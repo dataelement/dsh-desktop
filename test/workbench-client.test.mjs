@@ -980,9 +980,9 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain('已安装')
     expect(source).toContain('把开发指令发给你的 AI 助手')
     expect(source).toContain('发给你常用的 AI 助手（DSH、WorkBuddy、Codex 等）')
-    expect(source).toContain('重启 DSH，试试你的工作台')
+    expect(source).toContain('重启 Harness，试试你的工作台')
     expect(source).toContain('来开发并安装到本机')
-    expect(source).toContain('安装完成后，重启一下 DSH')
+    expect(source).toContain('安装完成后，等 AI 助手完成任务')
     expect(source).toContain('试试你平时会用到的功能，看看是否符合预期')
     expect(source).toContain('想上架？把提交指令发给 AI 助手')
     // The website is the only visible document entry point in this flow.
@@ -1072,12 +1072,14 @@ describe('desktop workbench client navigation', () => {
     const prompt = developmentWorkbenchAgentPrompt(english)
     const heading = english ? 'After every workbench development handoff' : '每次完成工作台开发后'
     const handoff = prompt.slice(prompt.indexOf(heading))
+    expect(prompt).toContain(english ? "no separate Agent API call is needed" : "无需 Agent 另行调用接口")
+    expect(prompt).toContain(english ? "does not support the automatic notice or no banner appears" : "不支持自动提示或未显示横幅")
     expect(prompt.indexOf(heading)).toBeGreaterThan(prompt.indexOf(english ? 'Report changed files' : '报告修改的文件'))
     expect(handoff).toContain(english ? 'after all change descriptions, self-test results, file links, and technical appendices' : '放在所有修改说明、自测结果、文件链接和技术附录之后')
     expect(handoff).toContain(english ? 'do not append any content after these three points' : '不能在这三点之后追加内容')
     const required = english
-      ? ['1. Development result:', 'actual workbench name', 'installation failed', 'Do not claim it loaded', '2. How to restart:', 'fully quit DSH Desktop and reopen', 'macOS use ⌘Q', 'Windows choose Quit', 'rather than only closing the window', '3. Where to open it:', 'upper left', 'Workbench Market → Installed', 'marked “Local,”', 'Restart complete', 'returning to the conversation is not required']
-      : ['1. 开发结果：', '工作台实际名称', '安装失败', '不得声称已加载', '2. 如何重启：', '完整退出 DSH Desktop，再重新打开', 'macOS 可按 ⌘Q', 'Windows 从应用菜单选择「退出」', '不是只关闭窗口', '3. 去哪里打开：', '左上角「工作台」', '工作台市场 → 已安装', '带「本地」标识', '重启好了', '不必返回对话才能使用']
+      ? ['1. Development result:', 'actual workbench name', 'installation failed', 'Do not claim it loaded', '2. How to restart:', 'click “Restart now” in the top banner', 'Harness → Restart Harness', 'normally only Harness needs restarting', 'current task finishes', '3. Where to open it:', 'upper left', 'Workbench Market → Installed', 'marked “Local,”', 'Restart complete', 'returning to the conversation is not required']
+      : ['1. 开发结果：', '工作台实际名称', '安装失败', '不得声称已加载', '2. 如何重启：', '点击顶部提示中的「立即重启」', 'Harness → 重启 Harness', '通常只需重启 Harness', '当前任务结束后', '3. 去哪里打开：', '左上角「工作台」', '工作台市场 → 已安装', '带「本地」标识', '重启好了', '不必返回对话才能使用']
     for (const phrase of required) expect(handoff).toContain(phrase)
     expect(handoff.indexOf(required[0])).toBeLessThan(handoff.indexOf(english ? '2. How to restart:' : '2. 如何重启：'))
     expect(prompt.endsWith(english ? 'If installation is incomplete, state that this entry remains unconfirmed until installation and loading succeed.' : '安装未完成时明确此入口仍待安装和加载后确认。')).toBe(true)
@@ -3872,5 +3874,72 @@ describe('workbench feature default', () => {
     expect(await openError(undefined)).not.toBe('工作台功能已关闭。')
     expect(await openError('true')).not.toBe('工作台功能已关闭。')
     expect(await openError('false')).toBe('工作台功能已关闭。')
+  })
+})
+
+describe('local workbench installation restart notice', () => {
+  it('polls immediately and every five seconds, rehydrates after page refresh, and never restarts automatically', async () => {
+    vi.useFakeTimers()
+    const { service, ctx, request } = await fixture()
+    const restart = vi.fn()
+    ctx.remote = { harness: { restart } }
+    let pending = false
+    request.mockImplementation(async () => Response.json({ restartRequired: pending }))
+    const stop = service.watchRestartStatus()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(service.getSnapshot().restartNeeded).toBe(false)
+    pending = true
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(service.getSnapshot().restartNeeded).toBe(true)
+    expect(restart).not.toHaveBeenCalled()
+    const reloaded = new Workbenches(ctx, request)
+    await reloaded.refreshRestartStatus()
+    expect(reloaded.getSnapshot().restartNeeded).toBe(true)
+    stop()
+    const calls = request.mock.calls.length
+    await vi.advanceTimersByTimeAsync(15000)
+    expect(request).toHaveBeenCalledTimes(calls)
+    reloaded.dispose()
+    service.dispose()
+  })
+
+  it('does not republish an unchanged pending restart notice', async () => {
+    const { service, request } = await fixture()
+    const listener = vi.fn()
+    const unsubscribe = service.subscribe(listener)
+    request.mockImplementation(async () => Response.json({ restartRequired: true, runtimeId: 'same-runtime' }))
+    await service.refreshRestartStatus()
+    expect(listener).toHaveBeenCalledTimes(1)
+    await service.refreshRestartStatus()
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+    service.dispose()
+  })
+
+  it('clears the notice after a Harness restart even if the page stays mounted', async () => {
+    const { service, request } = await fixture()
+    request.mockResolvedValue(Response.json({ restartRequired: true, runtimeId: 'before' }))
+    await service.refreshRestartStatus()
+    expect(service.restartNeeded).toBe(true)
+    request.mockResolvedValue(Response.json({ restartRequired: false, runtimeId: 'after' }))
+    await service.refreshRestartStatus()
+    expect(service.getSnapshot().restartNeeded).toBe(false)
+    service.dispose()
+  })
+
+  it('preserves current notice on older hosts/errors and ignores late results after disposal', async () => {
+    const { service, request } = await fixture()
+    service.restartNeeded = true
+    request.mockResolvedValue(new Response('', { status: 404 }))
+    await service.refreshRestartStatus()
+    expect(service.restartNeeded).toBe(true)
+    service.restartNeeded = false
+    const response = deferred()
+    request.mockReturnValue(response.promise)
+    const reading = service.refreshRestartStatus()
+    service.dispose()
+    response.resolve(Response.json({ restartRequired: true }))
+    await reading
+    expect(service.restartNeeded).toBe(false)
   })
 })

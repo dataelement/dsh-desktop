@@ -53,7 +53,7 @@ window.__ModuleLoader__.load({
       '还没有收藏工作台': 'No favorites yet', '还没有安装工作台': 'No installed workbenches yet', '没有找到匹配的工作台': 'No matching workbenches', '把鼠标移到市场卡片上，点击书签即可收藏。': 'Hover over a market card and select the bookmark to add a favorite.', '到工作台市场选择一个工作台开始。': 'Choose a workbench in the market to get started.', '试试其他关键词或分类。': 'Try another keyword or category.',
       '已复制': 'Copied', '复制失败，请展开指令手动复制。': 'Copy failed. Open the instructions and copy them manually.',
       '把开发指令发给你的 AI 助手': 'Send the development instructions to your AI assistant', '工作台开发规范': 'workbench development guide', '复制开发指令': 'Copy development instructions', '收起指令': 'Hide instructions', '查看指令': 'View instructions',
-      '重启 DSH，试试你的工作台': 'Restart DSH and try your workbench', '想上架？把提交指令发给 AI 助手': 'Want to share it? Send the submission instructions to your AI assistant', '工作台市场验收规范': 'market acceptance guide', '工作台市场仓库': 'market repository', '上架分类': 'Market category', '让 AI 助手帮我选': 'Let my AI assistant choose', '想要的新分类（可选）': 'Suggested new category (optional)', '例如：法务合规': 'For example: Legal compliance', '想要的新分类': 'Suggested new category', '复制提交指令': 'Copy submission instructions', '发给 AI 助手的开发指令': 'Development instructions for your AI assistant', '发给 AI 助手的提交指令': 'Submission instructions for your AI assistant', '工作台制作步骤': 'Workbench creation steps',
+      '重启 Harness，试试你的工作台': 'Restart Harness and try your workbench', '想上架？把提交指令发给 AI 助手': 'Want to share it? Send the submission instructions to your AI assistant', '工作台市场验收规范': 'market acceptance guide', '工作台市场仓库': 'market repository', '上架分类': 'Market category', '让 AI 助手帮我选': 'Let my AI assistant choose', '想要的新分类（可选）': 'Suggested new category (optional)', '例如：法务合规': 'For example: Legal compliance', '想要的新分类': 'Suggested new category', '复制提交指令': 'Copy submission instructions', '发给 AI 助手的开发指令': 'Development instructions for your AI assistant', '发给 AI 助手的提交指令': 'Submission instructions for your AI assistant', '工作台制作步骤': 'Workbench creation steps',
       'AI 助手已提交上架申请（PR）？粘贴链接查看进度': 'Has your AI assistant submitted a listing request (PR)? Paste its link to check progress', '上架申请 PR 链接': 'Submission PR link', '正在查询…': 'Checking…', '查询': 'Check', '在 GitHub 查看': 'View on GitHub',
       'PR 是 GitHub 上的提交审核请求。提交后可在上方粘贴链接查看进度，以 GitHub 上的状态为准，本机不保存提交状态。审核通过、PR 合并并且市场目录更新后，工作台才会上架。': 'A PR is a request to review a submission on GitHub. Paste its link above to check progress. GitHub is the source of status; submission status is not stored locally. Your workbench is listed after approval, PR merge, and a market catalog update.',
       '保存失败，当前内容仍保留在界面中。': 'Save failed. Your text is still visible here.', '正在保存…': 'Saving…', '已保存在本地 · 此工作台的会话共用这份笔记': 'Saved locally · Sessions in this workbench share these notes', '工作台加载失败': 'Workbench failed to load', '请检查该工作台是否已正确安装，重启 DSH 后重试；若仍失败，请联系工作台作者修复。': 'Check that this workbench is installed correctly, then restart DSH and try again. If it still fails, contact the workbench author for a fix.',
@@ -290,6 +290,35 @@ window.__ModuleLoader__.load({
         const bundle = name && this.native.bundles[name]
         const installed = this.native.status === NATIVE_STATUS.ready && name ? !!bundle && bundle.installed !== false : entry.installed || !!this.installRecordFor(catalogId)
         return installed && newerVersion(entry.listedVersion, this.installedVersionFor(entry))
+      }
+      watchRestartStatus() {
+        let stopped = false
+        let timer
+        const poll = async () => {
+          await this.refreshRestartStatus()
+          if (!stopped && !this.disposed) timer = setTimeout(poll, 5000)
+        }
+        poll()
+        return () => { stopped = true; clearTimeout(timer) }
+      }
+      async refreshRestartStatus() {
+        if (this.restartStatusRequest) return this.restartStatusRequest
+        this.restartStatusRequest = (async () => {
+          const response = await this.request('/api/desktop-workbenches/restart-status', { credentials: 'same-origin', cache: 'no-store' })
+          if (!response.ok) return // Older hosts and transient disk failures keep their existing notice state.
+          const data = await response.json()
+          if (this.disposed) return
+          const restarted = typeof data.runtimeId === 'string' && this.restartRuntimeId && data.runtimeId !== this.restartRuntimeId
+          if (typeof data.runtimeId === 'string') this.restartRuntimeId = data.runtimeId
+          if ((data.restartRequired === true || (restarted && data.restartRequired === false)) && this.restartNeeded !== data.restartRequired) {
+            this.restartNeeded = data.restartRequired
+            this.publish()
+          }
+        })().catch(() => {
+          // Restart guidance is supplementary; a disconnected host must not
+          // replace the user's conversation with a polling error.
+        }).finally(() => { this.restartStatusRequest = null })
+        return this.restartStatusRequest
       }
       async refreshNative() {
         const ticket = ++this.nativeTicket
@@ -1848,13 +1877,13 @@ Use business language for requirements discovery, layout suggestions, confirmati
 
 Development execution (for the Agent): Once requirements are clear, define the smallest business flow and preserve existing uncommitted changes. Under Section 4, choose a standard split or \`customFrame\` and design first use without a session: do not default the product design to a persistent conversation pane. Recommend a business-first full page for content review, renovation management, reports, or dashboards; create or restore a conversation and display it only when the user requests AI help. A standard split suits conversation-led tasks or compact companion tools. If the primary task is unclear, suggest layouts and confirm it with the user. In a split, check the host generic guidance beside the business panel. With \`customFrame\`, provide your own first-use action and place the host-provided \`conversation\` node when needed. Then implement the package format in Section 3 (the package.json dsh fields, cordis.patch.yml, server and client entries), workbench behavior, and UI; run relevant tests and builds. If scripts/check-workbench-package.mjs exists, use it to verify the package. Make the business area responsive to its own container width, not only window breakpoints. Check first entry without a session, an owned session, expanded and collapsed sidebar, and a narrow window. Use realistic Chinese and English content to catch single-character vertical wrapping, clipped controls, and page-wide horizontal overflow; preserve host shared entrances.
 
-Then install the workbench in this DSH Desktop using an installation method actually supported by this version; do not ask me to re-enter project information. If you are running inside the DSH Desktop session that needs restarting, do not close or restart DSH Desktop or Harness yourself, and do not use process probes such as \`ps\` or \`pgrep\` to manage the restart. After fully quitting and reopening DSH Desktop, offer two optional paths: (1) Try it directly: expand the sidebar, click the current workbench name / switch area to the right of “Workbenches” at the upper left, and select the new workbench. If it is missing, check its entry and running state in Workbench Market → Installed, then switch after it loads or is enabled. New local workbenches are added to the switch menu automatically when loaded; there is no separate “Add” button. (2) Continue Agent verification: return to the original development conversation and tell the Agent “Restart complete”; the Agent then follows Section 8 to check loading, the installed list, the switch entry, and the real business UI. I may try it independently without returning to the conversation. Checks the Agent has not actually performed remain pending verification; installation success does not mean all acceptance checks passed. If you run outside the target app, follow the normal restart process.
+Then install the workbench in this DSH Desktop using an installation method actually supported by this version; do not ask me to re-enter project information. After a confirmed local installation, DSH Desktop versions with automatic detection will detect the installation change and show the top restart banner within a few seconds; no separate Agent API call is needed. Once development, installation, and checks have finished, ask the user to click “Restart now.” If the current version does not support the automatic notice or no banner appears, use Harness → Restart Harness. Do not claim the notice was triggered without confirmed installation; it only indicates that reloading is needed, not that the workbench loaded or passed acceptance. If you are running inside the DSH Desktop session that needs restarting, do not close or restart DSH Desktop or Harness yourself, and do not use process probes such as \`ps\` or \`pgrep\` to manage the restart. After the user restarts Harness, offer two optional paths: (1) Try it directly: expand the sidebar, click the current workbench name / switch area to the right of “Workbenches” at the upper left, and select the new workbench. If it is missing, check its entry and running state in Workbench Market → Installed, then switch after it loads or is enabled. New local workbenches are added to the switch menu automatically when loaded; there is no separate “Add” button. (2) Continue Agent verification: return to the original development conversation and tell the Agent “Restart complete”; the Agent then follows Section 8 to check loading, the installed list, the switch entry, and the real business UI. I may try it independently without returning to the conversation. Checks the Agent has not actually performed remain pending verification; installation success does not mean all acceptance checks passed. If you run outside the target app, follow the normal restart process.
 
 If this Desktop version has no supported local installation method, or you cannot operate it, keep the verified package and precisely state which steps remain; do not claim it loaded. Report changed files, self-test results, actual loading state, and unverified items.
 
 After every workbench development handoff, the final response must end with a prominent three-point “What to do next” block, after all change descriptions, self-test results, file links, and technical appendices. Do not leave the reminder only at the beginning, and do not append any content after these three points:
 1. Development result: Use the actual workbench name and state the development and installation status. Say “Developed and installed locally” only when both actually succeeded; if development is incomplete or installation failed, explain the blocker honestly. Do not claim it loaded or all acceptance checks passed.
-2. How to restart: When installation succeeded and a restart is needed, ask the user to fully quit DSH Desktop and reopen it; on macOS use ⌘Q, and on Windows choose Quit from the application menu, rather than only closing the window. Do not close or restart the app the user is working in yourself. If no restart is needed or installation is incomplete, say so; do not present restarting as a fix for failed installation.
+2. How to restart: When installation succeeded and a restart is needed, ask the user to wait until the current task finishes, then click “Restart now” in the top banner or choose Harness → Restart Harness; normally only Harness needs restarting, without quitting DSH Desktop. Suggest fully quitting and reopening DSH Desktop only if Harness restart does not load the workbench and troubleshooting confirms this is needed. Do not close or restart the app the user is working in yourself. If no restart is needed or installation is incomplete, say so; do not present restarting as a fix for failed installation.
 3. Where to open it: After restarting, expand the sidebar and use the current name / switch area beside “Workbenches” at the upper left to select the newly created workbench (give its actual name). If missing, go to Workbench Market → Installed, find the entry marked “Local,” and check its running state; switch after it loads or is enabled. The user can try it directly, or optionally return to the original conversation and say “Restart complete” for continued verification; returning to the conversation is not required to use it. If installation is incomplete, state that this entry remains unconfirmed until installation and loading succeed.`
       return `我想在本机制作和使用一个 DSH Desktop 工作台，不需要上传或投稿。这条通用指令没有提供业务需求，不能据此直接决定做什么工作台。你可以使用自己的开发流程，DSH 不控制开发过程。
 
@@ -1864,13 +1893,13 @@ ${DEVELOPMENT_GUIDE_READING}先复用我在当前对话中明确提供的需求�
 
 开发执行（由 Agent 处理）：需求明确后，确定最小业务流程，不要覆盖已有的未提交更改。按规范第 4 节明确选择标准分栏或 customFrame，并设计首次无会话时的入口：不要把常驻会话区当作默认产品设计。内容审核、装修管理、报表、看板等优先建议业务整页；用户主动请求 AI 协助时才创建或恢复会话并显示会话区。对话主导或紧凑伴随工具适合标准分栏。主任务不明确时，先给用户布局建议并确认。标准分栏要检查宿主通用引导与业务面板并列的状态；customFrame 要自行提供首次使用入口，并在需要时放置宿主的 conversation 节点。再按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。业务区按自身容器宽度重排，不只依赖整窗断点。分别检查首次无会话、已关联会话、侧栏展开/收起及较窄窗口，用真实长度的中英文内容确认没有单字竖排、控件裁切或整页横向溢出，并保留宿主公共入口。
 
-完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。若你正运行在这台需要重启的 DSH Desktop 会话内，不要自行关闭或重启 DSH Desktop、Harness，也不要用 ps、pgrep 等进程探测来尝试管理重启；完整退出并重新打开 DSH Desktop 后，给用户两条可选路径：① 直接试用：展开左侧栏，点击左上角「工作台」右侧的当前工作台名称／切换区域，选择新工作台；若未显示，进入工作台市场的「已安装」检查条目和运行状态，加载或启用成功后再切换。新本地工作台加载后会自动加入切换菜单，不存在单独的「添加」按钮。② 继续 Agent 验收：回到原开发对话告诉 Agent「重启好了」，由 Agent 按第 8 节继续检查加载、已安装列表、切换入口和真实业务界面。用户可自行试用，不必返回对话；Agent 尚未实测的项目仍标为待验证，安装成功不能表述为全部验收通过。按规范第 8 节“本地自测清单”分别记录「已安装的工作台」、左侧入口和界面证据。若你运行在目标应用之外，可按正常重启流程操作。
+完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。本地安装成功后，支持自动检测的 DSH Desktop 会在几秒内检测安装变更并显示顶部重启提示，无需 Agent 另行调用接口。请在开发、安装和检查任务结束后，引导用户点击「立即重启」；若当前版本不支持自动提示或未显示横幅，使用菜单「Harness → 重启 Harness」。未确认安装成功时，不得声称已触发提示；提示只表示需要重新加载，不代表工作台已加载或验收通过。若你正运行在这台需要重启的 DSH Desktop 会话内，不要自行关闭或重启 DSH Desktop、Harness，也不要用 ps、pgrep 等进程探测来尝试管理重启；用户重启 Harness 后，给用户两条可选路径：① 直接试用：展开左侧栏，点击左上角「工作台」右侧的当前工作台名称／切换区域，选择新工作台；若未显示，进入工作台市场的「已安装」检查条目和运行状态，加载或启用成功后再切换。新本地工作台加载后会自动加入切换菜单，不存在单独的「添加」按钮。② 继续 Agent 验收：回到原开发对话告诉 Agent「重启好了」，由 Agent 按第 8 节继续检查加载、已安装列表、切换入口和真实业务界面。用户可自行试用，不必返回对话；Agent 尚未实测的项目仍标为待验证，安装成功不能表述为全部验收通过。按规范第 8 节“本地自测清单”分别记录「已安装的工作台」、左侧入口和界面证据。若你运行在目标应用之外，可按正常重启流程操作。
 
 若当前版本没有可用的本地安装方式，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确说明缺少的步骤，不要声称已加载。报告修改的文件、自测结果、实际加载状态和未验证的项目。
 
 每次完成工作台开发后，最终回复必须以醒目的「接下来怎么用」三点提示收尾，放在所有修改说明、自测结果、文件链接和技术附录之后；不能只在开头提醒，也不能在这三点之后追加内容：
 1. 开发结果：用工作台实际名称说明已完成的开发和安装状态。只有确实完成开发并安装后才能说“已开发好并安装到本机”；未完成或安装失败时如实说明卡在哪里，不得声称已加载或全部验收通过。
-2. 如何重启：安装成功且需要重启时，请用户完整退出 DSH Desktop，再重新打开；macOS 可按 ⌘Q，Windows 从应用菜单选择「退出」，不是只关闭窗口。不得自行关闭或重启用户正在使用的应用；无需重启或安装未完成时如实说明，不把重启当作安装失败的解决办法。
+2. 如何重启：安装成功且需要重启时，请用户等当前任务结束后，点击顶部提示中的「立即重启」，或使用菜单「Harness → 重启 Harness」；通常只需重启 Harness，无需退出 DSH Desktop。只有重启 Harness 后仍未正常加载且排查确认需要时，才建议完整退出并重新打开 DSH Desktop。不得自行关闭或重启用户正在使用的应用；无需重启或安装未完成时如实说明，不把重启当作安装失败的解决办法。
 3. 去哪里打开：重启后，展开左侧栏，在左上角「工作台」右侧的当前名称／切换区域，选择刚制作的工作台（写出实际名称）。若没看到，进入「工作台市场 → 已安装」查找带「本地」标识的条目并检查运行状态，加载或启用成功后再切换。用户可以直接试用；如需继续验收，也可以回到原对话说「重启好了」，不必返回对话才能使用。安装未完成时明确此入口仍待安装和加载后确认。`
     }
     // One line, no Markdown or YAML syntax: the text lands in a prompt and a PR body.
@@ -2090,8 +2119,8 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
               openPrompt === 'development' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: developmentPrompt, 'aria-label': tr('发给 AI 助手的开发指令'), onFocus: (event) => event.currentTarget.select() })),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '2'),
-              h('strong', null, tr('重启 DSH，试试你的工作台')),
-              h('p', null, both('你可以在左上角的「工作台」中切换到自己制作的工作台。安装完成后，重启一下 DSH，打开工作台试试你平时会用到的功能，看看是否符合预期。有问题或想调整的地方，继续告诉 AI 助手，让它帮你修改。只想自己用的话，到这一步就完成了。', 'You can switch to the workbench you created from “Workbench” in the top-left corner. Once installation is complete, restart DSH, open your workbench, try the features you would normally use, and see if they work as expected. Tell your AI assistant about any problems or changes you want so it can help you adjust it. For personal use, you can stop here.'))),
+              h('strong', null, tr('重启 Harness，试试你的工作台')),
+              h('p', null, both('你可以在左上角的「工作台」中切换到自己制作的工作台。安装完成后，等 AI 助手完成任务，点击顶部提示中的「立即重启」（或菜单「Harness → 重启 Harness」），再打开工作台试试你平时会用到的功能，看看是否符合预期。有问题或想调整的地方，继续告诉 AI 助手，让它帮你修改。只想自己用的话，到这一步就完成了。', 'You can switch to the workbench you created from “Workbench” in the top-left corner. Once installation is complete and your AI assistant has finished, click “Restart now” in the top banner (or choose Harness → Restart Harness), open your workbench, try the features you would normally use, and see if they work as expected. Tell your AI assistant about any problems or changes you want so it can help you adjust it. For personal use, you can stop here.'))),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '3'),
               h('strong', null, tr('想上架？把提交指令发给 AI 助手')),
@@ -2409,6 +2438,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         const disposeReset = ctx.on?.('connection/reset', refresh)
         return () => { disposeChanged?.(); disposeReset?.() }
       }, 'workbenches: native plugin status')
+      ctx.effect(() => service.watchRestartStatus(), 'workbenches: local installation restart notice')
       ctx.effect(maintainStyles, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.quickSwitcher', () => ctx.slots.register({ name: 'sidebar.quickSwitcher', inject: () => ({ service }) }, WorkbenchSidebarSwitcher))

@@ -51,9 +51,11 @@ describe('bundled workbench development guide', () => {
     for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE]) {
       const guide = read(path)
       const phrases = path.endsWith('.zh.md')
-        ? ['最终回复必须以醒目的「接下来怎么用」三点提示收尾', '放在所有修改说明、自测结果、文件链接和技术附录之后', '不能在这三点之后追加内容', '1. 开发结果：', '安装失败', '2. 如何重启：', '完整退出 DSH Desktop，再重新打开', '⌘Q', '3. 去哪里打开：', '左上角「工作台」', '工作台市场 → 已安装', '带「本地」标识']
-        : ['final response must end with a prominent three-point “What to do next” block', 'after all change descriptions, self-test results, file links, and technical appendices', 'do not append any content after these three points', '1. Development result:', 'installation failed', '2. How to restart:', 'fully quit DSH Desktop and reopen', '⌘Q', '3. Where to open it:', 'upper left', 'Workbench Market → Installed', 'marked “Local,”']
+        ? ['最终回复必须以醒目的「接下来怎么用」三点提示收尾', '放在所有修改说明、自测结果、文件链接和技术附录之后', '不能在这三点之后追加内容', '1. 开发结果：', '安装失败', '2. 如何重启：', '点击顶部提示中的「立即重启」', 'Harness → 重启 Harness', '通常只需重启 Harness', '3. 去哪里打开：', '左上角「工作台」', '工作台市场 → 已安装', '带「本地」标识']
+        : ['final response must end with a prominent three-point “What to do next” block', 'after all change descriptions, self-test results, file links, and technical appendices', 'do not append any content after these three points', '1. Development result:', 'installation failed', '2. How to restart:', 'click “Restart now” in the top banner', 'Harness → Restart Harness', 'normally only Harness needs restarting', '3. Where to open it:', 'upper left', 'Workbench Market → Installed', 'marked “Local,”']
       for (const phrase of phrases) expect(guide).toContain(phrase)
+      expect(guide).toContain(path.endsWith('.zh.md') ? '无需 Agent 另行调用接口' : 'no separate Agent API call is needed')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不支持自动提示或未显示横幅' : 'does not support the automatic notice or no banner appears')
     }
   })
 

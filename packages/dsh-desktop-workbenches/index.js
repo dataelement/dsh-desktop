@@ -1,4 +1,6 @@
+import { createRestartStatus, readLocalWorkbenchSnapshot } from './restart-status.mjs'
 import { readInstallEvidence } from './install-evidence.mjs'
+import { randomUUID } from 'node:crypto'
 import Schema from '@deepseek-ai/schemastery'
 import { CatalogError, createCatalogReader } from './catalog.mjs'
 import { selectMarketFetch } from './market-fetch.mjs'
@@ -70,6 +72,21 @@ export function apply(ctx, config) {
     onWarning: error => ctx.logger?.warn?.(error)
   })
   const marketInstalls = createMarketInstallStore(config.root)
+  const restartRuntimeId = randomUUID()
+  const restartStatus = createRestartStatus(async () => readLocalWorkbenchSnapshot(undefined, await marketInstalls.read()))
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/restart-status',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch() {
+      try {
+        return Response.json({ ...await restartStatus.read(), runtimeId: restartRuntimeId }, { headers: { 'cache-control': 'no-store' } })
+      } catch (error) {
+        ctx.logger?.warn?.('Could not inspect local workbench restart status: %s', error.message)
+        return Response.json({ error: 'Could not inspect local workbench restart status.' }, { status: 503, headers: { 'cache-control': 'no-store' } })
+      }
+    }
+  })
   // Providers must use the same persisted ownership as Desktop, never a second
   // settings namespace that could accidentally authorize an ordinary session.
   ctx.effect(() => ctx.reflect.provide('desktopWorkbenchOwnership', {
