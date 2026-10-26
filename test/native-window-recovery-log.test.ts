@@ -19,9 +19,8 @@ it('keeps native recovery available after a real asynchronous log-file write err
   try {
     runtime.note('renderer launch-failed exitCode=18')
     await runNativeWindowRecovery({
-      message: 'renderer launch-failed exitCode=18', chinese: false, cancelled: () => false,
-      flushDiagnostics: () => runtime.flushLog(), show, recoverConfiguration: async () => 'continue',
-      revealDiagnostics: () => {}, restart: () => {}, quit, note
+      chinese: false, cancelled: () => false,
+      flushDiagnostics: () => runtime.flushLog(), show, restart: () => {}, quit, note
     })
     // The file error event can follow its write callback; observe that event before cleanup.
     await vi.waitFor(() => expect(warn).toHaveBeenCalled())

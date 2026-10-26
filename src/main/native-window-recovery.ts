@@ -1,13 +1,10 @@
 import type { MessageBoxOptions } from 'electron'
 
 export interface NativeWindowRecoveryOptions {
-  message: string
   chinese: boolean
   cancelled: () => boolean
   flushDiagnostics: () => Promise<void>
   show: (options: MessageBoxOptions) => Promise<{ response: number }>
-  recoverConfiguration: () => Promise<'retry' | 'continue'>
-  revealDiagnostics: () => void
   restart: () => void
   quit: () => void
   note: (line: string) => void
@@ -35,39 +32,21 @@ export async function runNativeWindowRecovery(options: NativeWindowRecoveryOptio
     if (timer !== undefined) clearTimeout(timer)
   }
 
-  while (!options.cancelled()) {
-    const { response } = await options.show({
-      type: 'error',
-      title: 'DSH Desktop',
-      message: options.chinese ? '应用窗口无法继续加载' : 'The application window could not load',
-      detail: options.message + '\n\n' + (options.chinese
-        ? '可查看诊断信息以排查窗口加载失败。恢复配置可检查启动配置，但不保证能解决窗口加载问题。'
-        : 'View diagnostics to investigate the window failure. Configuration recovery checks startup settings and may not resolve a window loading problem.'),
-      buttons: options.chinese
-        ? ['退出', '重新启动', '恢复配置', '查看诊断信息']
-        : ['Quit', 'Restart', 'Recover Configuration', 'View Diagnostics'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true
-    })
-    if (options.cancelled()) return
-    if (response === 3) {
-      try {
-        options.revealDiagnostics()
-      } catch (error: unknown) {
-        options.note(`[desktop] native recovery reveal diagnostics failed: ${String(error)}`)
-      }
-      continue
-    }
-    if (response === 2) {
-      const result = await options.recoverConfiguration()
-      if (options.cancelled()) return
-      if (result === 'continue') continue
-      options.restart()
-    } else if (response === 1) {
-      options.restart()
-    }
-    if (!options.cancelled()) options.quit()
-    return
-  }
+  if (options.cancelled()) return
+  const { response } = await options.show({
+    type: 'error',
+    title: 'DSH Desktop',
+    message: options.chinese
+      ? '应用窗口无法加载。请重新启动 DSH Desktop。'
+      : 'The application window could not load. Please restart DSH Desktop.',
+    buttons: options.chinese ? ['重新启动'] : ['Restart'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  })
+  // Electron maps Esc/native cancellation to cancelId (the sole Restart action).
+  // Ignore responses that do not identify a button, if returned by the platform.
+  if (options.cancelled() || response !== 0) return
+  options.restart()
+  if (!options.cancelled()) options.quit()
 }

@@ -1,6 +1,6 @@
 import type { MessageBoxOptions } from 'electron'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { runNativeWindowRecovery, type NativeWindowRecoveryOptions } from '../src/main/native-window-recovery'
+import { runNativeWindowRecovery } from '../src/main/native-window-recovery'
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => { throw new Error('Promise not initialized') }
@@ -11,13 +11,10 @@ function deferred<T>() {
 
 function setup() {
   return {
-    message: 'renderer process failed',
     chinese: false,
     cancelled: vi.fn(() => false),
     flushDiagnostics: vi.fn(async () => {}),
     show: vi.fn(async (_options: MessageBoxOptions) => ({ response: 0 })),
-    recoverConfiguration: vi.fn<NativeWindowRecoveryOptions['recoverConfiguration']>(async () => 'continue'),
-    revealDiagnostics: vi.fn(),
     restart: vi.fn(),
     quit: vi.fn(),
     note: vi.fn()
@@ -41,9 +38,8 @@ describe('native window recovery', () => {
     expect(vi.getTimerCount()).toBe(0)
     expect(options.show).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error', title: 'DSH Desktop',
-      buttons: ['Quit', 'Restart', 'Recover Configuration', 'View Diagnostics'],
-      defaultId: 0, cancelId: 0, noLink: true,
-      detail: expect.stringContaining(options.message)
+      buttons: ['Restart'],
+      defaultId: 0, cancelId: 0, noLink: true
     }))
     expect(options.quit).toHaveBeenCalledOnce()
   })
@@ -59,6 +55,7 @@ describe('native window recovery', () => {
     await vi.advanceTimersByTimeAsync(1)
     await operation
     expect(options.show).toHaveBeenCalledOnce()
+    expect(options.note).toHaveBeenCalledWith('[desktop] native recovery diagnostics flush timed out after 1000ms')
     expect(vi.getTimerCount()).toBe(0)
     flush.reject(new Error('late disk failure'))
     await Promise.resolve()
@@ -94,11 +91,24 @@ describe('native window recovery', () => {
     expect(options.quit).not.toHaveBeenCalled()
   })
 
-  it.each([0, 1, 2, 3])('ignores dialog response %i after cancellation while the dialog is open', async (response) => {
+  it('does not show recovery after the flush deadline if cancelled while persistence stalls', async () => {
+    vi.useFakeTimers()
+    const options = setup()
+    options.flushDiagnostics.mockReturnValue(new Promise<void>(() => {}))
+    const operation = runNativeWindowRecovery(options)
+    await vi.advanceTimersByTimeAsync(999)
+    options.cancelled.mockReturnValue(true)
+    await vi.advanceTimersByTimeAsync(1)
+    await operation
+    expect(options.show).not.toHaveBeenCalled()
+    expect(options.restart).not.toHaveBeenCalled()
+    expect(options.quit).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each([-1, 0])('ignores response %i after cancellation while the dialog is open', async (response) => {
     const options = setup()
     const dialog = deferred<{ response: number }>()
-    options.show.mockReturnValue(dialog.promise)
-    // The show mock marks the point where the awaited native dialog is open.
     const opened = deferred<void>()
     options.show.mockImplementation(() => { opened.resolve(); return dialog.promise })
     const operation = runNativeWindowRecovery(options)
@@ -106,82 +116,61 @@ describe('native window recovery', () => {
     options.cancelled.mockReturnValue(true)
     dialog.resolve({ response })
     await operation
-    expect(options.recoverConfiguration).not.toHaveBeenCalled()
-    expect(options.revealDiagnostics).not.toHaveBeenCalled()
     expect(options.restart).not.toHaveBeenCalled()
     expect(options.quit).not.toHaveBeenCalled()
   })
 
-  it('views diagnostics then returns to the native dialog and restarts before quitting', async () => {
+  it.each([
+    [false, 'The application window could not load. Please restart DSH Desktop.', 'Restart'],
+    [true, '应用窗口无法加载。请重新启动 DSH Desktop。', '重新启动']
+  ] as const)('uses only clear load and restart copy for chinese=%s', async (chinese, message, button) => {
     const options = setup()
+    options.chinese = chinese
+    await runNativeWindowRecovery(options)
+    expect(options.show).toHaveBeenCalledExactlyOnceWith({
+      type: 'error', title: 'DSH Desktop', message, buttons: [button],
+      defaultId: 0, cancelId: 0, noLink: true
+    })
+    expect(options.show.mock.calls[0]?.[0]).not.toHaveProperty('detail')
+  })
+
+  it('restarts before quitting once even if a native promise resolves twice', async () => {
+    const options = setup()
+    const dialog = deferred<{ response: number }>()
     const actions: string[] = []
-    options.show.mockResolvedValueOnce({ response: 3 }).mockResolvedValueOnce({ response: 1 })
-    options.revealDiagnostics.mockImplementation(() => { actions.push('view') })
+    options.show.mockReturnValue(dialog.promise)
     options.restart.mockImplementation(() => { actions.push('restart') })
     options.quit.mockImplementation(() => { actions.push('quit') })
-    await runNativeWindowRecovery(options)
-    expect(actions).toEqual(['view', 'restart', 'quit'])
-    expect(options.show).toHaveBeenCalledTimes(2)
+    const operation = runNativeWindowRecovery(options)
+    dialog.resolve({ response: 0 })
+    dialog.resolve({ response: 0 })
+    await operation
+    expect(actions).toEqual(['restart', 'quit'])
+    expect(options.show).toHaveBeenCalledOnce()
     expect(options.flushDiagnostics).toHaveBeenCalledOnce()
   })
 
-  it('logs reveal failures and keeps the native recovery dialog available', async () => {
+  it.each([-1, 1, 2, 3])('does not restart or quit for a platform response without a matching button %i', async (response) => {
     const options = setup()
-    options.show.mockResolvedValueOnce({ response: 3 })
-    options.revealDiagnostics.mockImplementation(() => { throw new Error('folder unavailable') })
+    options.show.mockResolvedValue({ response })
     await runNativeWindowRecovery(options)
-    expect(options.note).toHaveBeenCalledWith(expect.stringContaining('reveal diagnostics failed: Error: folder unavailable'))
-    expect(options.show).toHaveBeenCalledTimes(2)
-    expect(options.quit).toHaveBeenCalledOnce()
-  })
-
-  it.each(['retry', 'continue'] as const)('handles configuration recovery returning %s', async (result) => {
-    const options = setup()
-    const actions: string[] = []
-    options.show.mockResolvedValueOnce({ response: 2 })
-    options.recoverConfiguration.mockResolvedValue(result)
-    options.restart.mockImplementation(() => { actions.push('restart') })
-    options.quit.mockImplementation(() => { actions.push('quit') })
-    await runNativeWindowRecovery(options)
-    expect(options.recoverConfiguration).toHaveBeenCalledOnce()
-    expect(options.show).toHaveBeenCalledTimes(result === 'retry' ? 1 : 2)
-    expect(actions).toEqual(result === 'retry' ? ['restart', 'quit'] : ['quit'])
-  })
-
-  it.each(['retry', 'continue'] as const)('ignores configuration result %s after cancellation during recovery', async (result) => {
-    const options = setup()
-    const recovery = deferred<'retry' | 'continue'>()
-    const started = deferred<void>()
-    options.show.mockResolvedValue({ response: 2 })
-    options.recoverConfiguration.mockImplementation(() => { started.resolve(); return recovery.promise })
-    const operation = runNativeWindowRecovery(options)
-    await started.promise
-    options.cancelled.mockReturnValue(true)
-    recovery.resolve(result)
-    await operation
     expect(options.show).toHaveBeenCalledOnce()
     expect(options.restart).not.toHaveBeenCalled()
     expect(options.quit).not.toHaveBeenCalled()
   })
 
-  it('uses Chinese native actions and explains the limited scope of configuration recovery', async () => {
+  it('does not quit if restart triggers cancellation', async () => {
     const options = setup()
-    options.chinese = true
+    options.restart.mockImplementation(() => { options.cancelled.mockReturnValue(true) })
     await runNativeWindowRecovery(options)
-    expect(options.show).toHaveBeenCalledWith(expect.objectContaining({
-      buttons: ['退出', '重新启动', '恢复配置', '查看诊断信息'],
-      detail: expect.stringContaining('不保证能解决窗口加载问题')
-    }))
+    expect(options.restart).toHaveBeenCalledOnce()
+    expect(options.quit).not.toHaveBeenCalled()
   })
 
-  it.each(['dialog', 'configuration'] as const)('propagates %s errors to the caller fallback', async (stage) => {
+  it('propagates dialog errors to the caller fallback', async () => {
     const options = setup()
     const error = new Error('native recovery failed')
-    if (stage === 'dialog') options.show.mockRejectedValue(error)
-    else {
-      options.show.mockResolvedValue({ response: 2 })
-      options.recoverConfiguration.mockRejectedValue(error)
-    }
+    options.show.mockRejectedValue(error)
     await expect(runNativeWindowRecovery(options)).rejects.toBe(error)
     expect(options.restart).not.toHaveBeenCalled()
     expect(options.quit).not.toHaveBeenCalled()

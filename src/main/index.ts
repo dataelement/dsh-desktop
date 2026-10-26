@@ -194,7 +194,8 @@ import { shouldKeepRunningInBackground } from './close-to-tray'
 import { RendererNavigationRecovery } from './renderer-navigation-recovery'
 import { rendererDiagnosticText, rendererDiagnosticUrl } from './renderer-diagnostics'
 import { runNativeWindowRecovery } from './native-window-recovery'
-import { release } from 'node:os'
+import { freemem, release, totalmem } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { loadDesktopWindowAfterStop } from './desktop-window-load'
 
 type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates' | 'market-upgrade' | 'market-remove'
@@ -392,13 +393,32 @@ function recordMainWindowRendererLoss(
 
 function installMainWindowRendererRecovery(window: BrowserWindow): void {
   const webContents = window.webContents
+  const recoveryId = randomUUID()
   let contextRecorded = false
+  let lastRendererPid = 0
+  const noteRecovery = (phase: string, details: Record<string, unknown> = {}) => {
+    runtime?.note('[desktop] renderer recovery: ' + JSON.stringify({
+      recoveryId, windowId: window.id, webContentsId: webContents.id,
+      stage: harnessRendered ? 'running' : 'startup', uptimeSeconds: Math.round(process.uptime()),
+      harnessPhase: runtime?.snapshot().phase, phase, ...details
+    }))
+  }
   const recovery = new RendererNavigationRecovery({
     load: (url, cancelled) => loadDesktopWindowAfterStop(window, url, cancelled),
     cancelled: () => quitting || gpuFallbackRelaunching || window.isDestroyed() || webContents.isDestroyed(),
     onError: showUnexpectedError,
     onDiagnostic: diagnostic => {
-      runtime?.note('[desktop] renderer recovery: ' + JSON.stringify(diagnostic))
+      if (!contextRecorded) {
+        contextRecorded = true
+        noteRecovery('environment', {
+          desktop: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
+          node: process.versions.node, platform: process.platform, arch: process.arch, osRelease: release()
+        })
+      }
+      if (diagnostic.phase === 'load-completed') {
+        try { lastRendererPid = webContents.getOSProcessId() } catch { /* Process may have exited already. */ }
+      }
+      noteRecovery(diagnostic.phase, { ...diagnostic })
     }
   })
   const unregister = registerNavigationOwner(window, (url, cancelled) => recovery.navigate(url, false, cancelled))
@@ -406,13 +426,6 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
   webContents.on('render-process-gone', (event, details) => {
     if (quitting || gpuFallbackRelaunching || window.isDestroyed() || details.reason === 'clean-exit') return
     clearProfileBootConfirmation()
-    if (!contextRecorded) {
-      contextRecorded = true
-      runtime?.note('[desktop] renderer environment: ' + JSON.stringify({
-        desktop: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
-        node: process.versions.node, platform: process.platform, arch: process.arch, osRelease: release()
-      }))
-    }
     // Take control: by default the window stays drawn but blank, which is
     // exactly the black screen this recovery is meant to prevent.
     event.preventDefault()
@@ -433,6 +446,10 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     // allowed the normal bounded reload; if that freshly reloaded renderer
     // dies with the same native signature, the launch is still unusable and
     // must take the same immediate relaunch path as a pre-render GPU loss.
+    noteRecovery('renderer-gone', {
+      reason, exitCode, lastRendererPid, gpuStatus,
+      systemMemory: { freeBytes: freemem(), totalBytes: totalmem() }
+    })
     const unusableLaunch = !harnessRendered || recovery.reloadCount > 0
     if (
       isRendererGpuFallbackCandidate({ platform: process.platform, reason, exitCode }) &&
@@ -1980,20 +1997,20 @@ function showUnexpectedError(error: unknown): void {
   if (nativeRecoveryActive || quitting || gpuFallbackRelaunching) return
   nativeRecoveryActive = true
   void runNativeWindowRecovery({
-    message,
     chinese: harnessLocale() === 'zh',
     cancelled: () => quitting || gpuFallbackRelaunching,
     flushDiagnostics: () => runtime?.flushLog() ?? Promise.resolve(),
     show: options => dialog.showMessageBox(options),
-    recoverConfiguration: recoverCoreConfiguration,
-    revealDiagnostics: () => shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')),
     restart: () => app.relaunch(),
     quit: () => { app.quit() },
     note: line => { runtime?.note(rendererDiagnosticText(line)) }
   }).catch((failure: unknown) => {
-    console.error('[desktop] native recovery failed', rendererDiagnosticText(String(failure)))
+    const failureMessage = rendererDiagnosticText(String(failure))
+    runtime?.note('[desktop] native recovery failed: ' + failureMessage)
+    console.error('[desktop] native recovery failed', failureMessage)
     if (quitting || gpuFallbackRelaunching) return
-    dialog.showErrorBox('DSH Desktop', message)
+    dialog.showErrorBox('DSH Desktop', harnessLocale() === 'zh'
+      ? '应用窗口无法继续加载，请重新启动应用。' : 'The application window could not load. Please restart the application.')
   }).finally(() => { nativeRecoveryActive = false })
 }
 

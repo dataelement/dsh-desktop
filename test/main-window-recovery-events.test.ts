@@ -1,5 +1,6 @@
 import { rendererDiagnosticText, rendererDiagnosticUrl } from '../src/main/renderer-diagnostics'
-import { release } from 'node:os'
+import { freemem, release, totalmem } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, readFileSync as readLog, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -25,24 +26,25 @@ function fixture(note: (line: string) => void = () => {}) {
   const contents = new EventEmitter()
   const loads: { resolve: () => void; reject: (error: Error) => void }[] = []
   const target = Object.assign(window, {
-    isDestroyed: () => false,
+    id: 1, isDestroyed: () => false,
     webContents: Object.assign(contents, {
+      id: 2, getOSProcessId: vi.fn(() => 1234),
       isDestroyed: () => false, isLoading: vi.fn(() => false), getURL: vi.fn(() => 'file:///splash.html'), reload: vi.fn(), stop: vi.fn()
     }),
     loadURL: vi.fn(() => new Promise<void>((resolve, reject) => loads.push({ resolve, reject })))
   })
   const error = vi.fn()
   const context = {
-    rendererDiagnosticText, rendererDiagnosticUrl, release, RendererNavigationRecovery, loadDesktopWindowAfterStop, registerNavigationOwner, shouldReloadAfterMainWindowRendererLoss,
+    rendererDiagnosticText, rendererDiagnosticUrl, freemem, release, totalmem, randomUUID, RendererNavigationRecovery, loadDesktopWindowAfterStop, registerNavigationOwner, shouldReloadAfterMainWindowRendererLoss,
     MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS, mainWindowRecoveryReloadAt: 0,
     mainWindowRecoveryReloadCount: 0, quitting: false, gpuFallbackRelaunching: false,
     harnessRendered: false, clearProfileBootConfirmation: vi.fn(), recordMainWindowRendererLoss: vi.fn((source, details) => note(source + ": " + details)),
     showUnexpectedError: error, isRendererGpuFallbackCandidate: () => false,
-    app: { getVersion: () => "test", getGPUFeatureStatus: () => ({}) }, runtime: { note }, process, setTimeout, clearTimeout
+    app: { getVersion: () => "test", getGPUFeatureStatus: () => ({}) }, runtime: { note, snapshot: () => ({ phase: 'ready' }) }, process, setTimeout, clearTimeout
   }
   const install: (target: typeof window) => void = runInNewContext(code + ';installMainWindowRendererRecovery', context)
   install(target)
-  return { target, contents, loads, error }
+  return { target, contents, loads, error, context }
 }
 
 afterEach(() => vi.useRealTimers())
@@ -72,7 +74,13 @@ it('persists native evidence and the exhausted timeline in the raw runtime log w
     expect(raw).toContain('reason=launch-failed exitCode=18')
     expect(raw).toContain('"phase":"exhausted","reloadCount":3')
     expect(raw).toContain('"rendererLoss":{"reason":"launch-failed","exitCode":18}')
-    expect(raw).toContain('renderer environment:')
+    expect(raw).toContain('"phase":"environment"')
+    const events = raw.split(String.fromCharCode(10)).filter(line => line.includes('[desktop] renderer recovery: '))
+      .map(line => JSON.parse(line.slice(line.indexOf('{'))) as Record<string, unknown>)
+    expect(new Set(events.map(event => event.recoveryId)).size).toBe(1)
+    expect(events.every(event => event.stage === 'startup' && event.windowId === 1 && event.webContentsId === 2)).toBe(true)
+    expect(events.filter(event => event.phase === 'load-started').map(event => event.loadId)).toEqual([1, 2, 3, 4])
+    expect(events.at(-1)).toMatchObject({ navigationId: 1, elapsedMs: 15_000, phase: 'exhausted' })
     expect(raw).toContain('http://127.0.0.1:1234/route')
     expect(raw).not.toMatch(/credential-secret|query-secret|fragment-secret/)
     expect(f.error).toHaveBeenCalledTimes(1)
@@ -82,6 +90,35 @@ it('persists native evidence and the exhausted timeline in the raw runtime log w
     rmSync(dir, { recursive: true, force: true })
   }
 })
+it('distinguishes a running renderer loss and retains its last live PID in the correlated log', async () => {
+  vi.useFakeTimers()
+  const notes: string[] = []
+  const f = fixture(line => notes.push(line))
+  const initial = navigateDesktopWindow(f.target, 'http://127.0.0.1/', () => false)
+  f.loads[0]?.resolve()
+  await initial
+  f.context.harnessRendered = true
+  f.target.webContents.getOSProcessId.mockReturnValue(0)
+  f.contents.emit('render-process-gone', { preventDefault() {} }, { reason: 'oom', exitCode: 14 })
+  await vi.advanceTimersByTimeAsync(5_000)
+  f.loads[1]?.resolve()
+  await vi.advanceTimersByTimeAsync(0)
+  const events = notes.filter(line => line.startsWith('[desktop] renderer recovery: '))
+    .map(line => JSON.parse(line.slice(line.indexOf('{'))) as Record<string, unknown>)
+  const loss = events.find(event => event.phase === 'renderer-gone')
+  expect(loss).toMatchObject({ stage: 'running', harnessPhase: 'ready', lastRendererPid: 1234,
+    reason: 'oom', exitCode: 14, systemMemory: { freeBytes: expect.any(Number), totalBytes: expect.any(Number) } })
+  expect(events.at(-1)).toMatchObject({ phase: 'load-completed', stage: 'running', reloadCount: 1 })
+  const otherNotes: string[] = []
+  const other = fixture(line => otherNotes.push(line))
+  const otherLoad = navigateDesktopWindow(other.target, 'file:///splash.html', () => false)
+  other.loads[0]?.resolve()
+  await otherLoad
+  expect(otherNotes.join('')).not.toContain(String(loss?.recoveryId))
+  f.target.emit('closed')
+  other.target.emit('closed')
+})
+
 it('drains the previous native load before installing the replacement load promise', async () => {
   vi.useFakeTimers()
   const f = fixture()

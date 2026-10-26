@@ -7,6 +7,9 @@ export interface RendererLoss {
 export interface RendererRecoveryDiagnostic {
   phase: 'load-started' | 'load-failed' | 'retry-scheduled' | 'load-completed' | 'budget-reset' | 'exhausted'
   reloadCount: number
+  navigationId: number
+  loadId: number
+  elapsedMs: number
   rendererLoss?: RendererLoss
   code?: string | number
 }
@@ -21,6 +24,8 @@ interface RecoveryOptions {
   healthyMs?: number
 }
 interface Operation {
+  id: number
+  startedAt: number
   url: string
   cancelled: boolean
   pending: boolean
@@ -45,6 +50,8 @@ export class RendererNavigationRecovery {
   private operation: Operation | undefined
   private disposed = false
   private attempts = 0
+  private navigationSequence = 0
+  private loadSequence = 0
   private lastRendererLoss: RendererLoss | undefined
   private healthyTimer: ReturnType<typeof setTimeout> | undefined
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
@@ -54,7 +61,11 @@ export class RendererNavigationRecovery {
   private diagnose(phase: RendererRecoveryDiagnostic['phase'], code?: string | number): void {
     // Diagnostics must never take ownership away from navigation/recovery.
     try {
-      this.options.onDiagnostic?.({ phase, reloadCount: this.attempts, rendererLoss: this.lastRendererLoss, code })
+      this.options.onDiagnostic?.({
+        phase, reloadCount: this.attempts, navigationId: this.operation?.id ?? 0,
+        loadId: this.loadSequence, elapsedMs: Math.max(0, Date.now() - (this.operation?.startedAt ?? Date.now())),
+        rendererLoss: this.lastRendererLoss, code
+      })
     } catch (error) {
       console.warn('[desktop] renderer recovery diagnostic failed', error)
     }
@@ -99,6 +110,7 @@ export class RendererNavigationRecovery {
   }
 
   private async load(operation: Operation): Promise<boolean> {
+    this.loadSequence += 1
     this.diagnose('load-started')
     const result = await this.bounded(operation,
       (cancelled) => this.options.load(operation.url, cancelled).then(() => true),
@@ -128,7 +140,10 @@ export class RendererNavigationRecovery {
     this.operation?.cancel()
     this.clearHealthy()
     if (!replacement) this.lastRendererLoss = undefined
-    const operation: Operation = { url, cancelled: false, pending: true, superseded, cancel: () => {} }
+    const operation: Operation = {
+      id: ++this.navigationSequence, startedAt: Date.now(), url,
+      cancelled: false, pending: true, superseded, cancel: () => {}
+    }
     this.operation = operation
     try {
       if (replacement && !await this.backoff(operation)) return false
