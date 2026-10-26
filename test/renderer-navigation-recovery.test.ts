@@ -20,6 +20,54 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('owned renderer navigation recovery', () => {
+  it('keeps a native loss across paired failures, replaces it on a later loss and clears it after health', async () => {
+    vi.useFakeTimers()
+    const diagnostics: import('../src/main/renderer-navigation-recovery').RendererRecoveryDiagnostic[] = []
+    const recovery = new RendererNavigationRecovery({
+      load: async () => {}, cancelled: () => false, onError: vi.fn(),
+      onDiagnostic: event => diagnostics.push(event), cooldownMs: 1, healthyMs: 10
+    })
+    await recovery.navigate('http://127.0.0.1/')
+    recovery.rendererGone(undefined, { reason: 'launch-failed', exitCode: 18 })
+    recovery.loadFailed('http://127.0.0.1/', -2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(diagnostics.at(-1)).toMatchObject({ phase: 'load-completed', reloadCount: 1,
+      rendererLoss: { reason: 'launch-failed', exitCode: 18 } })
+    recovery.rendererGone(undefined, { reason: 'crashed', exitCode: 23 })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(diagnostics.at(-1)?.rendererLoss).toEqual({ reason: 'crashed', exitCode: 23 })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(diagnostics.at(-1)).toMatchObject({ phase: 'budget-reset', reloadCount: 0 })
+    expect(diagnostics.at(-1)?.rendererLoss).toBeUndefined()
+    recovery.dispose()
+  })
+
+  it('records load timeouts and exhaustion without a renderer event', async () => {
+    vi.useFakeTimers()
+    const diagnostics: import('../src/main/renderer-navigation-recovery').RendererRecoveryDiagnostic[] = []
+    const recovery = new RendererNavigationRecovery({
+      load: () => new Promise(() => {}), cancelled: () => false, onError: vi.fn(),
+      onDiagnostic: event => diagnostics.push(event), timeoutMs: 10, cooldownMs: 1
+    })
+    const result = expect(recovery.navigate('file:///splash.html')).rejects.toThrow('renderer')
+    await vi.advanceTimersByTimeAsync(50)
+    await result
+    expect(diagnostics.filter(event => event.phase === 'load-failed')).toHaveLength(4)
+    expect(diagnostics.filter(event => event.phase === 'load-failed').every(event => event.code === 'RENDERER_LOAD_TIMEOUT')).toBe(true)
+    expect(diagnostics.at(-1)).toMatchObject({ phase: 'exhausted', reloadCount: 3 })
+    recovery.dispose()
+  })
+
+  it('diagnostic failures cannot prevent a successful navigation', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const recovery = new RendererNavigationRecovery({
+      load: async () => {}, cancelled: () => false, onError: vi.fn(),
+      onDiagnostic: () => { throw new Error('unwritable diagnostics') }
+    })
+    try { await expect(recovery.navigate('file:///splash.html')).resolves.toBe(true) }
+    finally { recovery.dispose(); warn.mockRestore() }
+  })
+
   it('recovers the settled current URL after a redirect or direct reload without accepting stale pending failures', async () => {
     vi.useFakeTimers()
     const f = fixture()

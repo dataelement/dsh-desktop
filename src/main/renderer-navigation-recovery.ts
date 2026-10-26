@@ -1,9 +1,21 @@
 import { MAIN_WINDOW_RECOVERY_MAX_RELOADS, MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS } from './main-window-recovery'
 
+export interface RendererLoss {
+  reason: string
+  exitCode: number
+}
+export interface RendererRecoveryDiagnostic {
+  phase: 'load-started' | 'load-failed' | 'retry-scheduled' | 'load-completed' | 'budget-reset' | 'exhausted'
+  reloadCount: number
+  rendererLoss?: RendererLoss
+  code?: string | number
+}
+
 interface RecoveryOptions {
   load: (url: string, cancelled: () => boolean) => Promise<void>
   cancelled: () => boolean
   onError: (error: unknown) => void
+  onDiagnostic?: (diagnostic: RendererRecoveryDiagnostic) => void
   cooldownMs?: number
   timeoutMs?: number
   healthyMs?: number
@@ -33,10 +45,31 @@ export class RendererNavigationRecovery {
   private operation: Operation | undefined
   private disposed = false
   private attempts = 0
+  private lastRendererLoss: RendererLoss | undefined
   private healthyTimer: ReturnType<typeof setTimeout> | undefined
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
 
   constructor(private readonly options: RecoveryOptions) {}
+
+  private diagnose(phase: RendererRecoveryDiagnostic['phase'], code?: string | number): void {
+    // Diagnostics must never take ownership away from navigation/recovery.
+    try {
+      this.options.onDiagnostic?.({ phase, reloadCount: this.attempts, rendererLoss: this.lastRendererLoss, code })
+    } catch (error) {
+      console.warn('[desktop] renderer recovery diagnostic failed', error)
+    }
+  }
+
+  private exhausted(): Error {
+    this.diagnose('exhausted')
+    const loss = this.lastRendererLoss
+    return loss
+      ? new Error(
+        'The renderer failed to load after bounded recovery attempts. Last renderer loss: reason=' + loss.reason + ' exitCode=' + loss.exitCode + '.',
+        { cause: { ...loss } }
+      )
+      : rendererError()
+  }
 
   private clearHealthy(): void {
     if (this.healthyTimer !== undefined) clearTimeout(this.healthyTimer)
@@ -53,7 +86,7 @@ export class RendererNavigationRecovery {
     const interrupted = new Promise<false>((resolve, reject) => {
       operation.cancel = () => { active = false; operation.cancelled = true; resolve(false) }
       operation.fail = signal ? (error) => { active = false; reject(error) } : undefined
-      timer = setTimeout(() => { active = false; reject(lossError()) }, timeoutMs)
+      timer = setTimeout(() => { active = false; reject(Object.assign(lossError(), { code: 'RENDERER_LOAD_TIMEOUT' })) }, timeoutMs)
       this.timers.add(timer)
     })
     try {
@@ -66,6 +99,7 @@ export class RendererNavigationRecovery {
   }
 
   private async load(operation: Operation): Promise<boolean> {
+    this.diagnose('load-started')
     const result = await this.bounded(operation,
       (cancelled) => this.options.load(operation.url, cancelled).then(() => true),
       this.options.timeoutMs ?? 30_000)
@@ -73,7 +107,8 @@ export class RendererNavigationRecovery {
   }
 
   private async backoff(operation: Operation): Promise<boolean> {
-    if (this.attempts >= MAIN_WINDOW_RECOVERY_MAX_RELOADS) throw rendererError()
+    if (this.attempts >= MAIN_WINDOW_RECOVERY_MAX_RELOADS) throw this.exhausted()
+    this.diagnose('retry-scheduled')
     const delay = this.options.cooldownMs ?? MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
@@ -92,6 +127,7 @@ export class RendererNavigationRecovery {
   async navigate(url: string, replacement = false, superseded: () => boolean = () => false): Promise<boolean> {
     this.operation?.cancel()
     this.clearHealthy()
+    if (!replacement) this.lastRendererLoss = undefined
     const operation: Operation = { url, cancelled: false, pending: true, superseded, cancel: () => {} }
     this.operation = operation
     try {
@@ -101,14 +137,20 @@ export class RendererNavigationRecovery {
           const loaded = await this.load(operation)
           if (!loaded || this.inactive(operation)) return false
           operation.pending = false
+          this.diagnose('load-completed')
           this.healthyTimer = setTimeout(() => {
             this.healthyTimer = undefined
             this.attempts = 0
+            this.lastRendererLoss = undefined
+            this.diagnose('budget-reset')
           }, this.options.healthyMs ?? MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS * 4)
           this.healthyTimer.unref?.()
           return true
         } catch (error) {
           if (this.inactive(operation)) return false
+          const code = error instanceof Error && 'code' in error &&
+            (typeof error.code === 'string' || typeof error.code === 'number') ? error.code : undefined
+          this.diagnose('load-failed', code)
           if (!retryable(error)) throw error
           // A paired load/gone event belongs to the failed attempt during backoff.
           if (!await this.backoff(operation)) return false
@@ -123,9 +165,10 @@ export class RendererNavigationRecovery {
     }
   }
 
-  rendererGone(currentUrl?: string): void {
+  rendererGone(currentUrl?: string, loss?: RendererLoss): void {
     const operation = this.operation
     if (!operation || this.inactive(operation)) return
+    if (loss) this.lastRendererLoss = { ...loss }
     this.clearHealthy()
     if (operation.pending) {
       operation.fail?.(lossError())

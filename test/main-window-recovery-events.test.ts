@@ -1,3 +1,9 @@
+import { rendererDiagnosticText, rendererDiagnosticUrl } from '../src/main/renderer-diagnostics'
+import { release } from 'node:os'
+import { mkdtempSync, readFileSync as readLog, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
@@ -8,7 +14,7 @@ import { RendererNavigationRecovery } from '../src/main/renderer-navigation-reco
 import { loadDesktopWindowAfterStop } from '../src/main/desktop-window-load'
 import { shouldReloadAfterMainWindowRendererLoss, MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS } from '../src/main/main-window-recovery'
 
-function fixture() {
+function fixture(note: (line: string) => void = () => {}) {
   const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8')
   const start = source.includes('function reloadMainWindowAfterRendererLoss(')
     ? source.indexOf('function reloadMainWindowAfterRendererLoss(')
@@ -27,12 +33,12 @@ function fixture() {
   })
   const error = vi.fn()
   const context = {
-    RendererNavigationRecovery, loadDesktopWindowAfterStop, registerNavigationOwner, shouldReloadAfterMainWindowRendererLoss,
+    rendererDiagnosticText, rendererDiagnosticUrl, release, RendererNavigationRecovery, loadDesktopWindowAfterStop, registerNavigationOwner, shouldReloadAfterMainWindowRendererLoss,
     MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS, mainWindowRecoveryReloadAt: 0,
     mainWindowRecoveryReloadCount: 0, quitting: false, gpuFallbackRelaunching: false,
-    harnessRendered: false, clearProfileBootConfirmation: vi.fn(), recordMainWindowRendererLoss: vi.fn(),
+    harnessRendered: false, clearProfileBootConfirmation: vi.fn(), recordMainWindowRendererLoss: vi.fn((source, details) => note(source + ": " + details)),
     showUnexpectedError: error, isRendererGpuFallbackCandidate: () => false,
-    app: { getGPUFeatureStatus: () => ({}) }, runtime: { note: vi.fn() }, process, setTimeout, clearTimeout
+    app: { getVersion: () => "test", getGPUFeatureStatus: () => ({}) }, runtime: { note }, process, setTimeout, clearTimeout
   }
   const install: (target: typeof window) => void = runInNewContext(code + ';installMainWindowRendererRecovery', context)
   install(target)
@@ -40,6 +46,42 @@ function fixture() {
 }
 
 afterEach(() => vi.useRealTimers())
+
+it('persists native evidence and the exhausted timeline in the raw runtime log without URL secrets', async () => {
+  vi.useFakeTimers()
+  const dir = mkdtempSync(join(tmpdir(), 'renderer-diagnostics-'))
+  const logPath = join(dir, 'harness.log')
+  const runtime = new HarnessRuntime({
+    dshEntryPath: '', nodeExecutablePath: '', nodeEntryPath: '', dshPatchPath: '', dshSafePatchPath: '',
+    dshHome: dir, logPath, launchProcess: () => { throw new Error('Not used') }, onChanged: () => {}
+  })
+  const f = fixture(line => runtime.note(line))
+  const url = 'http://user:credential-secret@127.0.0.1:1234/route?token=query-secret#fragment-secret'
+  f.target.webContents.getURL.mockReturnValue(url)
+  try {
+    const result = navigateDesktopWindow(f.target, url, () => false).catch(f.error)
+    for (let i = 0; i < 4; i++) {
+      f.contents.emit('did-fail-load', {}, -2, 'ERR_FAILED loading ' + url, url, true)
+      f.contents.emit('render-process-gone', { preventDefault() {} }, { reason: 'launch-failed', exitCode: 18 })
+      await vi.advanceTimersByTimeAsync(5_000)
+    }
+    await result
+    await runtime.flushLog()
+    // Read the actual bytes, not tailLog(), which would conceal leaks through its own redaction.
+    const raw = readLog(logPath, 'utf8')
+    expect(raw).toContain('reason=launch-failed exitCode=18')
+    expect(raw).toContain('"phase":"exhausted","reloadCount":3')
+    expect(raw).toContain('"rendererLoss":{"reason":"launch-failed","exitCode":18}')
+    expect(raw).toContain('renderer environment:')
+    expect(raw).toContain('http://127.0.0.1:1234/route')
+    expect(raw).not.toMatch(/credential-secret|query-secret|fragment-secret/)
+    expect(f.error).toHaveBeenCalledTimes(1)
+  } finally {
+    f.target.emit('closed')
+    await runtime.stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
 it('drains the previous native load before installing the replacement load promise', async () => {
   vi.useFakeTimers()
   const f = fixture()
@@ -93,17 +135,19 @@ it('actual callbacks preserve newer pending navigation and dispose timers on clo
   expect(f.error).not.toHaveBeenCalled()
 })
 
-it('actual callbacks surface terminal failure once, only after replacement attempts fail', async () => {
+it.each(['gone-first', 'load-first'])('actual callbacks preserve native evidence and surface exhaustion once: %s', async order => {
   vi.useFakeTimers()
   const f = fixture()
   const result = navigateDesktopWindow(f.target, 'file:///splash.html', () => false).catch(f.error)
   for (let i = 0; i < 4; i++) {
-    f.contents.emit('render-process-gone', { preventDefault() {} }, { reason: 'launch-failed', exitCode: 18 })
-    f.contents.emit('did-fail-load', {}, -2, 'ERR_FAILED', 'file:///splash.html', true)
+    const gone = () => f.contents.emit('render-process-gone', { preventDefault() {} }, { reason: 'launch-failed', exitCode: 18 })
+    const failed = () => f.contents.emit('did-fail-load', {}, -2, 'ERR_FAILED', 'file:///splash.html', true)
+    if (order === 'gone-first') { gone(); failed() } else { failed(); gone() }
     await vi.advanceTimersByTimeAsync(5_000)
     if (i < 3) expect(f.error).not.toHaveBeenCalled()
   }
   await result
+  expect(String(f.error.mock.calls[0]?.[0])).toContain('reason=launch-failed exitCode=18')
   expect(f.target.loadURL).toHaveBeenCalledTimes(4)
   expect(f.error).toHaveBeenCalledTimes(1)
   f.contents.emit('render-process-gone', { preventDefault() {} }, { reason: 'launch-failed', exitCode: 18 })

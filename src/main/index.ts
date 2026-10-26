@@ -192,6 +192,9 @@ import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { parseWindowsMenuRequest, windowsMenuTemplate, type EditingKey } from './windows-menu'
 import { shouldKeepRunningInBackground } from './close-to-tray'
 import { RendererNavigationRecovery } from './renderer-navigation-recovery'
+import { rendererDiagnosticText, rendererDiagnosticUrl } from './renderer-diagnostics'
+import { runNativeWindowRecovery } from './native-window-recovery'
+import { release } from 'node:os'
 import { loadDesktopWindowAfterStop } from './desktop-window-load'
 
 type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates' | 'market-upgrade' | 'market-remove'
@@ -389,16 +392,27 @@ function recordMainWindowRendererLoss(
 
 function installMainWindowRendererRecovery(window: BrowserWindow): void {
   const webContents = window.webContents
+  let contextRecorded = false
   const recovery = new RendererNavigationRecovery({
     load: (url, cancelled) => loadDesktopWindowAfterStop(window, url, cancelled),
     cancelled: () => quitting || gpuFallbackRelaunching || window.isDestroyed() || webContents.isDestroyed(),
-    onError: showUnexpectedError
+    onError: showUnexpectedError,
+    onDiagnostic: diagnostic => {
+      runtime?.note('[desktop] renderer recovery: ' + JSON.stringify(diagnostic))
+    }
   })
   const unregister = registerNavigationOwner(window, (url, cancelled) => recovery.navigate(url, false, cancelled))
   window.once('closed', () => { unregister(); recovery.dispose() })
   webContents.on('render-process-gone', (event, details) => {
     if (quitting || gpuFallbackRelaunching || window.isDestroyed() || details.reason === 'clean-exit') return
     clearProfileBootConfirmation()
+    if (!contextRecorded) {
+      contextRecorded = true
+      runtime?.note('[desktop] renderer environment: ' + JSON.stringify({
+        desktop: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
+        node: process.versions.node, platform: process.platform, arch: process.arch, osRelease: release()
+      }))
+    }
     // Take control: by default the window stays drawn but blank, which is
     // exactly the black screen this recovery is meant to prevent.
     event.preventDefault()
@@ -412,7 +426,7 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     })()
     recordMainWindowRendererLoss(
       'render-process-gone',
-      `reason=${reason} exitCode=${exitCode}${currentUrl ? ` url=${currentUrl}` : ''}${gpuStatus ? ` gpu=${gpuStatus}` : ''}`
+      `reason=${reason} exitCode=${exitCode}${currentUrl ? ` url=${rendererDiagnosticUrl(currentUrl)}` : ''}${gpuStatus ? ` gpu=${gpuStatus}` : ''}`
     )
     // `did-finish-load` can win the race by milliseconds before a broken
     // graphics stack takes the renderer down. The first post-render crash is
@@ -427,7 +441,7 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
         { unusableLaunch }
       )
     ) return
-    recovery.rendererGone(currentUrl)
+    recovery.rendererGone(currentUrl, { reason, exitCode })
   })
   webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3 || quitting || gpuFallbackRelaunching || window.isDestroyed()) return
@@ -437,7 +451,7 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     // failure and let the recovery path try to reload the page.
     recordMainWindowRendererLoss(
       'did-fail-load',
-      `errorCode=${errorCode} description=${errorDescription} url=${validatedURL}`
+      `errorCode=${errorCode} description=${rendererDiagnosticText(errorDescription)} url=${rendererDiagnosticUrl(validatedURL)}`
     )
     recovery.loadFailed(validatedURL, errorCode, webContents.getURL())
   })
@@ -1960,30 +1974,25 @@ async function waitForPluginRecoveryAction(options: {
 }
 
 function showUnexpectedError(error: unknown): void {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error)
+  const message = rendererDiagnosticText(error instanceof Error ? error.stack ?? error.message : String(error))
   runtime?.note(`[desktop] unexpected error: ${message}`)
   console.error('[desktop] unexpected error:', message)
   if (nativeRecoveryActive || quitting || gpuFallbackRelaunching) return
   nativeRecoveryActive = true
-  const zh = harnessLocale() === 'zh'
-  void (async () => {
-    while (!quitting && !gpuFallbackRelaunching) {
-      const { response } = await dialog.showMessageBox({
-        type: 'error', title: 'DSH Desktop',
-        message: zh ? '应用窗口无法继续加载' : 'The application window could not load',
-        detail: message, buttons: zh ? ['退出', '重新启动', '恢复配置'] : ['Quit', 'Restart', 'Recover Configuration'],
-        defaultId: 0, cancelId: 0, noLink: true
-      })
-      if (response === 2) {
-        if (await recoverCoreConfiguration() === 'retry') { app.relaunch(); app.quit(); return }
-        continue
-      }
-      if (response === 1) app.relaunch()
-      app.quit()
-      return
-    }
-  })().catch((failure: unknown) => {
-    console.error('[desktop] native recovery failed', failure)
+  void runNativeWindowRecovery({
+    message,
+    chinese: harnessLocale() === 'zh',
+    cancelled: () => quitting || gpuFallbackRelaunching,
+    flushDiagnostics: () => runtime?.flushLog() ?? Promise.resolve(),
+    show: options => dialog.showMessageBox(options),
+    recoverConfiguration: recoverCoreConfiguration,
+    revealDiagnostics: () => shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')),
+    restart: () => app.relaunch(),
+    quit: () => { app.quit() },
+    note: line => { runtime?.note(rendererDiagnosticText(line)) }
+  }).catch((failure: unknown) => {
+    console.error('[desktop] native recovery failed', rendererDiagnosticText(String(failure)))
+    if (quitting || gpuFallbackRelaunching) return
     dialog.showErrorBox('DSH Desktop', message)
   }).finally(() => { nativeRecoveryActive = false })
 }
