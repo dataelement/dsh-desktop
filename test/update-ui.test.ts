@@ -96,10 +96,19 @@ describe('manual update presentation lifecycle', () => {
     expect(isNewManualPresentation({ ...previous, manual: false, source: 'runtime', presentationId: 2 }, previous)).toBe(false)
   })
 
-  it('opens the initial manual result and supports older producers without IDs', () => {
+  it('opens the first live manual result and supports older producers without IDs', () => {
     expect(isNewManualPresentation({ ...downloaded, manual: true })).toBe(true)
     expect(isNewManualPresentation({ ...downloaded, manual: true, phase: 'checking' }, downloaded)).toBe(true)
     expect(isNewManualPresentation({ ...downloading, manual: true }, { ...downloading, manual: true })).toBe(false)
+  })
+
+  it('distinguishes bootstrap snapshots from live manual requests without changing their request identity', () => {
+    const historical: UpdateStatus = { ...downloaded, phase: 'up-to-date', manual: true, presentationId: 7 }
+    expect(isNewManualPresentation(historical, undefined, 'snapshot')).toBe(false)
+    expect(isNewManualPresentation(historical, historical)).toBe(false)
+    expect(shouldShowUpdate(historical, false)).toBe(false)
+    expect(shouldShowUpdate({ ...historical, phase: 'available' }, false)).toBe(true)
+    expect(isNewManualPresentation({ ...historical, presentationId: 8 }, historical)).toBe(true)
   })
 
   it('names the available version in the notification title in both languages', () => {

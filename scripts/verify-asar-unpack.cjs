@@ -1,4 +1,6 @@
 const path = require('node:path')
+const fs = require('node:fs')
+const { createHash } = require('node:crypto')
 const asar = require('@electron/asar')
 
 // First bytes of the executable formats the OS loads directly: ELF, Mach-O
@@ -29,7 +31,18 @@ function verifyAsarUnpack(resourcesDir) {
   for (const entry of asar.listPackage(archive, { isPack: false })) {
     const relative = entry.replace(/^[\\/]/u, '')
     const info = asar.statFile(archive, relative, false)
-    if (!('size' in info) || info.unpacked || info.link !== undefined || info.size < 4) continue
+    if (!('size' in info) || info.link !== undefined) continue
+    if (info.unpacked) {
+      const physical = path.join(`${archive}.unpacked`, relative)
+      const actual = fs.lstatSync(physical)
+      if (!actual.isFile() || actual.size !== info.size) throw new Error(`Missing or incomplete unpacked resource: ${relative}`)
+      if (info.integrity?.algorithm === 'SHA256' &&
+        createHash('sha256').update(fs.readFileSync(physical)).digest('hex') !== info.integrity.hash) {
+        throw new Error(`Unpacked resource integrity mismatch: ${relative}`)
+      }
+      continue
+    }
+    if (info.size < 4) continue
     const format = nativeFormat(asar.extractFile(archive, relative))
     if (format !== undefined) inline.push(`${relative} (${format})`)
   }

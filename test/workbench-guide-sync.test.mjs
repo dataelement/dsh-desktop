@@ -107,7 +107,7 @@ describe('bundled workbench development guide', () => {
     try {
       const routes = []
       const connection = { fetch: { register(route) { routes.push(route) } } }
-      apply({ effect: fn => fn(), inject: (_deps, callback) => callback({ connection, desktopPnpm: {} }), reflect: { provide() {} }, connection }, { root })
+      apply({ effect: fn => fn(), inject: (_deps, callback) => callback({ connection, pluginManager: {}, effect: fn => fn() }), reflect: { provide() {} }, connection }, { root })
       expect(routes.length).toBeGreaterThan(5)
       for (const route of routes) expect([route.path, route.requestBody]).toEqual([route.path, 'buffered'])
     } finally { await rm(root, { recursive: true, force: true }) }

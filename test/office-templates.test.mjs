@@ -204,11 +204,18 @@ it('restores selected Office context after compaction and retires it when switch
     const seq = events.size + 1; events.set(seq, { type, data }); surface.nodes.add(seq)
     if (options?.surfaceOp?.op === 'replace') surface.nodes.delete(options.surfaceOp.startSeq)
   } }
-  const ctx = { on(_name, run) { hook = run }, skills: { get: async name => ({ name, provider: 'test', content: `Official or business content: ${name}` }) } }
+  let current = f.root
+  const ctx = { workingDirectory: { ensure: async () => current }, on(_name, run) { hook = run }, skills: { get: async name => ({ name, provider: 'test', content: `Official or business content: ${name}` }) } }
   registerOfficeContext(ctx, library, f.modes)
   const run = () => hook({ agent: { id, session }, step: 7, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))
   const first = await run(); expect(first.messages[0].content[0].text).toContain('office_template')
   session.append('user/message', first.messages[0])
+  expect((await run()).messages).toHaveLength(0)
+  current = join(f.root, 'worktree')
+  const changed = await run()
+  expect(changed.messages).toHaveLength(1)
+  expect(changed.messages[0].source.cwd).toBe(current)
+  session.append('user/message', changed.messages[0])
   expect((await run()).messages).toHaveLength(0)
   surface.nodes.clear(); expect((await run()).messages).toHaveLength(1)
   surface.nodes.add(1); await f.modes.select(id, 'excel')
@@ -235,7 +242,10 @@ it('binds the reviewed meeting to built-in business and Office skills and copies
   await f.modes.select(id, 'word')
   await f.modes.selectTemplate(id, { id: item.id, mode: item.mode, revision: item.revision })
   let hook; const loaded = []
-  registerOfficeContext({ on(_name, callback) { hook = callback }, skills: { get: async name => {
+  const current = join(f.root, 'current')
+  await mkdir(current)
+  registerOfficeContext({ workingDirectory: { ensure: async () => current }, on(_name, callback) { hook = callback }, skills: { get: async (name, options) => {
+    expect(options.cwd).toBe(current)
     loaded.push(name); return { name, provider: 'test', content: `Built-in workflow ${name}` }
   } } }, library, f.modes)
   const result = await hook({ agent: { id, session: { header: { cwd: f.root }, surface: { nodes: new Set() } } },
@@ -253,7 +263,25 @@ it('requires the session write policy before starting the sandbox worker', async
   const root = await temporary(), outside = await temporary()
   const exec = { agent: { id: 'policy-session', session: { header: { cwd: root } } }, signal: new AbortController().signal }
   await expect(workspacePolicy({ sandboxPolicy: { resolve: () => ({ mode: 'read-only', workspaceRoot: root }) } }, exec)).rejects.toThrow('write permission')
-  await expect(workspacePolicy({ sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: outside }) } }, exec)).rejects.toThrow('covered')
+  await expect(workspacePolicy({ workingDirectory: { ensure: async () => root }, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: outside }) } }, exec)).rejects.toThrow('covered')
   const tool = templateTool({}, library, { state: async () => ({ documentMode: 'word' }) })
   await expect(tool.execute({ template_id: 'government-notice' }, exec)).rejects.toThrow('current Word')
+})
+
+it('uses the effective Office directory without granting access outside the authorized root', async () => {
+  const root = await temporary(), outside = await temporary(), child = join(root, 'worktree')
+  await mkdir(child)
+  const exec = { agent: { session: { header: { cwd: root } } }, signal: new AbortController().signal }
+  let current = child, mode = 'workspace-write'
+  const ctx = { workingDirectory: { ensure: async () => current }, sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: root }) } }
+  expect(await workspacePolicy(ctx, exec)).toMatchObject({ cwd: child, workspaceRoot: root, mode })
+  current = outside
+  await expect(workspacePolicy(ctx, exec)).rejects.toThrow('covered')
+  const link = join(root, 'escape')
+  await symlink(outside, link, 'dir')
+  current = link
+  await expect(workspacePolicy(ctx, exec)).rejects.toThrow('covered')
+  current = child; mode = 'read-only'
+  await expect(workspacePolicy(ctx, exec)).rejects.toThrow('write permission')
+  expect(await workspacePolicy(ctx, exec, false)).toMatchObject({ cwd: child, workspaceRoot: root, mode })
 })

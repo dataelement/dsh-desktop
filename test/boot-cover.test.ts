@@ -63,7 +63,7 @@ function mountHarnessCover(options: Partial<BootCoverOptions> = {}) {
   const theme = createThemeQuery(false)
   const unsubscribePageHide = vi.fn()
   let pageHide: (() => void) | undefined
-  const cover = mountBootCover('http://127.0.0.1:43129/', {
+  const cover = mountBootCover('dsh-desktop://harness/', {
     document: doc,
     locale: 'en',
     schedule: timers.schedule,
@@ -79,8 +79,12 @@ function mountHarnessCover(options: Partial<BootCoverOptions> = {}) {
 }
 
 describe('boot cover target', () => {
-  it('covers only the loopback Harness origin', () => {
+  it('covers the packaged shell and legacy loopback page, but not other documents', () => {
+    expect(isHarnessBootCoverTarget('dsh-desktop://harness/')).toBe(true)
     expect(isHarnessBootCoverTarget('http://127.0.0.1:43129/')).toBe(true)
+    expect(isHarnessBootCoverTarget('dsh-desktop://harness.evil/')).toBe(false)
+    expect(isHarnessBootCoverTarget('dsh-desktop://user@harness/')).toBe(false)
+    expect(isHarnessBootCoverTarget('https://example.com/')).toBe(false)
     expect(isHarnessBootCoverTarget('file:///tmp/plugin-recovery.html')).toBe(false)
     expect(isHarnessBootCoverTarget('dsh-desktop://desktop/safe-mode.html')).toBe(false)
   })
@@ -101,7 +105,7 @@ describe('boot cover lifecycle', () => {
   it('mounts one cover on a Harness document and none on a desktop page', () => {
     const harness = mountHarnessCover()
     const first = harness.doc.getElementById(BOOT_COVER_ID)
-    const repeat = mountBootCover('http://127.0.0.1:43129/', {
+    const repeat = mountBootCover('dsh-desktop://harness/', {
       document: harness.doc,
       locale: 'en'
     })
@@ -124,7 +128,7 @@ describe('boot cover lifecycle', () => {
     const doc = document.implementation.createHTMLDocument()
     doc.body?.remove()
     const timers = createTimers()
-    const cover = mountBootCover('http://127.0.0.1:43129/', {
+    const cover = mountBootCover('dsh-desktop://harness/', {
       document: doc,
       locale: 'zh',
       schedule: timers.schedule,
@@ -269,7 +273,7 @@ describe('boot cover lifecycle', () => {
 
   it('clears the timer when the real page is hidden', () => {
     const timers = createTimers()
-    const cover = mountBootCover('http://127.0.0.1:43129/', {
+    const cover = mountBootCover('dsh-desktop://harness/', {
       document,
       locale: 'en',
       schedule: timers.schedule,

@@ -64,15 +64,29 @@ function mount(): void {
   render()
 }
 
-function applyStatus(status: UpdateStatus): void {
+// Retain snapshot request identity so later progress for that same historical
+// request cannot reopen a manual dialog after a renderer or Harness restart.
+function applyStatus(status: UpdateStatus, delivery: 'event' | 'snapshot' = 'event'): void {
   if (status.locale) locale = status.locale
-  if (isNewManualPresentation(status, currentStatus)) {
+  // A fresh automatic check is a new presentation, not a continuation of an
+  // earlier manual result or an update detail the user left open.
+  if (!status.manual && status.phase === 'checking') detailOpen = false
+  if (isNewManualPresentation(status, currentStatus, delivery)) {
     dismissedPresentationId = undefined
     dismissedVersion = null
     dismissedTransientPhase = null
     detailOpen = true
-  } else if (status.source === 'startup' && status.phase === 'available') detailOpen = true
-  if (status.phase === 'error' && (accepting || installing || currentStatus && ['downloading', 'downloaded'].includes(currentStatus.phase))) detailOpen = true
+  }
+  const failedActiveUpdate = delivery === 'event' && status.phase === 'error' &&
+    (accepting || installing || currentStatus?.phase === 'downloading' || currentStatus?.phase === 'downloaded')
+  if (failedActiveUpdate) {
+    // A live failure is actionable even when the download was restored from a
+    // snapshot or its progress card was dismissed. Historical errors stay quiet.
+    dismissedPresentationId = undefined
+    dismissedVersion = null
+    dismissedTransientPhase = null
+    detailOpen = true
+  }
   if (status.phase === 'idle') detailOpen = false
   currentStatus = status
   if (host) {
@@ -91,7 +105,7 @@ function render(): void {
   if (!host || !content || !currentStatus) return
 
   if (
-    (!shouldShowUpdate(currentStatus) && !(detailOpen && currentStatus.phase === 'error')) ||
+    (!shouldShowUpdate(currentStatus, detailOpen) && !(detailOpen && currentStatus.phase === 'error')) ||
     (currentStatus.manual && currentStatus.presentationId !== undefined && currentStatus.presentationId === dismissedPresentationId) ||
     isUpdateDismissed(currentStatus, dismissedVersion, dismissedTransientPhase)
   ) {
@@ -102,7 +116,7 @@ function render(): void {
 
   host.style.display = 'block'
   const status = currentStatus
-  const centered = detailOpen || status.manual || status.source === 'startup'
+  const centered = detailOpen
   host.style.left = centered ? '50%' : 'auto'
   host.style.top = centered ? '50%' : 'auto'
   host.style.right = centered ? 'auto' : '20px'
@@ -332,6 +346,7 @@ function renderAbout(): void {
   }
 
   const card = element('div', 'about-card')
+  card.tabIndex = -1
   card.setAttribute('role', 'dialog')
   card.setAttribute('aria-modal', 'false')
   card.setAttribute('aria-label', zh ? '关于 DSH Desktop' : 'About DSH Desktop')
@@ -406,7 +421,9 @@ function renderAbout(): void {
 
   const firstOpen = !overlay.childElementCount
   overlay.replaceChildren(card)
-  if (firstOpen) confirm.focus()
+  // Initial focus enters the panel without drawing a button focus ring; Tab
+  // still reaches its controls and preserves their keyboard-visible outline.
+  if (firstOpen) card.focus()
 }
 
 function appendAboutVersionGroup(
@@ -525,6 +542,7 @@ const styles = `
   .notification .body { overflow-wrap:anywhere; }
   .about-overlay { width:100%; }
   .about-card { overflow:visible; }
+  .about-card:focus { outline:none; }
   @media (max-width:440px) { .notification .row { flex-wrap:wrap; } .notification .actions { margin-left:auto; } }
   .about-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
   .about-line { display:flex; align-items:center; flex-wrap:wrap; gap:3px; }
@@ -607,7 +625,7 @@ window.addEventListener('unload', () => {
 void ipcRenderer
   .invoke('updates:status')
   .then((status: UpdateStatus) => {
-    if (!receivedStatusEvent) applyStatus(status)
+    if (!receivedStatusEvent) applyStatus(status, 'snapshot')
   })
   .catch((error: unknown) => console.warn('[updater] unable to read update status', error))
 

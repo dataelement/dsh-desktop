@@ -25,6 +25,7 @@ doc = Document()
 doc.add_heading('Office runtime smoke', 0)
 doc.add_paragraph('Bundled Python authoring')
 doc.save(root / 'sample.docx')
+assert Document(root / 'sample.docx').paragraphs[0].text == 'Office runtime smoke'
 assert Document(root / 'sample.docx').paragraphs[1].text == 'Bundled Python authoring'
 ppt = Presentation()
 ppt.slides.add_slide(ppt.slide_layouts[0]).shapes.title.text = 'Office runtime smoke'
@@ -35,6 +36,7 @@ book.active['A1'] = 'Office runtime smoke'
 book.active['A2'] = 7
 book.active['A3'] = '=A2*2'
 book.save(root / 'sample.xlsx')
+assert load_workbook(root / 'sample.xlsx').active['A1'].value == 'Office runtime smoke'
 assert load_workbook(root / 'sample.xlsx').active['A3'].value == '=A2*2'
 writer = xlsxwriter.Workbook(root / 'writer.xlsx')
 writer.add_worksheet().write('A1', 'Office runtime smoke')

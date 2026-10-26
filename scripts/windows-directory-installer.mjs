@@ -88,11 +88,25 @@ export async function signWindowsPeWithJsign(path) {
   const { JSIGN_JAR, JSIGN_PIN_FILE } = process.env
   if (!JSIGN_JAR && !JSIGN_PIN_FILE) return // unsigned Windows staging build
   if (!JSIGN_JAR || !JSIGN_PIN_FILE) throw new Error('Incomplete Jsign environment for installer tool')
-  await execFileAsync('java', [
+  const args = [
     '-jar', JSIGN_JAR, '--storetype', 'ETOKEN', '--storepass', `file:${JSIGN_PIN_FILE}`,
     '--alg', 'SHA-256', '--tsaurl', 'http://timestamp.digicert.com', '--tsmode', 'RFC3161',
     '--tsretries', '3', '--tsretrywait', '10', path
-  ])
+  ]
+  let lastError
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await execFileAsync('java', args)
+      lastError = null
+      break
+    } catch (error) {
+      lastError = error
+      console.warn(`[windows-directory-installer] Warning: Signing attempt ${attempt}/3 failed for ${path}: ${error.stderr || error.message}`)
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 2000 * attempt))
+    }
+  }
+  if (lastError) throw lastError
+
   await execFileAsync('java', ['-jar', JSIGN_JAR, 'extract', '--format', 'DER', path])
   const signature = `${path}.sig`
   if ((await stat(signature)).size === 0) throw new Error(`Installer extraction tool was not signed: ${path}`)

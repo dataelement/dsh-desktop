@@ -1,6 +1,7 @@
 import { lstat, realpath } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { isAbsolute, relative, sep } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export async function workspacePolicy(ctx, exec, write = true) {
@@ -8,10 +9,14 @@ export async function workspacePolicy(ctx, exec, write = true) {
   if (!session?.header.cwd) throw new Error('Choose a workspace for the Office task')
   const policy = ctx.sandboxPolicy.resolve({ session })
   if (!(write ? ['workspace-write', 'danger-full-access'] : ['read-only', 'workspace-write', 'danger-full-access']).includes(policy.mode)) throw new Error('Office template copies require workspace write permission')
-  const root = await realpath(session.header.cwd)
-  if (root !== await realpath(policy.workspaceRoot) || !(await lstat(root)).isDirectory()) throw new Error('Choose the workspace covered by the session write policy')
+  const cwd = await realpath(await ctx.workingDirectory.ensure(exec.agent, exec.signal))
+  const root = await realpath(policy.workspaceRoot)
+  const offset = relative(root, cwd)
+  if (!(await lstat(cwd)).isDirectory()
+    || offset === '..' || offset.startsWith(`..${sep}`) || isAbsolute(offset)) throw new Error('Choose the workspace covered by the session write policy')
   exec.signal?.throwIfAborted()
-  return { ...policy, mode: write ? 'workspace-write' : 'read-only', workspaceRoot: root }
+  // cwd follows the session; the sandbox retains its independently authorized root.
+  return { ...policy, mode: write ? 'workspace-write' : 'read-only', workspaceRoot: root, cwd }
 }
 
 export function templateTool(ctx, library, modes, docx) {
@@ -51,7 +56,7 @@ export function templateTool(ctx, library, modes, docx) {
       await modes.record(sessionId, 'office-template-start', facts)
       try {
         const signal = AbortSignal.any([AbortSignal.timeout(30_000), ...(exec.signal ? [exec.signal] : [])])
-        const child = ctx.subprocess.spawn({ argv: plan.argv, cwd: policy.workspaceRoot, env, signal, graceMs: 1000,
+        const child = ctx.subprocess.spawn({ argv: plan.argv, cwd: policy.cwd, env, signal, graceMs: 1000,
           stdio: { stdin: { data: JSON.stringify({ directory, files: prepared.files }) }, stdout: { maxBytes: 32_768 }, stderr: { maxBytes: 2048 } } })
         const outcome = await child.done
         signal.throwIfAborted()
@@ -61,7 +66,7 @@ export function templateTool(ctx, library, modes, docx) {
           || prepared.files.some((file, index) => result.files[index]?.workspace_path !== `${directory}/${file.path}` || result.files[index]?.sha256 !== file.sha256)) throw new Error('The Office copy differs from the selected resource revision')
         // A selection made during the copy belongs to the next attempt.
         const live = (await modes.state(sessionId)).selectedDocumentTemplate
-        if (live?.id !== selection.id || live?.revision !== selection.revision || (await workspacePolicy(ctx, exec)).workspaceRoot !== policy.workspaceRoot) throw new Error('The Office selection or workspace changed; prepare the current example')
+        if (live?.id !== selection.id || live?.revision !== selection.revision || (await workspacePolicy(ctx, exec)).cwd !== policy.cwd) throw new Error('The Office selection or workspace changed; prepare the current example')
         let paragraphs = []
         const workspacePath = `${directory}/${prepared.item.sampleFile}`
         if (prepared.item.mode === 'word' && docx) {

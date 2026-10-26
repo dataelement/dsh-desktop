@@ -141,7 +141,7 @@ describe('generation projection onto the app-boot contract', () => {
     await initProfile(home)
     const manifestPath = join(home, 'profiles', 'web', 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    const official = '@deepseek-ai/dsh-experimental-voice-input-bundle'
     manifest.dsh.profile.bundles.push(official)
     await writeFile(manifestPath, JSON.stringify(manifest))
     await fakeGeneration(home, 'a+1+x', 'plugin-a', '1.0.0')
@@ -166,7 +166,7 @@ describe('generation projection onto the app-boot contract', () => {
   it('loads the selected official bundle in fresh Harness profile-loader processes after projection', async () => {
     const home = await freshHome()
     const profileDir = join(home, 'profiles', 'web')
-    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    const official = '@deepseek-ai/dsh-experimental-voice-input-bundle'
     await mkdir(profileDir, { recursive: true })
     await writeFile(join(profileDir, 'package.json'), JSON.stringify({
       name: 'dsh-profile-web', private: true, dependencies: {},
@@ -198,7 +198,7 @@ describe('generation projection onto the app-boot contract', () => {
     const home = await freshHome()
     await initProfile(home)
     const manifestPath = join(home, 'profiles', 'web', 'package.json')
-    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    const official = '@deepseek-ai/dsh-experimental-voice-input-bundle'
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
     manifest.dsh.profile.bundles.push(official)
     await writeFile(manifestPath, JSON.stringify(manifest))
@@ -227,7 +227,7 @@ describe('generation projection onto the app-boot contract', () => {
     await initProfile(home)
     const manifestPath = join(home, 'profiles', 'web', 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    const official = '@deepseek-ai/dsh-experimental-voice-input-bundle'
     manifest.dsh.profile.bundles.push(official, 'legacy-plugin', 'override-plugin')
     manifest.dependencies['legacy-plugin'] = 'link:../.generations/live/legacy/node_modules/legacy-plugin'
     manifest.pnpm = { overrides: { 'override-plugin': 'link:../.generations/live/old/node_modules/override-plugin' } }

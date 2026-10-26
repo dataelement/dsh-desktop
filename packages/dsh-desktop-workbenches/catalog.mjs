@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 
 const DEFAULT_CATALOG_URL = 'https://market.dshdesktop.com/index.json'
 const MAX_CATALOG_BYTES = 2 * 1024 * 1024
-const FETCH_TIMEOUT_MS = 10_000
+const FETCH_TIMEOUT_MS = 30_000
 const CACHE_MAX_AGE_MS = 15 * 60 * 1000
 
 export class CatalogError extends Error {
@@ -65,7 +65,7 @@ export function validatePublishedCatalog(value) {
   return structuredClone(value)
 }
 
-/** cachePath is optional; disk snapshots are only used after a network failure. */
+/** cachePath is optional; cachedOnly reads snapshots without starting or awaiting network work. */
 export function createCatalogReader({ fetch: fetchCatalog = globalThis.fetch, url = DEFAULT_CATALOG_URL, now = Date.now, cachePath, onWarning } = {}) {
   let cached
   let fetchedAt = 0
@@ -133,7 +133,14 @@ export function createCatalogReader({ fetch: fetchCatalog = globalThis.fetch, ur
     } finally { clearTimeout(timeout) }
   }
 
-  return async function readCatalog({ force = false } = {}) {
+  return async function readCatalog({ force = false, cachedOnly = false } = {}) {
+    if (cachedOnly) {
+      // Do not seed fresh-memory state from disk or join an in-flight refresh.
+      // Prefer a network result that arrived while the disk read was pending.
+      const snapshot = cached || await readSnapshot()
+      const catalog = cached || snapshot
+      return { catalog: catalog ? structuredClone(catalog) : null, stale: Boolean(catalog) }
+    }
     if (!force && cached && now() - fetchedAt < CACHE_MAX_AGE_MS) return { catalog: structuredClone(cached), stale: false }
     if (!pending) pending = fetchFresh().catch(async error => {
       warn('fetch failed', error)

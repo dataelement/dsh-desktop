@@ -45,8 +45,12 @@ export async function findSignableBinaries(unpackedDir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const filePath = join(dir, entry.name)
       if (entry.isSymbolicLink()) throw new Error(`Linked path in unpacked application: ${filePath}`)
-      if (entry.isDirectory()) await scan(filePath)
-      else if (entry.isFile() && await isWindowsPE(filePath)) results.push(filePath)
+      if (entry.isDirectory()) {
+        if (entry.name === 'office-runtime') continue
+        await scan(filePath)
+      } else if (entry.isFile() && await isWindowsPE(filePath)) {
+        results.push(filePath)
+      }
     }
   }
   await scan(root)
@@ -102,7 +106,19 @@ async function signBinary(targetFile, config) {
     return
   }
 
-  await execFileAsync('java', args)
+  let lastError
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      await execFileAsync('java', args)
+      lastError = null
+      break
+    } catch (error) {
+      lastError = error
+      console.warn(`[sign-windows] Warning: Signing attempt ${attempt}/6 failed for ${basename(targetFile)}: ${error.stderr || error.message}`)
+      if (attempt < 6) await sleep(2000 * attempt)
+    }
+  }
+  if (lastError) throw lastError
 
   // Verify signature extraction
   const verifyArgs = ['-jar', config.jsignJar, 'extract', '--format', 'DER', targetFile]
@@ -176,6 +192,7 @@ async function main() {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
   main().catch((error) => {
     console.error(`[sign-windows] Fatal: ${error.message}`)
+    if (error.stderr) console.error(error.stderr)
     process.exit(1)
   })
 }

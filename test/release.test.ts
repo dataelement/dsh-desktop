@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.0-rc.2'
+const HARNESS_VERSION = '0.2.1-rc.3'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -101,13 +101,20 @@ describe('GitHub release contract', () => {
     expect(packageLockRaw).not.toMatch(/file:packages\/harness-/)
   })
 
-  it('does not promote optional Harness providers and test support into the desktop runtime', async () => {
+  it('keeps the official Harness closure at one version without promoting optional providers or test support', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
     ) as { dependencies: Record<string, string> }
     const packageLock = JSON.parse(
       await readFile(path.join(projectRoot, 'package-lock.json'), 'utf8')
-    ) as { packages: Record<string, unknown> }
+    ) as { packages: Record<string, { version?: string }> }
+
+    for (const [location, metadata] of Object.entries(packageLock.packages)) {
+      const name = location.slice(location.lastIndexOf('node_modules/') + 'node_modules/'.length)
+      if (/^@deepseek-ai\/dsh(?:-|$)/.test(name)) {
+        expect(metadata.version, location).toBe(HARNESS_VERSION)
+      }
+    }
 
     const excludedHarnessPackages = [
       '@deepseek-ai/cordis-plugin-logger-console',
@@ -129,7 +136,6 @@ describe('GitHub release contract', () => {
       // 0.1.2-alpha.3, so its exclusion assertion is gone. dsh-storage-sqlite is
       // likewise no longer in the closure but its guard is kept defensively.
       '@deepseek-ai/dsh-session-snapshot',
-      '@deepseek-ai/dsh-session-title-all-prompts-llm',
       '@deepseek-ai/dsh-storage-sqlite',
       '@deepseek-ai/dsh-subagent-acp',
       '@deepseek-ai/dsh-subagent-claude-code',
@@ -137,8 +143,6 @@ describe('GitHub release contract', () => {
       '@deepseek-ai/dsh-subagent-dsh-sdk',
       '@deepseek-ai/dsh-subprocess-e2b',
       '@deepseek-ai/dsh-tool-lsp',
-      '@deepseek-ai/dsh-tool-session-query',
-      '@deepseek-ai/dsh-tool-terminal',
       '@deepseek-ai/dsh-web-search-exa',
       '@deepseek-ai/dsh-web-search-perplexity'
     ]
@@ -146,6 +150,18 @@ describe('GitHub release contract', () => {
     for (const packageName of excludedHarnessPackages) {
       expect(packageJson.dependencies[packageName]).toBeUndefined()
       expect(packageLock.packages[`node_modules/${packageName}`]).toBeUndefined()
+    }
+    // Official bundles own these, including retrieval, model badges and entry customization.
+    for (const packageName of [
+      '@deepseek-ai/dsh-tool-terminal',
+      '@deepseek-ai/dsh-tool-session-query',
+      '@deepseek-ai/dsh-session-title-all-prompts-llm',
+      '@deepseek-ai/dsh-web-deepseek-api',
+      '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017',
+      '@deepseek-ai/dsh-client-ui-entry-customization'
+    ]) {
+      expect(packageJson.dependencies[packageName]).toBeUndefined()
+      expect(packageLock.packages[`node_modules/${packageName}`]).toBeDefined()
     }
     expect(packageLock.packages['node_modules/@anthropic-ai/claude-agent-sdk']).toBeUndefined()
     expect(packageLock.packages['node_modules/@openai/codex']).toBeUndefined()
@@ -172,6 +188,10 @@ describe('GitHub release contract', () => {
     )
     const windowsHiddenConsole = await readFile(
       path.join(projectRoot, 'build', 'windows-hidden-console.mjs'),
+      'utf8'
+    )
+    const windowsHideConsoleImport = await readFile(
+      path.join(projectRoot, 'build', 'windows-hide-console-import.mjs'),
       'utf8'
     )
 
@@ -202,6 +222,11 @@ describe('GitHub release contract', () => {
     })
     expect(harnessNodeEntry).toContain("from './host-module-fallback.mjs'")
     expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/packaged-pnpm-invocation.mjs',
+      to: 'packaged-pnpm-invocation.mjs'
+    })
+    expect(harnessNodeEntry).toContain("from './packaged-pnpm-invocation.mjs'")
+    expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/office-engine-resolution.mjs',
       to: 'office-engine-resolution.mjs'
     })
@@ -210,6 +235,12 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/windows-child-process-hide.mjs',
       to: 'windows-child-process-hide.mjs'
+    })
+    expect(windowsHideConsoleImport).toContain("await import('./windows-hidden-console.mjs')")
+    expect(windowsHideConsoleImport).toContain('enforceWindowsChildProcessHide')
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/windows-hide-console-import.mjs',
+      to: 'windows-hide-console-import.mjs'
     })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/splash.html',
@@ -476,9 +507,6 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('set -euo pipefail')
     expect(workflow).not.toContain('Falling back to original installer')
     expect(workflow).not.toContain('Restoring original Windows installer')
-    expect(workflow).toContain('smoke-signed-windows:')
-    expect(workflow).toContain('smoke-signed-windows-installer.ps1')
-    expect(workflow).toContain("needs.smoke-signed-windows.result == 'success'")
     expect(workflow).toContain("if (Test-Path $packagedNode) { throw 'Standalone Windows node.exe must not be packaged.' }")
     expect(workflow).toContain('version="${PRERELEASE_TAG#v}"')
     expect(workflow).toContain('version="${SIGNED_VERSION#v}"')
@@ -487,6 +515,31 @@ describe('GitHub release contract', () => {
     expect(workflow).toMatch(
       /publish:[\s\S]*?needs\.sign-windows\.result == 'success'[\s\S]*?- sign-windows/
     )
+  })
+
+  it('keeps Windows signing independent of macOS packaging and notarization', async () => {
+    const { jobs } = parse(await readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')) as {
+      jobs: Record<string, { needs?: string | string[]; if?: string }>
+    }
+    expect(jobs['sign-windows']?.needs).toEqual(['validate-dispatch', 'windows-x64'])
+    const ancestors = new Set<string>()
+    const pending = ['sign-windows']
+    while (pending.length > 0) {
+      const name = pending.pop()
+      if (!name || ancestors.has(name)) continue
+      ancestors.add(name)
+      expect(jobs[name]).toBeDefined()
+      const needs = jobs[name]?.needs ?? []
+      pending.push(...(Array.isArray(needs) ? needs : [needs]))
+    }
+    expect(ancestors.has('macos')).toBe(false)
+    for (const name of ancestors) {
+      expect(jobs[name]?.if ?? '').not.toContain('needs.macos')
+    }
+    for (const name of ['publish', 'publish-prerelease', 'publish-signed-test']) {
+      expect(jobs[name]?.needs).toContain('macos')
+      expect(jobs[name]?.needs).toContain('sign-windows')
+    }
   })
 
   it('uses local npm downloads and bounds Node setup on the persistent UKey signer', async () => {
@@ -607,7 +660,7 @@ describe('rollback catalog publication', () => {
       'utf8'
     )
     expect(yml).toContain('releases/archive/')
-    expect(yml).toContain('scripts/build-version-index.mjs')
+    expect(yml).toContain('from append_version_index import append_version_index')
     expect(yml).toContain('releases/versions.json')
   })
 })

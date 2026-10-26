@@ -199,6 +199,62 @@ describe('Harness launch contract', () => {
       }
     })
     expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_PNPM_ENTRY')
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_PNPM_RUNNER')
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP')
+  })
+
+  it('tells the Harness which packaged pnpm to run instead of PATH pnpm.cmd', () => {
+    // Add-plugin reads `pnpm config get registry` on every click. On Windows
+    // PATH pnpm is a .cmd shim, and execa wraps that in cmd.exe. The entry
+    // turns these paths into runCli({ packageManager }) so the command is the
+    // Electron executable. A parent-shell value must not win.
+    const options = buildHarnessSpawnOptions(
+      'C:\\launch-root',
+      'C:\\harness',
+      'win32',
+      {
+        Path: 'C:\\Windows\\System32',
+        DSH_DESKTOP_PNPM_ENTRY: 'C:\\stale\\pnpm.cjs',
+        DSH_DESKTOP_PNPM_RUNNER: 'C:\\stale\\pnpm-runner.mjs'
+      },
+      'web',
+      {
+        entryPath: 'C:\\app\\node_modules\\pnpm\\bin\\pnpm.cjs',
+        runnerPath: 'C:\\app\\node_modules\\dsh-desktop-market-installer\\pnpm-runner.mjs'
+      }
+    )
+    expect(options.env).toMatchObject({
+      DSH_DESKTOP_PNPM_ENTRY: 'C:\\app\\node_modules\\pnpm\\bin\\pnpm.cjs',
+      DSH_DESKTOP_PNPM_RUNNER: 'C:\\app\\node_modules\\dsh-desktop-market-installer\\pnpm-runner.mjs'
+    })
+  })
+
+  it('gives the Harness the Windows console-hide bootstrap and ignores a parent path', () => {
+    const injected = buildHarnessSpawnOptions(
+      'C:\\launch-root',
+      'C:\\harness',
+      'win32',
+      {
+        Path: 'C:\\Windows\\System32',
+        DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: 'C:\\stale\\windows-hide-console-import.mjs'
+      },
+      'web',
+      { hideConsoleBootstrapPath: 'C:\\app\\resources\\windows-hide-console-import.mjs' }
+    )
+    expect(injected.env).toMatchObject({
+      DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: 'C:\\app\\resources\\windows-hide-console-import.mjs'
+    })
+
+    const otherPlatform = buildHarnessSpawnOptions(
+      '/launch-root',
+      '/harness',
+      'darwin',
+      { PATH: '/usr/bin', DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: '/stale/bootstrap.mjs' },
+      'web',
+      { hideConsoleBootstrapPath: '/app/windows-hide-console-import.mjs' }
+    )
+    expect(otherPlatform.env).not.toHaveProperty('DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP')
   })
 
   it('asks the patched Harness to resolve Safe Mode plugins from its installation only', () => {

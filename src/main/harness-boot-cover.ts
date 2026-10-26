@@ -1,3 +1,5 @@
+import { isHarnessBootPage } from '../shared/harness-boot'
+
 export const HARNESS_BOOT_COVER_CSS = `
   html { background: #f8f8f6 !important; }
   @media (prefers-color-scheme: dark) {
@@ -7,14 +9,7 @@ export const HARNESS_BOOT_COVER_CSS = `
   #dsh-desktop-boot-cover, #dsh-desktop-boot-cover * { visibility: visible !important; }
 `
 
-export function isHarnessBootCoverUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1'
-  } catch {
-    return false
-  }
-}
+export const isHarnessBootCoverUrl = isHarnessBootPage
 
 /**
  * One main window owns this session. `generation` advances whenever the
@@ -121,4 +116,61 @@ export async function removeHarnessBootCover(
   key: string
 ): Promise<void> {
   await contents.removeInsertedCSS(key)
+}
+
+interface BootCoverContents {
+  isDestroyed(): boolean
+  getURL(): string
+  insertCSS(css: string): Promise<string>
+  removeInsertedCSS(key: string): Promise<void>
+}
+
+/** A window owns its CSS keys; other windows and superseded documents cannot reveal them. */
+export class HarnessBootCover {
+  private session = createHarnessBootCoverSession()
+
+  constructor(private readonly contents: BootCoverContents) {}
+
+  navigate(url: string): void {
+    this.session = noteHarnessBootCoverNavigation(this.session, url)
+  }
+
+  async conceal(url: string): Promise<void> {
+    if (this.contents.isDestroyed() || !shouldInstallHarnessBootCover(this.session, url)) return
+    const generation = this.session.generation
+    this.session = noteHarnessBootCoverInstallStarted(this.session)
+    let cssKey: string
+    try {
+      cssKey = await installHarnessBootCover(this.contents)
+    } catch (error) {
+      if (this.session.pendingGeneration === generation) {
+        this.session = { ...this.session, pendingGeneration: undefined }
+      }
+      throw error
+    }
+    const settled = settleHarnessBootCoverInstall(this.session, generation,
+      this.contents.isDestroyed() ? '' : this.contents.getURL(), cssKey)
+    this.session = settled.session
+    if (!settled.staleKey || this.contents.isDestroyed()) return
+    // A late insertion may have landed on the replacement document.
+    const currentGeneration = this.session.generation
+    try {
+      await removeHarnessBootCover(this.contents, settled.staleKey)
+    } catch (error) {
+      this.session = restoreHarnessBootCoverKey(this.session, currentGeneration, settled.staleKey)
+      throw error
+    }
+  }
+
+  async reveal(): Promise<void> {
+    const revealed = noteHarnessBootCoverReveal(this.session)
+    this.session = revealed.session
+    if (!revealed.cssKey || this.contents.isDestroyed()) return
+    try {
+      await removeHarnessBootCover(this.contents, revealed.cssKey)
+    } catch (error) {
+      this.session = restoreHarnessBootCoverKey(this.session, revealed.session.generation, revealed.cssKey)
+      throw error
+    }
+  }
 }

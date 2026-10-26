@@ -12,15 +12,40 @@ const project = resolve(import.meta.dirname, '../..')
 const sources = join(project, 'packages/dsh-desktop-office/sources')
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 
-/** One LibreOffice call. The Kit default is 120s, which macOS CI exceeds on a heavy workbook page. */
-export const officeCliTimeoutMs = 240_000
+/**
+ * One LibreOffice call. annual-business recalculates in a few seconds; macOS CI
+ * sometimes blocks. Bounding this deadline allows prompt process recycling.
+ */
+export const officeCliTimeoutMs = 30_000
 
-/** Electron startup happens before the Kit timer, so the process limit is longer than 240s. */
+/** Fresh process after a hang. The same workbook then finishes on the next attempt. */
+export const officeCliAttempts = 3
+
+/** Electron startup happens before the Kit timer, so the process limit is longer than 30s. */
 export function officeCliCommand(executable, script, args, timeoutMs = officeCliTimeoutMs) {
   return {
     file: executable,
     args: [script, ...args, '--timeout-ms', String(timeoutMs)],
     timeout: timeoutMs + 60_000,
+  }
+}
+
+export function officeCliTimedOut(error) {
+  const stderrValue = error && typeof error === 'object' && 'stderr' in error ? error.stderr : ''
+  const stderr = Buffer.isBuffer(stderrValue) ? stderrValue.toString('utf8') : typeof stderrValue === 'string' ? stderrValue : ''
+  if (stderr.includes('"code":"timeout"')) return true
+  return Boolean(error && typeof error === 'object' && error.killed === true && error.signal === 'SIGTERM')
+}
+
+/** Retry only a Kit timeout or the outer process kill. Other failures stop immediately. */
+export async function runOfficeCli(label, run, attempts = officeCliAttempts) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await run()
+    } catch (error) {
+      if (attempt === attempts || !officeCliTimedOut(error)) throw error
+      console.log(`Office ${label} timed out, retrying (${attempt + 1}/${attempts})`)
+    }
   }
 }
 
@@ -42,7 +67,7 @@ export async function prepareOfficeTemplates({ runtime = join(project, '.build/o
   const kit = JSON.parse(await readFile(join(project, 'node_modules/@deepseek-ai/libreoffice-kit/package.json'), 'utf8'))
   const inputs = await files(sources)
   const fingerprint = hash(Buffer.concat([
-    Buffer.from(JSON.stringify({ format: 1, manifest, kit: kit.version })),
+    Buffer.from(JSON.stringify({ format: 1, python: manifest.python, kit: kit.version })),
     await readFile(fileURLToPath(import.meta.url)), await readFile(join(import.meta.dirname, 'normalize-package.py')),
     await readFile(join(import.meta.dirname, 'check-templates.py')),
     ...await Promise.all(inputs.map(async path => Buffer.concat([Buffer.from(path), await readFile(join(sources, path))])))
@@ -61,12 +86,17 @@ export async function prepareOfficeTemplates({ runtime = join(project, '.build/o
       const ordered = [legacy.find(x => x.id === 'government-notice'),
         ...legacy.filter(x => x.mode === 'word' && x.id !== 'government-notice'), ...legacy.filter(x => x.mode === 'excel')]
       const catalog = []
-      const cli = async args => {
+      const cli = async args => runOfficeCli(args[0] ?? 'libreoffice', async () => {
+        const outputFlag = args.indexOf('--output')
+        const directoryFlag = args.indexOf('--output-dir')
+        const produced = outputFlag >= 0 ? args[outputFlag + 1] : directoryFlag >= 0 ? args[directoryFlag + 1] : undefined
+        // A timed-out helper may leave the exclusive output behind; the next call opens it with wx.
+        if (produced) await rm(produced, { recursive: true, force: true })
         const command = officeCliCommand(electronExecutable(project), join(project, 'build/office-cli.mjs'), args)
         const { stdout } = await exec(command.file, command.args,
           { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: command.timeout, maxBuffer: 4 * 1024 * 1024, windowsHide: true })
         return JSON.parse(stdout.trim())
-      }
+      })
       for (const source of ordered) {
         const { source: sourcePath, previewPages, ...item } = source
         const directory = join(staging, item.id)

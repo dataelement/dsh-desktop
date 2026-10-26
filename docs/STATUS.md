@@ -1,3 +1,11 @@
+## Windows 导入苹方 PPT 的字体与字重解析 — 2026-10-15
+
+- 基线：核实远端 `V0.12.0@8ade5b7cc3d391fe881dd2af64a8648e771653f5`；工作树 `codex/windows-ppt-font-layout`，Harness `0.2.0-rc.2`、Kit `0.1.3`、Electron `43.0.0`。
+- 原稿的 `PingFang SC Regular / Semibold` 同时在字体名中编码字重，旧导入逻辑在 Windows 原样保留这些 Mac 字面名。Windows 导入现在显式使用微软雅黑常规／细体及原生粗字重，统一可见运行、段落默认与段尾的字体度量；Mac 字面、其他显式字体及原始对象坐标沿来源保留。
+- 转换版本 10／预览版本 11 使旧模板重传后重新生成；用户确认保存时沿原子流程保留身份、描述、创建时间、会话选择与历史备份。
+- 新 Windows 字体回归在旧代码上捕获 5 个字体变体的解析缺口；本机 207 文件／2051 项全量回归、41 项最终定向回归、类型检查、生产构建与新模块的分发内容一致性 PASS。原 11 页 PPT 的 Mac 转换源与修复前完全一致，Windows 字体选择路径的 11 页往返保持坐标并解析全部苹方字面。
+- [Windows/macOS 原生 CI](https://github.com/dataelement/dsh-desktop/actions/runs/38730759532) 各 41 项回归 PASS，实际 LibreOffice→PDF→PDFium 中文标题占宽分别为 143px／140px，缺失字体列表为空；合成 PPTX、PNG 与度量已归档。该验证对应代码提交 `25958ad1`。同事截图的实机复测、安装包与原生 Office 编辑保存重开沿独立验收记录。
+
 ## PPT 导入文字位置与图表轴显示修复 — 2026-10-14
 
 - 沿用已核实的 `V0.12.0@0966adf9154b685e647ff932bfca5ab8823f0696` 与 `codex/v012-office-template-followup`，Harness `0.2.0-rc.2`、Kit `0.1.3`。

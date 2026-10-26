@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import '@deepseek-ai/dsh-session-persistence'
 import { describe, expect, it } from 'vitest'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
@@ -12,43 +13,43 @@ const projectRoot = path.resolve(import.meta.dirname, '..')
 const patchedPackages = [
   {
     name: 'dsh-session-persistence',
-    version: '0.2.0-rc.2',
+    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['does not support deletion', 'delete(_id, _options)', 'Permanently remove one stored Session identity']
   },
   {
     name: 'dsh-session-persistence-jsonl',
-    version: '0.2.0-rc.2',
+    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['async delete(id, options)', 'this.tracker.claimWrite(id)', 'this.coldLogMemo.delete(id)']
   },
   {
     name: 'dsh-workspace',
-    version: '0.2.0-rc.2',
+    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['forgetSession(sessionId)', 'archivedSessionIds: state.archivedSessionIds.filter']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.2.0-rc.2',
+    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['disposeOwned(sessionId)', 'await persistence.delete(request.sessionId)', 'workspaceRegistry.forgetSession(request.sessionId)']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.2.0-rc.2',
+    version: '0.2.1-rc.3',
     file: 'lib/client.js',
     markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'uiWorkspace, which releases its main view before calling this method']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.2.0-rc.2',
+    version: '0.2.1-rc.3',
     file: 'lib/typert.host.js',
     markers: ["id: '@deepseek-ai/dsh-api-session-controller#session/delete'", "method: 'delete'"]
   },
   {
     name: 'dsh-client-ui-workspace',
-    version: '0.2.0-rc.2',
+    version: '0.2.1-rc.3',
     file: 'lib/client.js',
     markers: ['async deleteSession(sessionId)', 'this.clearMain()', 'const retention = this.sessions.retainInfo(sessionId)', 'timer = setTimeout(finish, 250)', 'await this.sessions.delete(sessionId)']
   }

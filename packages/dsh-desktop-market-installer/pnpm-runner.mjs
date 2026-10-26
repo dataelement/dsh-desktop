@@ -29,6 +29,7 @@ import { existsSync, realpathSync, watch } from 'node:fs'
 import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { hideConsoleImportArguments } from './windows-hide-console.mjs'
 
 export const SIDELINE_MARKER = '.dsh-old-'
 export const RETRY_DELAY_MS = 750
@@ -309,6 +310,20 @@ export async function suspendGenerationProjectionForPnpm(profileDirectory) {
 }
 
 /**
+ * Arguments for one pnpm process. On Windows the console-hide bootstrap is
+ * loaded first, so `pnpm view`'s passthrough to `npm.cmd` inherits a hidden
+ * console. The path is read from this process, not the child environment:
+ * the shim restores it after Harness scrubs `DSH_*` names.
+ * @param {readonly string[]} args - pnpm entry and its own arguments.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string[]}
+ */
+export function pnpmLaunchArguments(args, env = process.env, platform = process.platform) {
+  return [...hideConsoleImportArguments(env, platform), ...args]
+}
+
+/**
  * Run pnpm once, mirroring its streams to this process while keeping a copy
  * for failure classification.
  *
@@ -332,7 +347,7 @@ function runPnpm(executable, args, options = {}) {
   } = options
 
   return new Promise((resolve, reject) => {
-    const child = spawnProcess(executable, args, {
+    const child = spawnProcess(executable, pnpmLaunchArguments(args), {
       stdio: ['inherit', 'pipe', 'pipe'],
       windowsHide: true,
       env: options.environment ?? process.env

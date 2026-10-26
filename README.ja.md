@@ -4,7 +4,8 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> のための、ローカルファーストかつクロスプラットフォーム対応のデスクトップアプリ。
+  <strong>DSH Desktop by Dataelem</strong> は、Dataelem チームが DeepSeek Harness フレームワークを基盤に開発したデスクトップ Agent アプリケーションです。オープンソース版とエンタープライズ版を提供しています。<br />
+  公式サイト：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · オープンソースリポジトリ：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
 </p>
 
 <p align="center">
@@ -24,7 +25,7 @@
 DSH Desktop は、ローカルの DeepSeek Harness をインストール可能なデスクトップアプリとして提供します。Harness を自動起動し、Profile、プラグイン、ワークスペース、モデル設定、セッションをアプリ本体とは別の場所に保存し、ローカル Runtime の準備が整うと完全な Harness 画面を開きます。
 
 > [!IMPORTANT]
-> DSH Desktop は、急速に進化している `@deepseek-ai/dsh@0.2.0-rc.2` を基盤とする早期プレビューです。macOS 版はコード署名と Apple 公証済みです。Windows x64 インストーラーもコード署名済みですが、発行元のダウンロード・インストール実績が蓄積されるまでは Windows のセキュリティ警告が表示される場合があります。
+> DSH Desktop は、急速に進化している `@deepseek-ai/dsh@0.2.1-rc.3` を基盤とする早期プレビューです。macOS 版はコード署名と Apple 公証済みです。Windows x64 インストーラーもコード署名済みですが、発行元のダウンロード・インストール実績が蓄積されるまでは Windows のセキュリティ警告が表示される場合があります。
 
 ## ダウンロード
 

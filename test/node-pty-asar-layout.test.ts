@@ -2,7 +2,7 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const nodePtyRoot = dirname(require.resolve('node-pty/package.json'))
@@ -15,21 +15,33 @@ type NodePty = { spawn(file: string, args: string[], options: { cwd: string, env
 
 const roots: string[] = []
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
 // Only macOS launches the shell through node-pty's spawn-helper binary.
 describe.runIf(process.platform === 'darwin')('node-pty in the packaged asar layout', () => {
-  it('starts a terminal when loaded from app.asar with its native files unpacked', async () => {
+  it.each([
+    ['app.asar', 'default'],
+    ['app.asar', 'external'],
+    ['app.asar.unpacked', 'default'],
+    ['app.asar.unpacked', 'external']
+  ])('starts a terminal from %s with %s helper resolution', async (layout, resolution) => {
     // Packaged Harness loads node-pty through app.asar while asarUnpack keeps
     // spawn-helper and pty.node in app.asar.unpacked. Upstream node-pty maps
-    // the one to the other, so this layout needs no node-pty patch.
+    // the one to the other; the external-helper override must also preserve this default.
     const root = await mkdtemp(join(tmpdir(), 'dsh-node-pty-'))
     roots.push(root)
     const resources = join(root, 'DSH Desktop.app', 'Contents', 'Resources')
-    const packaged = join(resources, 'app.asar', 'node_modules', 'node-pty')
+    const packaged = join(resources, layout, 'node_modules', 'node-pty')
     await cp(nodePtyRoot, packaged, { recursive: true })
     await cp(join(nodePtyRoot, 'prebuilds'), join(resources, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds'), { recursive: true })
+    if (resolution === 'external') {
+      const helper = join(root, 'external-spawn-helper')
+      await cp(join(nodePtyRoot, 'prebuilds', `darwin-${process.arch}`, 'spawn-helper'), helper)
+      vi.stubEnv('DSH_NODE_PTY_SPAWN_HELPER', helper)
+      await rm(join(resources, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds', `darwin-${process.arch}`, 'spawn-helper'))
+    }
     const pty = require(packaged) as NodePty
 
     const terminal = pty.spawn('/bin/echo', ['dsh-pty-ok'], { cwd: root, env: process.env })

@@ -16,7 +16,8 @@ it('all patched JavaScript has no unresolved local identifiers', () => {
   const failures = program.getSemanticDiagnostics().filter(diagnostic => {
     if (![2304, 2552, 18004].includes(diagnostic.code)) return false
     const name = diagnostic.file.text.slice(diagnostic.start, diagnostic.start + diagnostic.length)
-    return !['global', 'setImmediate'].includes(name)
+    if (name === '__dirname' && diagnostic.file.commonJsModuleIndicator) return false
+    return !['global', 'setImmediate', 'clearImmediate'].includes(name)
   }).map(diagnostic => `${diagnostic.file.fileName}:${diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start).line + 1}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`)
   expect(failures).toEqual([])
 }, 30000)
@@ -47,4 +48,10 @@ it('maintained Desktop clients inject only slots declared by the installed Harne
       expect(declarations.has(match[1]), `${file}: undeclared slot ${match[1]}`).toBe(true)
     }
   }
+})
+
+it('preserves the native hero options outlet alongside Desktop mode actions', () => {
+  const client = readFileSync('node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js', 'utf8')
+  expect(client.match(/renderSlot\("conversation\.hero\.options", \{\}\)/g)).toHaveLength(1)
+  expect(client.match(/renderSlot\("conversation\.hero\.modeActions", zone \?\? \{\}\)/g)).toHaveLength(1)
 })

@@ -74,7 +74,7 @@ export function createDocxWorkflow(ctx, library, modes, resources) {
     const facts = { templateId: item.id, revision: item.revision, operation: command, path: args.path ?? args.output_path }
     await modes.record(id, 'office-docx-start', facts)
     try {
-      const child = ctx.subprocess.spawn({ argv: plan.argv, cwd: policy.workspaceRoot, env, signal, graceMs: 1000,
+      const child = ctx.subprocess.spawn({ argv: plan.argv, cwd: policy.cwd, env, signal, graceMs: 1000,
         stdio: { stdin: { data: JSON.stringify({ command, args, profile, source: source.toString('base64'), sourceSha256: item.files[item.sampleFile] }) }, stdout: { maxBytes: 1024 * 1024 }, stderr: { maxBytes: 4096 } } })
       const outcome = await child.done
       signal.throwIfAborted()
@@ -87,7 +87,7 @@ export function createDocxWorkflow(ctx, library, modes, resources) {
       if (command === 'prepare' ? !Array.isArray(result.paragraphs) : !Array.isArray(result.checks) || result.checks.some(check => typeof check !== 'string')) throw new Error('Word template processing returned an invalid layout result')
       if (command === 'write' && result.path !== args.output_path) throw new Error('Word template processing returned a different output path')
       const live = selectedTemplate(library, await modes.state(id))
-      if (live?.id !== item.id || live.revision !== item.revision || (await workspacePolicy(ctx, exec, command !== 'validate')).workspaceRoot !== policy.workspaceRoot) throw new Error('Prepare the current selection in its active workspace')
+      if (live?.id !== item.id || live.revision !== item.revision || (await workspacePolicy(ctx, exec, command !== 'validate')).cwd !== policy.cwd) throw new Error('Prepare the current selection in its active workspace')
       await modes.record(id, 'office-docx-ready', { ...facts, sha256: result.sha256 })
       return result
     } catch (error) {

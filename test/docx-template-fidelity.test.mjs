@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, realpath, rm, writeFile, access, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, access, symlink } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
@@ -26,7 +26,8 @@ async function fixture(templateId = 'government-notice') {
   const id = SessionId(randomUUID()); const agent = { id, session: Session.create(id, undefined, { version: SESSION_FORMAT_VERSION, id, createdAt: Date.now(), isSeeded: false, cwd: workspace }) }
   let mode = 'workspace-write', selection = { documentMode: 'word', selectedDocumentTemplate: { id: item.id, mode: 'word', revision: item.revision } }
   const modes = { state: async () => selection, record: vi.fn(async () => true) }
-  const services = { sandbox: ctx.sandbox, subprocess: ctx.subprocess, sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: workspace }) } }
+  let currentDirectory = workspace
+  const services = { sandbox: ctx.sandbox, subprocess: ctx.subprocess, workingDirectory: { ensure: async () => currentDirectory }, sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: workspace }) } }
   const workflow = createDocxWorkflow(services, library, modes, resolve('.build/office-runtime'))
   ctx.tools.register(docxWriteTool(workflow)); registerDocxDelivery(ctx, library, modes, workflow)
   const delivered = vi.fn(async () => 'presented')
@@ -39,8 +40,17 @@ async function fixture(templateId = 'government-notice') {
   const other = prepared.paragraphs.find(p => p.text === '一、活动主题和时间')
   const plan = templateId === 'government-notice' ? { output_path: 'result.docx', replacements: [{ id: 'p1', text: '示例市公园管理局文件' }, { id: title.id, text: '关于公园节假日开放安排的通告' }, { id: normal.id, text: '现将公园节假日开放有关事项通告如下。' }], additions: [{ after: normal.id, source: normal.id, text: '具体开放时间以已确认的安排为准。' }], removals: [other.id] } : { output_path: 'result.docx', replacements: [{ id: prepared.paragraphs.find(p => p.text && p.can_remove).id, text: '当前材料的标题与内容' }] }
   const call = async (name, args) => ctx.tools.execute({ name, arguments: args, callId: randomUUID(), ...exec })
-  return { ctx, workflow, prepared, plan, call, delivered, workspace, modes, exec, setMode: value => { mode = value }, clearSelection: () => { selection = {} } }
+  return { ctx, workflow, prepared, plan, call, delivered, workspace, modes, exec, setDirectory: value => { currentDirectory = value }, setMode: value => { mode = value }, clearSelection: () => { selection = {} } }
 }
+it('writes the real Word worker output in a changed session directory', async () => {
+  const f = await fixture()
+  const current = join(f.workspace, 'worktree')
+  await mkdir(current)
+  f.setDirectory(current)
+  await f.workflow.run('write', f.plan, f.exec)
+  expect((await readFile(join(current, 'result.docx'))).length).toBeGreaterThan(0)
+  await expect(access(join(f.workspace, 'result.docx'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
 it('keeps the Word worker off the Windows confinement command line', () => {
   const script = 'print("段落")\n'
   const argv = docxWorkerArgv('python.exe')
@@ -135,11 +145,15 @@ it.each(['coffee-market', 'equity-research', 'meeting-minutes'])('retains the na
   expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
   expect((await f.call('present', { files: [{ path: 'result.docx' }] })).isError).toBe(false)
 })
-it.each(['font', 'footer', 'divider', 'text-style', 'page-margins', 'document-grid', 'style-definition', 'table-columns'])('blocks a %s change before delivery', async kind => {
+it('blocks layout and style mutations before delivery', async () => {
   const f = await fixture(); await f.call('office_template_write', f.plan)
+  const resultPath = join(f.workspace, 'result.docx')
+  const original = await readFile(resultPath)
   const { execFile } = await import('node:child_process'); const { promisify } = await import('node:util')
   const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
-  await promisify(execFile)(python, ['-I', '-B', '-c', `
+  for (const kind of ['font', 'footer', 'divider', 'text-style', 'page-margins', 'document-grid', 'style-definition', 'table-columns']) {
+    await writeFile(resultPath, original)
+    await promisify(execFile)(python, ['-I', '-B', '-c', `
 import sys,zipfile
 from lxml import etree as E
 p,kind=sys.argv[1:]; ns={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}; q=lambda x:'{'+ns['w']+'}'+x
@@ -159,10 +173,11 @@ else:
  parts['word/document.xml']=E.tostring(d)
 with zipfile.ZipFile(p,'w',zipfile.ZIP_DEFLATED) as z:
  for name,data in parts.items():z.writestr(name,data)
-`, join(f.workspace, 'result.docx'), kind])
-  expect((await f.call('present', { files: [{ path: 'result.docx' }] })).isError).toBe(true)
-  expect(f.delivered).not.toHaveBeenCalled()
-})
+`, resultPath, kind])
+    expect((await f.call('present', { files: [{ path: 'result.docx' }] })).isError).toBe(true)
+    expect(f.delivered).not.toHaveBeenCalled()
+  }
+}, 60_000)
 
 it('retains mixed heading/body typography with explicit native run references', async () => {
   const f = await fixture()

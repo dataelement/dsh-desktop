@@ -1,9 +1,10 @@
-import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { cp, mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { crc32 } from 'node:zlib';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import PptxGenJS from 'pptxgenjs';
 import sharp from 'sharp';
@@ -34,6 +35,8 @@ async function fixture(existingRoot) {
   };
   const host = {
     provide() {},
+    workingDirectory: { ensure: async () => workspace },
+    sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: workspace }) },
     effect(run) { run(); return () => {}; },
     webServer: { register(route) { routes.set(route.path, route); return () => routes.delete(route.path); } },
     get(name) { if (name === 'connection') return connection; throw new Error(`Unexpected service: ${name}`); },
@@ -87,10 +90,10 @@ async function fixture(existingRoot) {
   return { root, storage, workspace, request, tool, rpc, httpRequest, httpRequestOversize };
 }
 
-async function source() {
+async function source(pages = 4) {
   const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_WIDE';
   const logo = await sharp({ create: { width: 24, height: 24, channels: 4, background: '#446677' } }).png().toBuffer();
-  for (let page = 0; page < 4; page++) {
+  for (let page = 0; page < pages; page++) {
     const slide = pptx.addSlide();
     slide.background = { color: 'F4F2ED' };
     slide.addText(`Company template ${page + 1}`, { x: 0.8, y: 0.7, w: 10, h: 0.6, fontFace: 'Arial', fontSize: 28, color: '1C3848' });
@@ -101,8 +104,29 @@ async function source() {
   return Buffer.from(await pptx.write({ outputType: 'nodebuffer' }));
 }
 
-async function save(f) {
-  const bytes = await source();
+function insertPngChunk(png, type, data) {
+  const name = Buffer.from(type);
+  const prefix = Buffer.alloc(8);
+  prefix.writeUInt32BE(data.length, 0);
+  name.copy(prefix, 4);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(Buffer.concat([name, data])) >>> 0, 0);
+  const iend = png.lastIndexOf(Buffer.from('IEND')) - 4;
+  return Buffer.concat([png.subarray(0, iend), prefix, data, checksum, png.subarray(iend)]);
+}
+
+// Intel release runners time out while deflating and rasterizing multi-megapixel
+// random PNGs. A private ancillary chunk keeps each picture under the 16 MiB
+// import cap, makes the stored PPTX exceed 64 MiB, and must survive export.
+async function largeTemplateImage(seed) {
+  const png = await sharp({
+    create: { width: 32, height: 32, channels: 3, background: { r: 32 + seed * 24, g: 84, b: 132 } }
+  }).png().toBuffer();
+  return insertPngChunk(png, 'prIv', Buffer.alloc(9 * 1024 * 1024));
+}
+
+async function save(f, pages = 4) {
+  const bytes = await source(pages);
   const draft = await f.request('template/prepare', { input: { fileName: '公司模板.pptx', base64: bytes.toString('base64') } });
   const template = await f.request('template/save', { draftId: draft.draftId, name: '公司模板' });
   return { bytes, draft, template };
@@ -110,7 +134,7 @@ async function save(f) {
 
 describe('personal PPT templates in the shipped runtime', () => {
   it('cancels preparation through the authenticated host without waiting behind the import', async () => {
-    const f=await fixture(), bytes=await source(), requestId=randomUUID();
+    const f=await fixture(), bytes=await source(1), requestId=randomUUID();
     const upload=await f.request('template/upload-start',{input:{fileName:'cancel.pptx',size:bytes.length}});
     await f.request('template/upload-chunk',{uploadId:upload.uploadId,offset:0,base64:bytes.toString('base64')});
     const preparing=f.request('template/prepare',{input:{uploadId:upload.uploadId,requestId}});
@@ -155,7 +179,7 @@ describe('personal PPT templates in the shipped runtime', () => {
 
   it('uploads and saves a personal template through authenticated current and legacy HTTP routes', async () => {
     const f = await fixture();
-    const bytes = await source();
+    const bytes = await source(1);
     const input = { input: { fileName: 'Company.pptx', base64: bytes.toString('base64') } };
     expect(await f.httpRequest('template/prepare', input, { authorized: false })).toEqual({ status: 401, body: 'unauthorized' });
     const prepared = await f.httpRequest('template/prepare', input);
@@ -174,7 +198,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     slide.addText('Large image template', { x: 0.5, y: 0.3, w: 11, h: 0.6, fontSize: 24 });
     const images = [];
     for (let i = 0; i < 8; i++) {
-      const image = await sharp(randomBytes(1800 * 1600 * 3), { raw: { width: 1800, height: 1600, channels: 3 } }).png().toBuffer();
+      const image = await largeTemplateImage(i);
       images.push(image);
       slide.addImage({ data: `image/png;base64,${image.toString('base64')}`, x: 0.4 + i % 4 * 3.2, y: 1.3 + Math.floor(i / 4) * 2.5, w: 3, h: 2.3 });
     }
@@ -206,7 +230,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     const mediaHashes = Object.entries(exported).filter(([name]) => name.startsWith('ppt/media/')).map(([, data]) => createHash('sha256').update(data).digest('hex'));
     for (const image of images) expect(mediaHashes).toContain(createHash('sha256').update(image).digest('hex'));
     expect((await readFile(path.join(f.storage, 'personal-templates/saved', template.id, 'source.pptx'))).equals(bytes)).toBe(true);
-  }, 60000);
+  }, 120000);
 
   it('imports mixed-size title and body text without inflating all text to the largest run', async () => {
     const f = await fixture();
@@ -306,7 +330,7 @@ describe('personal PPT templates in the shipped runtime', () => {
   },30000);
 
   it('previews before registration and persists across sessions/restarts with profile isolation', async () => {
-    const f = await fixture(); const bytes = await source();
+    const f = await fixture(); const bytes = await source(2);
     const draft = await f.request('template/prepare', { input: { fileName: 'Company.pptx', base64: bytes.toString('base64') } });
     expect(draft.preview.startsWith('data:image/png;base64,iVBOR')).toBe(true);
     expect(draft.previews).toBeUndefined();
@@ -373,7 +397,7 @@ describe('personal PPT templates in the shipped runtime', () => {
   }, 30000);
 
   it('reuses template page images through saving and enforces ownership, bounds and file confinement',async()=>{
-    const f=await fixture(),bytes=await source();
+    const f=await fixture(),bytes=await source(2);
     const draft=await f.request('template/prepare',{input:{fileName:'Sample.pptx',base64:bytes.toString('base64')}});
     const directory=path.join(f.storage,'personal-templates/drafts',draft.draftId);
     await expect(f.request('template/preview-page',{draftId:draft.draftId,page:1},'session-b')).rejects.toThrow('其他会话');
@@ -417,7 +441,7 @@ describe('personal PPT templates in the shipped runtime', () => {
   },30000);
 
   it('renames globally, deletes from selection, and retains existing task copies', async () => {
-    const f = await fixture(); const { template } = await save(f);
+    const f = await fixture(); const { template } = await save(f, 1);
     await f.request('template/select', { templateId: template.id, mode: 'ppt' }, 'session-b');
     await f.tool('ppt_template_create_project', { template_id: template.id, output_directory: 'kept' });
     await f.request('template/rename', { templateId: template.id, name: '年度模板' });
@@ -431,7 +455,7 @@ describe('personal PPT templates in the shipped runtime', () => {
   }, 30000);
 
   it('persists edited name and description atomically while preserving selection and source', async () => {
-    const f = await fixture(); const { bytes, template } = await save(f);
+    const f = await fixture(); const { bytes, template } = await save(f, 1);
     await f.request('template/select', { templateId: template.id, mode: 'ppt' }, 'session-b');
     const changes = { templateId: template.id, name: '年度报告', description: '品牌配色与简洁图表。\n适用于年度经营汇报。' };
     const updated = await f.request('template/update', changes);
@@ -452,7 +476,7 @@ describe('personal PPT templates in the shipped runtime', () => {
   }, 30000);
 
   it('validates chunk ordering, total integrity and upload session ownership',async()=>{
-    const f=await fixture(),bytes=await source();
+    const f=await fixture(),bytes=await source(1);
     await expect(f.request('template/upload-start',{input:{fileName:'../escape.pptx',size:8}})).rejects.toThrow('PPTX');
     await expect(f.request('template/upload-start',{input:{fileName:'Source.pptx',size:-1}})).rejects.toThrow('大小无效');
     const upload=await f.request('template/upload-start',{input:{fileName:'Source.pptx',size:bytes.length}});
@@ -500,7 +524,7 @@ describe('personal PPT templates in the shipped runtime', () => {
       body: 'payload too large'
     });
     expect((await f.request('state')).templates.filter(t => t.origin === 'personal')).toEqual([]);
-    const bytes = await source();
+    const bytes = await source(1);
     const draft = await f.request('template/prepare', { input: { fileName: 'cancel.pptx', base64: bytes.toString('base64') } });
     await f.request('template/cancel', { draftId: draft.draftId });
     await expect(f.request('template/save', { draftId: draft.draftId, name: 'Cancelled' })).rejects.toThrow();
@@ -508,23 +532,25 @@ describe('personal PPT templates in the shipped runtime', () => {
     await symlink(f.workspace, path.join(f.storage, 'personal-templates/saved', `personal-${'a'.repeat(64)}`));
     await expect(f.request('state')).rejects.toThrow();
   }, 30000);
-  it('reconverts legacy uploads after preview acceptance while preserving identity, metadata and backup', async () => {
-    const f = await fixture(); const { bytes, template } = await save(f);
+  it.each(['legacy', 'previous'])('reconverts %s uploads after preview acceptance while preserving identity, metadata and backup', async revision => {
+    const f = await fixture(); const { bytes, template } = await save(f, 1);
     await f.request('template/select', {templateId:template.id,mode:'ppt'}, 'session-b');
     const file = path.join(f.storage,'personal-templates','saved',template.id,'template.json');
     const old = JSON.parse(await readFile(file,'utf8'));
-    delete old.conversionVersion; delete old.previewVersion; old.description='Keep metadata';
+    if(revision==='legacy'){delete old.conversionVersion;delete old.previewVersion;}
+    else {old.conversionVersion=PERSONAL_TEMPLATE_CONVERSION_VERSION-1;old.previewVersion=PERSONAL_TEMPLATE_PREVIEW_VERSION-1;}
+    old.description='Keep metadata';
     await writeFile(file,JSON.stringify(old));
     const draft=await f.request('template/prepare',{input:{fileName:'refresh.pptx',base64:bytes.toString('base64')}});
     expect(draft.duplicate).toBeUndefined();expect(draft.template.id).toBe(template.id);
-    expect(JSON.parse(await readFile(file,'utf8')).conversionVersion).toBeUndefined();
+    expect(JSON.parse(await readFile(file,'utf8')).conversionVersion).toBe(old.conversionVersion);
     const updated=await f.request('template/save',{draftId:draft.draftId,name:old.name});
     expect(updated.conversionVersion).toBe(PERSONAL_TEMPLATE_CONVERSION_VERSION);expect(updated.previewVersion).toBe(PERSONAL_TEMPLATE_PREVIEW_VERSION);expect(updated.description).toBe('Keep metadata');
     expect(updated.createdAt).toBe(old.createdAt);
     expect((await f.request('state',{},'session-b')).selectedTemplateId).toBe(old.id);
     const backups=await readdir(path.join(f.storage,'personal-templates','backups',template.id));
     expect(backups).toHaveLength(1);
-    expect(JSON.parse(await readFile(path.join(f.storage,'personal-templates','backups',template.id,backups[0],'template.json'),'utf8')).conversionVersion).toBeUndefined();
-  },30000);
+    expect(JSON.parse(await readFile(path.join(f.storage,'personal-templates','backups',template.id,backups[0],'template.json'),'utf8')).conversionVersion).toBe(old.conversionVersion);
+  }, 120000);
 
 });

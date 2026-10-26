@@ -2,9 +2,9 @@ import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
 
 export type UpdateLocale = 'en' | 'zh'
 
-export function shouldShowUpdate(status: UpdateStatus): boolean {
+export function shouldShowUpdate(status: UpdateStatus, allowManualPresentation = true): boolean {
   if (['available', 'downloading', 'downloaded'].includes(status.phase)) return true
-  return status.manual && ['checking', 'up-to-date', 'error', 'unsupported'].includes(status.phase)
+  return allowManualPresentation && status.manual && ['checking', 'up-to-date', 'error', 'unsupported'].includes(status.phase)
 }
 
 export function isUpdateDismissed(
@@ -17,7 +17,8 @@ export function isUpdateDismissed(
 }
 
 /** A manual request may replay a cached update; progress keeps the same request ID. */
-export function isNewManualPresentation(status: UpdateStatus, previous?: UpdateStatus): boolean {
+export function isNewManualPresentation(status: UpdateStatus, previous?: UpdateStatus, delivery: 'event' | 'snapshot' = 'event'): boolean {
+  if (delivery === 'snapshot') return false
   if (!status.manual) return false
   if (!previous) return true
   if (status.presentationId !== undefined) return status.presentationId !== previous.presentationId

@@ -17,7 +17,7 @@ export interface RuntimeSnapshot {
   authToken?: string
   pluginFailures?: PluginStartupFailure[]
   /** Desktop-owned failure classification; Harness-reported causes stay in `message`/`pluginFailures`. */
-  failureReason?: 'startup-timeout'
+  failureReason?: 'startup-timeout' | 'memory-exhausted'
 }
 
 export type UpdatePhase =

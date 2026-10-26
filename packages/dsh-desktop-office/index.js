@@ -27,7 +27,7 @@ export async function apply(ctx, config) {
   })
   registerBusinessSkills(ctx, join(config.resources, 'business-skills'))
   const library = await createTemplateLibrary(join(config.resources, 'templates'))
-  ctx.inject(['officeModes', 'tools', 'skills', 'sandboxPolicy', 'sandbox', 'subprocess'], scoped => {
+  ctx.inject(['officeModes', 'tools', 'skills', 'workingDirectory', 'sandboxPolicy', 'sandbox', 'subprocess'], scoped => {
     registerOfficeContext(scoped, library, scoped.officeModes)
     const docx = createDocxWorkflow(scoped, library, scoped.officeModes, config.resources)
     scoped.tools.register(templateTool(scoped, library, scoped.officeModes, docx))

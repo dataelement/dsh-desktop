@@ -135,6 +135,14 @@ describe('structured startup failures through the real bundled loader', () => {
     expect(run(entry).failures[0]).toMatchObject({ stage: 'import', owner: { packageName: names[0] } })
   })
 
+  it('attributes a removed workflow implementation to its third-party owner', async () => {
+    const { home, entry, names } = await fixture(['import "@deepseek-ai/dsh-workflow-worker-thread"; export default () => {};'])
+    const { failures } = run(entry)
+    expect(failures[0]).toMatchObject({ stage: 'import', owner: { packageName: names[0] },
+      message: expect.stringContaining('@deepseek-ai/dsh-workflow-worker-thread') })
+    expect((await detectPluginRecovery({ dshHome: home, initialLogs: [], startupFailures: failures })).plugins).toEqual(names)
+  })
+
   it('inherits ownership for an unannotated child loaded by a nested include', async () => {
     const { home, entry, names } = await fixture(['export default function() { throw new Error("nested include failure"); }'])
     const dir = join(home, 'profiles', 'web', 'node_modules', names[0]!)

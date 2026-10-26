@@ -15,6 +15,7 @@ import { composePptxLayers } from "./pptx-layers.js";
 import { convertedGeometry } from "./pptx-geometry.js";
 import { boundedPptxMedia, createPptxImageReader, mediaPlaceholder } from "./pptx-media.js";
 import { resolveFontFace } from "./font-family.js";
+import { resolveImportedFontStyle } from "./imported-font-style.js";
 import { markSourceLayout } from "./source-layout.js";
 import { readPptxImageContracts, remapImageContract } from "./template-image-contract.js";
 //#region lib/types/pptd-convert.js
@@ -155,7 +156,7 @@ function textRunStyle(properties, theme, text = "") {
 	const fontSizeRaw = Number(properties?.getAttribute("sz"));
 	return {
 		...Number.isFinite(fontSizeRaw) && fontSizeRaw > 0 ? { fontSize: fontSizeRaw / 100 } : {},
-		...fontFamily === void 0 ? {} : { fontFamily },
+        ...resolveImportedFontStyle(fontFamily),
 		...color === void 0 ? {} : { color },
         ...(childElement(properties,"highlight") ? {highlight:ooxmlColor(childElement(properties,"highlight"),theme)} : {}),
         ...(properties?.getAttribute("u") && properties.getAttribute("u")!=="none" ? {underline:true} : {}),
@@ -253,7 +254,9 @@ function preservedTextBody(textBody, theme) {
       // Flatten font inheritance into the font actually selected for this script.
       // Source theme font slots belong to the original package, whereas this deck
       // has its own theme. Explicit slots preserve glyph selection after export.
-      const face=resolveFontFace(textRunStyle(safeElement(run.properties),theme,run.text).fontFamily, "Arial", run.text);
+      const style=textRunStyle(safeElement(run.properties),theme,run.text);
+      const face=resolveFontFace(style.fontFamily, "Arial", run.text);
+      if(style.bold)props.setAttribute('b','1');
       if(face)for(const font of ['latin','ea','cs']){
         let child=childElement(props,font);
         if(!child){child=doc.createElementNS(A,`a:${font}`);props.appendChild(child);}
@@ -271,6 +274,14 @@ function preservedTextBody(textBody, theme) {
   // DrawingML children have schema-defined order; inheritance merging must preserve it.
   const orders={pPr:['lnSpc','spcBef','spcAft','buClrTx','buClr','buSzTx','buSzPct','buSzPts','buFontTx','buFont','buNone','buAutoNum','buChar','buBlip','tabLst','defRPr','extLst'],rPr:['ln','noFill','solidFill','gradFill','blipFill','pattFill','grpFill','effectLst','effectDag','highlight','uLnTx','uLn','uFillTx','uFill','latin','ea','cs','sym','hlinkClick','hlinkMouseOver','rtl','extLst']};
   for(const node of body.getElementsByTagNameNS('*','*')){
+    // Empty paragraphs and inherited run defaults also contribute font metrics.
+    // Resolve their full-face names through the same contract as visible runs.
+    if(['rPr','defRPr','endParaRPr'].includes(node.localName))for(const font of [...node.children]){
+      if(!['latin','ea','cs','sym'].includes(font.localName))continue;
+      const style=resolveImportedFontStyle(font.getAttribute('typeface'));
+      if(style.fontFamily)font.setAttribute('typeface',style.fontFamily);
+      if(style.bold)node.setAttribute('b','1');
+    }
     const order=orders[node.localName];if(!order)continue;
     [...node.children].sort((a,b)=>order.indexOf(a.localName)-order.indexOf(b.localName)).forEach(child=>node.appendChild(child));
   }

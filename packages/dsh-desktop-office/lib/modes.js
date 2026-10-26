@@ -36,28 +36,29 @@ export function registerOfficeContext(ctx, library, modes) {
     if (state.selectedDocumentTemplate && !template && ['word', 'excel'].includes(mode)) throw new Error('Selected Office template revision requires a new selection')
     const names = ['word', 'excel'].includes(mode)
       ? [mode, ...(template ? [`${template.id}@${template.revision}`] : [])] : []
+    const cwd = names.length ? await ctx.workingDirectory.ensure(agent, signal) : undefined
     const fingerprint = names.join(':')
     let active = false
     for (const seq of [...agent.session.surface.nodes]) {
       const event = agent.session.eventAt(seq)
       if (event?.type !== 'user/message' || sourcePlugin(event.data?.source) !== PLUGIN) continue
-      if (event.data.source.sections?.[0]?.name === fingerprint && fingerprint) { active = true; continue }
+      if (event.data.source.sections?.[0]?.name === fingerprint && fingerprint && event.data.source.cwd === cwd) { active = true; continue }
       agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: '输出格式已按当前会话选择更新。' }],
         source: { kind: 'plugin:dsh-desktop-office-updated', plugin: 'dsh-desktop-office-updated' } }),
       { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
     }
     if (!fingerprint || active) return decision
-    const foundation = await ctx.skills.get(mode === 'word' ? 'office-docx' : 'office-xlsx', { cwd: agent.session.header.cwd, scope: agent, signal })
+    const foundation = await ctx.skills.get(mode === 'word' ? 'office-docx' : 'office-xlsx', { cwd, scope: agent, signal })
     if (!foundation) throw new Error('The official Office skill is unavailable')
     const sections = [{ name: fingerprint, text: `当前输出格式：${mode === 'word' ? 'Word DOCX' : 'Excel XLSX'}。\n\n${renderSkillContent(foundation)}` }]
     if (template) sections.push({ name: 'office-template', text: templateContext(template) })
     for (const name of businessNames(template)) {
-      const skill = await ctx.skills.get(name, { cwd: agent.session.header.cwd, scope: agent, signal })
+      const skill = await ctx.skills.get(name, { cwd, scope: agent, signal })
       if (!skill) throw new Error('The selected business skill is unavailable')
       sections.push({ name: skill.name, text: renderSkillContent(skill) })
     }
     return { kind: 'enter', messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text: sections.map(x => x.text).join('\n\n') }],
-      source: { kind: `plugin:${PLUGIN}`, plugin: PLUGIN, form: 'snapshot', sections } })] }
+      source: { kind: `plugin:${PLUGIN}`, plugin: PLUGIN, form: 'snapshot', cwd, sections } })] }
   }, { prepend: true })
 }
 

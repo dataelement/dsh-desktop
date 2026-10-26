@@ -21,8 +21,8 @@ build/icon-1024.png
 __pycache__/
 *.pyc
 
-# Native recovery UI smoke-test output
-/artifacts/recovery-ui/
+# Local test artifacts, diagnostics and smoke-test output
+/artifacts/
 
 # Local-only design docs
 docs/plugin-management.zh.md

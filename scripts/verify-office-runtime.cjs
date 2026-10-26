@@ -18,12 +18,12 @@ async function verifyOfficeRuntime(resources, executable, smokeScript = path.joi
     await execFile(executable, [path.join(__dirname, 'office-runtime', 'probe.cjs'), path.join(resources, 'app.asar'), resources], options)
     await execFile(python, ['-I', '-B', smokeScript, scratch, metadata], options)
     await execFile(python, ['-I', '-B', '-m', 'pip', 'check'], options)
-    const checker = path.join(resources, 'office-runtime', 'office-skills', 'scripts', 'check_office.py')
     const cli = path.join(resources, 'office-cli.mjs')
     await execFile(executable, [cli, 'capabilities', '--json'], options)
     for (const extension of ['docx', 'pptx', 'xlsx']) {
       const input = path.join(scratch, `sample.${extension}`)
-      await execFile(python, ['-I', '-B', checker, input, '--contains', 'Office runtime smoke'], options)
+      // smoke.py reopens each document and checks content and OPC paths;
+      // current upstream skills no longer ship scripts/check_office.py.
       await execFile(executable, [cli, 'convert', '--input', input, '--output', path.join(scratch, `${extension}.pdf`)], options)
       const pdf = await fs.readFile(path.join(scratch, `${extension}.pdf`))
       if (pdf.subarray(0, 5).toString() !== '%PDF-') throw new Error(`Office ${extension} conversion did not produce PDF`)

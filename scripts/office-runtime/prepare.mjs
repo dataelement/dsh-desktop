@@ -65,6 +65,47 @@ export async function unpackWheel(archive, destination) {
   }
 }
 
+async function stripUnusedPythonPayload(dependencies, pythonLib, sitePackages) {
+  // Strip C development headers not needed at runtime.
+  await rm(join(dependencies, 'python', 'include'), { recursive: true, force: true })
+  // Strip unused GUI, package manager, and demo modules from Python standard library.
+  const unusedStdlib = [
+    join(pythonLib, 'ensurepip'),
+    join(pythonLib, 'idlelib'),
+    join(pythonLib, 'tkinter'),
+    join(pythonLib, 'turtledemo'),
+    join(pythonLib, 'turtle.py')
+  ]
+  for (const item of unusedStdlib) {
+    await rm(item, { recursive: true, force: true })
+  }
+  // Strip heavy test suites, build/packaging tools, and development modules in site-packages.
+  const unusedSitePackages = [
+    join(sitePackages, 'pandas', 'tests'),
+    join(sitePackages, 'numpy', 'tests'),
+    join(sitePackages, 'numpy', 'testing'),
+    join(sitePackages, 'numpy', 'f2py'),
+    join(sitePackages, 'numpy', '_core', 'tests'),
+    join(sitePackages, 'numpy', 'typing', 'tests'),
+    join(sitePackages, 'numpy', 'lib', 'tests'),
+    join(sitePackages, 'numpy', 'random', 'tests'),
+    join(sitePackages, 'numpy', 'ma', 'tests'),
+    join(sitePackages, 'numpy', 'polynomial', 'tests'),
+    join(sitePackages, 'numpy', 'linalg', 'tests'),
+    join(sitePackages, 'numpy', 'matrixlib', 'tests'),
+    join(sitePackages, 'numpy', 'fft', 'tests'),
+    join(sitePackages, 'numpy', '_pyinstaller', 'tests')
+  ]
+  for (const directory of unusedSitePackages) {
+    await rm(directory, { recursive: true, force: true })
+  }
+  // Strip unused helper binaries.
+  const binDir = join(dependencies, 'python', 'bin')
+  for (const name of ['idle3', 'idle3.12', 'pydoc3', 'pydoc3.12']) {
+    await rm(join(binDir, name), { force: true })
+  }
+}
+
 /** Always assemble this build's payload. Keep only verified downloads as cache. */
 export async function prepareOfficeRuntime({ target = officeTarget(), output = join(project, '.build/office-runtime'), cache = join(project, '.build/office-downloads') } = {}) {
   const artifact = lock.targets[target]
@@ -82,10 +123,12 @@ export async function prepareOfficeRuntime({ target = officeTarget(), output = j
     const url = `https://github.com/astral-sh/python-build-standalone/releases/download/${lock.pythonRelease}/${encodeURIComponent(filename)}`
     await extractTar({ file: await downloadAsset(url, artifact.pythonSha256, cache), cwd: dependencies })
     const windows = target === 'win-x64'
-    const sitePackages = join(dependencies, 'python', ...(windows ? ['Lib'] : ['lib', `python${lock.pythonVersion.split('.').slice(0, 2).join('.')}`]), 'site-packages')
+    const pythonLib = join(dependencies, 'python', ...(windows ? ['Lib'] : ['lib', `python${lock.pythonVersion.split('.').slice(0, 2).join('.')}`]))
+    const sitePackages = join(pythonLib, 'site-packages')
     for (const wheel of [...artifact.wheels, ...lock.wheels]) {
       await unpackWheel(await downloadAsset(wheel.url, wheel.sha256, cache), sitePackages)
     }
+    await stripUnusedPythonPayload(dependencies, pythonLib, sitePackages)
     const manifest = {
       desktopVersion: version,
       platform: windows ? 'win32' : 'darwin',

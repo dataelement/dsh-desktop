@@ -103,6 +103,32 @@ describe('Awesome workbench published catalog', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('allows a slow catalog request for 30 seconds before aborting it', async () => {
+    vi.useFakeTimers()
+    try {
+      let signal
+      const fetch = vi.fn((_, options) => {
+        signal = options.signal
+        return new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+      })
+      const read = createCatalogReader({ fetch })
+      const result = read()
+      const rejection = expect(result).rejects.toThrow('Workbench catalog request timed out.')
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(signal.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(19_999)
+      expect(signal.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signal.aborted).toBe(true)
+      await rejection
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('serves the last good catalog as stale when a forced refresh fails inside the TTL', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(Response.json(catalog()))

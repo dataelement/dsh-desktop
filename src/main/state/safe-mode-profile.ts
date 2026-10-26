@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isMap, isSeq, parseDocument } from 'yaml'
+import { validModelEndpoint } from './startup-config-recovery'
 
 export const SAFE_MODE_PROFILE = 'desktop-safe-mode'
 export const SAFE_MODE_BUNDLES = [
@@ -45,6 +46,16 @@ export function extractSafeModePatch(sourcePatchText: string): string {
     if (!isMap(item)) continue
     const id = item.get('id')
     if (typeof id === 'string' && SAFE_MODE_MODEL_ENTRY_IDS.has(id)) {
+      // Safe Mode must never inherit a broken baseURL that crashes the DeepSeek core adapter
+      if (id === 'llm-deepseek') {
+        const config = item.get('config')
+        if (isMap(config) && config.has('baseURL')) {
+          const rawUrl = config.get('baseURL')
+          if (!validModelEndpoint(rawUrl, true)) {
+            config.delete('baseURL')
+          }
+        }
+      }
       kept.push(item)
     }
   }

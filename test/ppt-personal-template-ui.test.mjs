@@ -302,8 +302,8 @@ it('shows a quiet placeholder notice while keeping preview, pagination and savin
   expect(f.calls.some(call => call.endpoint === 'template/select')).toBe(true);
 });
 
-it.each(previewClients)('shows the completed template directly and supports pagination and saving ($name)', async ({ Component }) => {
-  const f = await fixture(undefined, undefined, [], Component);
+it('shows the completed template directly and supports pagination and saving', async () => {
+  const f = await fixture();
   await f.upload(new File(['source'], 'Company.pptx'));
   await loadPreview();
   expect(container.querySelector('.personal-zoom-stage img')).not.toBeNull();
@@ -319,8 +319,8 @@ it.each(previewClients)('shows the completed template directly and supports pagi
   expect(container.querySelector('dialog[open]')).toBeNull();
 });
 
-it.each(previewClients)('recovers the template image after a failed preview ($name)', async ({ Component }) => {
-  const f = await fixture(undefined, undefined, [], Component);
+it('recovers the template image after a failed preview', async () => {
+  const f = await fixture();
   await f.upload(new File(['source'], 'Company.pptx'));
   await act(async () => container.querySelector('.personal-zoom-stage img').dispatchEvent(new Event('error')));
   expect(container.querySelector('[role=alert]')).not.toBeNull();
@@ -329,13 +329,13 @@ it.each(previewClients)('recovers the template image after a failed preview ($na
   expect(container.querySelector('[role=alert]')).toBeNull();
 });
 
-it.each(previewClients)('fits a cached image using its actual aspect ratio before the load event ($name)', async ({ Component }) => {
+it('fits a cached image using its actual aspect ratio before the load event', async () => {
   vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(1600);
   vi.spyOn(HTMLImageElement.prototype, 'naturalHeight', 'get').mockReturnValue(1200);
   vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
-  const f = await fixture(undefined, undefined, [], Component);
+  const f = await fixture();
   await f.upload(new File(['source'], 'Company.pptx'));
   const image = container.querySelector('.personal-zoom-stage img');
   expect(image.style.width).toBe('800px');
@@ -476,8 +476,8 @@ it('shows page request failures and retries without losing the uploaded draft', 
   expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
 });
 
-it.each(previewClients)('$name pages through representative layouts and isolates late page responses',async({Component})=>{
-  const f=await fixture(undefined,undefined,[],Component,{representativePages:[1,3]});
+it('pages through representative layouts and isolates late page responses', async () => {
+  const f = await fixture(undefined, undefined, [], Manager, { representativePages: [1, 3] });
   await f.upload(new File(['source'],'Samples.pptx'));
   expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 1 / 2');
   expect(container.querySelector('.personal-view-toggle')).toBeNull();
@@ -544,10 +544,10 @@ it('opens a separate detailed viewer without selecting and supports zoom, arrows
   expect(container.querySelector('dialog[open]')).toBeNull();
 });
 
-it.each(previewClients)('$name holds completed thumbnails for one second before opening the preview', async ({ Component }) => {
+it('holds completed thumbnails for one second before opening the preview', async () => {
   let finish;
   const pending=new Promise(resolve=>{finish=resolve;});
-  const f=await fixture(undefined,pending,[],Component);
+  const f=await fixture(undefined,pending);
   await f.upload(new File([new Uint8Array(10)],'Progress.pptx'));
   await act(async()=>{await new Promise(resolve=>setTimeout(resolve,450));});
   expect(container.querySelector('.personal-progress-pages img')).not.toBeNull();
@@ -562,8 +562,8 @@ it.each(previewClients)('$name holds completed thumbnails for one second before 
   expect(container.querySelector('dialog[open] img')).not.toBeNull();
 });
 
-it.each(previewClients)('$name clears the completion pause and discards the draft on a session change', async ({ Component }) => {
-  const f = await fixture(undefined, undefined, [], Component, undefined, false);
+it('clears the completion pause and discards the draft on a session change', async () => {
+  const f = await fixture(undefined, undefined, [], Manager, undefined, false);
   await f.upload(new File(['source'], 'Ready.pptx'));
   expect(container.querySelector('dialog[open] .personal-zoom-stage')).toBeNull();
   await f.switchSession();
@@ -592,8 +592,8 @@ it('uses the previewed template and preserves an existing selection', async () =
 });
 
 
-it.each(previewClients)('$name closes and cancels an active import through each dismiss control', async ({Component}) => {
-  const f = await fixture(undefined, undefined, [], Component);
+it('closes and cancels an active import through each dismiss control', async () => {
+  const f = await fixture();
   for (const control of ['personal.close', 'personal.cancel', 'Escape']) {
     const release = f.holdOnce('template/prepare');
     await f.upload(new File(['source'], 'Interrupted.pptx'));
@@ -612,8 +612,8 @@ it.each(previewClients)('$name closes and cancels an active import through each 
   expect(f.calls.filter(call => call.endpoint === 'template/save')).toHaveLength(0);
 });
 
-it.each(previewClients)('$name keeps a new import active when a cancelled task returns late', async ({Component}) => {
-  const f = await fixture(undefined, undefined, [], Component);
+it('keeps a new import active when a cancelled task returns late', async () => {
+  const f = await fixture();
   const releaseOld = f.holdOnce('template/prepare');
   await f.upload(new File(['source'], 'Old.pptx'));
   await f.click('personal.cancel');
@@ -631,8 +631,8 @@ it.each(previewClients)('$name keeps a new import active when a cancelled task r
   expect(f.calls.filter(call => call.endpoint === 'template/cancel').map(call => call.payload.draftId)).toEqual(['draft-1','draft-2']);
 });
 
-it.each(previewClients)('$name allows cancellation during the completed-grid pause and protects saving', async ({Component}) => {
-  const f = await fixture(undefined, undefined, [], Component, undefined, false);
+it('allows cancellation during the completed-grid pause and protects saving', async () => {
+  const f = await fixture(undefined, undefined, [], Manager, undefined, false);
   await f.upload(new File(['source'], 'Ready.pptx'));
   expect(container.querySelector('dialog[open] .personal-zoom-stage')).toBeNull();
   await f.click('personal.close');

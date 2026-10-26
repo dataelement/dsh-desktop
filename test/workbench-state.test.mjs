@@ -18,10 +18,11 @@ const populated = () => ({ ...emptyState(), added: [WRITER, RESEARCH], pinned: [
   favorites: [WRITER], sessionBindings: { 'session-1': WRITER }, recentSessions: { [WRITER]: 'session-1' }, notes: { [WRITER]: 'An unsaved business draft' } })
 
 describe('desktop workbench state', () => {
-  it('accepts only the explicit force=1 catalog refresh query', () => {
+  it('accepts only explicit, mutually exclusive force=1 and cache=1 catalog queries', () => {
     expect(catalogReadOptions(new Request('http://localhost/api/desktop-workbenches/catalog'))).toEqual({ force: false })
     expect(catalogReadOptions(new Request('http://localhost/api/desktop-workbenches/catalog?force=1'))).toEqual({ force: true })
-    for (const query of ['force=true', 'force=0', 'force=1&force=1', 'refresh=1']) {
+    expect(catalogReadOptions(new Request('http://localhost/api/desktop-workbenches/catalog?cache=1'))).toEqual({ cachedOnly: true })
+    for (const query of ['force=true', 'force=0', 'force=1&force=1', 'refresh=1', 'cache=true', 'cache=0', 'cache=1&cache=1', 'cache=1&force=1', 'cache=1&refresh=1']) {
       expect(() => catalogReadOptions(new Request(`http://localhost/api/desktop-workbenches/catalog?${query}`))).toThrow()
     }
   })
@@ -208,6 +209,10 @@ describe('desktop workbench state', () => {
     expect(migrateRoute.methods).toEqual(['POST'])
     expect(migrateRoute.requestBody).toBe('buffered')
     expect((await catalogRoute.fetch(new Request('http://localhost' + catalogRoute.path + '?force=true'))).status).toBe(400)
+    const cachedResponse = await catalogRoute.fetch(new Request('http://localhost' + catalogRoute.path + '?cache=1'))
+    expect(cachedResponse.status).toBe(200)
+    expect(await cachedResponse.json()).toEqual({ catalog: null, stale: false })
+    expect((await catalogRoute.fetch(new Request('http://localhost' + catalogRoute.path + '?cache=1&force=1'))).status).toBe(400)
     expect(await (await readRoute.fetch(new Request('http://localhost' + readRoute.path))).json()).toEqual({ revision: 0, state: emptyState() })
     const post = (body) => writeRoute.fetch(new Request('http://localhost' + writeRoute.path, { method: 'POST', body }))
     expect((await post('{invalid')).status).toBe(400)

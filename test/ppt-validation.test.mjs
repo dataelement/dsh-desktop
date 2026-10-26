@@ -38,6 +38,8 @@ async function fixture({ broken = true, malformed = false } = {}) {
   let rpc
   const host = {
     provide() {},
+    workingDirectory: { ensure: async () => workspace },
+    sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: workspace }) },
     // The plugin scopes its webServer work under ctx.inject(['webServer'])
     // (0.1.5 owns connection routes on the reading Context). Give the fake host
     // the two members those callbacks touch so they run inertly.
@@ -58,10 +60,28 @@ async function fixture({ broken = true, malformed = false } = {}) {
     expect(validateJsonSchemaValue(tool.output.schema, value, 'value')).toEqual([])
     return { value, text: tool.output.render(args, value).map(c => c.text ?? '').join('\n') }
   }
-  return { root, workspace, project, exec, run, writePages, rpc }
+  return { root, workspace, project, exec, run, writePages, rpc, host }
 }
 
 describe('PPT validation authoring loop', () => {
+  it('reads and writes in the current directory while preserving workspace permissions', async () => {
+    const f = await fixture({ broken: false })
+    const current = path.join(f.workspace, 'worktree')
+    await mkdir(current)
+    await mkdir(path.join(current, 'deck'))
+    await writeFile(path.join(current, 'deck/deck.pptd'), 'current project')
+    f.host.workingDirectory.ensure = async () => current
+    const result = await f.run('pptd_read_file', { project_path: 'deck', file_path: 'deck.pptd' })
+    expect(result.value.content).toBe('current project')
+    await f.run('pptd_write_file', { project_path: 'deck', file_path: 'new.page', content: 'elements: []' })
+    expect(await readFile(path.join(current, 'deck/new.page'), 'utf8')).toBe('elements: []')
+    await expect(readFile(path.join(f.project, 'new.page'))).rejects.toMatchObject({ code: 'ENOENT' })
+    f.host.sandboxPolicy.resolve = () => ({ mode: 'read-only', workspaceRoot: f.workspace })
+    await expect(f.run('pptd_write_file', { project_path: 'deck', file_path: 'blocked.page', content: 'elements: []' })).rejects.toThrow('write permission')
+    expect((await f.run('pptd_read_file', { project_path: 'deck', file_path: 'deck.pptd' })).value.content).toBe('current project')
+    f.host.workingDirectory.ensure = async () => f.root
+    await expect(f.run('pptd_read_file', { project_path: 'deck', file_path: 'deck.pptd' })).rejects.toThrow('covered')
+  })
   it.each([
     ['plain', String.raw`水是供应链中\n最被低估的\n宏观变量`],
     ['single-quoted', String.raw`'水是供应链中\n最被低估的\n宏观变量'`],

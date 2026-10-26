@@ -1,3 +1,5 @@
+import { isHarnessBootPage } from '../shared/harness-boot'
+
 export const BOOT_COVER_ID = 'dsh-desktop-boot-cover'
 export const BOOT_COVER_STYLE_ID = 'dsh-desktop-boot-cover-style'
 export const BOOT_COVER_STALL_MS = 20_000
@@ -46,15 +48,8 @@ export function shouldReleaseBootCover(input: {
   return input.clientReady && !input.bootFailurePending
 }
 
-/** Desktop only covers the loopback Harness origin. Its own file and desktop pages stay visible. */
-export function isHarnessBootCoverTarget(href: string): boolean {
-  try {
-    const url = new URL(href)
-    return url.protocol === 'http:' && url.hostname === '127.0.0.1'
-  } catch {
-    return false
-  }
-}
+/** Cover the packaged Harness shell and legacy loopback page, never recovery documents. */
+export const isHarnessBootCoverTarget = isHarnessBootPage
 
 const covers = new WeakMap<Document, BootCover>()
 
@@ -304,6 +299,7 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
       // The main-process rule is still applied. Removing the cover now
       // would leave a blank document instead of the failure details.
       revealing = false
+      status.textContent = locale === 'zh' ? '无法显示详细信息，请重试。' : 'Could not show details. Please try again.'
     })
   })
 

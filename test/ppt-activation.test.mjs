@@ -31,12 +31,15 @@ async function fixture(existingRoot) {
   await skills
   cleanups.push(() => skills.dispose())
   let rpc
+  let currentDirectory = root
   const tools = []
   const plugin = ctx.plugin({
     inject: ['systemPrompt', 'skills'],
     async apply(pluginCtx) {
       const host = {
     provide() {},
+        workingDirectory: { ensure: async () => currentDirectory },
+        sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) },
         // The plugin scopes its webServer work under ctx.inject(['webServer'])
         // (0.1.5 owns connection routes on the reading Context). This fixture
         // has no webServer service, so run those callbacks on the same fake
@@ -92,7 +95,7 @@ async function fixture(existingRoot) {
     }
     return decision
   }
-  return { root, ctx, tools, agent, toggle, assemble, preStep, disposePpt: () => plugin.dispose(), rpc: (...args) => rpc(...args) }
+  return { root, ctx, tools, agent, toggle, assemble, preStep, setDirectory: value => { currentDirectory = value }, disposePpt: () => plugin.dispose(), rpc: (...args) => rpc(...args) }
 }
 
 function automaticMessages(agent) {
@@ -105,6 +108,19 @@ function automaticMessages(agent) {
 }
 
 describe('PPT instructions follow the session composer button', () => {
+  it('refreshes automatic skills after a directory change within a turn', async () => {
+    const f = await fixture(), agent = await f.agent()
+    await f.toggle(agent, true)
+    await f.preStep(agent)
+    const current = path.join(f.root, 'worktree')
+    await mkdir(current)
+    f.setDirectory(current)
+    await f.preStep(agent, { step: 2 })
+    const skills = automaticMessages(agent).filter(message => message.source.plugin === 'dsh-ppt-skill')
+    expect(skills).toHaveLength(1)
+    expect(skills[0].source.cwd).toBe(current)
+    expect((await f.preStep(agent, { step: 3 })).messages).toEqual([])
+  })
   it('routes general PPT skills per session on cached catalogs and direct loads, restoring them after mode changes', async () => {
     const f = await fixture()
     let skillTool
@@ -116,6 +132,7 @@ describe('PPT instructions follow the session composer button', () => {
         }
         registerSkillTools({
           skills: ctx.skills, on: ctx.on.bind(ctx),
+          workingDirectory: { ensure: async () => f.root },
           tools: { register: tool => { skillTool = tool }, get: () => skillTool }
         })
       }

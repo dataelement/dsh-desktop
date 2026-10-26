@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { resolveHarnessLocale } from '../src/main/application-locale'
+import { applicationText, resolveHarnessLocale } from '../src/main/application-locale'
 
 describe('application locale', () => {
+  it('uses the selected application language for native copy rather than the system language', () => {
+    expect(applicationText(resolveHarnessLocale('en', ['zh-CN']), 'common.restart')).toBe('Restart')
+    expect(applicationText(resolveHarnessLocale('zh', ['en-US']), 'common.restart')).toBe('重新启动')
+    expect(applicationText(resolveHarnessLocale(undefined, ['zh-TW']), 'windowRecovery.heading')).toBe('窗口暂时无法显示')
+  })
+
   it('uses the saved DSH preference when one exists', () => {
     expect(resolveHarnessLocale('en', ['zh-Hans-CN'])).toBe('en')
     expect(resolveHarnessLocale('zh', ['en-US'])).toBe('zh')

@@ -1,4 +1,5 @@
 import { parseImageContract } from "./template-image-contract.js";
+import { workspaceDirectory } from './workspace-directory.js';
 import { validationSchema, validationReport, formatValidation } from "./validation.js";
 import { MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PersonalTemplateLibrary } from "./personal-templates.js";
 import { personalTemplateSourceTheme, personalTemplateDesignProfile, personalTemplatePageSummary } from './personal-template-profile.js';
@@ -1661,11 +1662,6 @@ const PROJECT_ASSET_EXTENSIONS = new Set([
 	".webp",
 	".svg"
 ]);
-function workspaceRoot(exec) {
-	const root = exec.agent?.session.header.cwd;
-	if (root === void 0) throw new Error("PPTD tools require an active workspace");
-	return root;
-}
 function safeWorkspaceRelative(value, kind) {
 	if (value === "" || path.isAbsolute(value) || value.includes("\\") || value.includes("\0")) throw new Error(`${kind} must be a workspace-relative path`);
 	const normalized = path.posix.normalize(value);
@@ -1819,7 +1815,7 @@ function registerPptdProjectTools(ctx, service) {
 			render: (_args, value) => [{ type: "text", text: `已从模板创建独立 PPTD 工程：${value.projectPath}（${value.slideCount} 页）。请读取页面并替换本次内容。` }]
 		},
 		async execute(args, exec) {
-			const workspace = workspaceRoot(exec);
+			const workspace = await workspaceDirectory(ctx, exec);
 			const state = await service.state(sessionId(exec));
 			if (state.selectedTemplateId !== args.template_id) throw new Error("请先选择要使用的模板");
 			const template = await service.store.personalTemplates.readRecord(args.template_id);
@@ -1849,9 +1845,10 @@ function registerPptdProjectTools(ctx, service) {
 		parameters: { project_path: { type: "string", required: true, description: "Workspace-relative PPTD project directory or .pptd manifest." } },
 		output: { schema: validationSchema, render: (_args, value) => [{ type: "text", text: formatValidation(value) }] },
 		async execute(args, exec) {
-			const input = await existingWorkspacePath(workspaceRoot(exec), args.project_path, "project_path");
+			const workspace = await workspaceDirectory(ctx, exec, false);
+			const input = await existingWorkspacePath(workspace, args.project_path, "project_path");
 			exec.signal.throwIfAborted();
-			return projectValidationReport(await loadPptdProject(input), input, workspaceRoot(exec));
+			return projectValidationReport(await loadPptdProject(input), input, workspace);
 		},
 		isConcurrencySafe: () => true,
 		presentCall: () => ({ card: "generic", title: "检查 PPT 排版", kind: "read" })
@@ -1909,7 +1906,7 @@ function registerPptdProjectTools(ctx, service) {
 			}]
 		},
 		async execute(args, exec) {
-			const workspace = workspaceRoot(exec);
+			const workspace = await workspaceDirectory(ctx, exec, false);
 			const directory = await existingProjectDirectory(workspace, args.project_path);
 			const files = [];
 			async function visit(current, prefix) {
@@ -1992,7 +1989,7 @@ function registerPptdProjectTools(ctx, service) {
 			}]
 		},
 		async execute(args, exec) {
-			const workspace = workspaceRoot(exec);
+			const workspace = await workspaceDirectory(ctx, exec, false);
 			const fileRelative = projectFileRelative(args.file_path, "file_path", PROJECT_TEXT_EXTENSIONS);
 			const target = await existingProjectFile(workspace, args.project_path, fileRelative, "file_path", PROJECT_TEXT_EXTENSIONS);
 			if ((await lstat(target)).size > MAX_PROJECT_TEXT_BYTES) throw new Error(`PPTD text files accept at most ${MAX_PROJECT_TEXT_BYTES} bytes`);
@@ -2069,7 +2066,7 @@ function registerPptdProjectTools(ctx, service) {
 			}]
 		},
 		async execute(args, exec) {
-			const workspace = workspaceRoot(exec);
+			const workspace = await workspaceDirectory(ctx, exec);
 			const projectRelative = projectFileRelative(args.project_path, "project_path");
 			const fileRelative = projectFileRelative(args.file_path, "file_path", PROJECT_TEXT_EXTENSIONS);
 			const bytes = Buffer.from(args.content, "utf8");
@@ -2151,7 +2148,7 @@ function registerPptdProjectTools(ctx, service) {
 			}]
 		},
 		async execute(args, exec) {
-			const workspace = workspaceRoot(exec);
+			const workspace = await workspaceDirectory(ctx, exec);
 			const projectRelative = projectFileRelative(args.project_path, "project_path");
 			const source = await existingWorkspaceRegularFile(workspace, projectFileRelative(args.source_path, "source_path", PROJECT_ASSET_EXTENSIONS), "source_path", PROJECT_ASSET_EXTENSIONS);
 			if ((await lstat(source)).size > MAX_PROJECT_ASSET_BYTES) throw new Error(`PPTD image assets accept at most ${MAX_PROJECT_ASSET_BYTES} bytes`);
@@ -2288,7 +2285,7 @@ function registerPptdProjectTools(ctx, service) {
 			}]
 		},
 		async execute(args, exec) {
-			const workspace = workspaceRoot(exec);
+			const workspace = await workspaceDirectory(ctx, exec);
 			const source = await existingWorkspacePath(workspace, safePptxName(args.pptx_path, "pptx_path"), "pptx_path");
 			const metadata = await lstat(source);
 			if (!metadata.isFile() || metadata.size > MAX_PPTX_BYTES) throw new Error(`pptx_path must be a file no larger than ${MAX_PPTX_BYTES} bytes`);
@@ -2391,7 +2388,7 @@ function registerPptdProjectTools(ctx, service) {
 			}]
 		},
 		async execute(args, exec) {
-			const workspace = workspaceRoot(exec);
+			const workspace = await workspaceDirectory(ctx, exec);
 			const input = await existingWorkspacePath(workspace, args.project_path, "project_path");
 			const outputRelative = safePptxName(args.output_file, "output_file");
 			const project = await loadPptdProject(input);
@@ -2640,19 +2637,20 @@ function sourcePluginName(source) {
 	if (typeof source.kind === "string" && source.kind.startsWith("plugin:")) return source.kind.slice("plugin:".length);
 	return typeof source.kind === "string" ? source.kind : undefined;
 }
-function hasActiveSkill(agent) {
+function hasActiveSkill(agent, cwd) {
 	return agent.session.deriveMessages().some((message) => {
 		if (message.role !== "user") return false;
 		if (message.source?.kind === "skill-invocation") return message.source.name === DSH_PPT_SKILL_NAME;
 		const source = message.source;
 		if (!source || source.form !== "snapshot") return false;
-		return sourcePluginName(source) === SKILL_PLUGIN && Array.isArray(source.sections) && source.sections.some((section) => section.name === "dsh-ppt");
+		return sourcePluginName(source) === SKILL_PLUGIN && source.cwd === cwd && Array.isArray(source.sections) && source.sections.some((section) => section.name === "dsh-ppt");
 	});
 }
-async function automaticSkill(ctx, agent, signal) {
-	if (hasActiveSkill(agent)) return void 0;
+async function automaticSkill(ctx, agent, signal, cwd) {
+	if (hasActiveSkill(agent, cwd)) return void 0;
+	clearAutomaticPptContext(agent);
 	const skill = await ctx.skills.get(DSH_PPT_SKILL_NAME, {
-		cwd: agent.session.header.cwd,
+		cwd,
 		signal,
 		scope: agent
 	});
@@ -2667,6 +2665,7 @@ async function automaticSkill(ctx, agent, signal) {
 			kind: `plugin:${SKILL_PLUGIN}`,
 			plugin: SKILL_PLUGIN,
 			form: "snapshot",
+			cwd,
 			sections: [{
 				name: DSH_PPT_SKILL_NAME,
 				text: skillText
@@ -2734,8 +2733,9 @@ function registerPptTools(ctx, service) {
 			return decision;
 		}
 		clearAutomaticPptContext(agent, true);
-		if (step !== 1) return decision;
-		const skill = await automaticSkill(ctx, agent, signal);
+		const cwd = await ctx.workingDirectory.ensure(agent, signal);
+		if (step !== 1 && hasActiveSkill(agent, cwd)) return decision;
+		const skill = await automaticSkill(ctx, agent, signal, cwd);
 		return {
 			kind: "enter",
 			messages: [
@@ -3130,7 +3130,9 @@ const inject = [
 	"connection",
 	"tools",
 	"systemPrompt",
-	"skills"
+	"skills",
+	"workingDirectory",
+	"sandboxPolicy"
 ];
 /** Loader schema with conservative local defaults. */
 const Config = z.object({

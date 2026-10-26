@@ -16,6 +16,57 @@ const online = () => Promise.resolve(Response.json(catalog))
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 
 describe('persistent workbench catalog fallback', () => {
+  it('serves a disk snapshot after restart without joining a pending network refresh', async () => {
+    const cachePath = await cacheFile()
+    await createCatalogReader({ cachePath, fetch: online })()
+    let resolve
+    const fetch = vi.fn(() => new Promise(done => { resolve = done }))
+    const read = createCatalogReader({ cachePath, fetch })
+    const refresh = read({ force: true })
+    try {
+      await expect(read({ cachedOnly: true })).resolves.toEqual({ catalog, stale: true })
+      expect(fetch).toHaveBeenCalledTimes(1)
+    } finally { resolve(Response.json({ ...catalog, generatedAt: 'new' })) }
+    await expect(refresh).resolves.toEqual({ catalog: { ...catalog, generatedAt: 'new' }, stale: false })
+    await expect(read()).resolves.toEqual({ catalog: { ...catalog, generatedAt: 'new' }, stale: false })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns null without a snapshot and never starts network work', async () => {
+    const fetch = vi.fn(online)
+    const read = createCatalogReader({ cachePath: await cacheFile(), fetch })
+    await expect(read({ cachedOnly: true })).resolves.toEqual({ catalog: null, stale: false })
+    expect(fetch).not.toHaveBeenCalled()
+    await expect(read({ force: true })).resolves.toEqual({ catalog, stale: false })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not promote a disk snapshot to fresh memory or lose it on failed refresh', async () => {
+    const cachePath = await cacheFile()
+    await createCatalogReader({ cachePath, fetch: online })()
+    const fetch = vi.fn(offline)
+    const read = createCatalogReader({ cachePath, fetch })
+    const snapshot = await readFile(cachePath, 'utf8')
+    await expect(read({ cachedOnly: true })).resolves.toEqual({ catalog, stale: true })
+    expect(fetch).not.toHaveBeenCalled()
+    await expect(read()).resolves.toEqual({ catalog, stale: true })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await expect(read({ cachedOnly: true })).resolves.toEqual({ catalog, stale: true })
+    expect(await readFile(cachePath, 'utf8')).toBe(snapshot)
+  })
+
+  it('treats a corrupt cached-only snapshot as missing and permits online recovery', async () => {
+    const cachePath = await cacheFile()
+    await writeFile(cachePath, '{broken')
+    const fetch = vi.fn(online)
+    const read = createCatalogReader({ cachePath, fetch })
+    await expect(read({ cachedOnly: true })).resolves.toEqual({ catalog: null, stale: false })
+    expect(fetch).not.toHaveBeenCalled()
+    await expect(read({ force: true })).resolves.toEqual({ catalog, stale: false })
+    await expect(read({ cachedOnly: true })).resolves.toEqual({ catalog, stale: true })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('persists success and revalidates it after restart, keeping offline responses stale', async () => {
     const cachePath = await cacheFile()
     await expect(createCatalogReader({ cachePath, fetch: online, now: () => 123 })()).resolves.toEqual({ catalog, stale: false })

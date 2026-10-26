@@ -43,4 +43,18 @@ describe('verifyAsarUnpack', () => {
     const resources = await packagedApp('**/bin/tool')
     expect(() => verifyAsarUnpack(resources)).not.toThrow()
   })
+
+  it('rejects an unpacked payload whose physical file is missing', async () => {
+    const resources = await packagedApp('**/bin/tool')
+    await rm(join(resources, 'app.asar.unpacked', 'node_modules', 'tool', 'bin', 'tool'))
+    expect(() => verifyAsarUnpack(resources)).toThrow(/ENOENT|unpacked resource/)
+  })
+
+  it('rejects changed bytes even when the unpacked file size still matches', async () => {
+    const resources = await packagedApp('**/bin/tool')
+    const changed = Buffer.from(MACHO)
+    changed[10] = 1
+    await writeFile(join(resources, 'app.asar.unpacked', 'node_modules', 'tool', 'bin', 'tool'), changed)
+    expect(() => verifyAsarUnpack(resources)).toThrow('integrity mismatch')
+  })
 })
