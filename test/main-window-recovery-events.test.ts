@@ -11,9 +11,8 @@ import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { afterEach, expect, it, vi } from 'vitest'
 import { navigateDesktopWindow, registerNavigationOwner } from '../src/main/desktop-navigation'
-import { RendererNavigationRecovery } from '../src/main/renderer-navigation-recovery'
+import { RendererNavigationRecovery } from '../src/main/main-window-recovery'
 import { loadDesktopWindowAfterStop } from '../src/main/desktop-window-load'
-import { shouldReloadAfterMainWindowRendererLoss, MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS } from '../src/main/main-window-recovery'
 
 function fixture(note: (line: string) => void = () => {}) {
   const source = readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8')
@@ -35,9 +34,8 @@ function fixture(note: (line: string) => void = () => {}) {
   })
   const error = vi.fn()
   const context = {
-    rendererDiagnosticText, rendererDiagnosticUrl, freemem, release, totalmem, randomUUID, RendererNavigationRecovery, loadDesktopWindowAfterStop, registerNavigationOwner, shouldReloadAfterMainWindowRendererLoss,
-    MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS, mainWindowRecoveryReloadAt: 0,
-    mainWindowRecoveryReloadCount: 0, quitting: false, gpuFallbackRelaunching: false,
+    rendererDiagnosticText, rendererDiagnosticUrl, freemem, release, totalmem, randomUUID, RendererNavigationRecovery, loadDesktopWindowAfterStop, registerNavigationOwner,
+    quitting: false, gpuFallbackRelaunching: false,
     harnessRendered: false, clearProfileBootConfirmation: vi.fn(), recordMainWindowRendererLoss: vi.fn((source, details) => note(source + ": " + details)),
     showUnexpectedError: error, isRendererGpuFallbackCandidate: () => false,
     app: { getVersion: () => "test", getGPUFeatureStatus: () => ({}) }, runtime: { note, snapshot: () => ({ phase: 'ready' }) }, process, setTimeout, clearTimeout

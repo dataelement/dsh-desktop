@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadDesktopWindowAfterStop } from '../src/main/desktop-window-load'
-import { RendererNavigationRecovery } from '../src/main/renderer-navigation-recovery'
+import { RendererNavigationRecovery } from '../src/main/main-window-recovery'
 
 function fixture(loading = true) {
   const contents = Object.assign(new EventEmitter(), {

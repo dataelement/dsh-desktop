@@ -157,7 +157,7 @@ import {
   stopUpdateManager
 } from './update/update-manager'
 import type { RuntimeSnapshot } from '../shared/contracts'
-import { resolveHarnessLocale } from './application-locale'
+import { applicationText, resolveHarnessLocale } from './application-locale'
 import { installContextMenu } from './context-menu'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
@@ -191,9 +191,9 @@ import { upgradeMarketInSharedTree, upgradePluginToGeneration } from './state/pl
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { parseWindowsMenuRequest, windowsMenuTemplate, type EditingKey } from './windows-menu'
 import { shouldKeepRunningInBackground } from './close-to-tray'
-import { RendererNavigationRecovery } from './renderer-navigation-recovery'
+import { RendererNavigationRecovery } from './main-window-recovery'
 import { rendererDiagnosticText, rendererDiagnosticUrl } from './renderer-diagnostics'
-import { runNativeWindowRecovery } from './native-window-recovery'
+import { showWindowRestartPrompt } from './window-restart-prompt'
 import { freemem, release, totalmem } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { loadDesktopWindowAfterStop } from './desktop-window-load'
@@ -1996,8 +1996,8 @@ function showUnexpectedError(error: unknown): void {
   console.error('[desktop] unexpected error:', message)
   if (nativeRecoveryActive || quitting || gpuFallbackRelaunching) return
   nativeRecoveryActive = true
-  void runNativeWindowRecovery({
-    chinese: harnessLocale() === 'zh',
+  void showWindowRestartPrompt({
+    locale: harnessLocale(),
     cancelled: () => quitting || gpuFallbackRelaunching,
     flushDiagnostics: () => runtime?.flushLog() ?? Promise.resolve(),
     show: options => dialog.showMessageBox(options),
@@ -2009,8 +2009,9 @@ function showUnexpectedError(error: unknown): void {
     runtime?.note('[desktop] native recovery failed: ' + failureMessage)
     console.error('[desktop] native recovery failed', failureMessage)
     if (quitting || gpuFallbackRelaunching) return
-    dialog.showErrorBox('DSH Desktop', harnessLocale() === 'zh'
-      ? '应用窗口无法继续加载，请重新启动应用。' : 'The application window could not load. Please restart the application.')
+    const locale = harnessLocale()
+    dialog.showErrorBox('DSH Desktop', applicationText(locale, 'windowRecovery.heading') + '\n\n' +
+      applicationText(locale, 'windowRecovery.description'))
   }).finally(() => { nativeRecoveryActive = false })
 }
 

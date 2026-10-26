@@ -13,7 +13,7 @@ it.skipIf(!enabled)('recovers real sandboxed Electron navigation and renderer lo
   if (typeof electron !== 'string') throw new Error('Native Electron executable is required for opt-in acceptance')
   const root = await mkdtemp(join(tmpdir(), 'dsh-renderer-recovery-'))
   const entry = join(root, 'fixture.cjs')
-  const controller = resolve('src/main/renderer-navigation-recovery.ts')
+  const controller = resolve('src/main/main-window-recovery.ts')
   let cleanExit = false
   try {
     await mkdir(join(root, 'user-data'))
