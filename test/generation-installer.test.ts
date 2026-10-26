@@ -75,6 +75,65 @@ describe('the generation installer', () => {
     ])).toBeUndefined()
   })
 
+  it.each([undefined, 'packages:\n  - .\n', 'allowBuilds:\n  esbuild: false\n'])(
+    'isolates staging from ancestor workspaces without approvals (%s)',
+    async (profileWorkspace) => {
+      const home = await freshHome()
+      const ancestor = join(home, 'profiles', '.generations')
+      const ancestorYaml = 'packages:\n  - .\nallowBuilds:\n  unsafe: true\n'
+      await mkdir(ancestor, { recursive: true })
+      await writeFile(join(ancestor, 'pnpm-workspace.yaml'), ancestorYaml)
+      if (profileWorkspace !== undefined) {
+        const profile = join(home, 'profiles', 'web')
+        await mkdir(profile, { recursive: true })
+        await writeFile(join(profile, 'pnpm-workspace.yaml'), profileWorkspace)
+      }
+      const result = await installGeneration({
+        dshHome: home,
+        pluginSpec: 'isolated-plugin@1.0.0',
+        expectedPluginName: 'isolated-plugin',
+        nodeExecutablePath: process.execPath,
+        pnpmEntryPath: '/unused',
+        runInstall: stubInstall(async (staging) => {
+          const policy = await readFile(join(staging, 'pnpm-workspace.yaml'), 'utf8')
+          expect(policy).toContain('packages:\n  - .\n')
+          expect(policy).not.toContain('allowBuilds:')
+          const pkg = join(staging, 'node_modules', 'isolated-plugin')
+          await mkdir(pkg, { recursive: true })
+          await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'isolated-plugin', version: '1.0.0' }))
+        })
+      })
+      expect(result.ok).toBe(true)
+      expect(await readFile(join(ancestor, 'pnpm-workspace.yaml'), 'utf8')).toBe(ancestorYaml)
+    }
+  )
+
+  it('installs with real pnpm inside an ancestor workspace without modifying it (#747)', async () => {
+    const home = await freshHome()
+    const ancestor = join(home, 'profiles', '.generations')
+    const source = join(home, 'fixture-plugin')
+    await mkdir(ancestor, { recursive: true })
+    await mkdir(source, { recursive: true })
+    const ancestorYaml = 'packages:\n  - .\n'
+    const ancestorManifest = JSON.stringify({ name: 'ancestor-workspace', private: true })
+    await writeFile(join(ancestor, 'pnpm-workspace.yaml'), ancestorYaml)
+    await writeFile(join(ancestor, 'package.json'), ancestorManifest)
+    await writeFile(join(source, 'package.json'), JSON.stringify({ name: 'isolated-plugin', version: '1.0.0', main: 'index.js' }))
+    await writeFile(join(source, 'index.js'), 'module.exports = 42')
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: `file:${source}`,
+      expectedPluginName: 'isolated-plugin',
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: join(import.meta.dirname, '..', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
+    })
+    expect(result).toMatchObject({ ok: true, generation: { pluginName: 'isolated-plugin', version: '1.0.0' } })
+    expect(await readFile(join(ancestor, 'pnpm-workspace.yaml'), 'utf8')).toBe(ancestorYaml)
+    expect(await readFile(join(ancestor, 'package.json'), 'utf8')).toBe(ancestorManifest)
+    await expect(readFile(join(ancestor, 'pnpm-lock.yaml'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(join(ancestor, 'node_modules', 'isolated-plugin', 'package.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  }, 15000)
+
   it('forwards Profile build approvals into the isolated pnpm staging workspace', async () => {
     const home = await freshHome()
     const profile = join(home, 'profiles', 'web')
