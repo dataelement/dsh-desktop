@@ -29,7 +29,7 @@ describe('bundled desktop repair mode', () => {
     const dispose = vi.fn()
     const register = vi.fn(async () => dispose)
     let cleanup
-    await apply({ agentPresets: { register }, effect: setup => { cleanup = setup() } })
+    await apply({ inject: vi.fn(), agentPresets: { register }, effect: setup => { cleanup = setup() } })
     expect(register).toHaveBeenCalledOnce()
     expect(register.mock.calls[0][0].id).toBe('desktop-repair')
     expect(dispose).not.toHaveBeenCalled()
@@ -38,6 +38,6 @@ describe('bundled desktop repair mode', () => {
   })
 
   it('does not pretend registration succeeded if the Harness cannot register the mode', async () => {
-    await expect(apply({ agentPresets: { register: async () => { throw new Error('missing tool') } } })).rejects.toThrow('missing tool')
+    await expect(apply({ inject: vi.fn(), agentPresets: { register: async () => { throw new Error('missing tool') } } })).rejects.toThrow('missing tool')
   })
 })

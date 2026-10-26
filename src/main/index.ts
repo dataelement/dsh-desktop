@@ -32,7 +32,8 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
-import { clearStaleLoopbackHttpCache } from './cache-maintenance'
+import { HarnessShell } from './harness-shell'
+import { HARNESS_SHELL_URL, HARNESS_BOOT_CHANNEL, HARNESS_BOOT_FAILED_CHANNEL, isHarnessShellUrl } from '../shared/harness-boot'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
@@ -144,10 +145,8 @@ import {
   quarantineAppBundleLaunchAgents
 } from './state/launch-agent-audit'
 import {
-  clearStaleHarnessAuthCookies,
   desktopHarnessUrl,
-  isAbortedNavigationError,
-  shouldLoadHarnessUrl
+  isAbortedNavigationError
 } from './window-navigation'
 import {
   DesktopStorageManager,
@@ -235,6 +234,8 @@ let mainWindow: BrowserWindow | undefined
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
+let harnessShell: HarnessShell
+let harnessPagePreparation: Promise<boolean> | undefined
 let desktopStorageManager: DesktopStorageManager | undefined
 let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
@@ -739,7 +740,7 @@ function normalProfileBootIsHealthy(expectedNavigationVersion: number): boolean 
     !window.isDestroyed() &&
     expectedNavigationVersion === mainWindowNavigationVersion &&
     Date.now() - profileRendererHealthAt <= PROFILE_RENDERER_HEARTBEAT_MAX_AGE_MS &&
-    window.webContents.getURL().startsWith('http://127.0.0.1:')
+    isHarnessShellUrl(window.webContents.getURL())
   )
 }
 
@@ -1058,7 +1059,7 @@ function createWindow(): BrowserWindow {
   window.webContents.on('console-message', (details) => {
     if (details.level !== 'error') return
     const sourceUrl = details.sourceId || window.webContents.getURL()
-    if (!sourceUrl.startsWith('http://127.0.0.1:')) return
+    if (!isHarnessShellUrl(sourceUrl) && !sourceUrl.startsWith('http://127.0.0.1:')) return
     appendRendererPluginFailureLog(details.message)
   })
   installPluginRecoveryNavigation(window)
@@ -1078,6 +1079,22 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+/** Prepare the existing Harness shell while Profile work and child boot continue. */
+function prepareHarnessPage(): void {
+  harnessShell.reset()
+  rendererPluginFailureLogs = []
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const navigationVersion = ++mainWindowNavigationVersion
+  window.webContents.stop()
+  harnessPagePreparation = navigateDesktopWindow(window, desktopHarnessUrl(HARNESS_SHELL_URL, process.platform),
+    () => quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
+  void harnessPagePreparation.then((loaded) => {
+    if (loaded) runtime.note('[desktop] local Harness shell prepared; waiting for backend boot')
+  }).catch((error: unknown) => {
+    runtime.note('[desktop] local Harness shell failed: ' + (error instanceof Error ? error.message : String(error)))
+  })
+}
+
 async function openHarness(
   url: string,
   focusIntent: WindowFocusIntent = 'automatic'
@@ -1093,55 +1110,40 @@ async function openHarness(
     }
   }
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
-  const rendererUrl = desktopHarnessUrl(url, process.platform, runtime.snapshot().authToken)
-  if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
-    // Taken before the first await: the Recovery page's fallback below runs
-    // as soon as the Safe Mode launch resolves, and must see it gone.
-    const repairPrompt = safeModeVisible ? takePendingRepairPrompt() : undefined
-    const navigationVersion = ++mainWindowNavigationVersion
-    rendererPluginFailureLogs = []
-    window.webContents.stop()
-    // Open the repair session before the page loads, so the UI lands on it.
-    if (repairPrompt !== undefined) {
-      const started = await startRepairAgentPrompt(repairPrompt)
-      repairAgentLaunchError = started.ok ? undefined : started.error
-    }
-    await clearStaleLoopbackHttpCache(
-      window.webContents.session,
-      join(app.getPath('userData'), 'http-cache-origin'),
-      new URL(url).origin,
-      (line) => runtime.note(line)
-    )
-    const clearedCookies = await clearStaleHarnessAuthCookies(
-      window.webContents.session.cookies,
-      rendererUrl,
-      runtime.snapshot().authToken
-    ).catch((error) => {
-      runtime.note(
-        `[desktop] stale Harness cookie cleanup failed: ${error instanceof Error ? error.message : String(error)
-        }`
-      )
-      return 0
-    })
-    if (clearedCookies > 0) {
-      runtime.note(`[desktop] cleared ${clearedCookies} stale Harness authentication cookie(s)`)
-    }
-    try {
-      const loaded = await navigateDesktopWindow(window, rendererUrl,
-        () => quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
-      if (!loaded) return
-    } catch (error) {
-      if (navigationVersion !== mainWindowNavigationVersion) return
-      if (isAbortedNavigationError(error)) return
-      const snapshot = runtime.snapshot()
-      if (snapshot.phase !== 'ready' || snapshot.url !== url) return
-      throw error
-    }
-    if (navigationVersion !== mainWindowNavigationVersion) return
+  let navigationVersion = mainWindowNavigationVersion
+  const launchAttemptId = runtime.launchAttemptId
+  const authToken = runtime.snapshot().authToken
+  const repairPrompt = safeModeVisible ? takePendingRepairPrompt() : undefined
+  if (repairPrompt !== undefined) {
+    const started = await startRepairAgentPrompt(repairPrompt)
+    repairAgentLaunchError = started.ok ? undefined : started.error
   }
+  if (harnessPagePreparation) await harnessPagePreparation
+  if (quitting || gpuFallbackRelaunching || window.isDestroyed() ||
+    navigationVersion !== mainWindowNavigationVersion || runtime.snapshot().url !== url) return
+  if (!isHarnessShellUrl(window.webContents.getURL())) {
+    navigationVersion = ++mainWindowNavigationVersion
+    const loaded = await navigateDesktopWindow(window, desktopHarnessUrl(HARNESS_SHELL_URL, process.platform),
+      () => quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
+    if (!loaded) return
+  }
+  const stillCurrent = (): boolean => !quitting && !gpuFallbackRelaunching &&
+    mainWindow === window && !window.isDestroyed() && navigationVersion === mainWindowNavigationVersion &&
+    runtime.launchAttemptId === launchAttemptId && runtime.snapshot().phase === 'ready' &&
+    runtime.snapshot().url === url && runtime.snapshot().authToken === authToken &&
+    isHarnessShellUrl(window.webContents.getURL())
+  try {
+    await harnessShell.connect(url, authToken)
+  } catch (error) {
+    if (!stillCurrent()) return
+    runtime.note('[desktop] ' + (error instanceof Error ? error.message : String(error)))
+    await showPluginRecovery({ message: error instanceof Error ? error.message : String(error), logs: runtime.snapshot().logs })
+    return
+  }
+  if (!stillCurrent()) return
   markHarnessRendered()
-  if (runtime.snapshot().url !== url || window.isDestroyed()) return
   await syncNativeTheme(window)
+  if (!stillCurrent()) return
   raiseWindowWithoutStealingFocus(
     window,
     process.platform,
@@ -1440,6 +1442,8 @@ function launchHarness(): Promise<void> {
     await runtime.stop()
     runtime.note('[desktop] previous Harness stopped; starting profile maintenance')
     await maybeImportWebHome(dshHome)
+    desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
+    prepareHarnessPage()
     const maintenance = await runProfileStartupMaintenance({
       note: (line) => runtime.note(line),
       recoverInterruptedMigration: () =>
@@ -1544,6 +1548,7 @@ function launchHarness(): Promise<void> {
         const rollback = await rollBackMigration(dshHome, (line) => runtime.note(line))
         if (rollback.outcome === 'restored') {
           runtime.note('[desktop] restarting the verified pre-upgrade Profile without package repair')
+          prepareHarnessPage()
           await runtime.start(launchDirectory)
         } else {
           const reason = rollback.outcome === 'recovery-required'
@@ -1570,6 +1575,8 @@ function launchSafeHarness(): Promise<void> {
     await refreshMigrationRecoveryLock(dshHome)
     await showSplash()
     await runtime.stop()
+    desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
+    prepareHarnessPage()
     await ensureSafeModeProfile(dshHome)
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
@@ -1663,7 +1670,7 @@ function takePendingRepairPrompt(): string | undefined {
 function reloadHarnessWindow(): void {
   const url = runtime.snapshot().url
   if (!url || !mainWindow || mainWindow.isDestroyed()) return
-  if (!shouldLoadHarnessUrl(mainWindow.webContents.getURL(), url)) mainWindow.webContents.reload()
+  if (isHarnessShellUrl(mainWindow.webContents.getURL())) mainWindow.webContents.reload()
 }
 
 function restartHarness(): Promise<void> {
@@ -2471,6 +2478,19 @@ async function showPluginRecovery(options?: {
       })
     }
   }
+}
+
+function handleFrontendPluginFailure(message: string | undefined): { ok: true } {
+  desktopDiagnostics?.discardPendingPluginFailure()
+  if (message) appendRendererPluginFailureLog(message)
+  const logs = [...rendererPluginFailureLogs]
+  appendRendererPluginRecoveryLog(logs)
+  if (failureRecoveryVisible) {
+    queuePendingFrontendPluginRecovery(message)
+    return { ok: true }
+  }
+  void showPluginRecovery({ message, logs, followRendererLogs: true })
+  return { ok: true }
 }
 
 async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
@@ -3301,7 +3321,10 @@ async function showMobilePairing(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   desktopDiagnostics?.startSending()
-  installDesktopProtocol(desktopResourcePath)
+  harnessShell = new HarnessShell({
+    frontendRoot: join(bundledRuntimeRoot(), 'node_modules', '@deepseek-ai', 'dsh-web-frontend', 'dist')
+  })
+  installDesktopProtocol(desktopResourcePath, request => harnessShell.handle(request))
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers({ locale: harnessLocale })
@@ -3355,7 +3378,38 @@ async function bootstrap(): Promise<void> {
       }
     }
   })
+  // Native sockets cannot pass through protocol.handle. Match the owned backend
+  // authority and the Harness main window before attaching its private cookie.
+  mainWindow?.webContents.session.webRequest.onBeforeSendHeaders(
+    { urls: ['ws://127.0.0.1/*', 'ws://localhost/*'] },
+    (details, callback) => {
+      if (details.resourceType !== 'webSocket' || details.webContentsId !== mainWindow?.webContents.id ||
+        !mainWindow || !isHarnessShellUrl(mainWindow.webContents.getURL())) {
+        callback({})
+        return
+      }
+      callback(harnessShell.authorizeWebSocket(details.url, details.requestHeaders) ?? {})
+    }
+  )
   registerHarnessHandlers()
+  ipcMain.handle(HARNESS_BOOT_CHANNEL, async event => {
+    assertTrustedMainWindowEvent(event)
+    if (!isHarnessShellUrl(event.sender.getURL())) throw new Error('The Harness shell is not active.')
+    const version = mainWindowNavigationVersion
+    const payload = await harnessShell.waitUntilReady()
+    assertTrustedMainWindowEvent(event)
+    if (version !== mainWindowNavigationVersion || !isHarnessShellUrl(event.sender.getURL())) {
+      throw new Error('Harness page boot was superseded.')
+    }
+    return payload
+  })
+  ipcMain.handle(HARNESS_BOOT_FAILED_CHANNEL, (event, message: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (!isHarnessShellUrl(event.sender.getURL()) || typeof message !== 'string' || message.length > 20_000) {
+      throw new Error('Invalid Harness boot failure report.')
+    }
+    return handleFrontendPluginFailure(message)
+  })
   mobileBridge = new LanMobileBridge({
     harnessUrl: () => runtime.snapshot().url,
     harnessAuthToken: () => runtime.snapshot().authToken,
@@ -3445,17 +3499,17 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.handle('repair-agent:draft/get', (event, sessionId: unknown) => {
     assertTrustedMainWindowEvent(event)
-    if (!event.sender.getURL().startsWith('http://127.0.0.1:')) return {}
+    if (!isHarnessShellUrl(event.sender.getURL())) return {}
     return typeof sessionId === 'string' ? repairDrafts.get(sessionId) : {}
   })
   ipcMain.handle('repair-agent:draft/ack', (event, sessionId: unknown, token: unknown) => {
     assertTrustedMainWindowEvent(event)
-    if (!event.sender.getURL().startsWith('http://127.0.0.1:')) return { ok: false }
+    if (!isHarnessShellUrl(event.sender.getURL())) return { ok: false }
     return { ok: typeof sessionId === 'string' && typeof token === 'string' && repairDrafts.acknowledge(sessionId, token) }
   })
   ipcMain.handle('repair-agent:open', async event => {
     assertTrustedMainWindowEvent(event)
-    if (!event.sender.getURL().startsWith('http://127.0.0.1:')) return { ok: false, error: 'Repair requires a running Harness interface' }
+    if (!isHarnessShellUrl(event.sender.getURL())) return { ok: false, error: 'Repair requires a running Harness interface' }
     const started = await startRepairAgentPrompt(harnessLocale() === 'zh'
       ? '请协助排查使用中的问题，先询问我遇到的问题和复现步骤，再结合已有诊断信息分析。'
       : 'Help diagnose a problem during use. First ask what happened and how to reproduce it, then inspect the available diagnostics.', { fresh: true })
@@ -3465,17 +3519,8 @@ async function bootstrap(): Promise<void> {
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
     assertTrustedMainWindowEvent(event)
-    desktopDiagnostics?.discardPendingPluginFailure()
     const message = typeof frontendErrorMessage === 'string' ? frontendErrorMessage : undefined
-    if (message) appendRendererPluginFailureLog(message)
-    const logs = [...rendererPluginFailureLogs]
-    appendRendererPluginRecoveryLog(logs)
-    if (failureRecoveryVisible) {
-      queuePendingFrontendPluginRecovery(message)
-      return { ok: true }
-    }
-    void showPluginRecovery({ message, logs, followRendererLogs: true })
-    return { ok: true }
+    return handleFrontendPluginFailure(message)
   })
   ipcMain.removeHandler('recovery:action')
   ipcMain.handle('recovery:action', (event, action: unknown, options?: unknown) => {
