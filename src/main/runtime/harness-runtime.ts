@@ -571,7 +571,7 @@ export class HarnessRuntime {
 
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })
-    this.logStream ??= createWriteStream(this.options.logPath, { flags: 'a' })
+    this.logStream ??= this.openLogStream()
     for (const lock of await removeStaleWriterLocks(this.options.dshHome)) {
       this.writeLog(`[desktop] removed stale writer lock ${lock}`)
     }
@@ -791,12 +791,22 @@ ${cause}`
     if (!this.logStream) {
       try {
         mkdirSync(dirname(this.options.logPath), { recursive: true })
-        this.logStream = createWriteStream(this.options.logPath, { flags: 'a' })
+        this.logStream = this.openLogStream()
       } catch {
         // Keep the line in the in-memory buffer regardless.
       }
     }
     this.writeLog(line)
+  }
+
+  private openLogStream(): WriteStream {
+    const stream = createWriteStream(this.options.logPath, { flags: 'a' })
+    // File-stream errors are asynchronous. Keep diagnostics best effort instead of
+    // letting an unwritable log abort the native recovery path with an unhandled event.
+    stream.on('error', (error: NodeJS.ErrnoException) => {
+      console.warn('[desktop] Harness log write failed:', error.code ?? 'UNKNOWN')
+    })
+    return stream
   }
 
   private writeLog(line: string): void {
@@ -821,6 +831,7 @@ ${cause}`
 
   flushLog(): Promise<void> {
     const stream = this.logStream
+    if (stream?.errored) return Promise.reject(stream.errored)
     if (!stream || stream.destroyed || stream.writableEnded) return Promise.resolve()
     return new Promise((resolve, reject) => {
       stream.write('', error => error ? reject(error) : resolve())

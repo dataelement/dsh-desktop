@@ -1,4 +1,5 @@
 import type { EventEmitter } from 'node:events'
+import { rendererDiagnosticUrl } from '../renderer-diagnostics'
 import type { RuntimeSnapshot } from '../../shared/contracts'
 import { DesktopService, type FailureKind } from './service'
 
@@ -36,7 +37,7 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
         let urlInfo = ''
         try {
           const url = (contents as { getURL?: () => string }).getURL?.()
-          if (url) urlInfo = ` url=${url}`
+          if (url) urlInfo = ` url=${rendererDiagnosticUrl(url)}`
         } catch { /* ignore */ }
         capture('renderer-crash', `reason=${details.reason} exitCode=${details.exitCode}${urlInfo}`)
       }

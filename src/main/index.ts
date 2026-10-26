@@ -1,5 +1,5 @@
 import { developmentEnvironment } from './development-environment'
-import { desktopFileUrl, navigateDesktopWindow } from './desktop-navigation'
+import { desktopFileUrl, navigateDesktopWindow, registerNavigationOwner } from './desktop-navigation'
 import { recoverStartupConfiguration } from './startup-config-recovery'
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { applyMacosWindowBackdrop } from './macos-window-backdrop'
@@ -191,10 +191,12 @@ import { upgradeMarketInSharedTree, upgradePluginToGeneration } from './state/pl
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { parseWindowsMenuRequest, windowsMenuTemplate, type EditingKey } from './windows-menu'
 import { shouldKeepRunningInBackground } from './close-to-tray'
-import {
-  MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
-  shouldReloadAfterMainWindowRendererLoss
-} from './main-window-recovery'
+import { RendererNavigationRecovery } from './renderer-navigation-recovery'
+import { rendererDiagnosticText, rendererDiagnosticUrl } from './renderer-diagnostics'
+import { runNativeWindowRecovery } from './native-window-recovery'
+import { freemem, release, totalmem } from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { loadDesktopWindowAfterStop } from './desktop-window-load'
 
 type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates' | 'market-upgrade' | 'market-remove'
 type WebImportAction = 'import' | 'skip'
@@ -273,14 +275,6 @@ let profileRendererHealthAt = 0
 let profileBootNavigationVersion = 0
 let profileBootConfirmationComplete = false
 let safeModeSuspectedPlugins: string[] = []
-// A renderer that crashes (render-process-gone) and reloads that fails the
-// same way produces a permanent black window the user has to close by hand.
-// The cooldown keeps reloads from stacking up when the underlying crash
-// (almost always the GPU process) keeps recurring, and the counter gives us
-// a way to give up after enough attempts and surface the harness failure
-// page instead of hammering the GPU.
-let mainWindowRecoveryReloadAt = 0
-let mainWindowRecoveryReloadCount = 0
 const startInSafeMode = shouldStartInSafeMode(process.argv)
 // The GPU process can die before the harness is ever on screen, which is the
 // whole reason the fallback exists; tracking the first harness render is what
@@ -397,40 +391,38 @@ function recordMainWindowRendererLoss(
   runtime.note(`[desktop] main window ${source}: ${details}`)
 }
 
-function reloadMainWindowAfterRendererLoss(window: BrowserWindow): void {
-  if (quitting || gpuFallbackRelaunching || window.isDestroyed() || window.webContents.isDestroyed()) return
-  const now = Date.now()
-  if (!shouldReloadAfterMainWindowRendererLoss({
-    now,
-    lastReloadAt: mainWindowRecoveryReloadAt,
-    reloadCount: mainWindowRecoveryReloadCount
-  })) {
-    recordMainWindowRendererLoss(
-      'render-process-gone',
-      'reload throttled; surfacing harness failure instead'
-    )
-    showUnexpectedError(new Error('Harness web view stopped responding after repeated renderer failures.'))
-    return
-  }
-  mainWindowRecoveryReloadAt = now
-  mainWindowRecoveryReloadCount += 1
-  // Schedule a counter reset long after the cooldown so a single, isolated
-  // crash recovers cleanly while a sustained failure still trips the cap.
-  setTimeout(() => {
-    mainWindowRecoveryReloadCount = 0
-  }, MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS * 4).unref?.()
-  try {
-    void window.webContents.reload()
-  } catch (error) {
-    recordMainWindowRendererLoss(
-      'render-process-gone',
-      `reload threw: ${error instanceof Error ? error.message : String(error)}`
-    )
-  }
-}
-
 function installMainWindowRendererRecovery(window: BrowserWindow): void {
   const webContents = window.webContents
+  const recoveryId = randomUUID()
+  let contextRecorded = false
+  let lastRendererPid = 0
+  const noteRecovery = (phase: string, details: Record<string, unknown> = {}) => {
+    runtime?.note('[desktop] renderer recovery: ' + JSON.stringify({
+      recoveryId, windowId: window.id, webContentsId: webContents.id,
+      stage: harnessRendered ? 'running' : 'startup', uptimeSeconds: Math.round(process.uptime()),
+      harnessPhase: runtime?.snapshot().phase, phase, ...details
+    }))
+  }
+  const recovery = new RendererNavigationRecovery({
+    load: (url, cancelled) => loadDesktopWindowAfterStop(window, url, cancelled),
+    cancelled: () => quitting || gpuFallbackRelaunching || window.isDestroyed() || webContents.isDestroyed(),
+    onError: showUnexpectedError,
+    onDiagnostic: diagnostic => {
+      if (!contextRecorded) {
+        contextRecorded = true
+        noteRecovery('environment', {
+          desktop: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
+          node: process.versions.node, platform: process.platform, arch: process.arch, osRelease: release()
+        })
+      }
+      if (diagnostic.phase === 'load-completed') {
+        try { lastRendererPid = webContents.getOSProcessId() } catch { /* Process may have exited already. */ }
+      }
+      noteRecovery(diagnostic.phase, { ...diagnostic })
+    }
+  })
+  const unregister = registerNavigationOwner(window, (url, cancelled) => recovery.navigate(url, false, cancelled))
+  window.once('closed', () => { unregister(); recovery.dispose() })
   webContents.on('render-process-gone', (event, details) => {
     if (quitting || gpuFallbackRelaunching || window.isDestroyed() || details.reason === 'clean-exit') return
     clearProfileBootConfirmation()
@@ -447,14 +439,18 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     })()
     recordMainWindowRendererLoss(
       'render-process-gone',
-      `reason=${reason} exitCode=${exitCode}${currentUrl ? ` url=${currentUrl}` : ''}${gpuStatus ? ` gpu=${gpuStatus}` : ''}`
+      `reason=${reason} exitCode=${exitCode}${currentUrl ? ` url=${rendererDiagnosticUrl(currentUrl)}` : ''}${gpuStatus ? ` gpu=${gpuStatus}` : ''}`
     )
     // `did-finish-load` can win the race by milliseconds before a broken
     // graphics stack takes the renderer down. The first post-render crash is
     // allowed the normal bounded reload; if that freshly reloaded renderer
     // dies with the same native signature, the launch is still unusable and
     // must take the same immediate relaunch path as a pre-render GPU loss.
-    const unusableLaunch = !harnessRendered || mainWindowRecoveryReloadCount > 0
+    noteRecovery('renderer-gone', {
+      reason, exitCode, lastRendererPid, gpuStatus,
+      systemMemory: { freeBytes: freemem(), totalBytes: totalmem() }
+    })
+    const unusableLaunch = !harnessRendered || recovery.reloadCount > 0
     if (
       isRendererGpuFallbackCandidate({ platform: process.platform, reason, exitCode }) &&
       respondToGpuFallbackSignal(
@@ -462,7 +458,7 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
         { unusableLaunch }
       )
     ) return
-    reloadMainWindowAfterRendererLoss(window)
+    recovery.rendererGone(currentUrl, { reason, exitCode })
   })
   webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3 || quitting || gpuFallbackRelaunching || window.isDestroyed()) return
@@ -472,9 +468,9 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     // failure and let the recovery path try to reload the page.
     recordMainWindowRendererLoss(
       'did-fail-load',
-      `errorCode=${errorCode} description=${errorDescription} url=${validatedURL}`
+      `errorCode=${errorCode} description=${rendererDiagnosticText(errorDescription)} url=${rendererDiagnosticUrl(validatedURL)}`
     )
-    reloadMainWindowAfterRendererLoss(window)
+    recovery.loadFailed(validatedURL, errorCode, webContents.getURL())
   })
   webContents.on('unresponsive', () => {
     clearProfileBootConfirmation()
@@ -1995,31 +1991,26 @@ async function waitForPluginRecoveryAction(options: {
 }
 
 function showUnexpectedError(error: unknown): void {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error)
+  const message = rendererDiagnosticText(error instanceof Error ? error.stack ?? error.message : String(error))
   runtime?.note(`[desktop] unexpected error: ${message}`)
   console.error('[desktop] unexpected error:', message)
   if (nativeRecoveryActive || quitting || gpuFallbackRelaunching) return
   nativeRecoveryActive = true
-  const zh = harnessLocale() === 'zh'
-  void (async () => {
-    while (!quitting && !gpuFallbackRelaunching) {
-      const { response } = await dialog.showMessageBox({
-        type: 'error', title: 'DSH Desktop',
-        message: zh ? '应用窗口无法继续加载' : 'The application window could not load',
-        detail: message, buttons: zh ? ['退出', '重新启动', '恢复配置'] : ['Quit', 'Restart', 'Recover Configuration'],
-        defaultId: 0, cancelId: 0, noLink: true
-      })
-      if (response === 2) {
-        if (await recoverCoreConfiguration() === 'retry') { app.relaunch(); app.quit(); return }
-        continue
-      }
-      if (response === 1) app.relaunch()
-      app.quit()
-      return
-    }
-  })().catch((failure: unknown) => {
-    console.error('[desktop] native recovery failed', failure)
-    dialog.showErrorBox('DSH Desktop', message)
+  void runNativeWindowRecovery({
+    chinese: harnessLocale() === 'zh',
+    cancelled: () => quitting || gpuFallbackRelaunching,
+    flushDiagnostics: () => runtime?.flushLog() ?? Promise.resolve(),
+    show: options => dialog.showMessageBox(options),
+    restart: () => app.relaunch(),
+    quit: () => { app.quit() },
+    note: line => { runtime?.note(rendererDiagnosticText(line)) }
+  }).catch((failure: unknown) => {
+    const failureMessage = rendererDiagnosticText(String(failure))
+    runtime?.note('[desktop] native recovery failed: ' + failureMessage)
+    console.error('[desktop] native recovery failed', failureMessage)
+    if (quitting || gpuFallbackRelaunching) return
+    dialog.showErrorBox('DSH Desktop', harnessLocale() === 'zh'
+      ? '应用窗口无法继续加载，请重新启动应用。' : 'The application window could not load. Please restart the application.')
   }).finally(() => { nativeRecoveryActive = false })
 }
 

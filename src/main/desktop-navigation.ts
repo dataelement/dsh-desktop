@@ -1,5 +1,12 @@
 import { pathToFileURL } from 'node:url'
 
+const navigationOwners = new WeakMap<NavigationTarget, (url: string, cancelled: () => boolean) => Promise<boolean>>()
+
+export function registerNavigationOwner(target: NavigationTarget, navigate: (url: string, cancelled: () => boolean) => Promise<boolean>): () => void {
+  navigationOwners.set(target, navigate)
+  return () => { navigationOwners.delete(target) }
+}
+
 export interface NavigationTarget {
   isDestroyed(): boolean
   loadURL(url: string): Promise<void>
@@ -18,7 +25,10 @@ export async function navigateDesktopWindow(
 ): Promise<boolean> {
   if (cancelled() || target.isDestroyed()) return false
   try {
-    await target.loadURL(url)
+    const owner = navigationOwners.get(target)
+    if (owner) {
+      if (!await owner(url, cancelled)) return false
+    } else await target.loadURL(url)
   } catch (error) {
     if (cancelled() || target.isDestroyed() || isCancelledNavigation(error)) return false
     throw error
