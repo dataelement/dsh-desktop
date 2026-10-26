@@ -107,6 +107,8 @@ When upgrading Harness:
 5. Run the full automated suite.
 6. Start the real app and exercise every affected user flow.
 
+The `node-pty@1.2.0-beta.15` helper-path patch retains the #615/#646 correction alongside the external-helper support: only complete `app.asar` and `node_modules.asar` path segments map to their unpacked siblings, and already-unpacked paths remain unchanged. Keep the resolution order (explicit `DSH_NODE_PTY_SPAWN_HELPER`, executable sibling, default module-relative helper). Remove this part of the patch only when the pinned upstream version preserves these behaviors and passes both `test/node-pty-helper-path.test.ts` (actual module evaluation with a recorded native call) and `test/node-pty-asar-layout.test.ts` (real macOS PTY in archived and already-unpacked layouts, with default and external helpers). The path tests do not replace the native or installed-application checks.
+
 ## Packaging
 
 Harness includes architecture-specific native dependencies. Build each installer on the operating system and architecture where it will run.
