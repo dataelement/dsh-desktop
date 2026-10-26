@@ -1,6 +1,6 @@
-# GPU 与内存故障保护
+# GPU 与 OOM 故障恢复
 
-本方案属于 Electron 宿主的进程编排和恢复，不修改 Harness 插件解析、Profile 投影或用户会话数据。普通 Profile 与 Safe Mode 使用相同的资源保护。预算由 Desktop 生成，启动参数作用于当前安装携带的 Electron；不依赖开发目录。超限/OOM 保留原始日志和原有故障上报，并转入独立于 Harness UI 的原生恢复窗口。
+本方案属于 Electron 宿主的进程编排和恢复，不修改 Harness 插件解析、Profile 投影或用户会话数据。普通 Profile 与 Safe Mode 均沿用上游运行时的内存配置。真实 OOM 保留原始日志和原有故障上报，并转入独立于 Harness UI 的原生恢复窗口。
 
 ## GPU 故障
 
@@ -9,21 +9,14 @@
 - 原生访问冲突和断点异常继续进入有限降级路径。自动降级直接使用软件渲染，不移除 GPU sandbox；旧的 `sandbox-disabled` 状态按软件渲染加载。软件渲染仍无法恢复时交由用户选择，避免不断重载。
 - 软件渲染的 CPU 成本仍然存在。稳定启动达到原有阈值后再尝试默认加速模式。自动重新启动通过应用正常退出清理 Harness，不直接 `app.exit()` 遗留后台进程。
 
-## 内存边界
+## 内存配置与 OOM 恢复
 
-| 机器内存 | Harness 老生代预算 | 每个 renderer 老生代预算 | Harness RSS 停止阈值 | Electron 进程合计停止阈值 |
-| --- | --- | --- | --- | --- |
-| 4 GiB | 1 GiB | 512 MiB | 1.5 GiB | 2 GiB |
-| 8 GiB | 2 GiB | 1 GiB | 2.5 GiB | 4 GiB |
-| 16 GiB 及以上 | 2 GiB | 1 GiB | 2.5 GiB | 最多 6 GiB |
+- Desktop 不设置 Harness 或 renderer 的 `--max-old-space-size` / `js-flags`，由 Node/V8/Chromium 按默认机制及既有环境配置决定上限。不将默认值硬编码为 4 GB。
+- 不增加定时内存检查，不根据自定义 heap/RSS 或进程合计阈值终止运行。上游 PTC 工具执行进程自身的 512 MB 老生代配置保持不变。
+- 只有 renderer/GPU 明确报告 OOM，或当前 Harness 启动出现 V8 OOM/内存耗尽退出码时，才停止剩余 Harness 和手机桥接、释放主页面，禁止自动重载、插件自动修复及迁移失败后的自动重试；由用户选择退出或重启。
+- 已持久化的会话、Profile 和恢复材料保留。正在执行的任务可能中断，未持久化内容无法保证恢复。
 
-- Windows Harness 使用 Electron Node 模式的 `--max-old-space-size`。renderer 使用 Chromium 的 `js-flags`。这是 V8 老生代预算，不是整个进程 RSS 上限。
-- **Electron 43 的 macOS UtilityProcess 实测不应用 Node execArgv 中的堆上限**。因此不能把参数存在当成保护已经生效。主进程通过实际 UtilityProcess PID 检查 RSS，即使 Harness 的事件循环阻塞也能触发停止。
-- 主进程每 30 秒检查 Electron 进程指标；Windows 优先使用 private bytes，其他平台使用 working set，后者可能包含共享页。Harness 入口每 30 秒检查自己的 heapUsed/RSS，用于补充 Windows 普通子进程不在 Electron 指标中的缺口。健康时不写日志、不上传这些样本，也不生成 heap snapshot。
-- `DSH_DESKTOP_MEMORY_BUDGET_MB` 只在宿主到启动入口间传递，入口读后删除，避免工具子进程继承这项宿主协议。入口超限通知父进程停止；父进程不可用时五秒后退出。
-- renderer/GPU 明确 OOM、Harness 当前启动的 V8 OOM 或超限后，停止 Harness 和手机桥接、释放主页面，禁止自动重载、插件自动修复及迁移失败后的自动重试；由用户选择退出或重启。保留已持久化的会话、Profile 和恢复材料。正在执行的任务可能中断，未持久化内容无法保证恢复。
-
-这不是整个电脑或完整进程树的硬配额：原生分配、外部工具后代、两次检查间的瞬时峰值不都能由此拦截。macOS 保护是采样后停止，不是 V8 硬限制。内存泄漏、历史恢复复制和特定驱动故障仍须根据原始 Profile、操作步骤及对象保留路径定位，不能把这些止损措施宣称为全部根因修复。
+本变更处理已发生的 OOM 后的恢复循环，不提供整个电脑或进程树的内存配额，也不保证阻止内存峰值。内存泄漏、历史恢复复制和特定驱动故障仍须根据原始 Profile、操作步骤及对象保留路径定位。
 
 ## 诊断与验收
 
@@ -38,4 +31,4 @@ npm test
 node scripts/verify-stability-runtime.mjs
 ```
 
-原生脚本使用临时 userData/DSH_HOME，检查实际 renderer 堆和 Harness 子进程限制；macOS 输出明确标记无 Harness V8 硬上限。Windows 原生环境可手动运行同一脚本与相关回归。它们不执行系统注销，也不能代替正式安装包中的注销/取消注销、远程桌面、睡眠唤醒、低内存长任务和真实用户 Profile 验收。
+原生脚本使用临时 userData/DSH_HOME，启动实际 renderer 和 Harness 子进程并记录默认堆大小；输出 `customHeapLimit: false`，不人为降低内存上限。Windows 原生环境可手动运行同一脚本与相关回归。它们不执行系统注销，也不能代替正式安装包中的注销/取消注销、远程桌面、睡眠唤醒、低内存长任务和真实用户 Profile 验收。

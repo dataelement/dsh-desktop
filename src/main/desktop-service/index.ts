@@ -1,5 +1,5 @@
 import { totalmem, freemem, release } from 'node:os'
-import { resourceSnapshot, graphicsSnapshot } from '../resource-budget'
+import { resourceSnapshot, graphicsSnapshot } from '../resource-diagnostics'
 import { app, dialog, net } from 'electron'
 import { join } from 'node:path'
 import { DesktopService } from './service'

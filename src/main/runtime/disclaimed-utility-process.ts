@@ -19,12 +19,7 @@ export function buildDisclaimedUtilityProcessSpec(
   spawnOptions: SpawnOptionsWithoutStdio,
   utilityProcessOptions?: { disclaim?: boolean }
 ): DisclaimedUtilityProcessSpec {
-  const [internalLoaderFlag, ...rest] = nodeArguments
-  const heapFlag = rest[0]?.startsWith('--max-old-space-size=') ? rest.shift() : undefined
-  if (heapFlag && !/^--max-old-space-size=[1-9]\d*$/.test(heapFlag)) {
-    throw new Error('Invalid Harness heap flag')
-  }
-  const [modulePath, ...args] = rest
+  const [internalLoaderFlag, modulePath, ...args] = nodeArguments
   if (internalLoaderFlag !== '--expose-internals' || !modulePath) {
     throw new Error('Unexpected Harness Node arguments for the macOS utility process.')
   }
@@ -40,7 +35,7 @@ export function buildDisclaimedUtilityProcessSpec(
             ? fileURLToPath(spawnOptions.cwd)
             : undefined,
       env: definedEnvironment(spawnOptions.env),
-      execArgv: [internalLoaderFlag, ...(heapFlag ? [heapFlag] : [])],
+      execArgv: [internalLoaderFlag],
       stdio: 'pipe',
       serviceName: 'DSH Harness',
       // Harness loads user-installed plugins and can launch third-party tools.
@@ -98,8 +93,6 @@ class UtilityProcessAdapter extends EventEmitter implements HarnessChildProcess 
       this.emit('exit', code, null)
     })
   }
-
-  get pid(): number | undefined { return this.child.pid }
 
   kill(signal?: NodeJS.Signals): boolean {
     if (signal === 'SIGKILL' && this.child.pid !== undefined) {

@@ -1,13 +1,5 @@
 const MIB = 1024 * 1024
 
-/** V8 old-space budgets, not RSS or process-tree limits. Leave room for native
- * allocations, Chromium, tools and other applications even on large machines. */
-export function desktopHeapBudget(totalBytes: number): { harnessMb: number; rendererMb: number } {
-  const totalMb = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes / MIB : 4096
-  const harnessMb = Math.max(256, Math.min(2048, Math.floor(totalMb / 4 / 128) * 128))
-  return { harnessMb, rendererMb: Math.max(128, Math.min(1024, harnessMb / 2)) }
-}
-
 export function isMemoryExit(reason: string, exitCode: number): boolean {
   return reason === 'oom' || (exitCode >>> 0) === 0xe0000008
 }
@@ -26,7 +18,7 @@ export function resourceSnapshot(totalBytes: number, freeBytes: number, metrics:
       privateMb: p.memory.privateBytes === undefined ? undefined : Math.round(p.memory.privateBytes / 1024),
       cpu: Math.round(p.cpu.percentCPUUsage) }))
   return JSON.stringify({ totalMb: Math.round(totalBytes / MIB), freeMb: Math.round(freeBytes / MIB),
-    ...desktopHeapBudget(totalBytes), processes })
+    processes })
 }
 
 export function graphicsSnapshot(info: unknown): string {

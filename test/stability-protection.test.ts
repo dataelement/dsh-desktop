@@ -1,32 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { desktopHeapBudget, graphicsSnapshot, isMemoryExit, resourceSnapshot } from '../src/main/resource-budget'
+import { graphicsSnapshot, isMemoryExit, resourceSnapshot } from '../src/main/resource-diagnostics'
 import { GpuDeviceRecovery } from '../src/main/gpu-device-recovery'
 import { ProcessFailureRecovery } from '../src/main/process-failure-recovery'
-import { buildNodeArguments } from '../src/main/runtime/harness-runtime'
-import { buildDisclaimedUtilityProcessSpec } from '../src/main/runtime/disclaimed-utility-process'
 
 afterEach(() => vi.useRealTimers())
 
 describe('memory boundaries', () => {
-  it.each([[2, 512, 256], [4, 1024, 512], [8, 2048, 1024], [32, 2048, 1024]])(
-    'reserves headroom on a %i GiB computer', (gb, harnessMb, rendererMb) => {
-      expect(desktopHeapBudget(gb * 1024 ** 3)).toEqual({ harnessMb, rendererMb })
-    })
-  it('handles invalid capacities and identifies signed/unsigned OOM independently of GPU failures', () => {
-    expect(desktopHeapBudget(NaN)).toEqual({ harnessMb: 1024, rendererMb: 512 })
+  it('identifies signed/unsigned OOM independently of GPU failures', () => {
     expect(isMemoryExit('oom', 0)).toBe(true)
     expect(isMemoryExit('crashed', -536870904)).toBe(true)
     expect(isMemoryExit('crashed', 0xe0000008)).toBe(true)
     expect(isMemoryExit('crashed', -1073741819)).toBe(false)
-  })
-  it('passes the same explicit budget to Node argv and the macOS utility execArgv', () => {
-    const args = buildNodeArguments('/host/entry.mjs', '/host/dsh.js', 1234, undefined, 'web', 1024)
-    expect(args.slice(0, 3)).toEqual(['--expose-internals', '--max-old-space-size=1024', '/host/entry.mjs'])
-    const spec = buildDisclaimedUtilityProcessSpec(args, {})
-    expect(spec.modulePath).toBe('/host/entry.mjs')
-    expect(spec.options.execArgv).toEqual(['--expose-internals', '--max-old-space-size=1024'])
-    expect(spec.args[0]).toBe('/host/dsh.js')
-    expect(() => buildNodeArguments('entry', 'dsh', 1, undefined, 'web', NaN)).toThrow('budget')
   })
   it('bounds fault metadata and excludes arbitrary GPU fields', () => {
     const info = graphicsSnapshot({ gpuDevice: [{ vendorId: 42, driverVersion: '1', secret: 'do-not-upload' }] })
@@ -99,40 +83,6 @@ describe('explicit failure recovery', () => {
     await vi.waitFor(() => expect(restart).toHaveBeenCalledWith(true))
     expect(stop).not.toHaveBeenCalled()
     expect(quit).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('independent process memory safety check', () => {
-  it('stops an over-budget Harness even if its own event loop cannot report', async () => {
-    const { ProcessMemoryWatch } = await import('../src/main/process-memory-watch')
-    vi.useFakeTimers()
-    let rss = 100
-    const sample = vi.fn(() => [{ pid: 42, type: 'Utility', cpu: { percentCPUUsage: 100 }, memory: { workingSetSize: rss * 1024 } }])
-    const onLimit = vi.fn()
-    const watch = new ProcessMemoryWatch({ totalBytes: 8 * 1024 ** 3, sample, harnessPid: () => 42, onLimit, onError: vi.fn() })
-    watch.start(); watch.start()
-    await vi.advanceTimersByTimeAsync(30_000)
-    expect(onLimit).not.toHaveBeenCalled()
-    rss = 3000
-    await vi.advanceTimersByTimeAsync(30_000)
-    expect(onLimit).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(sample).toHaveBeenCalledTimes(2)
-    watch.dispose()
-  })
-  it('covers aggregate Chromium pressure and survives missing or failing samples', async () => {
-    const { ProcessMemoryWatch } = await import('../src/main/process-memory-watch')
-    const onLimit = vi.fn(), onError = vi.fn()
-    const sample = vi.fn<() => Array<{ pid: number; type: string; cpu: { percentCPUUsage: number }; memory: { workingSetSize: number } }>>()
-      .mockImplementationOnce(() => { throw Error('unavailable') }).mockReturnValueOnce([])
-      .mockReturnValue([{ pid: 1, type: 'Tab', cpu: { percentCPUUsage: 0 }, memory: { workingSetSize: 2200 * 1024 } }])
-    const watch = new ProcessMemoryWatch({ totalBytes: 4 * 1024 ** 3, sample, harnessPid: () => undefined, onLimit, onError })
-    watch.check(); watch.check()
-    expect(onError).toHaveBeenCalledTimes(1)
-    expect(onLimit).not.toHaveBeenCalled()
-    watch.check()
-    expect(onLimit).toHaveBeenCalledTimes(1)
-    watch.dispose()
   })
 })
 

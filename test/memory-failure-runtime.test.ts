@@ -18,7 +18,8 @@ it('classifies real child heap exhaustion, preserves the Profile and does not ca
     dshPatchPath: entry, dshSafePatchPath: entry, dshHome: home, logPath: join(home, 'runtime.log'),
     startupTimeoutMs: 10000, onChanged() {},
     launchProcess: (executable, args, options) => spawn(executable,
-      args.map(arg => arg.startsWith('--max-old-space-size=') ? '--max-old-space-size=64' : arg), options)
+      // Deliberately constrain this synthetic child only; production argv stays upstream-default.
+      ['--max-old-space-size=64', ...args], options)
   })
   try {
     await runtime.start(home)

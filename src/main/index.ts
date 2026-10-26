@@ -1,6 +1,4 @@
-import { ProcessMemoryWatch } from './process-memory-watch'
-import { totalmem } from 'node:os'
-import { desktopHeapBudget, isMemoryExit } from './resource-budget'
+import { isMemoryExit } from './resource-diagnostics'
 import { GpuDeviceRecovery } from './gpu-device-recovery'
 import { ProcessFailureRecovery } from './process-failure-recovery'
 import { getGpuExitContext, trackGpuExitContext } from './gpu-exit-context'
@@ -318,20 +316,8 @@ let harnessRendered = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
-const processMemoryWatch = new ProcessMemoryWatch({
-  totalBytes: totalmem(),
-  sample: () => quitting || getGpuExitContext(app).sessionEnding ? [] : app.getAppMetrics(),
-  harnessPid: () => runtime?.processId,
-  onLimit: evidence => {
-    runtime?.note(`[desktop] resource budget exceeded: ${evidence}`)
-    desktopDiagnostics?.resourceLimit(evidence)
-    processFailureRecovery.start('memory')
-  },
-  onError: error => runtime?.note(`[desktop] resource safety check failed: ${String(error)}`)
-})
 const processFailureRecovery = new ProcessFailureRecovery({
   stop: async () => {
-    processMemoryWatch.dispose()
     gpuDeviceRecovery.dispose()
     await runtime?.stop()
     await mobileBridge?.stop()
@@ -893,8 +879,7 @@ function markHarnessRendered(): void {
  */
 function installGpuFallbackWatch(): void {
   trackGpuExitContext(app)
-  app.once('quit', () => { gpuDeviceRecovery.dispose(); processMemoryWatch.dispose() })
-  void app.whenReady().then(() => processMemoryWatch.start()).catch(showUnexpectedError)
+  app.once('quit', () => gpuDeviceRecovery.dispose())
   app.on('child-process-gone', (_event, details) => {
     if (details.type !== 'GPU') return
     if (processFailureRecovery.blocked || gpuFallbackRelaunching || quitting) return
@@ -3833,7 +3818,6 @@ if (isDaemonLaunch(process.env, process.platform)) {
 } else {
   configureAppIdentity()
   configureApplicationLocale()
-  app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${desktopHeapBudget(totalmem()).rendererMb}`)
   configureGpuFallback()
   installGpuFallbackWatch()
   const singleInstance = app.requestSingleInstanceLock()

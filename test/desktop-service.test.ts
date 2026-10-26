@@ -26,11 +26,11 @@ describe('desktop service', () => {
     disposers.push(() => diagnostics.dispose())
     expect(sample).not.toHaveBeenCalled()
     app.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 34 })
-    diagnostics.resourceLimit('controlled stop')
+    app.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 2 })
     const reports = queued(service, dir)
     expect(reports).toHaveLength(2)
     expect(reports.some(r => r.message.includes('resources=freeMb=100'))).toBe(true)
-    expect(reports.some(r => r.message.includes('controlled stop'))).toBe(true)
+    expect(reports.some(r => r.message.includes('exitCode=2'))).toBe(true)
     expect(onError).toHaveBeenCalledTimes(1)
   })
 

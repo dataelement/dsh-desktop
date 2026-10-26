@@ -117,7 +117,6 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
         pendingPluginFailureEventId = undefined
       }
     },
-    resourceLimit(message: string) { capture('harness-crash', `Desktop stopped runtime for resource protection: ${message}`) },
     startupFailed(error: unknown) { capture('startup-failure', error instanceof Error ? error.stack ?? error.message : String(error)) },
     markCleanExit: clean,
     dispose() {
