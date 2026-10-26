@@ -1,3 +1,4 @@
+import { findBootFailureText } from './boot-failure'
 import { isHarnessBootPage } from '../shared/harness-boot'
 
 export const BOOT_COVER_ID = 'dsh-desktop-boot-cover'
@@ -284,16 +285,30 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     unsubscribePageHide()
     covers.delete(doc)
   }
+  const hasFailureDetails = (): boolean => {
+    if (findBootFailureText(doc)) return true
+    status.textContent = locale === 'zh'
+      ? '页面仍在加载，尚无可显示的错误信息。可以继续等待，或稍后重试。'
+      : 'The page is still loading. No error details are available yet. Keep waiting or try again later.'
+    return false
+  }
   let revealing = false
   details.addEventListener('click', () => {
     if (disposed || revealing) return
+    // During a stalled script download the underlying document is empty.
+    // Removing the cover would replace actionable feedback with a white page.
+    if (!hasFailureDetails()) return
     const reveal = options.revealPage
     if (!reveal) {
       dispose()
       return
     }
     revealing = true
-    void Promise.resolve(reveal()).then(() => {
+    void Promise.resolve().then(reveal).then(() => {
+      if (disposed) return
+      // Startup can replace the failure document while main removes its CSS.
+      // Keep our own cover until the normal ready path releases it.
+      if (!hasFailureDetails()) { revealing = false; return }
       dispose()
     }).catch(() => {
       // The main-process rule is still applied. Removing the cover now

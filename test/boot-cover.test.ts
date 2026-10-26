@@ -205,11 +205,29 @@ describe('boot cover lifecycle', () => {
     expect(root?.shadowRoot?.querySelector('h1')?.textContent).toBe('启动时间较长')
     expect(button?.hidden).toBe(false)
     expect(button?.getAttribute('aria-label')).toBe('显示详细信息')
+    doc.body.innerHTML = '<div data-dsh-boot>Failed to load plugins: fixture import failed</div>'
     button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(doc.getElementById(BOOT_COVER_ID)).toBeNull()
     expect(timers.pending()).toBe(0)
     cover?.holdForFailure()
     expect(doc.getElementById(BOOT_COVER_ID)).toBeNull()
+  })
+
+  it.each(['en', 'zh'] as const)('keeps an empty startup page covered when details are requested (%s)', async locale => {
+    const revealPage = vi.fn(async () => {})
+    const waiting = mountHarnessCover({ locale, revealPage })
+    waiting.timers.fire()
+    const root = waiting.doc.getElementById(BOOT_COVER_ID)
+    root?.shadowRoot?.querySelector('button')?.click()
+    await Promise.resolve()
+    expect(revealPage).not.toHaveBeenCalled()
+    expect(root?.isConnected).toBe(true)
+    expect(waiting.doc.getElementById(BOOT_COVER_STYLE_ID)).not.toBeNull()
+    expect(root?.shadowRoot?.querySelector('p')?.textContent).toContain(
+      locale === 'zh' ? '尚无可显示的错误信息' : 'No error details are available yet')
+    waiting.cover?.releaseWhenReady()
+    expect(root?.isConnected).toBe(false)
+    waiting.cover?.dispose()
   })
 
   it('waits until the main-process hide is gone before showing the failure page', async () => {
@@ -220,23 +238,58 @@ describe('boot cover lifecycle', () => {
       rejectReveal = reject
     })
     const waiting = mountHarnessCover({ revealPage })
+    waiting.doc.body.innerHTML = '<div data-dsh-boot>Failed to load plugins: fixture import failed</div>'
     waiting.timers.fire()
     waiting.doc.getElementById(BOOT_COVER_ID)?.shadowRoot?.querySelector('button')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(waiting.doc.getElementById(BOOT_COVER_ID)).not.toBeNull()
+    await Promise.resolve()
     finishReveal?.()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(waiting.doc.getElementById(BOOT_COVER_ID)).toBeNull()
     expect(waiting.doc.getElementById(BOOT_COVER_STYLE_ID)).toBeNull()
 
     const failed = mountHarnessCover({ revealPage })
+    failed.doc.body.innerHTML = '<div data-dsh-boot>Failed to load plugins: fixture import failed</div>'
     failed.timers.fire()
     failed.doc.getElementById(BOOT_COVER_ID)?.shadowRoot?.querySelector('button')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await Promise.resolve()
     rejectReveal?.(new Error('remove failed'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(failed.doc.getElementById(BOOT_COVER_ID)).not.toBeNull()
     failed.cover?.dispose()
+  })
+
+  it('allows retry when failure details arrive after an initially empty page', async () => {
+    const revealPage = vi.fn(async () => {})
+    const waiting = mountHarnessCover({ revealPage })
+    waiting.timers.fire()
+    const button = waiting.doc.getElementById(BOOT_COVER_ID)?.shadowRoot?.querySelector('button')
+    button?.click()
+    expect(revealPage).not.toHaveBeenCalled()
+    waiting.doc.body.innerHTML = '<div data-dsh-boot>Failed to load plugins: late failure</div>'
+    button?.click()
+    await vi.waitFor(() => expect(waiting.doc.getElementById(BOOT_COVER_ID)).toBeNull())
+    expect(revealPage).toHaveBeenCalledOnce()
+    expect(waiting.doc.body.textContent).toContain('late failure')
+  })
+
+  it('keeps the cover if details disappear while main removes its CSS', async () => {
+    let finish: () => void = () => {}
+    const waiting = mountHarnessCover({ revealPage: () => new Promise<void>(resolve => { finish = resolve }) })
+    waiting.doc.body.innerHTML = '<div data-dsh-boot>Failed to load plugins: temporary failure</div>'
+    waiting.timers.fire()
+    waiting.doc.getElementById(BOOT_COVER_ID)?.shadowRoot?.querySelector('button')?.click()
+    await Promise.resolve()
+    waiting.doc.body.replaceChildren()
+    finish()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(waiting.doc.getElementById(BOOT_COVER_ID)).not.toBeNull()
+    expect(waiting.doc.getElementById(BOOT_COVER_STYLE_ID)).not.toBeNull()
+    waiting.cover?.releaseWhenReady()
+    expect(waiting.doc.getElementById(BOOT_COVER_ID)).toBeNull()
+    waiting.cover?.dispose()
   })
 
   it('restores the cover if the page removes it, and again after the client was ready', async () => {

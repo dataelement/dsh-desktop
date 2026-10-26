@@ -32,8 +32,11 @@ The desktop boot-failure bridge holds the cover before sending the original
 message to main. DOM-based diagnostics remain readable beneath the cover. Main
 collects failure evidence before replacing the failed document with the splash,
 then performs market checks and opens the existing recovery page. Slow startup
-exposes a bilingual “Show details” action after 20 seconds; failed CSS removal
-keeps the cover and offers a retry instead of revealing a blank page.
+exposes a bilingual “Show details” action after 20 seconds. The action only
+reveals a document containing a recognized startup failure; while scripts are
+still loading it keeps the cover and explains that no error details are available.
+It checks again after asynchronous CSS removal in case the failure content has
+disappeared. Failed CSS removal also keeps the cover and allows retry.
 
 CSS insertion/removal belongs to each window and document generation. Late
 insertion is removed after navigation or an explicit reveal, failed removals
