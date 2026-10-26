@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
+import semver from 'semver'
 import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
@@ -40,6 +41,65 @@ const GENERATION_INSTALL_TIMEOUT_MS = 90 * 1000
 
 function isHostSingleton(name) {
   return HOST_SINGLETON_PATTERNS.some((pattern) => pattern.test(name))
+}
+
+function requiredPrivatePeers(manifest) {
+  const providers = Object.create(null)
+  for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
+    if (name === manifest.name || isHostSingleton(name) ||
+        manifest.peerDependenciesMeta?.[name]?.optional === true ||
+        Object.hasOwn(manifest.dependencies ?? {}, name) ||
+        Object.hasOwn(manifest.optionalDependencies ?? {}, name)) continue
+    if (!PACKAGE_NAME_PATTERN.test(name) || typeof range !== 'string' || semver.validRange(range) === null) {
+      throw new Error('ERR_PRIVATE_PEER_RANGE: invalid required peer ' + name)
+    }
+    providers[name] = range
+  }
+  return providers
+}
+
+async function inspectPrivatePeerProviders(stagingDir, manifestPath, providers) {
+  const { createRequire } = await import('node:module')
+  const requireFromPlugin = createRequire(manifestPath)
+  const missing = Object.create(null)
+  const problems = []
+  const record = (name, range, detail) => { missing[name] = range; problems.push(detail) }
+  const root = await realpath(stagingDir)
+  for (const [name, range] of Object.entries(providers)) {
+    let entry
+    try { entry = requireFromPlugin.resolve(name) } catch (error) {
+      if (!['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND', 'ERR_PACKAGE_PATH_NOT_EXPORTED'].includes(error.code)) throw error
+      entry = await resolveNonRootPackage(requireFromPlugin, name)
+    }
+    if (entry === undefined) {
+      record(name, range, 'ERR_PRIVATE_PEER_MISSING: ' + name)
+      continue
+    }
+    const resolved = await realpath(entry)
+    if (!isInsideDirectory(root, resolved)) {
+      record(name, range, 'ERR_PRIVATE_PEER_OUTSIDE_GENERATION: ' + name)
+      continue
+    }
+    let directory = dirname(resolved)
+    let found = false
+    while (isInsideDirectory(root, directory)) {
+      let candidate
+      try { candidate = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+      if (candidate?.name === name) {
+        if (typeof candidate.version !== 'string' || !semver.satisfies(candidate.version, range)) {
+          record(name, range, 'ERR_PRIVATE_PEER_VERSION: ' + name + ' does not satisfy ' + range)
+        }
+        found = true
+        break
+      }
+      if (directory === root) break
+      directory = dirname(directory)
+    }
+    if (!found) record(name, range, 'ERR_PRIVATE_PEER_MISSING: ' + name)
+  }
+  return { missing, problems }
 }
 
 function installationClosureDir(dshHome) {
@@ -146,8 +206,7 @@ export function installPnpmArguments(options, env = process.env, platform = proc
       ...(options.environment ?? {})
     }, platform),
     options.pnpmEntryPath,
-    'add',
-    options.pluginSpec,
+    ...(options.installPhase === 'peers' ? ['install', '--no-frozen-lockfile'] : ['add', options.pluginSpec]),
     ...(options.registry ? [`--registry=${options.registry}`] : []),
     ...(typeof options.autoInstallPeers === 'boolean'
       ? [`--config.auto-install-peers=${options.autoInstallPeers}`] : []),
@@ -324,10 +383,11 @@ export async function installGeneration(options) {
           PNPM_CONFIG_PM_ON_FAIL: 'ignore'
         }
       : options.environment
-    const runInstall = options.runInstall ?? ((dir) => defaultRunInstall({
+    const runInstall = options.runInstall ?? ((dir, phase) => defaultRunInstall({
       ...options,
       environment: installEnvironment,
-      pluginSpec: installSpec
+      pluginSpec: installSpec,
+      installPhase: phase
     }, dir))
     const started = Date.now()
     const { code, output } = await runInstall(stagingDir)
@@ -363,10 +423,31 @@ export async function installGeneration(options) {
       await cleanupStaging()
       return { ok: false, detail: `ERR_RESOLVED_VERSION_MISMATCH: expected ${options.expectedVersion}, installed ${version}` }
     }
+    const requiredPeers = requiredPrivatePeers(manifest)
+    const { missing: providers } = await inspectPrivatePeerProviders(stagingDir, installedManifestPath, requiredPeers)
+    if (Object.keys(providers).length > 0) {
+      // Preserve the original spec and lock; adding the original moving tag again
+      // could select a different plugin while filling its private peer closure.
+      stagingManifest.dependencies = { ...stagingManifest.dependencies, ...providers }
+      await writeFile(join(stagingDir, 'package.json'), JSON.stringify(stagingManifest, undefined, 2) + '\n')
+      trace('installing required private peer providers into staging')
+      const peers = await runInstall(stagingDir, 'peers')
+      if (peers.code !== 0) throw new Error(diagnosticLine(peers.output) ?? 'private peer install exited ' + peers.code)
+      const selected = JSON.parse(await readFile(installedManifestPath, 'utf8'))
+      if (selected.name !== manifest.name || selected.version !== manifest.version) {
+        throw new Error('ERR_RESOLVED_PACKAGE_MISMATCH: plugin identity or version changed during peer installation')
+      }
+    }
+
     const hoisted = await hoistHostSingletons(stagingDir, pluginName)
     if (hoisted.length > 0) {
       trace(`hoisted ${hoisted.length} host singletons: ${hoisted.slice(0, 6).join(', ')}…`)
     }
+
+    // pnpm can rehoist an initially compatible peer while supplying another one.
+    // Validate every required private peer against the final, pruned tree.
+    const validation = await inspectPrivatePeerProviders(stagingDir, installedManifestPath, requiredPeers)
+    if (validation.problems.length > 0) throw new Error(validation.problems.join('; '))
 
     const lockfileText = await readFile(join(stagingDir, 'pnpm-lock.yaml'), 'utf8').catch(() => randomUUID())
     // Approval can change built files without changing the lockfile. Never
@@ -573,14 +654,21 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       files.push(candidate)
     }
   }
+  const packageRoots = await Promise.all(candidatePaths.map(async (file) => {
+    const directory = dirname(file)
+    return await realpath(directory).catch(() => directory)
+  }))
   for (const file of files) {
+    // A wildcard may select a helper manifest inside the package. Recover only
+    // within that package; a broken nearer copy still owns Node's lookup.
+    const packageBoundary = packageRoots.find((root) => isInsideDirectory(root, file)) ?? dirname(file)
     let packageDirectory = file.slice(0, -'package.json'.length)
     let manifest
     try {
       manifest = JSON.parse(await readFile(file, 'utf8'))
     } catch (error) {
-      if (error?.code === 'ENOENT') continue
-      continue
+      if (error?.code === 'ENOENT' && !existsSync(packageBoundary)) continue
+      return undefined
     }
     // Packages with wildcard exports (e.g. "@modelcontextprotocol/sdk" with "./*": "./dist/cjs/*")
     // redirect "${dependency}/package.json" to a nested helper manifest (e.g. dist/cjs/package.json
@@ -589,7 +677,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
     if (manifest.name !== dependency) {
       let currentDir = dirname(dirname(file))
       let foundAncestor = false
-      while (currentDir.length > 1 && basename(currentDir) !== 'node_modules') {
+      while (isInsideDirectory(packageBoundary, currentDir) && basename(currentDir) !== 'node_modules') {
         const ancestorManifestPath = join(currentDir, 'package.json')
         if (existsSync(ancestorManifestPath)) {
           try {
@@ -601,14 +689,14 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
               break
             }
           } catch {
-            // Ignore malformed ancestor manifest
+            return undefined
           }
         }
         const parent = dirname(currentDir)
         if (parent === currentDir) break
         currentDir = parent
       }
-      if (!foundAncestor) continue
+      if (!foundAncestor) return undefined
     }
     const exported = manifest.exports
     const rootExport = exported && typeof exported === 'object' &&
