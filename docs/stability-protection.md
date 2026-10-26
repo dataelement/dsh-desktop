@@ -38,4 +38,4 @@ npm test
 node scripts/verify-stability-runtime.mjs
 ```
 
-原生脚本使用临时 userData/DSH_HOME，检查实际 renderer 堆和 Harness 子进程限制；macOS 输出明确标记无 Harness V8 硬上限。Windows 原生 workflow 运行同一脚本与相关回归。它们不执行系统注销，也不能代替正式安装包中的注销/取消注销、远程桌面、睡眠唤醒、低内存长任务和真实用户 Profile 验收。
+原生脚本使用临时 userData/DSH_HOME，检查实际 renderer 堆和 Harness 子进程限制；macOS 输出明确标记无 Harness V8 硬上限。Windows 原生环境可手动运行同一脚本与相关回归。它们不执行系统注销，也不能代替正式安装包中的注销/取消注销、远程桌面、睡眠唤醒、低内存长任务和真实用户 Profile 验收。
