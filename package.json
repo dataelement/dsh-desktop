@@ -278,6 +278,7 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-log-bridge": "file:packages/dsh-desktop-log-bridge",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
+    "dsh-desktop-multi-account": "file:packages/dsh-desktop-multi-account",
     "dsh-desktop-office": "file:packages/dsh-desktop-office",
     "dsh-desktop-onboarding": "file:packages/dsh-desktop-onboarding",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
