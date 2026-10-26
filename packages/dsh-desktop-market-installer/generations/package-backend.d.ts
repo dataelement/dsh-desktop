@@ -36,6 +36,8 @@ export interface ProfileBundlePackageBackend {
     signal?: AbortSignal
     onOutput?(text: string, stream: 'stdout' | 'stderr'): void
   }): Promise<{ packageResult: PackageResult } | undefined>
+  /** Side-effect-free validation before Plugin Manager persists bundle selection. */
+  validateSwitch(request: { name: string; enabled: boolean; rowIds?: readonly string[] }): Promise<void>
   switched(request: { name: string; enabled: boolean; rowIds?: readonly string[] }): Promise<void>
   removed(request: { name: string }): Promise<void>
 }

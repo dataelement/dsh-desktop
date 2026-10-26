@@ -295,8 +295,32 @@ describe('workbench market install routes', () => {
     expect((await call('/api/desktop-workbenches/market-installs')).body.installs[KEY]).toMatchObject({ pluginName: 'project-helper' })
   })
 
+  it('clears stale provenance when inventory confirms the package is absent', async () => {
+    const service = manager({ removeBundle: vi.fn(async () => outcome('failed', { error: { code: 'not-removable' } })) })
+    const { call, root } = await host(service)
+    const store = createMarketInstallStore(root)
+    await store.record(KEY, { catalogId: KEY, pluginName: 'project-helper', version: '1.2.0' })
+    await store.record('o/kept', { catalogId: 'o/kept', pluginName: 'kept', version: '1.0.0' })
+    expect(await call('/api/desktop-workbenches/market-uninstall', { id: KEY })).toMatchObject({
+      status: 200, body: { application: 'applied', restartRequired: false, result: { target: 'project-helper', stage: 'remove' } }
+    })
+    expect(service.listBundles).toHaveBeenCalledOnce()
+    expect(service.removeBundle).not.toHaveBeenCalled()
+    expect(await store.read()).toEqual({ 'o/kept': { catalogId: 'o/kept', pluginName: 'kept', version: '1.0.0' } })
+  })
+
+  it('retains stale provenance when inventory cannot confirm package absence', async () => {
+    const service = manager({ listBundles: vi.fn(async () => { throw new Error('Inventory unavailable') }) })
+    const { call, root } = await host(service)
+    const store = createMarketInstallStore(root)
+    await store.record(KEY, { catalogId: KEY, pluginName: 'project-helper', version: '1.2.0' })
+    expect((await call('/api/desktop-workbenches/market-uninstall', { id: KEY })).status).toBe(500)
+    expect(service.removeBundle).not.toHaveBeenCalled()
+    expect((await store.read())[KEY]).toBeDefined()
+  })
+
   it('delegates removal and keeps provenance until removal is applied', async () => {
-    const service = manager()
+    const service = manager({ listBundles: vi.fn(async () => [{ name: 'project-helper', installed: true, removable: true }]) })
     const { call } = await host(service)
     await call('/api/desktop-workbenches/market-install', { id: KEY })
     service.removeBundle.mockResolvedValueOnce(outcome('restart-required'))

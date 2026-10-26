@@ -314,7 +314,15 @@ export function apply(ctx, config) {
       async fetch(request) {
         try {
           const { id } = await catalogPayloadFrom(request)
-          const result = await manager.removeBundle(await installedPackage(id))
+          const name = await installedPackage(id)
+          const bundles = await manager.listBundles()
+          // A package removed elsewhere leaves provenance only. The manager rejects
+          // absent bundles, so clear this record after a successful inventory read.
+          if (!bundles.some(bundle => bundle.name === name)) {
+            await marketInstalls.forget(id)
+            return lifecycleResponse({ target: name, stage: 'remove', application: 'applied', changed: true, warnings: [] })
+          }
+          const result = await manager.removeBundle(name)
           if (result?.application === 'applied') await marketInstalls.forget(id)
           return lifecycleResponse(result)
         } catch (error) { return installFailure(error, 'Could not uninstall the workbench.') }
