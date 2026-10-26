@@ -752,8 +752,14 @@ export async function verifyGenerationPeers(dshHome, generation, options = {}) {
       let resolved
       try {
         resolved = requireFromPackage.resolve(dependency)
-      } catch {
+      } catch (error) {
         resolved = await resolveNonRootPackage(requireFromPackage, dependency)
+        // Match runtime fallback: only missing Harness packages may use the
+        // current installation. Never mask local exports errors or private copies.
+        if (resolved === undefined && dependency.startsWith('@deepseek-ai/') &&
+            ['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(error?.code)) {
+          resolved = await hostEntry(dependency)
+        }
       }
       const requiredDependency =
         Object.hasOwn(dependencies, dependency) && !Object.hasOwn(optionalDependencies, dependency)
