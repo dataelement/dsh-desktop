@@ -1,3 +1,6 @@
+import type { GpuExitContext } from './gpu-exit-context'
+import { classifyGpuExit } from './gpu-exit-context'
+
 /**
  * Some Windows machines cannot start Chromium's GPU process inside its
  * sandbox at all: a virtual display driver (Todesk, GameViewer) stacked on
@@ -80,7 +83,14 @@ const windowsRendererFallbackCodes: ReadonlySet<number> = new Set([
  */
 const GPU_DEVICE_LOST_EXIT_CODE = 34
 
-export function isGpuLossFatal(reason: string, exitCode?: number): boolean {
+export function isGpuLossFatal(reason: string, exitCode?: number, lifecycle?: {
+  platform: NodeJS.Platform
+  context: GpuExitContext
+}): boolean {
+  // The status alone does not prove the user was logging off. Requests may
+  // be cancelled; only confirmed session/app exit suppresses degradation.
+  if (exitCode !== undefined && lifecycle &&
+    classifyGpuExit(lifecycle.platform, exitCode, lifecycle.context) === 'logoff-during-exit') return false
   if (!survivableReasons.has(reason)) {
     if (reason === 'crashed' && exitCode === GPU_DEVICE_LOST_EXIT_CODE) return false
     return true

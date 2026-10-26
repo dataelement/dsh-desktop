@@ -1,3 +1,4 @@
+import { getGpuExitContext, trackGpuExitContext } from './gpu-exit-context'
 import { ApplicationRollbackFlow } from './application-rollback-flow'
 import { developmentEnvironment } from './development-environment'
 import { createDevelopmentRepairDemo } from './development-repair-demo'
@@ -817,6 +818,7 @@ function markHarnessRendered(): void {
  * update cannot cost this machine its GPU sandbox.
  */
 function installGpuFallbackWatch(): void {
+  trackGpuExitContext(app)
   app.on('child-process-gone', (_event, details) => {
     if (details.type !== 'GPU') return
     if (gpuFallbackRelaunching || quitting) return
@@ -824,7 +826,7 @@ function installGpuFallbackWatch(): void {
     // here like any other loss; degrading on that would degrade everyone.
     // A device-loss exit (TDR) is Chromium recovering on its own, not evidence
     // of a broken sandbox, so it is logged but excluded from the same check.
-    if (!isGpuLossFatal(details.reason, details.exitCode)) {
+    if (!isGpuLossFatal(details.reason, details.exitCode, { platform: process.platform, context: getGpuExitContext(app) })) {
       if (details.reason === 'crashed' && details.exitCode === 34) {
         runtime?.note(
           `[desktop] GPU process device-loss self-recovery: reason=${details.reason} exitCode=${details.exitCode}`
