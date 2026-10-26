@@ -1,8 +1,8 @@
 diff --git a/node_modules/node-pty/lib/unixTerminal.js b/node_modules/node-pty/lib/unixTerminal.js
-index af2d24c..addbe03 100644
+index af2d24c..2c8f460 100644
 --- a/node_modules/node-pty/lib/unixTerminal.js
 +++ b/node_modules/node-pty/lib/unixTerminal.js
-@@ -28,10 +28,22 @@ var terminal_1 = require("./terminal");
+@@ -28,10 +28,21 @@ var terminal_1 = require("./terminal");
  var utils_1 = require("./utils");
  var native = (0, utils_1.loadNativeModule)('pty');
  var pty = native.module;
@@ -22,8 +22,7 @@ index af2d24c..addbe03 100644
 +    else {
 +        helperPath = native.dir + '/spawn-helper';
 +        helperPath = path.resolve(__dirname, helperPath);
-+        helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');
-+        helperPath = helperPath.replace('node_modules.asar', 'node_modules.asar.unpacked');
++        helperPath = helperPath.replace(/(^|[\\/])(app\.asar|node_modules\.asar)(?=[\\/]|$)/g, '$1$2.unpacked');
 +    }
 +}
  var DEFAULT_FILE = 'sh';

@@ -89,6 +89,10 @@ Safe Mode uses the installation anchor for both host plugin imports and client b
 
 Normal-profile Desktop patch insertions resolve from the actual bundled Harness entry, then use the same absolute source URLs for backend loading and client discovery. The patch file's directory is not a package anchor: installed patches live directly in `resources`, while runtime packages live in `resources/app.asar.unpacked/node_modules`. Missing host sources retain the package name, anchor and original resolution cause, and leave the previous generated patch intact.
 
+Plugin switch reconciliation treats `cordis.patch.yml` as structured user configuration, not generated two-line text. It matches only direct top-level row IDs and boolean `disabled` overrides that contradict the requested package switch. Custom mapping fields and their ownership are retained; ambiguous YAML is rejected rather than repaired or partially deleted. The shared parser is declared in the installer package so installed runtime resolution does not depend on the development root.
+
+Plugin Manager calls the optional, side-effect-free `profileBundlePackageBackend.validateSwitch` hook after its bundle/protected-manager checks and before saving selection, including unchanged selections. Existing backends without this hook retain their behavior. The normal `switched` callback still commits afterward and revalidates current input; preflight is not a cross-process transaction or proof of recovery from every I/O interruption. This preserves user configuration on explicit toggles; it does not establish the cause of a reported bulk bundle reset or repair already-corrupted rows. Remove the matching Plugin Manager patch hunks when upstream supplies this preflight boundary.
+
 ## Mobile access boundary
 
 Harness itself stays on a random loopback port. Phone access is provided by a separate bridge:

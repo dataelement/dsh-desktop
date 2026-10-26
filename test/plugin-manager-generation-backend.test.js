@@ -1,7 +1,7 @@
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createGenerationPackageBackend } from '../packages/dsh-desktop-market-installer/generations/package-backend.mjs'
 import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection.mjs'
 import { readDesired } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
@@ -46,6 +46,27 @@ afterEach(async () => {
 })
 
 describe('Plugin Manager generation package backend', () => {
+  it('verifies catalog integrity before installing or publishing any generation', async () => {
+    const home = await freshHome()
+    const runInstall = vi.fn(installer('demo-plugin', '1.0.0'))
+    const fetchImpl = vi.fn(async () => Response.json({ dist: { integrity: 'sha512-wrong' } }))
+    const backend = createGenerationPackageBackend({ dshHome: home, nodeExecutablePath: process.execPath, pnpmEntryPath: 'unused', runInstall, fetchImpl })
+    expect(backend.supportsVerifiedInstall).toBe(true)
+    const request = { kind: 'registry', spec: 'demo-plugin@1.0.0', expectedName: 'demo-plugin', expectedVersion: '1.0.0', npmIntegrity: 'sha512-reviewed', registry: 'https://registry.example' }
+    const failed = await backend.install(request)
+    expect(failed.packageResult.exitCode).toBe(1)
+    expect(failed.packageResult.output).toContain('integrity listed in the workbench index')
+    expect(runInstall).not.toHaveBeenCalled()
+    expect(await readDesired(home)).toEqual([])
+    fetchImpl.mockResolvedValue(Response.json({ dist: { integrity: 'sha512-reviewed' } }))
+    const accepted = await backend.install(request)
+    expect(accepted.packageResult.exitCode).toBe(0)
+    expect(fetchImpl).toHaveBeenCalledWith('https://registry.example/demo-plugin/1.0.0', expect.objectContaining({ headers: { accept: 'application/json' } }))
+    expect(runInstall).toHaveBeenCalledTimes(1)
+    await accepted.rollback()
+    expect(await readDesired(home)).toEqual([])
+  })
+
   it('publishes immutable installs and restores the exact prior desired pointer on rollback', async () => {
     const home = await freshHome()
     const backend = createGenerationPackageBackend({

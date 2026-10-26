@@ -31,6 +31,27 @@ DSH_DEV_PROFILE=dsh-desktop-dev-workbench DSH_DEV_HARNESS_PORT=43132 DSH_DEV_MOB
 
 On PowerShell, set the same names through `$env:DSH_DEV_PROFILE`, `$env:DSH_DEV_HARNESS_PORT` and `$env:DSH_DEV_MOBILE_PORT` before `npm run dev`. The profile must be a directory name, separate from `dsh-desktop`; ports must be distinct integers from 1024 to 65535. These overrides are ignored by production builds. Defaults remain `dsh-desktop-dev`, Harness port 43130 and mobile port 43128.
 
+## Workbench package lifecycle
+
+Workbench Market resolves reviewed catalog targets, but delegates package installation,
+updates, selection switches, removal and runtime reconciliation to Plugin Manager.
+Its install records describe catalog provenance, not whether a plugin is running.
+The inventory endpoint returns Plugin Manager bundle and plugin snapshots; clients
+refresh them on `plugin-manager/changed` rather than treating saved sidebar entries
+or installed package files as proof of activation.
+
+Catalog installation requires the generation backend verified-install capability.
+The backend checks expected package name/version and registry integrity before
+publication; Release downloads retain SHA-256 validation. An unsupported backend
+refuses verified installation instead of falling back to unverified pnpm. Updates
+replace only the expected package and retain manager protections and rollback.
+
+Actual application results determine the next action: `applied`, `restart-required`,
+`failed`, `cancelled` or `overridden`. No static client/server package classifier
+drives these routes. The packaged HMR fallback reports `module-comparison` rather
+than claiming module replacement. This does not add unpublished local workbench
+identity support; registration and a mounted panel are separate acceptance stages.
+
 ## Validation
 
 Run the core checks before submitting a change:
@@ -75,6 +96,8 @@ test/                     Unit and source-contract regression coverage
 
 The desktop product intentionally reuses the upstream Harness UI. Desktop-specific provider onboarding, preset transfer, model selection, workspace, branding, and layout changes are captured under `patches/` rather than stored as untracked edits in `node_modules`.
 
+The `@deepseek-ai/dsh-host-open-in-app@0.2.1-rc.2` patch is the V0.12.2 adaptation of [PR #709](https://github.com/dataelement/dsh-desktop/pull/709) for [#686](https://github.com/dataelement/dsh-desktop/issues/686), originally targeting `0.2.0-rc.2`. Detached external app launches remove inherited `ELECTRON_RUN_AS_NODE` names case-insensitively before merging the adapter's explicit environment. GitHub Desktop's Windows CLI adapter keeps its explicit Node mode; the shared subprocess scrub and internal runners remain unchanged. `test/open-in-app-environment.test.ts` exercises the installed bundle, emitted resolver, and host route; set `DSH_TEST_OPEN_IN_ELECTRON=1` to include native Electron checks with disposable data directories and no application window. Run these tests with standalone Node, not Electron in Node mode, because their Node child fixtures use `process.execPath`. Remove the patch when the pinned upstream package provides equivalent behavior in both artifacts. Validate native Windows Open In when replaying or retiring it.
+
 When upgrading Harness:
 
 1. Install the intended upstream version.
@@ -83,6 +106,8 @@ When upgrading Harness:
 4. Regenerate the relevant `patch-package` patches.
 5. Run the full automated suite.
 6. Start the real app and exercise every affected user flow.
+
+The `node-pty@1.2.0-beta.15` helper-path patch retains the #615/#646 correction alongside the external-helper support: only complete `app.asar` and `node_modules.asar` path segments map to their unpacked siblings, and already-unpacked paths remain unchanged. Keep the resolution order (explicit `DSH_NODE_PTY_SPAWN_HELPER`, executable sibling, default module-relative helper). Remove this part of the patch only when the pinned upstream version preserves these behaviors and passes both `test/node-pty-helper-path.test.ts` (actual module evaluation with a recorded native call) and `test/node-pty-asar-layout.test.ts` (real macOS PTY in archived and already-unpacked layouts, with default and external helpers). The path tests do not replace the native or installed-application checks.
 
 ## Packaging
 

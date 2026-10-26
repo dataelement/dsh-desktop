@@ -103,6 +103,48 @@ it('repairs an incompatible private peer, but does not hide invalid package meta
   expect(malformed.result.detail).toMatch(/Invalid package config|JSON/)
 })
 
+it('does not bypass a nearer wrong-name subpath provider for a valid farther provider', async () => {
+  const { home, calls, result } = await fixture(
+    { peerDependencies: { 'private-provider': '^1.0.0' } },
+    async () => ({ code: 0, output: '' }),
+    'fixture-plugin@moving',
+    async staging => {
+      await provider(staging)
+      await writeFile(join(staging, 'node_modules/private-provider/package.json'), JSON.stringify({
+        name: 'private-provider', version: '1.2.0', exports: './index.js'
+      }))
+      const nearer = join(staging, 'node_modules/fixture-plugin/node_modules/private-provider')
+      await mkdir(nearer, { recursive: true })
+      await writeFile(join(nearer, 'package.json'), JSON.stringify({
+        name: 'other-provider', version: '1.2.0', exports: { './feature': './feature.js' }
+      }))
+      await writeFile(join(nearer, 'feature.js'), 'module.exports = 0')
+    }
+  )
+  expect(calls).toEqual([undefined, 'peers'])
+  expect(result.ok).toBe(false)
+  expect(result.detail).toContain('ERR_PRIVATE_PEER_MISSING: private-provider')
+  await expectNoPublication(home)
+})
+
+it('accepts a private peer whose wildcard export selects a nested helper manifest', async () => {
+  const { calls, result } = await fixture(
+    { peerDependencies: { 'private-provider': '^1.0.0' } },
+    async () => { throw new Error('unnecessary second install') },
+    'fixture-plugin@moving',
+    async staging => {
+      const directory = join(staging, 'node_modules/private-provider')
+      await mkdir(join(directory, 'dist/cjs'), { recursive: true })
+      await writeFile(join(directory, 'package.json'), JSON.stringify({
+        name: 'private-provider', version: '1.2.0', exports: { './*': './dist/cjs/*' }
+      }))
+      await writeFile(join(directory, 'dist/cjs/package.json'), JSON.stringify({ type: 'commonjs' }))
+    }
+  )
+  expect(result.ok, result.detail).toBe(true)
+  expect(calls).toEqual([undefined])
+})
+
 it.each([true, false])('preserves copied source and only supplies its missing private peer (existing=%s)', async existing => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-source-peer-'))
   roots.push(root)

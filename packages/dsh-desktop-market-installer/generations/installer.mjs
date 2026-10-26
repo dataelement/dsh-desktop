@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import semver from 'semver'
 import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
@@ -170,12 +170,13 @@ async function stageBuildApprovals(
   try {
     yaml = await readFile(source, 'utf8')
   } catch (error) {
-    if (error?.code === 'ENOENT') return []
-    throw error
+    if (error?.code !== 'ENOENT') throw error
   }
   const approvals = generationBuildApprovals(yaml)
   const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, approvals)
   const stagedApprovals = pinned === undefined ? approvals : [...approvals, pinned]
+  // Isolate hoisting from ancestor workspaces even without Profile approvals.
+  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n', 'utf8')
   if (stagedApprovals.length === 0) return []
   const lines = [
     'packages:',
@@ -642,18 +643,61 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
   } catch {
     // Packages with exports may hide their manifest; keep the bounded lookup.
   }
-  const files = selectedManifest ? [selectedManifest]
-    : (requireFromPackage.resolve.paths(dependency) ?? []).map(modules => join(modules, dependency, 'package.json'))
+  const files = []
+  if (selectedManifest) {
+    files.push(selectedManifest)
+  }
+  const candidatePaths = (requireFromPackage.resolve.paths(dependency) ?? [])
+    .map((modules) => join(modules, dependency, 'package.json'))
+  for (const candidate of candidatePaths) {
+    if (!files.includes(candidate)) {
+      files.push(candidate)
+    }
+  }
+  const packageRoots = await Promise.all(candidatePaths.map(async (file) => {
+    const directory = dirname(file)
+    return await realpath(directory).catch(() => directory)
+  }))
   for (const file of files) {
-    const packageDirectory = file.slice(0, -'package.json'.length)
+    // A wildcard may select a helper manifest inside the package. Recover only
+    // within that package; a broken nearer copy still owns Node's lookup.
+    const packageBoundary = packageRoots.find((root) => isInsideDirectory(root, file)) ?? dirname(file)
+    let packageDirectory = file.slice(0, -'package.json'.length)
     let manifest
     try {
       manifest = JSON.parse(await readFile(file, 'utf8'))
     } catch (error) {
-      if (error?.code === 'ENOENT') continue
+      if (error?.code === 'ENOENT' && !existsSync(packageBoundary)) continue
       return undefined
     }
-    if (manifest.name !== dependency) return undefined
+    // Packages with wildcard exports (e.g. "@modelcontextprotocol/sdk" with "./*": "./dist/cjs/*")
+    // redirect "${dependency}/package.json" to a nested helper manifest (e.g. dist/cjs/package.json
+    // containing only {"type": "commonjs"}) without a package name.
+    // If name does not match, inspect ancestor directories below the dependency root.
+    if (manifest.name !== dependency) {
+      let currentDir = dirname(dirname(file))
+      let foundAncestor = false
+      while (isInsideDirectory(packageBoundary, currentDir) && basename(currentDir) !== 'node_modules') {
+        const ancestorManifestPath = join(currentDir, 'package.json')
+        if (existsSync(ancestorManifestPath)) {
+          try {
+            const ancestorManifest = JSON.parse(await readFile(ancestorManifestPath, 'utf8'))
+            if (ancestorManifest.name === dependency) {
+              manifest = ancestorManifest
+              packageDirectory = currentDir.endsWith('/') || currentDir.endsWith('\\') ? currentDir : `${currentDir}/`
+              foundAncestor = true
+              break
+            }
+          } catch {
+            return undefined
+          }
+        }
+        const parent = dirname(currentDir)
+        if (parent === currentDir) break
+        currentDir = parent
+      }
+      if (!foundAncestor) return undefined
+    }
     const exported = manifest.exports
     const rootExport = exported && typeof exported === 'object' &&
       Object.hasOwn(exported, '.') ? exported['.'] : exported
@@ -683,7 +727,11 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       Object.keys(manifest.exports).some((key) => key.startsWith('./'))
     if (declarationOnly) {
       const declaration = join(packageDirectory, manifest.types ?? manifest.typings)
-      return existsSync(declaration) ? declaration : undefined
+      const candidates = [declaration, `${declaration}.d.ts`, `${declaration}.d.mts`, `${declaration}.d.cts`]
+      for (const candidate of candidates) {
+        if (existsSync(candidate)) return candidate
+      }
+      return undefined
     }
     // Some SDKs publish a root export without shipping its target, while their
     // supported API is exposed through concrete client/server subpaths. Package
@@ -700,7 +748,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
     }
     // Subpath exports are resolved when imported. A bare require is explicitly
     // unsupported by these packages; it cannot determine whether they exist.
-    return subpathOnly ? file : undefined
+    return subpathOnly ? join(packageDirectory, 'package.json') : undefined
   }
   return undefined
 }
@@ -792,8 +840,14 @@ export async function verifyGenerationPeers(dshHome, generation, options = {}) {
       let resolved
       try {
         resolved = requireFromPackage.resolve(dependency)
-      } catch {
+      } catch (error) {
         resolved = await resolveNonRootPackage(requireFromPackage, dependency)
+        // Match runtime fallback: only missing Harness packages may use the
+        // current installation. Never mask local exports errors or private copies.
+        if (resolved === undefined && dependency.startsWith('@deepseek-ai/') &&
+            ['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(error?.code)) {
+          resolved = await hostEntry(dependency)
+        }
       }
       const requiredDependency =
         Object.hasOwn(dependencies, dependency) && !Object.hasOwn(optionalDependencies, dependency)
