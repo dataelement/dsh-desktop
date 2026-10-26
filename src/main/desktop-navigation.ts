@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url'
+import { isAbortedNavigationError } from './window-navigation'
 
 const navigationOwners = new WeakMap<NavigationTarget, (url: string, cancelled: () => boolean) => Promise<boolean>>()
 
@@ -13,8 +14,8 @@ export interface NavigationTarget {
 }
 
 export function isCancelledNavigation(error: unknown): boolean {
-  return error instanceof Error && 'code' in error &&
-    (error.code === 'ERR_ABORTED' || error.code === -3)
+  return isAbortedNavigationError(error) ||
+    (error instanceof Error && 'code' in error && error.code === -3)
 }
 
 /** A failed navigation must never start a second load on a closing or superseded window. */

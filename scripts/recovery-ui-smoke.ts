@@ -48,7 +48,7 @@ async function main(): Promise<void> {
       autoHideMenuBar: true
     } : {}),
     backgroundColor: '#18181b',
-    webPreferences: { sandbox: true, contextIsolation: true }
+    webPreferences: { sandbox: true, contextIsolation: true, preload: process.env.RECOVERY_UI_TITLEBAR_PRELOAD }
   })
   parent.setMenuBarVisibility(false)
   secureWindow(parent)
@@ -69,7 +69,8 @@ async function main(): Promise<void> {
         parent.setTitleBarOverlay({ color: '#00000000', symbolColor: theme === 'dark' ? '#fafafa' : '#18181b', height: WINDOWS_TITLEBAR_HEIGHT })
       }
       const model = page === 'safe-mode' ? buildSafeModeViewModel({ locale, plugins: names }) : buildPluginRecoveryViewModel({
-        locale, plugins: scenario === 'unidentified-plugin' ? [] : (scenario === 'multiple-plugins' || scenario === 'market-offline') ? names.slice(0, 3) : [names[0]!], removedPlugins: [],
+        locale, rollbackVersion: '0.12.0',
+        plugins: scenario === 'unidentified-plugin' ? [] : (scenario === 'multiple-plugins' || scenario === 'market-offline') ? names.slice(0, 3) : [names[0]!], removedPlugins: [],
         pluginChecks: scenario === 'market-offline' ? names.slice(0, 3).map(packageName => ({ packageName, hint: 'ENOTFOUND — 请重新检查更新' })) : scenario === 'multiple-plugins' ? names.slice(0, 3).map((packageName, index) => ({
           packageName, hint: index === 1 ? '已是 latest，仍阻挡启动，请卸载此插件。' : '可尝试升级，兼容性未确认；升级后仍需验证启动。',
           removalRecommended: index === 1,
@@ -107,9 +108,12 @@ async function main(): Promise<void> {
           buttonsVisible:[...document.querySelectorAll('.actions button:not([hidden])')].filter(b=>b.getBoundingClientRect().height).every(b=>{const r=b.getBoundingClientRect();return r.top>=cr.top-epsilon&&r.bottom<=cr.bottom+epsilon&&r.right<=vw+epsilon}),
           footerBottom:fr.bottom,
           footerVisible:fr.bottom<=vh+epsilon,
+          headerTop:document.querySelector('.header').getBoundingClientRect().top,
+          captionBottom:document.querySelector('[data-dsh-windows-menu]').getBoundingClientRect().bottom,
           wechatLabel:document.querySelector('#community-wechat').innerText }
       })()`)
       const where = `${scenario} ${locale} ${theme} ${width}x${height} -> ${JSON.stringify(layout)}`
+      assert.ok(layout.headerTop >= layout.captionBottom - 0.5, `page header must stay below Windows caption menus: ${where}`)
       assert.equal(layout.outerScroll, false, `page must not scroll as a whole: ${where}`)
       assert.equal(layout.footerVisible, true, `footer must end inside the viewport: ${where}`)
       if (page === 'safe-mode') {
@@ -120,15 +124,18 @@ async function main(): Promise<void> {
       if (page === 'plugin-recovery') {
         const visibleLabels = (selector: string) => contents.executeJavaScript(`Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter(b => b.getBoundingClientRect().height > 0).map(b => b.textContent)`)
         const actions = await visibleLabels('.actions button')
-        const safeModeLabel = locale === 'zh' ? '进入安全模式' : 'Enter Safe Mode'
-        // Safe Mode is offered exactly once: as its own button beside the
-        // actions when a repair is on offer, otherwise as the primary action.
+        const agentLabel = locale === 'zh' ? '让 Agent 帮我修' : 'Ask Agent to help'
         const decision = await visibleLabels('#decision-row button')
-        assert.equal(decision.filter((label: string) => label === safeModeLabel).length, 1)
-        // With no culprit to repair, the agent sits beside Safe Mode; otherwise it stays out of the way.
-        const agentLabel = locale === 'zh' ? '智能修复 Agent' : 'Repair agent'
-        if (scenario === 'unidentified-plugin') assert.deepEqual(actions, [agentLabel, safeModeLabel])
-        else assert.equal(actions.includes(agentLabel), false)
+        assert.equal(decision.filter((label: string) => label === agentLabel).length, scenario === 'unidentified-plugin' ? 1 : 0)
+        if (scenario === 'unidentified-plugin') assert.deepEqual(actions, [agentLabel])
+        else {
+          assert.equal(actions.includes(locale === 'zh' ? '一键修复' : 'Repair now'), true)
+          const aside = await visibleLabels('.decision-aside button')
+          assert.equal(aside.includes(locale === 'zh' ? '回退应用至 0.12.0' : 'Restore app 0.12.0'), true, 'Rollback remains available on the left of the decision row')
+        }
+        assert.equal(await contents.executeJavaScript('document.querySelectorAll("[role=progressbar]").length'), 0)
+        assert.equal(await contents.executeJavaScript('document.querySelectorAll("#plugins button").length'), 0)
+
       }
       const prefix = `${scenario}-${locale}-${theme}-${width}`
       await capture(contents, join(output, `${prefix}.png`))
@@ -154,41 +161,28 @@ async function main(): Promise<void> {
           document.getElementById('primary').click();
           return { action, disabled: document.getElementById('primary').disabled };
         })()`)
-        assert.deepEqual(action, { action: 'safe-mode', disabled: true })
+        assert.deepEqual(action, { action: 'agent', disabled: true })
       }
-      if (scenario === 'multiple-plugins') {
-        const perPluginActions = await contents.executeJavaScript(`(() => {
-          const actions = [];
-          window.dshRecovery = { action: value => { actions.push(value) } };
-          const rows = [...document.querySelectorAll('#plugins li')];
-          for (const button of document.querySelectorAll('#plugins button')) {
-            document.querySelectorAll('button').forEach(control => { control.disabled = false });
-            button.click();
-          }
-          document.querySelectorAll('button').forEach(control => { control.disabled = false });
-          document.getElementById('primary').click();
-          return { actions, hints: rows.map(row => row.querySelector('.plugin-check-hint').textContent) };
-        })()`)
-        assert.deepEqual(perPluginActions.actions, [
-          `upgrade:${names[0]}`, `uninstall:${names[0]}`, `uninstall:${names[1]}`,
-          `upgrade:${names[2]}`, `uninstall:${names[2]}`, 'auto-process'
-        ])
-        assert.equal(perPluginActions.hints.length, 3)
-      }
-      if (scenario === 'market-offline') {
-        const retry = await contents.executeJavaScript(`(() => {
+      if (scenario === 'multiple-plugins' || scenario === 'market-offline') {
+        const repair = await contents.executeJavaScript(`(() => {
           let action;
           window.dshRecovery = { action: value => { action = value } };
-          const label = document.getElementById('primary').textContent;
           document.getElementById('primary').click();
-          return { action, label };
+          return action;
         })()`)
-        assert.deepEqual(retry, { action: 'check-updates', label: locale === 'zh' ? '重新检查更新' : 'Retry update checks' })
+        assert.equal(repair, 'auto-process')
       }
       results.push({ page, scenario, locale, theme, requestedSize: [width,height], layout, popup })
     }
     assert.deepEqual(rendererErrors, [])
   }
+  await parent.loadFile(join(process.cwd(), 'build', 'application-rollback.html'), { query: { state: '{}' } })
+  await delay(100)
+  const rollbackCaption = await parent.webContents.executeJavaScript(`(() => ({
+    headerTop: document.querySelector('header').getBoundingClientRect().top,
+    captionBottom: document.querySelector('[data-dsh-windows-menu]').getBoundingClientRect().bottom
+  }))()`)
+  assert.ok(rollbackCaption.headerTop >= rollbackCaption.captionBottom, 'Rollback header must clear Windows caption menus')
   // The Safe Mode frame is driven over IPC to the host page: the URL to show,
   // in-place model updates, and null to take the page down. Closing is
   // idempotent and follows the parent window.

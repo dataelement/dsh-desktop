@@ -73,3 +73,15 @@ it('marks <html> as soon as the parser creates it when preload runs first', asyn
   expect(html.hasAttribute('data-windows-titlebar')).toBe(true)
   expect(html.style.getPropertyValue('--dsh-windows-titlebar-height')).toBe('40px')
 })
+
+it('leaves the Harness caption seat owned by AppFrame in normal and safe repair sessions', async () => {
+  const { mountWindowsTitlebarLayout } = await import('../src/preload/windows-titlebar')
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn() }))
+  document.body.innerHTML = '<div id="root"><div data-shell-overlay></div></div>'
+  mountWindowsTitlebarLayout({ document, ipcRenderer: { invoke: vi.fn(async () => undefined) } })
+  expect(document.body.hasAttribute('data-dsh-standalone-titlebar')).toBe(false)
+  expect(getComputedStyle(document.body).paddingTop).toBe('0px')
+  expect(host()).not.toBeNull()
+  expect(document.getElementById('dsh-desktop-windows-drag-region')).toBeNull()
+  vi.unstubAllGlobals()
+})

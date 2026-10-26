@@ -29,6 +29,13 @@ describe('desktop navigation lifecycle', () => {
     expect(target.loadURL).not.toHaveBeenCalled()
   })
 
+  it('treats Electron numeric errno -3 with an empty code as an aborted reload', async () => {
+    const error = Object.assign(new Error(" (-3) loading 'dsh-desktop://harness/'"), { code: '', errno: -3 })
+    const target = { isDestroyed: () => false, loadURL: vi.fn().mockRejectedValue(error) }
+    await expect(navigateDesktopWindow(target, 'file:///splash.html', () => false)).resolves.toBe(false)
+    expect(target.loadURL).toHaveBeenCalledTimes(1)
+  })
+
   it('encodes file paths and query once and reports a current navigation as loaded', async () => {
     const url = desktopFileUrl('/tmp/app resources/splash.html', { theme: 'dark', state: 'a&b' })
     expect(new URL(url).searchParams.get('state')).toBe('a&b')

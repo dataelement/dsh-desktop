@@ -8,7 +8,7 @@ This guide covers local development, validation, patch maintenance, and target-n
 - npm
 - macOS on Apple Silicon or Intel, or Windows x64
 
-This baseline pins `@deepseek-ai/dsh@0.2.1-rc.2`. Windows packages run Harness in Electron Node mode, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
+This baseline pins `@deepseek-ai/dsh@0.2.1-rc.3`. Windows packages run Harness in Electron Node mode, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
 
 ## Local setup
 
@@ -96,7 +96,7 @@ test/                     Unit and source-contract regression coverage
 
 The desktop product intentionally reuses the upstream Harness UI. Desktop-specific provider onboarding, preset transfer, model selection, workspace, branding, and layout changes are captured under `patches/` rather than stored as untracked edits in `node_modules`.
 
-The `@deepseek-ai/dsh-host-open-in-app@0.2.1-rc.2` patch is the V0.12.2 adaptation of [PR #709](https://github.com/dataelement/dsh-desktop/pull/709) for [#686](https://github.com/dataelement/dsh-desktop/issues/686), originally targeting `0.2.0-rc.2`. Detached external app launches remove inherited `ELECTRON_RUN_AS_NODE` names case-insensitively before merging the adapter's explicit environment. GitHub Desktop's Windows CLI adapter keeps its explicit Node mode; the shared subprocess scrub and internal runners remain unchanged. `test/open-in-app-environment.test.ts` exercises the installed bundle, emitted resolver, and host route; set `DSH_TEST_OPEN_IN_ELECTRON=1` to include native Electron checks with disposable data directories and no application window. Run these tests with standalone Node, not Electron in Node mode, because their Node child fixtures use `process.execPath`. Remove the patch when the pinned upstream package provides equivalent behavior in both artifacts. Validate native Windows Open In when replaying or retiring it.
+The `@deepseek-ai/dsh-host-open-in-app@0.2.1-rc.3` patch carries forward the V0.12.2 adaptation of [PR #709](https://github.com/dataelement/dsh-desktop/pull/709) for [#686](https://github.com/dataelement/dsh-desktop/issues/686), originally targeting `0.2.0-rc.2`. Detached external app launches remove inherited `ELECTRON_RUN_AS_NODE` names case-insensitively before merging the adapter's explicit environment. GitHub Desktop's Windows CLI adapter keeps its explicit Node mode; the shared subprocess scrub and internal runners remain unchanged. `test/open-in-app-environment.test.ts` exercises the installed bundle, emitted resolver, and host route; set `DSH_TEST_OPEN_IN_ELECTRON=1` to include native Electron checks with disposable data directories and no application window. Run these tests with standalone Node, not Electron in Node mode, because their Node child fixtures use `process.execPath`. Remove the patch when the pinned upstream package provides equivalent behavior in both artifacts. Validate native Windows Open In when replaying or retiring it.
 
 When upgrading Harness:
 
@@ -136,3 +136,7 @@ Formal release artifacts are built, signed, and published by the tag workflow. A
 - Preserve unrelated worktree changes.
 - Keep temporary research, local reports, and internal working documents under the ignored `doc/` directory.
 - Update all localized README files when changing user-visible facts.
+
+### Optional workbench shell audit
+
+The `@deepseek-ai/dsh-web-frontend@0.2.1-rc.3` patch carries forward #762: the shell audit exempts only manifest-declared optional workbench entries present in the recorded failure snapshot. Required and unknown entries remain fatal, and failure diagnostics remain available. The rc.3 shell still performs the conflicting audit, so the rc.2 patch is ported to its current asset rather than retired. `test/client-shell-failure-isolation.test.ts` executes the pinned shell boot, audit and mount functions with their real Cordis dependency closure. Remove this patch when upstream provides equivalent isolation and required-entry handling.

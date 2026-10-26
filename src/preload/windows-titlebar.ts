@@ -44,6 +44,8 @@ export function mountWindowsTitlebarLayout(options: TitlebarLayoutMountOptions):
   markWindowsTitlebar(document)
   if (!document.body) return
 
+  const standalone = document.location.protocol === 'file:'
+  document.body.toggleAttribute('data-dsh-standalone-titlebar', standalone)
   installLayout(document)
   if (document.location.protocol === 'file:') installDragRegion(document)
   trackModals(document)
@@ -72,6 +74,15 @@ function installLayout(document: Document): void {
       box-sizing: border-box !important;
       height: 100% !important;
       padding-top: 0 !important;
+    }
+    /* Local recovery pages do not have Harness AppFrame to reserve a caption
+       row. Keep their logo/actions below both the menu and native controls. */
+    body.dsh-desktop-windows-titlebar-layout[data-dsh-standalone-titlebar] {
+      padding-top: ${WINDOWS_TITLEBAR_HEIGHT}px !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout[data-dsh-standalone-titlebar] > .shell {
+      height: 100% !important;
+      min-height: 0 !important;
     }
     body.dsh-desktop-windows-titlebar-layout > #root {
       height: 100% !important;

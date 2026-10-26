@@ -218,7 +218,7 @@
       document.documentElement.dataset.theme = params.get('theme') || 'system'
       document.title = `${model.badge || 'Safe Mode'} · ${model.brand || 'DSH Desktop'}`
       const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value || '' }
-      setText('page-title', model.locale === 'zh' ? '管理插件' : 'Manage plugins')
+      setText('page-title', model.locale === 'zh' ? '维修模式 · 安全模式' : 'Repair · Safe Mode')
       setText('heading', model.heading)
       setText('summary', model.summary)
       setText('empty', model.emptyMessage)
@@ -297,37 +297,13 @@
         recoveryOpen.hidden = false
       }
       const syncUpgradeAll = () => {
-        const visible = Boolean(model.upgradeAllLabel) && model.upgradeReadyCount > 0 && model.recoveryLocked !== true
-        upgradeAll.hidden = !visible
-        if (visible) upgradeAll.textContent = model.upgradeAllLabel
+        // Safe Mode is a disable-and-verify fallback; upgrades belong to one-click repair.
+        upgradeAll.hidden = true
       }
       syncUpgradeAll()
       const pluginCheckboxes = []
       const issueCheckboxes = []
-      for (const group of Array.isArray(model.issueGroups) ? model.issueGroups : []) {
-        const item = document.createElement('li'); item.className = 'issue-group'
-        const label = document.createElement('label'); label.className = 'issue'
-        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(group.id); checkbox.dataset.issueIds = JSON.stringify(group.issueIds || [])
-        const main = document.createElement('span'); main.className = 'issue-main'
-        const title = document.createElement('span'); title.className = 'issue-title'
-        const name = document.createElement('span'); name.className = 'issue-name'; name.textContent = String(group.name)
-        const badge = document.createElement('span'); badge.className = 'issue-badge'; badge.textContent = String(group.severityLabel)
-        title.append(name, badge); main.appendChild(title)
-        const meta = document.createElement('div'); meta.className = 'issue-meta'; meta.textContent = [group.kindLabel, group.countLabel].filter(Boolean).join(' · '); main.appendChild(meta)
-        const action = document.createElement('div'); action.className = 'issue-action'; action.textContent = String(group.actionLabel || ''); main.appendChild(action)
-        if ((group.issueIds || []).length > 0) { label.appendChild(checkbox); issueCheckboxes.push(checkbox) }
-        label.appendChild(main); item.appendChild(label); list.appendChild(item)
-        const details = document.createElement('details'); details.className = 'issue-details'
-        const detailsSummary = document.createElement('summary'); detailsSummary.textContent = String(group.detailLabel || group.countLabel || '')
-        const findings = document.createElement('ul'); findings.className = 'findings'
-        for (const issue of Array.isArray(group.issues) ? group.issues : []) {
-          const finding = document.createElement('li'); finding.className = 'finding'
-          const findingName = document.createElement('div'); findingName.className = 'finding-name'; findingName.textContent = String(issue.packageName)
-          const findingDetail = document.createElement('div'); findingDetail.className = 'finding-detail'; findingDetail.textContent = [issue.kindLabel, issue.versionLabel, issue.detail].filter(Boolean).join(' · ')
-          finding.append(findingName, findingDetail); findings.appendChild(finding)
-        }
-        details.append(detailsSummary, findings); item.appendChild(details)
-      }
+      // Configuration repairs are selected by host policy; only plugin fallback controls appear here.
       let pluginItems = Array.isArray(model.pluginItems)
         ? model.pluginItems
         : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))
@@ -350,26 +326,7 @@
           else if (plugin.statusTone === 'success') status.classList.add('success')
           row.title.appendChild(status)
         }
-        if (row.upgradeBtn?.disabled) return
-        row.upgradeBtn?.remove()
-        row.upgradeBtn = undefined
-        if (plugin.upgradeButtonLabel) {
-          const upgradeBtn = document.createElement('button')
-          upgradeBtn.type = 'button'
-          upgradeBtn.className = 'plugin-upgrade-btn'
-          upgradeBtn.textContent = String(plugin.upgradeButtonLabel)
-          upgradeBtn.addEventListener('click', (e) => {
-            e.stopPropagation()
-            upgradeBtn.disabled = true
-            upgradeBtn.textContent = model.locale === 'zh' ? '正在升级…' : 'Upgrading…'
-            apply.disabled = true
-            if (upgradeAll) upgradeAll.disabled = true
-            restart.disabled = true
-            void window.dshSafeMode.action('upgrade', { plugins: [plugin.name] })
-          })
-          row.item.appendChild(upgradeBtn)
-          row.upgradeBtn = upgradeBtn
-        }
+
       }
       for (const plugin of pluginItems) {
         const item = document.createElement('li')

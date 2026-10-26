@@ -26,10 +26,10 @@ On macOS, Harness runs in an Electron UtilityProcess with Node capabilities. On 
 1. Configure a stable production or development application identity and user-data directory.
 2. Acquire the single-instance lock.
 3. Create the application-owned `launch-root` directory.
-4. Open the startup surface and inspect the normal web profile.
+4. Open the startup surface, then start loading the packaged Harness shell at `dsh-desktop://harness/` while inspecting the web Profile. Static modules prepare before the backend is ready.
 5. Pin the profile's pnpm store and repair incomplete package state when needed.
 6. Start Harness on an available `127.0.0.1` port with the tracked desktop patch layer.
-7. Poll the endpoint until it remains healthy, then load it into the main window.
+7. After the endpoint is ready, authenticate in main, obtain the current structured boot injections and resolve the prepared shell through narrow IPC. Reuse the document; API requests are authenticated proxies and native WebSockets receive credentials only for the owned backend authority and main window. See [parallel page boot](parallel-page-boot.md) for ordering and recovery boundaries.
 8. Start the paired mobile bridge and, in installed builds, the update manager.
 
 Harness restarts reuse the same application-owned data. Safe Mode starts a separate profile containing official core bundles while leaving normal-profile plugins blocked.
