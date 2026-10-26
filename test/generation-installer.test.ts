@@ -707,6 +707,42 @@ describe('the generation installer', () => {
     )
   })
 
+  it('accepts packages whose exports wildcard redirects package.json to a nested helper manifest (#745)', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'wildcard-exports')
+    const modules = join(directory, 'node_modules')
+    const sdkRoot = join(modules, '@modelcontextprotocol', 'sdk')
+    const sdkNested = join(sdkRoot, 'dist', 'cjs')
+    await mkdir(sdkNested, { recursive: true })
+    await writeFile(join(sdkRoot, 'package.json'), JSON.stringify({
+      name: '@modelcontextprotocol/sdk',
+      version: '1.32.1',
+      exports: {
+        './*': './dist/cjs/*',
+        './client': { import: './dist/cjs/client/index.js' }
+      }
+    }))
+    await writeFile(join(sdkNested, 'package.json'), JSON.stringify({
+      type: 'commonjs'
+    }))
+    await mkdir(join(sdkNested, 'client'), { recursive: true })
+    await writeFile(join(sdkNested, 'client', 'index.js'), 'module.exports = {}')
+
+    const pluginDir = join(modules, 'mcp-plugin')
+    await mkdir(pluginDir, { recursive: true })
+    await writeFile(join(pluginDir, 'package.json'), JSON.stringify({
+      name: 'mcp-plugin',
+      version: '1.0.0',
+      dependencies: {
+        '@modelcontextprotocol/sdk': '^1.32.1'
+      }
+    }))
+
+    const generation = { id: 'wildcard-exports', pluginName: 'mcp-plugin', version: '1.0.0', directory }
+    const result = await verifyGenerationPeers(home, generation)
+    expect(result).toEqual({ ok: true, problems: [] })
+  })
+
   it('validates CLI-only host peers by their executable while retaining closure checks', async () => {
     const home = await freshHome()
     const directory = join(home, 'profiles', '.generations', 'live', 'cli-peer')

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
@@ -561,18 +561,54 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
   } catch {
     // Packages with exports may hide their manifest; keep the bounded lookup.
   }
-  const files = selectedManifest ? [selectedManifest]
-    : (requireFromPackage.resolve.paths(dependency) ?? []).map(modules => join(modules, dependency, 'package.json'))
+  const files = []
+  if (selectedManifest) {
+    files.push(selectedManifest)
+  }
+  const candidatePaths = (requireFromPackage.resolve.paths(dependency) ?? [])
+    .map((modules) => join(modules, dependency, 'package.json'))
+  for (const candidate of candidatePaths) {
+    if (!files.includes(candidate)) {
+      files.push(candidate)
+    }
+  }
   for (const file of files) {
-    const packageDirectory = file.slice(0, -'package.json'.length)
+    let packageDirectory = file.slice(0, -'package.json'.length)
     let manifest
     try {
       manifest = JSON.parse(await readFile(file, 'utf8'))
     } catch (error) {
       if (error?.code === 'ENOENT') continue
-      return undefined
+      continue
     }
-    if (manifest.name !== dependency) return undefined
+    // Packages with wildcard exports (e.g. "@modelcontextprotocol/sdk" with "./*": "./dist/cjs/*")
+    // redirect "${dependency}/package.json" to a nested helper manifest (e.g. dist/cjs/package.json
+    // containing only {"type": "commonjs"}) without a package name.
+    // If name does not match, inspect ancestor directories below the dependency root.
+    if (manifest.name !== dependency) {
+      let currentDir = dirname(dirname(file))
+      let foundAncestor = false
+      while (currentDir.length > 1 && basename(currentDir) !== 'node_modules') {
+        const ancestorManifestPath = join(currentDir, 'package.json')
+        if (existsSync(ancestorManifestPath)) {
+          try {
+            const ancestorManifest = JSON.parse(await readFile(ancestorManifestPath, 'utf8'))
+            if (ancestorManifest.name === dependency) {
+              manifest = ancestorManifest
+              packageDirectory = currentDir.endsWith('/') || currentDir.endsWith('\\') ? currentDir : `${currentDir}/`
+              foundAncestor = true
+              break
+            }
+          } catch {
+            // Ignore malformed ancestor manifest
+          }
+        }
+        const parent = dirname(currentDir)
+        if (parent === currentDir) break
+        currentDir = parent
+      }
+      if (!foundAncestor) continue
+    }
     const exported = manifest.exports
     const rootExport = exported && typeof exported === 'object' &&
       Object.hasOwn(exported, '.') ? exported['.'] : exported
@@ -619,7 +655,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
     }
     // Subpath exports are resolved when imported. A bare require is explicitly
     // unsupported by these packages; it cannot determine whether they exist.
-    return subpathOnly ? file : undefined
+    return subpathOnly ? join(packageDirectory, 'package.json') : undefined
   }
   return undefined
 }
