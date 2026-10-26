@@ -31,6 +31,27 @@ DSH_DEV_PROFILE=dsh-desktop-dev-workbench DSH_DEV_HARNESS_PORT=43132 DSH_DEV_MOB
 
 On PowerShell, set the same names through `$env:DSH_DEV_PROFILE`, `$env:DSH_DEV_HARNESS_PORT` and `$env:DSH_DEV_MOBILE_PORT` before `npm run dev`. The profile must be a directory name, separate from `dsh-desktop`; ports must be distinct integers from 1024 to 65535. These overrides are ignored by production builds. Defaults remain `dsh-desktop-dev`, Harness port 43130 and mobile port 43128.
 
+## Workbench package lifecycle
+
+Workbench Market resolves reviewed catalog targets, but delegates package installation,
+updates, selection switches, removal and runtime reconciliation to Plugin Manager.
+Its install records describe catalog provenance, not whether a plugin is running.
+The inventory endpoint returns Plugin Manager bundle and plugin snapshots; clients
+refresh them on `plugin-manager/changed` rather than treating saved sidebar entries
+or installed package files as proof of activation.
+
+Catalog installation requires the generation backend verified-install capability.
+The backend checks expected package name/version and registry integrity before
+publication; Release downloads retain SHA-256 validation. An unsupported backend
+refuses verified installation instead of falling back to unverified pnpm. Updates
+replace only the expected package and retain manager protections and rollback.
+
+Actual application results determine the next action: `applied`, `restart-required`,
+`failed`, `cancelled` or `overridden`. No static client/server package classifier
+drives these routes. The packaged HMR fallback reports `module-comparison` rather
+than claiming module replacement. This does not add unpublished local workbench
+identity support; registration and a mounted panel are separate acceptance stages.
+
 ## Validation
 
 Run the core checks before submitting a change:

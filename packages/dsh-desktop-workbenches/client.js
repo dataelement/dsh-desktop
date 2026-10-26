@@ -197,9 +197,7 @@ window.__ModuleLoader__.load({
         this.catalogRefreshing = false
         this.catalogRefresh = null
         this.checkingUpdates = false
-        // Workbenches installed from the market, keyed by Awesome repository
-        // identity. A new package only runs after Harness restarts, so
-        // restartNeeded stays set until then.
+        // Market records own business identity; Plugin Manager owns package lifecycle.
         this.installs = {}
         this.native = { status: NATIVE_STATUS.idle, bundles: {} }
         this.nativeTicket = 0
@@ -207,10 +205,7 @@ window.__ModuleLoader__.load({
         this.removingPlugin = null
         this.removedWorkbenchIds = new Set()
         this.installing = null
-        this.restartNeeded = false
-        this.pendingRestart = new Set()
-        this.reloadNeeded = false
-        this.pendingReload = new Set()
+        this.applicationOutcomes = new Map()
         this.installFailures = new Map()
         this.draftNotes = new Map()
         this.noteTimers = new Map()
@@ -227,6 +222,16 @@ window.__ModuleLoader__.load({
       }
       getSnapshot = () => this.snapshot
       subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+      get restartNeeded() { return [...this.applicationOutcomes.values()].some(result => result.application === 'restart-required') }
+      get reloadNeeded() { return [...this.applicationOutcomes.values()].some(result => result.application === 'reload-required') }
+      pendingApplications(application) {
+        return new Set([...this.applicationOutcomes.values()].filter(result => result.stage === 'install' && result.application === application).map(result => result.catalogId))
+      }
+      get pendingRestart() { return this.pendingApplications('restart-required') }
+      get pendingReload() { return this.pendingApplications('reload-required') }
+      recordApplication(name, result, catalogId, stage) {
+        this.applicationOutcomes.set(name, { ...result, catalogId, stage: stage || result.stage })
+      }
       installRecordFor(catalogId) {
         const install = this.installs[catalogId]
         if (!install) return null
@@ -297,14 +302,29 @@ window.__ModuleLoader__.load({
       async refreshNative() {
         const ticket = ++this.nativeTicket
         try {
-          const manager = this.ctx.remote?.pluginManager
-          if (!manager?.listBundles) throw new Error('Native plugin manager unavailable')
-          const result = await manager.listBundles()
-          if (!result?.ok || !Array.isArray(result.value)) throw new Error('Native plugin inventory unavailable')
+          const data = await this.readInstallSnapshot().catch(() => null)
           if (this.disposed || ticket !== this.nativeTicket) return
-          await this.readInstalls().catch(() => { this.packageEvidence = {} })
+          if (data?.installs && typeof data.installs === 'object') this.installs = data.installs
+          if (data?.packages && typeof data.packages === 'object') this.packageEvidence = data.packages
+          let lifecycle = data?.lifecycle
+          if (!Array.isArray(lifecycle?.bundles)) {
+            const manager = this.ctx.remote?.pluginManager
+            if (!manager?.listBundles) throw new Error('Native plugin manager unavailable')
+            const result = await manager.listBundles()
+            if (!result?.ok || !Array.isArray(result.value)) throw new Error('Native plugin inventory unavailable')
+            const plugins = manager.listPlugins ? await manager.listPlugins() : null
+            lifecycle = { bundles: result.value, plugins: plugins?.ok && Array.isArray(plugins.value) ? plugins.value : [] }
+          }
           if (this.disposed || ticket !== this.nativeTicket) return
-          this.native = { status: NATIVE_STATUS.ready, bundles: Object.fromEntries(result.value.filter((bundle) => typeof bundle?.name === 'string').map((bundle) => [bundle.name, bundle])) }
+          if (Array.isArray(lifecycle.applications)) {
+            this.applicationOutcomes.clear()
+            for (const result of lifecycle.applications) {
+              const name = result.bundle || result.target
+              const catalogId = Object.keys(this.installs).find(id => this.installs[id].pluginName === name)
+              if (name) this.recordApplication(name, result, catalogId, result.stage === 'enable' && result.bundle ? 'install' : result.stage)
+            }
+          }
+          this.native = { status: NATIVE_STATUS.ready, bundles: Object.fromEntries(lifecycle.bundles.filter((bundle) => typeof bundle?.name === 'string').map((bundle) => [bundle.name, bundle])), plugins: Array.isArray(lifecycle.plugins) ? lifecycle.plugins : [] }
         } catch {
           if (this.disposed || ticket !== this.nativeTicket) return
           this.native = { status: NATIVE_STATUS.unavailable, bundles: {} }
@@ -318,10 +338,15 @@ window.__ModuleLoader__.load({
         this.togglingPlugin = name
         this.publish()
         try {
-          const result = await this.ctx.remote.pluginManager.setBundleEnabled(name, enabled)
-          if (!result?.ok) throw new Error(result?.error?.diagnostic || '无法切换插件状态。')
-          if (result.value.application === 'failed' || result.value.application === 'cancelled') throw new Error(result.value.error?.diagnostic || '插件状态切换失败。')
-          if (result.value.application === 'restart-required') this.restartNeeded = true
+          const install = Object.entries(this.installs).find(([id, record]) => record?.catalogId === id && record.pluginName === name)
+          if (install) {
+            await this.marketPackage('/api/desktop-workbenches/market-enabled', install[0], { enabled })
+          } else {
+            const result = await this.ctx.remote.pluginManager.setBundleEnabled(name, enabled)
+            if (!result?.ok) throw new Error(result?.error?.diagnostic || '无法切换插件状态。')
+            if (!['applied', 'restart-required'].includes(result.value?.application)) throw new Error(result.value?.error?.diagnostic || '插件状态切换失败。')
+            this.recordApplication(name, result.value)
+          }
           await this.refreshNative()
           if (!enabled && this.state.active && this.pluginFor(this.catalog.get(this.state.active) || { id: this.state.active }) === name) await this.leave()
         } catch (error) {
@@ -599,13 +624,17 @@ window.__ModuleLoader__.load({
         try { await Promise.all([this.refreshCatalog(), this.refreshNative()]) }
         finally { this.checkingUpdates = false; if (!this.disposed) this.publish() }
       }
-      async readInstalls() {
+      async readInstallSnapshot() {
         const names = [...new Set([...this.providers.keys(), ...Object.values(this.knownProviders).map(item => item.sourcePackage)])].filter(name => typeof name === 'string').slice(0, 64)
         const evidenceQuery = names.map(name => `package=${encodeURIComponent(name)}`).join('&')
         const response = await this.request(evidenceQuery ? `${MARKET_INSTALLS_API}?${evidenceQuery}` : MARKET_INSTALLS_API, { credentials: 'same-origin', cache: 'no-store' })
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
-        if (data.packages && typeof data.packages === 'object') this.packageEvidence = data.packages
+        return data
+      }
+      async readInstalls() {
+        const data = await this.readInstallSnapshot()
+        if (!this.disposed && data.packages && typeof data.packages === 'object') this.packageEvidence = data.packages
         return data.installs && typeof data.installs === 'object' ? data.installs : {}
       }
       async marketPackage(path, catalogId, options = {}) {
@@ -620,17 +649,26 @@ window.__ModuleLoader__.load({
           const data = await response.json()
           if (!response.ok) {
             const error = new Error(installErrorMessage(this.ctx, data, response.status))
+            error.result = data.result
+            error.application = data.application || data.result?.application
             if (response.status === 409 && data.code === 'confirmation_required' && (data.params?.updateRisk === 'local' || data.params?.updateRisk === 'modified')) {
               error.code = 'confirmation_required'
               error.updateRisk = data.params.updateRisk
             }
             throw error
           }
-          if (data.actionRequired === 'reload' || (data.reloadRequired && !data.restartRequired)) {
-            this.reloadNeeded = true
-          } else if (data.restartRequired || data.actionRequired === 'restart') {
-            this.restartNeeded = true
+          if (path.endsWith('market-install') && (data.install?.catalogId !== catalogId || typeof data.install?.pluginName !== 'string')) throw new Error('市场安装记录无效。')
+          const outcome = data.result || data
+          if (outcome.application && !['applied', 'restart-required'].includes(outcome.application)) {
+            const error = new Error(outcome.error?.diagnostic || data.error || '工作台插件当前不可用。')
+            error.result = outcome
+            error.application = outcome.application
+            throw error
           }
+          const application = outcome.application || (data.restartRequired || data.actionRequired === 'restart' ? 'restart-required'
+            : data.reloadRequired || data.actionRequired === 'reload' ? 'reload-required' : 'applied')
+          const name = data.install?.pluginName || this.installs[catalogId]?.pluginName || this.pluginFor(this.remoteCatalog.find(entry => entry.id === catalogId) || { id: catalogId }) || catalogId
+          this.recordApplication(name, { ...outcome, application }, catalogId, path.endsWith('market-uninstall') ? 'remove' : path.endsWith('market-enabled') ? 'enable' : 'install')
           return data
         } finally {
           this.installing = null
@@ -654,16 +692,9 @@ window.__ModuleLoader__.load({
         if (wasInstalled && this.updateRiskFor(installed) && confirmedReplacement !== true) throw new Error('需要确认更新本机工作台代码。')
         try {
           const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId, confirmedReplacement === true ? { confirmedReplacement: true } : {})
-          if (data.install?.catalogId !== catalogId || typeof data.install?.pluginName !== 'string') throw new Error('市场安装记录无效。')
           this.installs = { ...this.installs, [catalogId]: data.install }
           this.removedWorkbenchIds.delete(catalogId)
-          if (data.actionRequired === 'reload' || (data.reloadRequired && !data.restartRequired)) {
-            this.pendingReload.add(catalogId)
-            this.pendingRestart.delete(catalogId)
-          } else {
-            this.pendingRestart.add(catalogId)
-            this.pendingReload.delete(catalogId)
-          }
+          if (data.application || data.result?.application) await this.refreshNative()
           this.installFailures.delete(catalogId)
           this.publish()
           const result = await this.commit((state) => {
@@ -675,8 +706,6 @@ window.__ModuleLoader__.load({
         } catch (error) {
           if (confirmationRisk(error)) throw error
           this.installFailures.set(catalogId, { kind: wasInstalled ? 'update' : 'install', message: error instanceof Error ? error.message : String(error) })
-          this.pendingRestart.delete(catalogId)
-          this.pendingReload.delete(catalogId)
           this.publish()
           throw error
         }
@@ -708,8 +737,7 @@ window.__ModuleLoader__.load({
         await this.marketPackage('/api/desktop-workbenches/market-uninstall', catalogId)
         const { [catalogId]: _removed, ...rest } = this.installs
         this.installs = rest
-        this.pendingRestart.delete(catalogId)
-        this.pendingReload.delete(catalogId)
+        await this.refreshNative()
         this.installFailures.delete(catalogId)
         this.publish()
       }
@@ -773,7 +801,7 @@ window.__ModuleLoader__.load({
           const result = await this.ctx.remote.pluginManager.removeBundle(name)
           if (!result?.ok) throw new Error(result?.error?.diagnostic || '卸载原生插件失败。')
           if (!['applied', 'restart-required'].includes(result.value?.application) || result.value.changed === false) throw new Error(result.value?.error?.diagnostic || '卸载原生插件未生效。')
-          if (result.value.application === 'restart-required') this.restartNeeded = true
+          this.recordApplication(name, result.value)
           this.removedWorkbenchIds.add(id)
           await this.remove(id)
           this.introducedLocal.delete(id)
@@ -800,17 +828,15 @@ window.__ModuleLoader__.load({
         this.error = ''
         this.publish()
         try {
-          const [data, catalog, installs] = await Promise.all([
+          const [data, catalog] = await Promise.all([
             this.read(),
             this.readCatalog().catch(error => ({ error })),
-            this.readInstalls().catch(() => ({})),
             this.refreshNative()
           ])
           await this.ctx.sessions.refresh()
           if (this.disposed || ticket !== this.navigation) return
           this.state = data.state
           this.revision = data.revision
-          this.installs = installs
           if (catalog?.error && catalogRevision === this.catalogRevision) this.catalogError = catalog.error instanceof Error ? catalog.error.message : String(catalog.error)
           else if (catalog && catalogRevision === this.catalogRevision) {
             this.catalogLoaded = true

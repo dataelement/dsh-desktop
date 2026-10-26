@@ -20,9 +20,9 @@ import { Service } from '@deepseek-ai/cordis'
  *
  * Module-level hot replacement genuinely needs those internals and is not
  * reproduced here. Watching the user patch layer does not — that is a file
- * watcher and a callback — and it is the capability profile boot actually
- * asks for. The desktop already owns a full Harness restart for everything
- * else.
+ * watcher and a callback. Plugin Manager also asks for profile reconciliation;
+ * without module-cache inspection that operation must report a restart, not
+ * claim that replacement code was loaded or activated.
  */
 export const name = 'dsh-desktop-hmr-fallback'
 export const inject = ['loader']
@@ -34,6 +34,26 @@ export class ConfigWatchHmr extends Service {
     super(ctx, 'hmr')
     this.operations = Promise.resolve()
     this.executing = new AsyncLocalStorage()
+  }
+
+  /** Host capability description; service presence alone does not imply full HMR. */
+  get capabilities() {
+    return { configWatching: true, profileReconciliation: false, moduleReplacement: false }
+  }
+
+  /**
+   * Match the upstream ProfileReconciliation result without applying a generation.
+   * Node's internal module cache is unavailable, so even required entry ids must
+   * wait for a restart; no modules were compared and no activation was judged.
+   * Callers hold runExclusive, as required by the upstream public contract.
+   * @param {readonly string[]} [requiredIds] Entries requested by the caller.
+   * @returns {Promise<import('@deepseek-ai/dsh-hmr').ProfileReconciliation>}
+   */
+  async reconcileProfile(requiredIds = []) {
+    if (this.executing.getStore() !== true) {
+      throw new Error('HMR profile reconciliation must run inside runExclusive')
+    }
+    return { warnings: [], pending: [], restartReason: 'module-comparison' }
   }
 
   /**
