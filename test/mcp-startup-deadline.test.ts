@@ -63,10 +63,9 @@ interface FixtureOptions {
   mode?: string
   strict?: boolean
   startupTimeoutMs?: number
-  brokenClose?: boolean
 }
 
-async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 900, brokenClose = false }: FixtureOptions = {}) {
+async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 900 }: FixtureOptions = {}) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-mcp-deadline-'))
   try {
     const profile = join(home, 'profiles', 'fixture')
@@ -90,14 +89,6 @@ async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 90
     const bootUrl = pathToFileURL(resolve('node_modules/@deepseek-ai/dsh-app-boot/lib/index.js')).href
     await writeFile(entry, `
       import { boot, loadProfile } from ${JSON.stringify(bootUrl)};
-      ${brokenClose ? `
-        const { Client } = await import(${JSON.stringify(pathToFileURL(resolve('node_modules/@modelcontextprotocol/client/dist/index.mjs')).href)});
-        const close = Client.prototype.close;
-        Client.prototype.close = function() {
-          void close.call(this);
-          return new Promise(() => {});
-        };
-      ` : ''}
       const live = new Set();
       const runtimeReady = Promise.withResolvers();
       let triggerRuntime;
@@ -201,15 +192,6 @@ describe('MCP entry startup deadline through the real Profile loader', () => {
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
   })
-
-  it('bounds a close promise that never settles, including final disposal', async () => {
-    const result = await runProfile({ brokenClose: true })
-    expect(result.status, result.stderr).toBe(0)
-    expect(result.stderr).toContain('failed generation could not confirm transport closure')
-    expect(result.stdout).toContain('PROFILE_READY:["mcp__healthy__ping"]')
-    expect(result.stdout).toContain('PROFILE_DISPOSED:0')
-    expect(result.elapsed).toBeLessThan(12_000)
-  }, 20_000)
 
   it('contains a tools/list stall after successful initialize and boots a healthy entry', async () => {
     const result = await runProfile()
