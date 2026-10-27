@@ -33,8 +33,7 @@ const locale: UpdateLocale = navigator.language.toLowerCase().startsWith('zh') ?
 // Cover the Harness document before its own scripts paint the boot failure screen.
 const bootCover = mountBootCover(location.href, {
   document,
-  locale,
-  revealPage: () => ipcRenderer.invoke('harness:reveal-boot-cover')
+  locale
 })
 
 installHarnessBootBridge(() => {

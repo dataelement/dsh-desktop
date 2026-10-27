@@ -1,4 +1,3 @@
-import { findBootFailureText } from './boot-failure'
 import { isHarnessBootPage } from '../shared/harness-boot'
 
 export const BOOT_COVER_ID = 'dsh-desktop-boot-cover'
@@ -23,12 +22,6 @@ export interface BootCoverOptions {
   cancel?: (timer: number) => void
   matchMedia?: (query: string) => MediaQueryList
   subscribePageHide?: (listener: () => void) => () => void
-  /**
-   * Remove the main-process hide before dropping this cover. Without it, the
-   * failure document stays `visibility: hidden` and the details button reveals
-   * a blank page.
-   */
-  revealPage?: () => Promise<unknown>
 }
 
 export interface BootCover {
@@ -147,8 +140,6 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     .markDark { display:none; }
     h1 { margin:0; font-size:23px; font-weight:650; letter-spacing:-0.02em; }
     p { margin:-4px 0 0; color:#777a80; font-size:13px; }
-    button { min-height:32px; padding:6px 12px; border:1px solid rgba(120,120,125,.45); border-radius:8px; color:inherit; background:transparent; cursor:pointer; font:inherit; font-size:13px; font-weight:600; }
-    button:focus-visible { outline:2px solid #4d6bfe; outline-offset:2px; }
     :host([data-theme="dark"]) { color:#f3f4f6; background:${DARK_BACKGROUND}; color-scheme:dark; }
     :host([data-theme="dark"]) .markLight { display:none; }
     :host([data-theme="dark"]) .markDark {
@@ -173,28 +164,21 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
   markFrame.append(markLight, markDark)
   const title = doc.createElement('h1')
   const status = doc.createElement('p')
-  const details = doc.createElement('button')
-  details.type = 'button'
-  details.hidden = true
   const starting = locale === 'zh'
     ? { title: '正在启动 DSH Desktop', status: '首次启动可能需要一点时间。' }
     : { title: 'Starting DSH Desktop', status: 'First launch may take a moment.' }
   const stalled = locale === 'zh'
     ? {
       title: '启动时间较长',
-      status: '可以继续等待，或查看当前页面的详细信息。',
-      action: '显示详细信息'
+      status: '仍在加载，可以继续等待；准备就绪后会自动进入。'
     }
     : {
       title: 'Startup is taking longer than usual',
-      status: 'You can keep waiting, or view details on the current page.',
-      action: 'Show details'
+      status: 'Still loading. You can keep waiting; the app continues on its own once ready.'
     }
   title.textContent = starting.title
   status.textContent = starting.status
-  details.textContent = stalled.action
-  details.setAttribute('aria-label', stalled.action)
-  panel.append(markFrame, title, status, details)
+  panel.append(markFrame, title, status)
   shadow.append(style, panel)
 
   const colorScheme = options.matchMedia ?? doc.defaultView?.matchMedia?.bind(doc.defaultView)
@@ -255,8 +239,6 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     if (disposed) return
     title.textContent = stalled.title
     status.textContent = stalled.status
-    details.hidden = false
-    details.focus()
   }
 
   const stopStallTimer = (): void => {
@@ -285,39 +267,6 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     unsubscribePageHide()
     covers.delete(doc)
   }
-  const hasFailureDetails = (): boolean => {
-    if (findBootFailureText(doc)) return true
-    status.textContent = locale === 'zh'
-      ? '页面仍在加载，尚无可显示的错误信息。可以继续等待，或稍后重试。'
-      : 'The page is still loading. No error details are available yet. Keep waiting or try again later.'
-    return false
-  }
-  let revealing = false
-  details.addEventListener('click', () => {
-    if (disposed || revealing) return
-    // During a stalled script download the underlying document is empty.
-    // Removing the cover would replace actionable feedback with a white page.
-    if (!hasFailureDetails()) return
-    const reveal = options.revealPage
-    if (!reveal) {
-      dispose()
-      return
-    }
-    revealing = true
-    void Promise.resolve().then(reveal).then(() => {
-      if (disposed) return
-      // Startup can replace the failure document while main removes its CSS.
-      // Keep our own cover until the normal ready path releases it.
-      if (!hasFailureDetails()) { revealing = false; return }
-      dispose()
-    }).catch(() => {
-      // The main-process rule is still applied. Removing the cover now
-      // would leave a blank document instead of the failure details.
-      revealing = false
-      status.textContent = locale === 'zh' ? '无法显示详细信息，请重试。' : 'Could not show details. Please try again.'
-    })
-  })
-
   const controller: BootCover = {
     holdForFailure() {
       if (disposed) return
