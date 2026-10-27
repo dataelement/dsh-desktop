@@ -7,8 +7,9 @@ import subprocess
 import tempfile
 import os
 import sys
+import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / '.github/scripts'))
 from confirm_popup_release import Review
@@ -146,6 +147,29 @@ class GateTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): self.review.handle(self.event('approve'))
         self.assertEqual(self.review.state, 'expired')
 
+    def test_fatal_during_translation_prevents_approval(self):
+        listener = gate.CardEvents()
+        listener.failed = threading.Event()
+        listener.process = Mock()
+        listener.process.poll.return_value = None
+        self.review.handle(self.event('rewrite'))
+        def disconnected_translation(text):
+            listener.failed.set()
+            return {'zh': text, 'en': '- Fix Save As'}
+        self.review.translate = disconnected_translation
+        with self.assertRaisesRegex(RuntimeError, 'Feishu event connection failed'):
+            self.review.handle(self.event('submit', '- 修复另存为'), listener.check_health)
+        self.assertNotEqual(self.review.state, 'approved')
+
+    def test_exited_listener_prevents_approval(self):
+        listener = gate.CardEvents()
+        listener.failed = threading.Event()
+        listener.process = Mock()
+        listener.process.poll.return_value = 1
+        with self.assertRaisesRegex(RuntimeError, 'Feishu event listener exited'):
+            self.review.handle(self.event('approve'), listener.check_health)
+        self.assertNotEqual(self.review.state, 'approved')
+
     def test_timeout_during_translation(self):
         self.review.handle(self.event('rewrite'))
         def slow(text):
@@ -167,6 +191,7 @@ class RunnerTests(unittest.TestCase):
         class Events:
             def __enter__(self): return self
             def __exit__(self, *_): pass
+            def check_health(self): pass
             def next(self, _):
                 action = next(item for item in nodes(api.cards[-1]) if item.get('tag') == 'button')['behaviors'][0]['value']
                 return {'type': 'action', 'event_id': 'approved-event', 'host': 'im_message',
@@ -194,6 +219,14 @@ class RunnerTests(unittest.TestCase):
                 self.assertFalse((folder / 'approved-popup.json').exists())
             finally:
                 os.chdir(old)
+
+
+class GenerationTests(unittest.TestCase):
+    def test_initial_generation_denies_tools(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/release.yml').read_text()
+        command = next(line for line in workflow.splitlines()
+                       if 'copilot -p' in line and 'popup-notes.json' in line)
+        self.assertIn("--deny-tool '*'", command)
 
 
 class TranslationTests(unittest.TestCase):

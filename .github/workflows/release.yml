@@ -970,7 +970,7 @@ jobs:
           set -euo pipefail
           test -n "$COPILOT_GITHUB_TOKEN" || { echo "::error::Missing MODELS_TOKEN; popup notes cannot be generated"; exit 1; }
           python3 .github/scripts/update_popup_notes.py prompt --tag "$RELEASE_TAG" --file .github/release-artifacts/popup-prompt.txt
-          copilot -p "$(cat .github/release-artifacts/popup-prompt.txt)" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user > .github/release-artifacts/popup-notes.json
+          copilot -p "$(cat .github/release-artifacts/popup-prompt.txt)" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user --deny-tool '*' > .github/release-artifacts/popup-notes.json
           python3 .github/scripts/update_popup_notes.py validate --file .github/release-artifacts/popup-notes.json
       - name: Install Feishu card callback transport
         run: |

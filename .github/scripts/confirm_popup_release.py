@@ -50,6 +50,7 @@ class CardEvents:
     """Own one SDK process for this run; never write credentials to disk or stdout."""
     def __enter__(self):
         self.messages = queue.Queue(maxsize=1000)
+        self.failed = threading.Event()
         self.process = subprocess.Popen([sys.executable, str(Path(__file__).with_name('feishu_card_events.py'))],
                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
 
@@ -58,11 +59,15 @@ class CardEvents:
                 for line in self.process.stdout:
                     if len(line) > 32000:
                         break
-                    self.messages.put(json.loads(line), timeout=1)
+                    event = json.loads(line)
+                    if event.get('type') == 'fatal':
+                        self.failed.set()
+                    self.messages.put(event, timeout=1)
             except (ValueError, queue.Full):
                 # Parent observes EOF/fatal and never releases on an incomplete stream.
                 pass
             finally:
+                self.failed.set()
                 try:
                     self.messages.put({'type': 'fatal', 'stage': 'event-stream-ended'}, timeout=1)
                 except queue.Full:
@@ -78,9 +83,15 @@ class CardEvents:
             raise
         return self
 
-    def next(self, timeout):
+    def check_health(self):
+        # A fatal behind queued actions must still block a synchronous translation.
+        if self.failed.is_set():
+            raise RuntimeError('Feishu event connection failed; release blocked')
         if self.process.poll() is not None:
             raise RuntimeError('Feishu event listener exited; release blocked')
+
+    def next(self, timeout):
+        self.check_health()
         try:
             event = self.messages.get(timeout=max(0, timeout))
         except queue.Empty:
@@ -126,7 +137,7 @@ class Review:
         self.change('expired', '等待确认超时，请重新运行发布流程。')
         raise RuntimeError('Release approval timed out')
 
-    def handle(self, event):
+    def handle(self, event, check_health=lambda: None):
         if self.clock() >= self.deadline:
             self.expire()
         if not isinstance(event, dict) or event.get('type') != 'action':
@@ -195,6 +206,7 @@ class Review:
             return None
         if self.clock() >= self.deadline:
             self.expire()
+        check_health()
         self.change('approved', '已批准文案，CI 将继续发布。后续构建发布结果以流水线为准。')
         return {**self.metadata, 'notes': self.notes, 'reviewer': event['operator'], 'event_id': eid,
                 'message_id': self.root, 'root_id': self.root, 'revision': self.revision,
@@ -219,8 +231,9 @@ def run():
                 event = events.next(min(15, max(0, review.deadline - time.monotonic())))
                 if time.monotonic() >= review.deadline:
                     review.expire()
-                approval = review.handle(event)
+                approval = review.handle(event, events.check_health)
                 if approval:
+                    events.check_health()
                     temporary = output.with_suffix('.tmp')
                     temporary.write_text(json.dumps(approval, ensure_ascii=False), encoding='utf-8')
                     temporary.replace(output)
