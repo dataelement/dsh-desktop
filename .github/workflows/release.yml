@@ -147,7 +147,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci --prefer-offline
+      - name: Configure native download caches before dependency installation
+        shell: bash
+        run: |
+          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
+          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
+      - name: Cache Electron downloads before dependency installation
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ELECTRON_CACHE }}
+          key: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install dependencies with timings
+        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
+      - name: Upload dependency installation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-timings-${{ github.job }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/npm-timings/*-timing.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Cache shared PPT runtime
         uses: actions/cache@v4
         with:
@@ -177,7 +199,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci --prefer-offline
+      - name: Configure native download caches before dependency installation
+        shell: bash
+        run: |
+          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
+          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
+      - name: Cache Electron downloads before dependency installation
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ELECTRON_CACHE }}
+          key: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install dependencies with timings
+        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
+      - name: Upload dependency installation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-timings-${{ github.job }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/npm-timings/*-timing.json
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/download-artifact@v4
         with:
           name: shared-ppt-runtime
@@ -248,7 +292,29 @@ jobs:
       - name: Set app version from signed version
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
         run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
-      - run: npm ci
+      - name: Configure native download caches before dependency installation
+        shell: bash
+        run: |
+          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
+          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
+      - name: Cache Electron downloads before dependency installation
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ELECTRON_CACHE }}
+          key: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install dependencies with timings
+        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
+      - name: Upload dependency installation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-timings-${{ github.job }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/npm-timings/*-timing.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Download shared runtime assets
         uses: actions/download-artifact@v4
         with:
@@ -412,6 +478,9 @@ jobs:
         (inputs.target == 'all' || inputs.target == 'windows'))
     runs-on: windows-2022
     steps:
+      - name: Preserve shared asset fingerprints during checkout
+        shell: bash
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -428,7 +497,33 @@ jobs:
       - name: Set app version from signed version
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
         run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
-      - run: npm ci
+      - name: Configure native download caches before dependency installation
+        shell: bash
+        run: |
+          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
+          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
+      - name: Cache Office runtime downloads and packaging tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/office-downloads
+            ${{ env.ELECTRON_CACHE }}
+            ${{ env.ELECTRON_BUILDER_CACHE }}
+          key: windows-packaging-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
+          restore-keys: |
+            windows-packaging-v1-
+      - name: Install dependencies with timings
+        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
+      - name: Upload dependency installation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-timings-${{ github.job }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/npm-timings/*-timing.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Download shared runtime assets
         uses: actions/download-artifact@v4
         with:
@@ -440,21 +535,6 @@ jobs:
           mkdir -p .build
           if [ -d .build/shared-assets/office-template-cache ]; then cp -R .build/shared-assets/office-template-cache .build/; fi
           if [ -d .build/shared-assets/ppt-runtime ]; then cp -R .build/shared-assets/ppt-runtime .build/; fi
-      - name: Configure Windows packaging cache
-        shell: pwsh
-        run: |
-          "ELECTRON_CACHE=$env:RUNNER_TEMP/electron-cache" >> $env:GITHUB_ENV
-          "ELECTRON_BUILDER_CACHE=$env:RUNNER_TEMP/electron-builder-cache" >> $env:GITHUB_ENV
-      - name: Cache Office runtime downloads and packaging tools
-        uses: actions/cache@v4
-        with:
-          path: |
-            .build/office-downloads
-            ${{ env.ELECTRON_CACHE }}
-            ${{ env.ELECTRON_BUILDER_CACHE }}
-          key: windows-packaging-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
-          restore-keys: |
-            windows-packaging-v1-
       - run: npm run build
       - name: Run focused Windows regressions
         if: inputs.windows_full_tests != true

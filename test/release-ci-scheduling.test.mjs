@@ -80,6 +80,36 @@ describe('release CI scheduling', () => {
     expect(afterPack).toContain('await verifyPackagedPptRuntime(context)')
   })
 
+  it('preserves source bytes before Windows checkout so shared template hashes remain reusable', () => {
+    const steps = jobs['windows-x64'].steps
+    const preserveIndex = steps.findIndex(candidate => candidate.name === 'Preserve shared asset fingerprints during checkout')
+    const checkoutIndex = steps.findIndex(candidate => candidate.uses === 'actions/checkout@v4')
+    expect(preserveIndex).toBeGreaterThanOrEqual(0)
+    expect(preserveIndex).toBeLessThan(checkoutIndex)
+    expect(steps[preserveIndex].run).toBe('git config --global core.autocrlf false')
+  })
+
+  it('restores Electron archives before ci and retains install-script execution with timing evidence', () => {
+    for (const name of ['prepare-shared-runtime-assets', 'validate-shared-runtime', 'macos', 'windows-x64']) {
+      const steps = jobs[name].steps
+      const installIndex = steps.findIndex(candidate => candidate.name === 'Install dependencies with timings')
+      const configIndex = steps.findIndex(candidate => candidate.name === 'Configure native download caches before dependency installation')
+      const cacheIndex = steps.findIndex(candidate => candidate.uses === 'actions/cache@v4' &&
+        (candidate.with.path === '${{ env.ELECTRON_CACHE }}' || candidate.with.path.includes('${{ env.ELECTRON_CACHE }}')))
+      expect(configIndex).toBeGreaterThanOrEqual(0)
+      expect(cacheIndex).toBeGreaterThan(configIndex)
+      expect(installIndex).toBeGreaterThan(cacheIndex)
+      expect(steps[configIndex].run).toContain('electron_config_cache=')
+      const install = steps[installIndex].run
+      expect(install).toContain('--timing')
+      expect(install).toContain('--prefer-offline')
+      expect(install).not.toContain('--ignore-scripts')
+      const evidence = step(name, 'Upload dependency installation timings')
+      expect(evidence.if).toBe('always()')
+      expect(evidence.with.path).toContain('*-timing.json')
+    }
+  })
+
   it('does not rebuild or retest when resigning an existing Windows artifact', () => {
     const input = { mode: 'resign', target: 'windows' }
     expect(enabled(jobs['prepare-shared-runtime-assets'].if, input)).toBe(false)
