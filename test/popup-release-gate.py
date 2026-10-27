@@ -17,6 +17,26 @@ import confirm_popup_release as gate
 from update_popup_notes import translate_chinese, validate
 
 
+# Exercise Windows' legacy default on every platform; explicit UTF-8 must win.
+_path_read_text = Path.read_text
+_path_write_text = Path.write_text
+
+
+def _legacy_read_text(self, encoding=None, **kwargs):
+    return _path_read_text(self, encoding=encoding or 'cp1252', **kwargs)
+
+
+def _legacy_write_text(self, data, encoding=None, **kwargs):
+    return _path_write_text(self, data, encoding=encoding or 'cp1252', **kwargs)
+
+
+def setUpModule():
+    for name, replacement in [('read_text', _legacy_read_text), ('write_text', _legacy_write_text)]:
+        patcher = patch.object(Path, name, replacement)
+        patcher.start()
+        unittest.addModuleCleanup(patcher.stop)
+
+
 def nodes(value):
     if isinstance(value, dict):
         yield value
@@ -206,10 +226,11 @@ class RunnerTests(unittest.TestCase):
                 os.chdir(temporary)
                 folder = Path('.github/release-artifacts')
                 folder.mkdir(parents=True)
-                (folder / 'popup-notes.json').write_text(json.dumps({'zh': '- 修复保存', 'en': '- Fix saving'}))
+                (folder / 'popup-notes.json').write_text(json.dumps({'zh': '- 修复保存', 'en': '- Fix saving'}, ensure_ascii=False), encoding='utf-8')
                 with patch.dict(os.environ, env, clear=True), patch.object(gate, 'Feishu', return_value=api), patch.object(gate, 'CardEvents', Events):
                     gate.run()
-                result = json.loads((folder / 'approved-popup.json').read_text())
+                result = json.loads((folder / 'approved-popup.json').read_text(encoding='utf-8'))
+                self.assertEqual(result['notes']['zh'], '- 修复保存')
                 self.assertEqual(result['event_id'], 'approved-event')
                 self.assertEqual(result['GITHUB_SHA'], 'abc')
                 self.assertFalse((folder / 'approved-popup.tmp').exists())
@@ -223,7 +244,7 @@ class RunnerTests(unittest.TestCase):
 
 class GenerationTests(unittest.TestCase):
     def test_initial_generation_denies_tools(self):
-        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/release.yml').read_text()
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/release.yml').read_text(encoding='utf-8')
         command = next(line for line in workflow.splitlines()
                        if 'copilot -p' in line and 'popup-notes.json' in line)
         self.assertIn("--deny-tool '*'", command)
