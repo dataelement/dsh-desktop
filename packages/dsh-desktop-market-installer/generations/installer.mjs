@@ -658,7 +658,10 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
     const directory = dirname(file)
     return await realpath(directory).catch(() => directory)
   }))
-  for (const file of files) {
+  for (const selectedFile of files) {
+    // Resolve the manifest and lookup roots into the same physical namespace.
+    // Windows short paths/junction aliases must not stop ancestor discovery.
+    const file = await realpath(selectedFile).catch(() => selectedFile)
     // A wildcard may select a helper manifest inside the package. Recover only
     // within that package; a broken nearer copy still owns Node's lookup.
     const packageBoundary = packageRoots.find((root) => isInsideDirectory(root, file)) ?? dirname(file)

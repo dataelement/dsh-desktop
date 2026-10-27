@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import ts from 'typescript'
 import { expect, it } from 'vitest'
+import { unresolvedIdentifiers } from './helpers/unresolved-identifiers.mjs'
 
 const require = createRequire(import.meta.url)
 const patchedJs = [...new Set(readdirSync('patches').filter(name => name.endsWith('.patch')).flatMap(name =>
@@ -9,16 +10,10 @@ const patchedJs = [...new Set(readdirSync('patches').filter(name => name.endsWit
 ))]
 
 it('all patched JavaScript has no unresolved local identifiers', () => {
-  // Resolve lexical names without loading the dependency tree. Node globals are
-  // supplied by the actual host; this does not replace runtime behavior tests.
-  const program = ts.createProgram(patchedJs, { allowJs: true, checkJs: true, noEmit: true,
-    noResolve: true, target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, skipLibCheck: true })
-  const failures = program.getSemanticDiagnostics().filter(diagnostic => {
-    if (![2304, 2552, 18004].includes(diagnostic.code)) return false
-    const name = diagnostic.file.text.slice(diagnostic.start, diagnostic.start + diagnostic.length)
-    if (name === '__dirname' && diagnostic.file.commonJsModuleIndicator) return false
-    return !['global', 'setImmediate', 'clearImmediate'].includes(name)
-  }).map(diagnostic => `${diagnostic.file.fileName}:${diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start).line + 1}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`)
+  const failures = patchedJs.flatMap(file => unresolvedIdentifiers(readFileSync(file, 'utf8'), file,
+    // React's bundled renderer probes these optional host-provided globals.
+    // They are not declarations supplied by current lib.dom.d.ts.
+    file.includes('/dsh-web-frontend/dist/assets/') ? ['MSApp', '__REACT_DEVTOOLS_GLOBAL_HOOK__'] : []))
   expect(failures).toEqual([])
 }, 30000)
 

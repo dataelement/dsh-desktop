@@ -294,6 +294,8 @@
     "saxes": "6.0.0"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.11",
+    "@babel/traverse": "^7.29.10",
     "@electron/notarize": "2.5.0",
     "@types/js-yaml": "4.0.9",
     "@types/node": "24.10.1",

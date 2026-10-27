@@ -4196,13 +4196,29 @@ describe('local workbench installation restart notice', () => {
     service.dispose()
   })
 
+  it('combines host restart status with local outcomes and clears only restart outcomes on runtime replacement', async () => {
+    const { service, request } = await fixture()
+    service.recordApplication('local', { application: 'restart-required' }, 'local', 'install')
+    service.recordApplication('reload', { application: 'reload-required' }, 'reload', 'install')
+    request.mockResolvedValue(Response.json({ restartRequired: false, runtimeId: 'before' }))
+    await service.refreshRestartStatus()
+    expect(service.restartNeeded).toBe(true)
+    request.mockResolvedValue(Response.json({ restartRequired: false, runtimeId: 'after' }))
+    await service.refreshRestartStatus()
+    expect(service.restartNeeded).toBe(false)
+    expect(service.reloadNeeded).toBe(true)
+    service.dispose()
+  })
+
   it('preserves current notice on older hosts/errors and ignores late results after disposal', async () => {
     const { service, request } = await fixture()
-    service.restartNeeded = true
+    request.mockResolvedValue(Response.json({ restartRequired: true, runtimeId: 'before' }))
+    await service.refreshRestartStatus()
     request.mockResolvedValue(new Response('', { status: 404 }))
     await service.refreshRestartStatus()
     expect(service.restartNeeded).toBe(true)
-    service.restartNeeded = false
+    request.mockResolvedValue(Response.json({ restartRequired: false, runtimeId: 'after' }))
+    await service.refreshRestartStatus()
     const response = deferred()
     request.mockReturnValue(response.promise)
     const reading = service.refreshRestartStatus()
