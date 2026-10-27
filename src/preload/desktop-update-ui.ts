@@ -1,3 +1,4 @@
+import { popupReleaseNotes } from '../shared/update-release-notes'
 import { ipcRenderer } from 'electron'
 import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
 import {
@@ -116,6 +117,7 @@ function render(): void {
 
   host.style.display = 'block'
   const status = currentStatus
+  const releaseNotes = popupReleaseNotes(status.releaseNotes, locale)
   const centered = detailOpen
   host.style.left = centered ? '50%' : 'auto'
   host.style.top = centered ? '50%' : 'auto'
@@ -145,14 +147,14 @@ function render(): void {
   // The failure's own words beat ours, when it has any.
   const description = element('p', 'description')
   description.textContent =
-    status.phase === 'error' && status.message ? status.message : status.phase === 'up-to-date' ? (locale === 'zh' ? '当前已是最新版本' : 'You’re on the latest version') : !centered && status.phase === 'available' ? (status.releaseNotes?.split('\n').find(line => line.trim()) || headline.description) : headline.description
+    status.phase === 'error' && status.message ? status.message : status.phase === 'up-to-date' ? (locale === 'zh' ? '当前已是最新版本' : 'You’re on the latest version') : !centered && status.phase === 'available' ? (releaseNotes?.split('\n').find(line => line.trim()) || headline.description) : headline.description
   if (description.textContent) body.appendChild(description)
 
   if (centered && status.phase === 'available') {
     const label = element('p', 'notes-label')
     label.textContent = locale === 'zh' ? '更新日志' : 'What’s new'
     const notes = element('p', 'release-notes')
-    notes.textContent = status.releaseNotes || (locale === 'zh' ? '此版本暂无更新日志。' : 'No release notes for this version.')
+    notes.textContent = releaseNotes || (locale === 'zh' ? '此版本暂无更新日志。' : 'No release notes for this version.')
     body.append(label, notes)
   }
   if (!centered && status.phase === 'available') {
