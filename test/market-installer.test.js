@@ -36,10 +36,10 @@ describe('desktop plugin market installer', () => {
       'web',
       'add',
       '--workspace-root',
-      'dshmarket@^1.65.1'
+      'dshmarket@^1.66.47'
     ])
     expect(MARKET_PACKAGE).toBe('dshmarket')
-    expect(RECOMMENDED_MARKET_VERSION).toBe('^1.65.1')
+    expect(RECOMMENDED_MARKET_VERSION).toBe('^1.66.47')
     expect(STATUS_PATH).toBe('/dsh-desktop/market-installer/status')
     expect(INSTALL_PATH).toBe('/dsh-desktop/market-installer/install')
     expect(UNINSTALL_PATH).toBe('/dsh-desktop/market-installer/uninstall')
@@ -164,7 +164,7 @@ describe('desktop plugin market installer', () => {
     const entry = join(dir, 'bin.js')
     await writeFile(bootstrap, '')
     const env = { DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: bootstrap }
-    expect(pluginCommandArguments(entry, ['add', 'dshmarket@^1.65.1'], env, 'win32')).toEqual([
+    expect(pluginCommandArguments(entry, ['add', 'dshmarket@^1.66.47'], env, 'win32')).toEqual([
       '--import',
       pathToFileURL(bootstrap).href,
       entry,
@@ -172,7 +172,7 @@ describe('desktop plugin market installer', () => {
       '--profile',
       'web',
       'add',
-      'dshmarket@^1.65.1'
+      'dshmarket@^1.66.47'
     ])
     expect(pluginCommandArguments(entry, ['add', 'demo'], env, 'darwin')[0]).toBe(entry)
   })

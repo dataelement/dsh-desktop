@@ -516,7 +516,7 @@ async function rewriteManifest(dshHome: string): Promise<void> {
   for (const [name, spec] of Object.entries(snapshot.dependencies ?? {})) {
     if (KEEP_IN_SHARED_TREE.has(name)) keptDeps[name] = spec as string
   }
-  if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.65.1'
+  if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.66.47'
 
   // Bundles are left to projection, which runs next and knows the generations.
   // Here we only trim to the shared-tree packages and keep in-box bundles.
