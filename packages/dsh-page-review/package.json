@@ -1,0 +1,75 @@
+{
+  "name": "dsh-page-review",
+  "version": "0.4.2",
+  "private": true,
+  "description": "Optional browser annotations with screenshots, element context and chat handoff.",
+  "type": "module",
+  "main": "lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-input-trigger",
+        "@deepseek-ai/dsh-client-resources",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "prepack": "npm run build",
+    "format": "prettier --write src tests build.mjs install-local.mjs"
+  },
+  "license": "MIT",
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dataelement/dsh-desktop.git",
+    "directory": "packages/dsh-page-review"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "jsdom": "26.0.0",
+    "prettier": "3.6.2",
+    "puppeteer-core": "23.11.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tar": "7.5.22"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1 || ^19.0.0",
+    "react-dom": "^18.3.1 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  }
+}

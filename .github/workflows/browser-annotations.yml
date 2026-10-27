@@ -1,0 +1,35 @@
+name: Optional browser annotations
+on:
+  pull_request:
+    paths:
+      - packages/dsh-page-review/**
+      - .github/workflows/browser-annotations.yml
+  push:
+    branches: [main]
+    paths:
+      - packages/dsh-page-review/**
+      - .github/workflows/browser-annotations.yml
+permissions:
+  contents: read
+jobs:
+  plugin:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/dsh-page-review
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: packages/dsh-page-review/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm pack --dry-run
+      - name: Generated output is not tracked
+        run: git diff --exit-code
