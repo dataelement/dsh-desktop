@@ -54,13 +54,15 @@ with tempfile.TemporaryDirectory() as work:
     sdk.HubApi = lambda: api
     env = dict(MODELSCOPE_REPO_ID='example/desktop', MODELSCOPE_TOKEN='fixture', FEISHU_RELEASE_WEBHOOK='fixture', GITHUB_SERVER_URL='https://github.com', GITHUB_REPOSITORY='example/desktop', GITHUB_STEP_SUMMARY=str(directory / 'summary'))
     argv = ['signed_test_build.py', '--directory', work, '--target', 'windows', '--version', '1.0.0-test.1', '--run-id', '42']
-    with patch.dict(sys.modules, {'modelscope': types.ModuleType('modelscope'), 'modelscope.hub': types.ModuleType('modelscope.hub'), 'modelscope.hub.api': sdk}), patch.dict(os.environ, env), patch.object(sys, 'argv', argv), patch.object(build, 'build_test_changes', return_value='feat: New Office preview\nDescription of preview') as changes, patch.object(build, 'verify_download', side_effect=lambda *args: events.append(('verify', args[0]))) as verify, patch.object(build, 'send_feishu_notification', side_effect=lambda *args, **kw: events.append(('notify', kw))) as notify:
+    with patch.dict(sys.modules, {'modelscope': types.ModuleType('modelscope'), 'modelscope.hub': types.ModuleType('modelscope.hub'), 'modelscope.hub.api': sdk}), patch.dict(os.environ, env), patch.object(sys, 'argv', argv), patch.object(build, 'summarize_test_changes', return_value='**功能**\n- 改善办公文档的预览体验。\n**问题修复**\n- 改善应用启动后的显示异常。'), patch.object(build, 'build_test_changes', return_value='feat: New Office preview\nDescription of preview') as changes, patch.object(build, 'verify_download', side_effect=lambda *args: events.append(('verify', args[0]))) as verify, patch.object(build, 'send_feishu_notification', side_effect=lambda *args, **kw: events.append(('notify', kw))) as notify:
         build.main()
         assert [e[0] for e in events] == ['upload', 'verify', 'upload', 'verify', 'notify']
         assert events[0][1] == 'test/1.0.0-test.1/42/dsh-desktop-windows-x64-setup.exe'
         assert events[2][1] == 'test/1.0.0-test.1/42/test-changes.md'
         assert events[4][1] == {'test_build': True}
-        assert 'Description of preview' in notify.call_args.args[2]
+        assert '改善办公文档' in notify.call_args.args[2]
+        assert 'Description of preview' not in notify.call_args.args[2]
+        assert 'Description of preview' in (directory / 'test-changes.md').read_text(encoding='utf-8')
         assert 'Windows x64' in (directory / 'summary').read_text(encoding='utf-8')
         notify.reset_mock()
         api.upload_file.side_effect = RuntimeError('upload failed')
@@ -122,6 +124,46 @@ with patch.object(feishu.urllib.request, 'urlopen', return_value=response) as se
 print('signed test build behavior passed')
 `], { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } })
     expect(output).toContain('signed test build behavior passed')
+  })
+
+  it('uses the configured model and keeps every failure fallback concise and Chinese', () => {
+    const output = execFileSync('python3', ['-c', String.raw`
+import os, sys, subprocess, json
+from unittest.mock import patch
+sys.path.insert(0, '.github/scripts')
+import signed_test_build as build
+import test_change_summary as summary
+payload = {"功能": ["改善工作台列表过长时的滚动体验。"], "问题修复": []}
+notes = summary.render_summary(json.dumps(payload))
+for count in [0, 1, 8]:
+    data = {"功能": [f"改善第{index}个工作台的滚动体验。" for index in range(count)], "问题修复": []}
+    assert summary.render_summary(json.dumps(data)).startswith('**功能**')
+
+evidence = '上一个 tag：' + chr(96) + 'v0.12.1' + chr(96) + '\nfeat: raw English commit\nCo-authored-by: fixture'
+env = {'COPILOT_GITHUB_TOKEN': 'fixture', 'RELEASE_NOTES_MODEL': 'configured-model'}
+with patch.dict(os.environ, env), patch.object(build, 'git', return_value='fixture diff'), patch.object(summary.subprocess, 'run') as run:
+    run.return_value.stdout = json.dumps(payload)
+    assert build.summarize_test_changes(evidence) == notes
+    args = run.call_args.args[0]
+    assert args[args.index('--model') + 1] == 'configured-model'
+    assert 'fixture diff' in args[args.index('-p') + 1]
+    assert run.call_args.kwargs['timeout'] == 180
+    for invalid in ['raw English commits', json.dumps({'功能': ['Co-authored-by: fixture'], '问题修复': []}), json.dumps({'功能': ['中文' * 60], '问题修复': []}), json.dumps({'功能': ['相同的中文条目', '相同的中文条目'], '问题修复': []})]:
+        run.return_value.stdout = invalid
+        assert build.summarize_test_changes(evidence) == build.SUMMARY_FALLBACK
+    for failure in [FileNotFoundError(), subprocess.TimeoutExpired('copilot', 180), subprocess.CalledProcessError(1, 'copilot')]:
+        run.side_effect = failure
+        assert build.summarize_test_changes(evidence) == build.SUMMARY_FALLBACK
+with patch.dict(os.environ, {'COPILOT_GITHUB_TOKEN': ''}), patch.object(build, 'git', return_value='fixture diff'), patch.object(summary.subprocess, 'run') as run:
+    assert build.summarize_test_changes(evidence) == build.SUMMARY_FALLBACK
+    run.assert_not_called()
+assert 'raw English' not in build.SUMMARY_FALLBACK
+notification = build.build_notification('1.0.0-test.1', [], 'example/desktop', 'test/42', 'https://example.com/run', notes)
+assert '**功能**' in notification and '**问题修复**' in notification
+assert '测试建议' in notification and '完整提测说明' in notification
+print('model summary behavior passed')
+`], { encoding: 'utf8' })
+    expect(output).toContain('model summary behavior passed')
   })
 
   it('waits for the selected platform verification gates in signed mode', () => {

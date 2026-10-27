@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from feishu_release_notes import send_feishu_notification
+from test_change_summary import summarize_changes, UNAVAILABLE as SUMMARY_FALLBACK
 
 INSTALLERS = {
     "macos": [
@@ -112,6 +113,18 @@ def build_test_changes(repository_url: str) -> str:
     return "\n\n".join(parts)
 
 
+def summarize_test_changes(changes: str) -> str:
+    baseline = re.search(r"上一个 tag：`([^`]+)`", changes)
+    if baseline:
+        revision = f"{baseline.group(1)}..HEAD"
+        diff = git("diff", revision, "--", "src", "packages", "build")
+        statistics = git("diff", "--stat", revision)
+    else:
+        diff = git("show", "--format=", "HEAD", "--", "src", "packages", "build")
+        statistics = git("show", "--stat", "--format=", "HEAD")
+    return summarize_changes(changes, statistics, diff[:48000])
+
+
 TEST_SUGGESTIONS = """\
 **测试建议**
 1. **安装与启动**：全新安装或覆盖升级，验证应用能否正常启动进入主界面。
@@ -126,11 +139,14 @@ def build_notification(version: str, installers: list[tuple[str, Path]], repo_id
     if len(changes) > 9000:
         changes = changes[:8500].rsplit("\n", 1)[0] + "\n\n变更较多，已截断展示。"
     details = f"\n\n{changes}" if changes else ""
+    if changes:
+        details += f"\n\n[完整提测说明]({download_url(repo_id, prefix, 'test-changes.md')})"
     return (
         f"**DSH Desktop {version} 测试打包完成**\n\n"
         f"**下载地址**\n{links}"
         + details
-        + f"\n\n{TEST_SUGGESTIONS}\n\n[查看 CI 构建详情]({run_url})"
+        + f"\n\n{TEST_SUGGESTIONS}"
+        + f"\n\n[查看 CI 构建详情]({run_url})"
     )
 
 
@@ -168,7 +184,7 @@ def main() -> None:
         verify_download(url, file.stat().st_size)
         print(f"Verified signed test installer: {file.name}")
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{args.run_id}"
-    notes = build_notification(args.version, installers, repo_id, prefix, run_url, changes)
+    notes = build_notification(args.version, installers, repo_id, prefix, run_url, summarize_test_changes(changes))
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as stream:

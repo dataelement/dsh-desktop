@@ -74,3 +74,7 @@ The configured update publisher is `Beijing Shuju Xiangsu Intelligence Technolog
 ### App notarization network recovery
 
 If Apple accepts the upload but the SDK fails with a transient network timeout while querying `/submissions/<id>`, the app hook resumes `notarytool wait` for that exact submission. It retries up to six times with 10–60 second backoff and a bounded wait per command, then staples and validates the ticket before packaging continues. It never resubmits an upload with an unknown outcome. Missing submission IDs, authentication errors, malformed responses and rejected notarization fail immediately. The separate DMG submit command is unchanged.
+
+### Signed test notifications
+
+Signed test builds use the same `MODELS_TOKEN` secret and `RELEASE_NOTES_MODEL` as release summaries. Copilot summarizes bounded commit and code-diff evidence into Chinese “功能” and “问题修复” sections, following bisheng-work. Item counts follow actual changes, with empty categories explicitly marked; each item is limited to 100 characters. Generation has a 180-second timeout and structural/length validation. Missing credentials, CLI failures or invalid output produce an explicitly unavailable summary with short Chinese test guidance; raw commits are never substituted into the chat. Full commit evidence remains in the uploaded `test-changes.md`. Notification still waits for successful uploads and public download verification.
