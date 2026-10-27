@@ -121,3 +121,15 @@ describe('local workbench restart detection', () => {
     await expect(broken.read()).rejects.toThrow('unreadable profile')
   })
 })
+
+it('acknowledges only a managed applied package and still detects subsequent external edits', async () => {
+  let snapshot = { local: 'old', other: 'old' }
+  const status = createRestartStatus(async () => ({ ...snapshot }), { minimumInterval: 0 })
+  await status.read()
+  snapshot = { local: 'new', other: 'changed' }
+  expect((await status.read()).packages).toEqual(['local', 'other'])
+  await status.acknowledge('local')
+  expect((await status.read()).packages).toEqual(['other'])
+  snapshot.local = 'edited-after-install'
+  expect((await status.read()).packages).toEqual(['other', 'local'])
+})

@@ -145,6 +145,9 @@ it.each(['coffee-market', 'equity-research', 'meeting-minutes'])('retains the na
   expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
   expect((await f.call('present', { files: [{ path: 'result.docx' }] })).isError).toBe(false)
 })
+// One fixture plus eight mutations uses 18 sequential Python launches
+// (prepare/write, then mutate/validate per case). Budget the batch separately
+// from each 45-second worker bound, including contention in the full suite.
 it('blocks layout and style mutations before delivery', async () => {
   const f = await fixture(); await f.call('office_template_write', f.plan)
   const resultPath = join(f.workspace, 'result.docx')
@@ -173,11 +176,11 @@ else:
  parts['word/document.xml']=E.tostring(d)
 with zipfile.ZipFile(p,'w',zipfile.ZIP_DEFLATED) as z:
  for name,data in parts.items():z.writestr(name,data)
-`, resultPath, kind])
+`, resultPath, kind], { timeout: 45_000 })
     expect((await f.call('present', { files: [{ path: 'result.docx' }] })).isError).toBe(true)
     expect(f.delivered).not.toHaveBeenCalled()
   }
-}, 60_000)
+}, 120_000)
 
 it('retains mixed heading/body typography with explicit native run references', async () => {
   const f = await fixture()

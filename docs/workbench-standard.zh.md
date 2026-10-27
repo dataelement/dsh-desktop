@@ -1,6 +1,6 @@
 # 工作台开发规范
 
-版本：2026-10-12 · 以官网版本为准，DSH Desktop 内附文档副本供离线取用。
+版本：2026-10-27 · 以官网版本为准，DSH Desktop 内附文档副本供离线取用。
 
 官方地址：https://dshdesktop.com/workbench/docs/development/
 
@@ -45,7 +45,7 @@ Markdown 原文（供 Agent 读取）：https://dshdesktop.com/workbench/docs/de
 5. **包校验**：运行 `pnpm pack`，检查 tarball 内 `package.json`、声明的入口和 `cordis.patch.yml`，检查大小和敏感文件。
 6. **本机安装实测**：按 3.6 探测当前 Desktop 的安装能力、安装该 tarball、完成所需重启，并按第 8 节记录真实 UI 与加载证据。在目标 DSH Desktop 内开发时，按下方“同机重启边界”交给用户手动重启。
 
-本地安装成功后，支持自动检测的 DSH Desktop 会在几秒内检测安装变更并显示顶部重启提示，无需 Agent 另行调用接口。请在开发、安装和检查任务结束后，引导用户点击「立即重启」；若当前版本不支持自动提示或未显示横幅，使用菜单「Harness → 重启 Harness」。未确认安装成功时，不得声称已触发提示；提示只表示需要重新加载，不代表工作台已加载或验收通过。
+模型完成构建和包校验后，直接调用 `install_local_workbench({ path: "<本机 .tgz 绝对路径>", replace: false })`，内部统一使用 Plugin Manager 的 `installBundle`，无需用户填写路径或操作安装页面。更新用户已授权修改的同名工作台时传 `replace: true`。读取 `application`：`applied` 时直接核验界面，只有 `restart-required` 才提示用户重启 Harness；失败、取消和 overridden 不算已生效。
 
 **同机重启边界**：Agent 不要自行关闭或重启 DSH Desktop、Harness，也不要用 `ps`、`pgrep` 等进程探测管理重启；请用户手动重启。用户重启 Harness 后，给用户两条可选路径：① 直接试用：展开左侧栏，点击左上角「工作台」右侧的当前工作台名称／切换区域，选择新工作台；若未显示，进入工作台市场的「已安装」检查条目和运行状态，加载或启用成功后再切换。新本地工作台加载后会自动加入切换菜单，不存在单独的「添加」按钮。② 继续 Agent 验收：回到原开发对话告诉 Agent「重启好了」，由 Agent 按第 8 节继续检查加载、已安装列表、切换入口和真实业务界面。用户可自行试用，不必返回对话；Agent 尚未实测的项目仍标为待验证，安装成功不能表述为全部验收通过。运行在目标应用之外的 Agent 可按正常重启流程操作。
 
@@ -57,16 +57,19 @@ Markdown 原文（供 Agent 读取）：https://dshdesktop.com/workbench/docs/de
 
 - **一个 npm 包**：有 `name`、`version`，可以从本地目录或 `.tgz` 文件安装，上架后也可以从 npm 或 GitHub 安装。
 - **一个 DSH 插件（bundle）**：`package.json` 声明 `dsh.bundle.patch`，由 `cordis.patch.yml` 把服务端入口插入 Harness 的插件树。
-- **一个 Desktop 工作台**：客户端通过 `desktopWorkbenches.register()` 注册业务面板。Desktop 从 `repository`、安装记录和市场分发映射解析仓库身份。
+- **一个 Desktop 工作台**：客户端通过 `desktopWorkbenches.register()` 注册业务面板。本地包省略 `repository` 时，Desktop 从真实调用方客户端 npm 包名派生稳定的本地身份；已有有效仓库身份仍保留。
 
-同一个工作台有三个标识，职责不同，不能混用：
+同一个工作台有以下标识，职责不同，不能混用：
 
 | 标识 | 在哪里 | 用途 |
 |---|---|---|
 | npm 包名 | `package.json` 的 `name` | 安装、依赖解析、`cordis.patch.yml` 的 `name:` |
 | 插件条目 id | `cordis.patch.yml` 中 `insert` 行的 `id` | Harness 插件树中定位这一行 |
-| 工作台身份 | 规范的 GitHub `repository` URL、市场条目 `id` | 小写 `owner/repository`；市场卡片、侧栏入口和会话归属共用 |
+| 本地工作台身份 | 宿主根据真实客户端 npm 包名自动生成 | `local:<npm 包名>`，例如 `local:my-workbench-package` 或 `local:@scope/name`；侧栏入口和会话归属共用 |
+| 仓库工作台身份 | 有效的 GitHub `repository` URL、市场条目 `id` 及既有归属记录 | 小写 `owner/repository`；已有身份保持兼容，市场卡片、侧栏入口和会话归属共用 |
 | 兼容用旧 ID | 老包 `register({ id })`、旧目录 `workbenchId` | 仅迁移旧数据时使用；新包和新投稿都不填写 |
+
+本地开发、安装和使用不需要 GitHub 账号、仓库 URL、创建仓库或上传代码，不得填写虚构或占位仓库。宿主使用真实客户端包来源，作者不要手工填写本地 ID。升级版本或移动项目目录不会改变本地身份；修改 npm 包名会生成新身份。日后上架不会自动迁移本地会话，也不会静默覆盖本地身份；必须明确设计并确认迁移，本规范不提供自动本地到市场迁移。
 
 Desktop 将 GitHub owner 和 repo 规范化为小写，例如 `https://github.com/Owner/Repo` 对应 `owner/repo`。仓库改名或转移会改变工作台身份，需按迁移规则处理原有会话，不能仅改 URL。旧版 `wb-owner-repo` 只作为兼容映射，不是新包的注册 ID。
 
@@ -153,7 +156,6 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       ctx.effect(() => ctx.desktopWorkbenches.register({
         title: '我的工作台',
-        repository: 'https://github.com/owner/repository',
         description: '说明它解决什么问题'
       }, BusinessPanel))
     }
@@ -163,7 +165,9 @@ window.__ModuleLoader__.load({
 ```
 
 - `require` 只能拿到共享基线（React、Cordis 等）、已加载的插件和 `dsh.client.external` 中列出的模块。其他依赖要在构建时打进客户端文件。
-- `register()` **必须**提供 `title`、业务组件和规范的 GitHub `repository` URL。新包**不要填写** `register({ id })`；Desktop 用 `repository` 解析 `owner/repo`，并用调用方客户端包、市场分发或安装记录交叉核对，来源冲突时不会暴露 provider。旧包的 `id` 仅用于迁移，不是新协议。
+- `register()` **必须**提供 `title` 和业务组件；本地开发默认省略 `repository`，由宿主从真实客户端 npm 包名生成 `local:<npm 包名>`。新包**不要填写** `register({ id })`。有效的既有仓库归属仍使用 `owner/repo`，来源冲突不能回退为另一个身份；旧包的 `id` 仅用于兼容迁移。
+- 仅在准备市场投稿并具备真实仓库时，另加 `repository: 'https://github.com/your-org/your-workbench'`；它不是本地安装前置条件。不要因缺少 `repository` 跳过 `register()`。
+- 注册失败时，工作台管理显示包名、失败阶段和原因，控制台同时输出 warning；修复并重新加载成功后清除对应诊断。若客户端尚未执行或缺少依赖，仍须调查对应加载阶段，不能仅凭没有入口归因为身份失败。
 - `workbench.json` 和投稿 YAML 的 `workbenchId` 不是新工作台的必填协议；运行时包名必须与 `window.__ModuleLoader__.load({ id })` 对应。
 - 可选注册字段：`description`、`panelTitle`、`icon`、`audience`、`requirements`、`layout`（`businessSide` 为 `left` 或 `right`，`businessWidth` 在 0.25–0.7 之间）、`customFrame`（布尔值，见第 4 节）、`headerLayout`（第 4 节）、`initialization`。
 - 注册返回的函数用于注销，要交给 `ctx.effect` 管理。
@@ -171,9 +175,10 @@ window.__ModuleLoader__.load({
 ### 3.6 构建与本地安装
 
 - 客户端文件**必须**是构建好的单文件，Desktop 不会替你构建。
-- **先探测能力，不猜版本号**：记录 Desktop “关于”中的版本、平台和架构；在“工作台管理／已安装的工作台”查找本地安装入口，再核对当前版本随附的插件安装界面或 `dsh plugin add --help` 是否接受本地 `.tgz`。只有界面或命令明确支持该输入时才安装；不能从官网文档的发布日期推断当前安装版本支持。记录采用的入口与输出。
-- 用已确认支持的入口安装 `pnpm pack` 得到的 `.tgz`。CLI 路径按其 `--help` 显示的语法执行；安装后按界面提示完成重启，按第 1 节两条可选路径直接试用或继续 Agent 验收；继续验收时确认“已安装”条目、切换入口和实际业务面板。如果 Agent 正在目标 DSH Desktop 内运行，必须遵守第 1 节“同机重启边界”，由用户点击顶部提示中的「立即重启」，或使用菜单「Harness → 重启 Harness」。`dsh --profile web --dump-config` 出现插件层只能证明配置，不能替代 UI 加载证据。
-- 当前 Desktop 无本地包安装入口、CLI 不支持或安装失败时，交付已校验的 `.tgz` 与包内容/校验记录，写明 Desktop 版本、探测结果和失败原因；将“安装、重启后加载、已安装列表、左侧入口、业务操作”逐项列为**未实测**，不能宣称本机验收通过。
+- **先探测能力**：记录 Desktop 版本、平台和架构，确认当前会话能发现 `install_local_workbench` 工具。不能从文档发布日期推断旧版本已具备该工具。
+- 模型完成构建和包校验后，直接调用 `install_local_workbench({ path: "<本机 .tgz 绝对路径>", replace: false })`，内部统一使用 Plugin Manager 的 `installBundle`，无需用户填写路径或操作安装页面。更新用户已授权修改的同名工作台时传 `replace: true`。读取 `application`：`applied` 时直接核验界面，只有 `restart-required` 才提示用户重启 Harness；失败、取消和 overridden 不算已生效。
+- 工具遵循宿主插件管理权限：已具备完整权限时直接执行，否则走宿主现有审批。被拒绝时不得用 CLI 绕过。安装脚本审批仅使用 `pendingBuilds` 返回的包名，并在明确授权后传 `approvedBuilds`。仅旧版本没有该工具时，检查实际 `dsh plugin --help`，可按其支持的方式使用 `dsh plugin add` 安装，并分别验证安装、所需重启和实际加载；不要调用不存在的 HTTP 安装接口。
+- 工具与 CLI 均不可用或安装失败时，交付已校验的 `.tgz`，记录失败原因和未实测项，不声称加载成功。
 - 需要运行安装或构建脚本时（pnpm 10 默认阻止），要明确知道每个脚本做什么，再单独授权。
 
 ## 4. 界面边界
@@ -203,7 +208,7 @@ window.__ModuleLoader__.load({
 
 ```js
 ctx.desktopWorkbenches.register({
-  title: '业务工具', repository: 'https://github.com/your-org/your-workbench',
+  title: '业务工具',
   customFrame: true, headerLayout: 'compact'
 }, BusinessPanel)
 // BusinessPanel 渲染的同一文档中，唯一一行工具栏：
@@ -267,6 +272,8 @@ React.createElement('header', { 'data-dsh-workbench-toolbar': '' },
 首次进入工作台可以显示首页、空会话状态或按工作台约定初始化会话，但业务面板不能依赖会话初始化完成。后续进入恢复该工作台最近会话。导航和切换不得删除会话、业务资料、项目文件、收藏或笔记。
 
 ## 8. 本地自测清单
+
+验证省略 `repository` 的本地包（包括 scoped npm 包名）：安装加载后出现带「本地」标识的条目和切换入口，业务面板可打开；重载或版本更新后身份及会话归属稳定。另验证注册失败时工作台管理显示包名、阶段和原因，修复重载后诊断消失。模块 HTTP 200、导入成功和测试通过均不能替代真实 UI 验收。
 
 开发完成后按责任逐项确认。“宿主负责”是对当前 Desktop 能力的观察和问题反馈，插件作者不得为此复制宿主界面；标为“仅使用该能力时适用”的项，不使用时记“不适用”及原因。全部适用项有证据通过，才能称为本机自测通过。
 

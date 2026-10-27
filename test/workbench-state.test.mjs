@@ -18,6 +18,37 @@ const populated = () => ({ ...emptyState(), added: [WRITER, RESEARCH], pinned: [
   favorites: [WRITER], sessionBindings: { 'session-1': WRITER }, recentSessions: { [WRITER]: 'session-1' }, notes: { [WRITER]: 'An unsaved business draft' } })
 
 describe('desktop workbench state', () => {
+  it.each(['local:resume-review', 'local:@hr/resume-review'])('persists canonical local identity %s across restart and removal without changing ownership', async local => {
+    const { root, store } = await fixture()
+    const initial = { ...emptyState(), added: [local, WRITER], pinned: [local], favorites: [local], active: local,
+      sessionBindings: { 'session-local': local, 'session-market': WRITER },
+      recentSessions: { [local]: 'session-local', [WRITER]: 'session-market' },
+      notes: { [local]: 'Local review draft' }, hiddenWorkspaces: { [local]: ['workspace-private'] } }
+    await store.write({ revision: 0, state: initial })
+    expect((await createStateStore(root).read()).state).toEqual(initial)
+    const removed = { ...initial, added: [WRITER], pinned: [], active: null }
+    await store.write({ revision: 1, state: removed })
+    expect((await createStateStore(root).read()).state).toEqual(removed)
+    await expect(store.write({ revision: 2, state: { ...removed, recentSessions: {}, sessionBindings: { ...removed.sessionBindings, 'session-local': WRITER } } })).rejects.toThrow('ownership')
+    await expect(store.write({ revision: 2, state: { ...removed, recentSessions: {}, sessionBindings: { 'session-market': WRITER } } })).rejects.toThrow('ownership')
+    await expect(store.write({ revision: 2, state: { ...removed, notes: {} } })).rejects.toThrow('preserve its notes')
+    await expect(store.write({ revision: 2, state: { ...removed, hiddenWorkspaces: {} } })).rejects.toThrow('preserve its workspace visibility')
+    expect((await store.read()).revision).toBe(2)
+  })
+
+  it('does not permit canonical local identity migration into a market repository or the reverse', async () => {
+    const { store } = await fixture()
+    const local = 'local:resume-review'
+    const state = { ...emptyState(), added: [local, WRITER], sessionBindings: { 'session-local': local, 'session-market': WRITER } }
+    await store.write({ revision: 0, state })
+    for (const migrations of [{ [local]: WRITER }, { [WRITER]: local }, { legacy: local }]) {
+      await expect(store.migrate({ revision: 1, state }, migrations)).rejects.toThrow('Invalid workbench ID migration')
+    }
+    await expect(store.write({ revision: 1, state: { ...state, sessionBindings: { 'session-local': WRITER } } })).rejects.toThrow('ownership')
+    await expect(store.write({ revision: 1, state: { ...state, sessionBindings: { ...state.sessionBindings, 'session-market': local } } })).rejects.toThrow('ownership')
+    expect((await store.read()).state).toEqual(state)
+  })
+
   it('accepts only explicit, mutually exclusive force=1 and cache=1 catalog queries', () => {
     expect(catalogReadOptions(new Request('http://localhost/api/desktop-workbenches/catalog'))).toEqual({ force: false })
     expect(catalogReadOptions(new Request('http://localhost/api/desktop-workbenches/catalog?force=1'))).toEqual({ force: true })

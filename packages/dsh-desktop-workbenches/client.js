@@ -10,6 +10,14 @@ window.__ModuleLoader__.load({
       zh: { download_failed: '无法下载工作台安装包', download_interrupted: '工作台安装包下载中断', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
       en: { download_failed: 'Could not download the workbench package', download_interrupted: 'Workbench package download interrupted', invalid_download_url: 'The workbench download URL is invalid.', unsafe_download_url: 'The workbench download URL must use HTTPS without credentials or a custom port.' }
     }
+    const REGISTRATION_NS = 'dsh-desktop-workbenches.registration'
+    const registrationCopy = {
+      zh: { failed: '工作台注册失败', identity: '身份解析', register: '注册', guidance: '请将以下包名、阶段和原因提供给开发助手修复，然后重新加载工作台。' },
+      en: { failed: 'Workbench registration failed', identity: 'Identity resolution', register: 'Registration', guidance: 'Give the package, stage and reason below to your development assistant, then reload the workbench after fixing it.' }
+    }
+    const registrationText = (ctx, key) => ctx.locale?.bind
+      ? ctx.locale.bind(REGISTRATION_NS)(key)
+      : registrationCopy[isEnglish() ? 'en' : 'zh'][key]
     function confirmationRisk(error) {
       return error?.code === 'confirmation_required' && (error.updateRisk === 'local' || error.updateRisk === 'modified') ? error.updateRisk : null
     }
@@ -184,6 +192,7 @@ window.__ModuleLoader__.load({
         this.listeners = new Set()
         this.catalog = new Map()
         this.providers = new Map()
+        this.registrationFailures = new Map()
         this.knownProviders = readKnownProviders()
         this.introducedLocal = readIntroducedLocal()
         this.remoteCatalog = []
@@ -320,7 +329,7 @@ window.__ModuleLoader__.load({
           const restarted = typeof data.runtimeId === 'string' && this.restartRuntimeId && data.runtimeId !== this.restartRuntimeId
           if (typeof data.runtimeId === 'string') this.restartRuntimeId = data.runtimeId
           const before = this.restartNeeded
-          if (data.restartRequired === true) this.hostRestartNeeded = true
+          if (typeof data.restartRequired === 'boolean') this.hostRestartNeeded = data.restartRequired
           if (restarted && data.restartRequired === false) {
             this.hostRestartNeeded = false
             // A confirmed runtime replacement has applied local restart-only outcomes too.
@@ -412,7 +421,8 @@ window.__ModuleLoader__.load({
           // A recovery removal can leave an old navigation/market record. The
           // native inventory wins once it is available: no package means there
           // is no current load failure to report.
-          const missingProvider = !provider && !pendingRestart && !pendingReload && !pluginClosed && !packageMissing && !!bundle
+          const healthyLocalProvider = providers.some(entry => entry.id.startsWith('local:') && entry.sourcePackage === pluginName)
+          const missingProvider = !provider && !healthyLocalProvider && !pendingRestart && !pendingReload && !pluginClosed && !packageMissing && !!bundle
           const loadFailure = failedInstall?.message || (!pluginClosed && !packageMissing && !provider && !pendingRestart && !pendingReload &&
             ((failedPackage && moduleFailures.get(failedPackage)) || (missingProvider && '工作台插件已安装，但启动后未注册。请重新加载或重试安装。')))
           const evidence = this.packageEvidence?.[pluginName]
@@ -456,7 +466,7 @@ window.__ModuleLoader__.load({
             const evidence = this.packageEvidence?.[provider.sourcePackage]
             const metadata = { ...provider }
             for (const [key, value] of Object.entries(evidence?.metadata || {})) if (value !== undefined) metadata[key] = value
-            remote.push({ ...provider, catalogId: provider.id, installedMetadata: metadata, listed: false, local: evidence?.origin === 'local', installed: true })
+            remote.push({ ...provider, catalogId: provider.id, installedMetadata: metadata, listed: false, local: provider.id.startsWith('local:') || evidence?.origin === 'local', installed: true })
           }
         }
         const visible = new Set(remote.map((entry) => entry.catalogId || entry.id))
@@ -484,7 +494,24 @@ window.__ModuleLoader__.load({
         if (!match) throw new Error('Workbench repository must be a GitHub URL.')
         return `${match[1]}/${match[2]}`.toLowerCase()
       }
+      localIdentity(source) {
+        const unsafe = ['__proto__', 'prototype', 'constructor', 'node_modules', 'favicon.ico']
+        const parts = typeof source === 'string' && source.startsWith('@') ? source.slice(1).split('/') : [source]
+        if (typeof source !== 'string' || !source.length || source.length > 214 || parts.length !== (source.startsWith('@') ? 2 : 1)
+          || !parts.every(part => /^[a-z0-9-][a-z0-9._-]*$/.test(part) && !unsafe.includes(part))) throw new Error('Invalid local workbench package name.')
+        return `local:${source}`
+      }
+      registrationFailure(source, stage, error) {
+        const failure = { sourcePackage: source, stage, message: error instanceof Error ? error.message : String(error) }
+        const key = `${source}:${stage}`
+        if (JSON.stringify(this.registrationFailures.get(key)) !== JSON.stringify(failure)) console.warn('[DSH workbench registration]', failure)
+        this.registrationFailures.set(key, failure)
+      }
+      clearRegistrationFailures(source) {
+        for (const [key, failure] of this.registrationFailures) if (failure.sourcePackage === source) this.registrationFailures.delete(key)
+      }
       identityForSource(source, repository, legacyId) {
+        const local = this.localIdentity(source)
         const installed = Object.keys(this.installs).filter((id) => this.installRecordFor(id)?.pluginName === source)
         const listed = this.remoteCatalog.filter(entry => entry.distribution?.name === source).map(entry => entry.id)
         const legacy = typeof legacyId === 'string'
@@ -492,18 +519,36 @@ window.__ModuleLoader__.load({
           : []
         const declared = this.repositoryIdentity(repository)
         const identities = [...new Set([...installed, ...listed, ...legacy, ...(declared ? [declared] : [])])]
-        if (identities.length !== 1) throw new Error(identities.length ? `Client package ${source} matches multiple workbenches.` : `Client package ${source} is not attributed to a market repository.`)
-        return identities[0]
+        if (identities.length > 1) throw new Error(`Client package ${source} matches multiple workbenches.`)
+        // Once introduced locally, later catalog discovery must not move owned sessions.
+        const referenced = this.state.added.includes(local) || this.state.pinned.includes(local) || this.state.active === local
+          || this.state.favorites.includes(local) || Object.values(this.state.sessionBindings).includes(local)
+          || Object.hasOwn(this.state.notes, local) || Object.hasOwn(this.state.recentSessions, local) || Object.hasOwn(this.state.hiddenWorkspaces, local)
+        if (this.knownProviders[local]?.sourcePackage === source || referenced) return local
+        const remembered = Object.entries(this.knownProviders).filter(([id, entry]) => !id.startsWith('local:') && entry.sourcePackage === source).map(([id]) => id)
+        const historicallyReferenced = listed.some(id => this.state.added.includes(id) || this.state.pinned.includes(id)
+          || this.state.favorites.includes(id) || this.state.active === id || Object.values(this.state.sessionBindings).includes(id)
+          || Object.hasOwn(this.state.notes, id) || Object.hasOwn(this.state.recentSessions, id) || Object.hasOwn(this.state.hiddenWorkspaces, id))
+        // A catalog package-name match is discovery, not a market installation receipt.
+        if (this.packageEvidence?.[source]?.origin === 'local' && !installed.length && !declared && !legacy.length
+          && !remembered.length && !historicallyReferenced) return local
+        if (identities.length) return identities[0]
+        if (remembered.length > 1) throw new Error(`Client package ${source} matches multiple workbenches.`)
+        if (remembered.length) throw new Error(`Client package ${source} is not attributed to its previous market repository.`)
+        return local
       }
       rebuildProviders({ preserveActive = false } = {}) {
         const previous = this.catalog
         const catalog = new Map()
         for (const [source, provider] of this.providers) {
           let id
-          try { id = this.identityForSource(source, provider.repository, provider.id) } catch { continue }
-          if (catalog.has(id)) throw new Error(`Duplicate workbench provider: ${id}`)
+          try {
+            id = this.identityForSource(source, provider.repository, provider.id)
+            if (catalog.has(id)) throw new Error(`Duplicate workbench provider: ${id}`)
+          } catch (error) { this.registrationFailure(source, 'identity', error); continue }
+          this.clearRegistrationFailures(source)
           catalog.set(id, { ...provider, id, sourcePackage: source })
-          this.knownProviders[id] = { id, sourcePackage: source,
+          if (!id.startsWith('local:') || this.ready) this.knownProviders[id] = { id, sourcePackage: source,
             title: provider.title, description: provider.description, category: provider.category,
             repository: provider.repository, icon: provider.icon, screenshot: provider.screenshot,
             screenshots: provider.screenshots, author: provider.author, version: provider.version }
@@ -563,7 +608,7 @@ window.__ModuleLoader__.load({
           for (const [legacy, remembered] of Object.entries(this.knownProviders)) {
             const source = remembered?.sourcePackage
             const bundle = source && this.native.bundles[source]
-            if (!source || !bundle || bundle.installed === false || bundle.error || this.catalog.has(legacy) || !referenced(legacy) || migrations[legacy]) continue
+            if (legacy.startsWith('local:') || !source || !bundle || bundle.installed === false || bundle.error || this.catalog.has(legacy) || !referenced(legacy) || migrations[legacy]) continue
             const current = [...this.catalog.values()].filter((provider) => provider.sourcePackage === source &&
               this.remoteCatalog.some((entry) => entry.id === provider.id))
             if (current.length === 1 && current[0].id !== legacy) migrations[legacy] = current[0].id
@@ -594,7 +639,7 @@ window.__ModuleLoader__.load({
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
           catalogLoaded: this.catalogLoaded, catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, checkingUpdates: this.checkingUpdates, pending: this.pending, marketOpen: this.marketOpen,
-          catalog: this.marketCatalog(), categories: this.marketCategories, installs: this.installs, installing: this.installing, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
+          registrationFailures: [...this.registrationFailures.values()], catalog: this.marketCatalog(), categories: this.marketCategories, installs: this.installs, installing: this.installing, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
         for (const listener of this.listeners) listener()
       }
       report(error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : String(error); this.publish() } }
@@ -936,12 +981,27 @@ window.__ModuleLoader__.load({
       /** Header layout is host-managed: 'default' reserves caption space;
        * 'compact' requires one same-document data-dsh-workbench-toolbar. */
       register(descriptor, Component) {
+        const caller = this.ctx.fiber?.entry?.options?.name
+        let diagnosticSource = '(unknown package)'
+        if (caller !== undefined) {
+          try { this.localIdentity(caller); diagnosticSource = caller }
+          catch { diagnosticSource = '(invalid package identity)' }
+        }
+        try { return this.registerProvider(descriptor, Component) }
+        catch (error) {
+          this.registrationFailure(diagnosticSource, 'register', error)
+          this.publish()
+          throw error
+        }
+      }
+      registerProvider(descriptor, Component) {
         // Older workbench packages declared a local id. Keep accepting those
         // packages during the repository-identity migration, but never use the
         // legacy value: identityForSource resolves the canonical catalog repo.
-        if (!descriptor || !descriptor.title || typeof Component !== 'function') throw new Error('Invalid workbench registration')
+        if (!descriptor || typeof descriptor !== 'object' || typeof descriptor.title !== 'string' || !descriptor.title.trim() || typeof Component !== 'function') throw new Error('Invalid workbench registration')
         this.repositoryIdentity(descriptor.repository)
         const source = this.sourcePackage()
+        this.localIdentity(source)
         if (this.providers.has(source)) throw new Error(`Duplicate workbench provider: ${source}`)
         if (descriptor.customFrame !== undefined && typeof descriptor.customFrame !== 'boolean') throw new Error('Invalid custom frame flag')
         if (descriptor.headerLayout !== undefined && !['default', 'compact'].includes(descriptor.headerLayout)) throw new Error('Invalid workbench header layout')
@@ -953,8 +1013,17 @@ window.__ModuleLoader__.load({
           screenshot: descriptor.screenshot || '',
           screenshotPosition: descriptor.screenshotPosition || 'center',
           layout: { businessSide: layout.businessSide || 'right', businessWidth: layout.businessWidth ?? 0.36 }, Component }
+        this.clearRegistrationFailures(source)
         this.providers.set(source, entry)
-        if (this.ready) void this.readInstalls().then(() => { if (!this.disposed) this.publish() }).catch(() => { this.packageEvidence = {}; if (!this.disposed) this.publish() })
+        if (this.ready) void this.readInstallSnapshot().then(data => {
+          if (this.disposed) return
+          if (data.installs && typeof data.installs === 'object') this.installs = data.installs
+          if (data.packages && typeof data.packages === 'object') this.packageEvidence = data.packages
+          this.rebuildProviders()
+          this.reconcileMarketInstalls()
+          this.reconcileLocalProviders()
+          this.publish()
+        }).catch(() => { this.packageEvidence = {}; if (!this.disposed) this.publish() })
         this.rebuildProviders()
         this.publish()
         this.migrateLegacyWorkbenchIds()
@@ -963,6 +1032,7 @@ window.__ModuleLoader__.load({
         return () => {
           if (this.providers.get(source) !== entry) return
           this.providers.delete(source)
+          this.clearRegistrationFailures(source)
           this.rebuildProviders()
           this.publish()
         }
@@ -1352,6 +1422,7 @@ window.__ModuleLoader__.load({
       dispose() {
         for (const timer of this.noteTimers.values()) clearTimeout(timer)
         for (const id of this.draftNotes.keys()) this.run(this.saveNote(id))
+        this.registrationFailures.clear()
         this.disposed = true; ++this.navigation; this.listeners.clear()
       }
     }
@@ -1943,11 +2014,13 @@ window.__ModuleLoader__.load({
 
 ${DEVELOPMENT_EN_READING} Reuse the requirements I explicitly provided in this conversation. Ask only one necessary question at a time; do not repeat information I already gave or use a fixed questionnaire. If the name is unknown, first ask “What would you like to call this workbench?”; a provisional name is fine and must not block implementation. Then fill gaps about the intended users, main functions, or business scenario based on context. If the core workflow is unclear, suggest a minimal flow based on my answers and let me confirm or adjust it; do not require a complete requirements form. Start when the business goal and minimal scope are sufficiently clear and confirmed. You may inspect directories, existing documentation, and uncommitted changes read-only, but names, examples, or existing code do not establish my intent by themselves. While the business intent or scope is unclear, wait for my answer to the current question. Until then, do not create or change business code, UI, or package files, and do not build, pack, install, or submit. With an empty directory and no business goal, stop after asking; a name alone is not a business brief.
 
+Local development and installation require no GitHub account, repository or repository URL. Omit repository for local-only workbenches; DSH derives their stable identity from the client package name. Never ask the user to create a repository to install locally.
+
 Use business language for requirements discovery, layout suggestions, confirmation choices, and installation or completion status, such as “Show the business content on a full page and open AI conversation when needed” or “Talk while viewing supporting information.” Do not ask ordinary users to confirm code fields such as \`customFrame\`, \`register()\`, \`repository\`, \`dshHomePath\`, or \`reconcileLocalProviders\`, internal identities, or placeholder repository URLs; do not present lengthy implementation details as choices. The Agent handles technical fields during development under this standard. Missing publication identity must not block confirmed local development, and a real repository must never be fabricated. Ask only for practical information affecting the business or installation, such as “Which folder should hold the data?” Explain technical details briefly when the user asks. Lead completion reports with what works, actual operations tested, and items still pending verification; put changed files and technical checks in a short appendix, then end with the usage handoff required below.
 
 Development execution (for the Agent): Once requirements are clear, define the smallest business flow and preserve existing uncommitted changes. Under Section 4, choose a standard split or \`customFrame\` and design first use without a session: do not default the product design to a persistent conversation pane. Recommend a business-first full page for content review, renovation management, reports, or dashboards; create or restore a conversation and display it only when the user requests AI help. A standard split suits conversation-led tasks or compact companion tools. If the primary task is unclear, suggest layouts and confirm it with the user. In a split, check the host generic guidance beside the business panel. With \`customFrame\`, provide your own first-use action and place the host-provided \`conversation\` node when needed. Then implement the package format in Section 3 (the package.json dsh fields, cordis.patch.yml, server and client entries), workbench behavior, and UI; run relevant tests and builds. If scripts/check-workbench-package.mjs exists, use it to verify the package. Make the business area responsive to its own container width, not only window breakpoints. Check first entry without a session, an owned session, expanded and collapsed sidebar, and a narrow window. Use realistic Chinese and English content to catch single-character vertical wrapping, clipped controls, and page-wide horizontal overflow; preserve host shared entrances.
 
-Then install the workbench in this DSH Desktop using an installation method actually supported by this version; do not ask me to re-enter project information. After a confirmed local installation, DSH Desktop versions with automatic detection will detect the installation change and show the top restart banner within a few seconds; no separate Agent API call is needed. Once development, installation, and checks have finished, ask the user to click “Restart now.” If the current version does not support the automatic notice or no banner appears, use Harness → Restart Harness. Do not claim the notice was triggered without confirmed installation; it only indicates that reloading is needed, not that the workbench loaded or passed acceptance. If you are running inside the DSH Desktop session that needs restarting, do not close or restart DSH Desktop or Harness yourself, and do not use process probes such as \`ps\` or \`pgrep\` to manage the restart. After the user restarts Harness, offer two optional paths: (1) Try it directly: expand the sidebar, click the current workbench name / switch area to the right of “Workbenches” at the upper left, and select the new workbench. If it is missing, check its entry and running state in Workbench Market → Installed, then switch after it loads or is enabled. New local workbenches are added to the switch menu automatically when loaded; there is no separate “Add” button. (2) Continue Agent verification: return to the original development conversation and tell the Agent “Restart complete”; the Agent then follows Section 8 to check loading, the installed list, the switch entry, and the real business UI. I may try it independently without returning to the conversation. Checks the Agent has not actually performed remain pending verification; installation success does not mean all acceptance checks passed. If you run outside the target app, follow the normal restart process.
+Then install the workbench in this DSH Desktop using an installation method actually supported by this version; do not ask me to re-enter project information. After building and verifying the archive, the model calls install_local_workbench({ path: "<absolute local .tgz path>", replace: false }) directly. This uses Plugin Manager installBundle; users do not enter paths or operate an installation page. Pass replace: true only for an authorized update of the same workbench. Inspect application: verify the UI for applied; only restart-required calls for restarting Harness. Failed, cancelled and overridden do not mean applied. If you are running inside the DSH Desktop session that needs restarting, do not close or restart DSH Desktop or Harness yourself, and do not use process probes such as \`ps\` or \`pgrep\` to manage the restart. After the user restarts Harness, offer two optional paths: (1) Try it directly: expand the sidebar, click the current workbench name / switch area to the right of “Workbenches” at the upper left, and select the new workbench. If it is missing, check its entry and running state in Workbench Market → Installed, then switch after it loads or is enabled. New local workbenches are added to the switch menu automatically when loaded; there is no separate “Add” button. (2) Continue Agent verification: return to the original development conversation and tell the Agent “Restart complete”; the Agent then follows Section 8 to check loading, the installed list, the switch entry, and the real business UI. I may try it independently without returning to the conversation. Checks the Agent has not actually performed remain pending verification; installation success does not mean all acceptance checks passed. If you run outside the target app, follow the normal restart process.
 
 If this Desktop version has no supported local installation method, or you cannot operate it, keep the verified package and precisely state which steps remain; do not claim it loaded. Report changed files, self-test results, actual loading state, and unverified items.
 
@@ -1959,11 +2032,13 @@ After every workbench development handoff, the final response must end with a pr
 
 ${DEVELOPMENT_GUIDE_READING}先复用我在当前对话中明确提供的需求。每次只问一个必要问题，不重复已提供的信息，不使用固定问卷。名称未知时先问“这个工作台想叫什么名字？”，允许暂定名，名称不应阻碍开工；再按已有上下文补问目标使用者、主要功能或业务场景。核心流程不清楚时，根据我的回答给出最小流程建议，让我确认或调整，不要求我填全需求表。业务目标和最小范围足够明确并经确认后即可开始。可以只读检查项目目录、已有说明和未提交更改，但目录名、示例或现有代码不能自行当作我的开发意图。业务意图或范围仍不清楚时，等待我回答当前问题；此前不要创建或修改业务代码、界面或包文件，也不要构建、打包、安装或投稿。空目录且没有业务目标时，到提问为止；只回答了名称不等于确认业务需求。
 
+本地开发和安装无需 GitHub 账号、仓库或仓库 URL。纯本地工作台省略 repository，由 DSH 按客户端包名生成稳定身份。不得要求用户为本地安装创建仓库。
+
 需求引导、布局建议、确认选项以及安装和完成状态都使用业务语言，例如“整页展示业务内容，需要时再打开 AI 对话”或“边对话边查看辅助资料”。不要要求普通用户确认 \`customFrame\`、\`register()\`、\`repository\`、\`dshHomePath\`、\`reconcileLocalProviders\` 等代码字段、内部身份或占位仓库地址，也不要大段呈现内部实现后让用户选择。技术字段由 Agent 在开发执行时按本规范处理；缺少发布身份不能阻断已明确的本地开发，不得捏造真实仓库。确实需要用户提供信息时，只询问影响业务或安装的实际问题，例如“要保存在哪个文件夹？”；用户主动询问技术细节时再简短解释。完成汇报先说明能做什么、哪些操作已实测和哪些仍待验证，修改文件与技术检查作为简短附录，最后按下方要求提示用户如何开始使用。
 
 开发执行（由 Agent 处理）：需求明确后，确定最小业务流程，不要覆盖已有的未提交更改。按规范第 4 节明确选择标准分栏或 customFrame，并设计首次无会话时的入口：不要把常驻会话区当作默认产品设计。内容审核、装修管理、报表、看板等优先建议业务整页；用户主动请求 AI 协助时才创建或恢复会话并显示会话区。对话主导或紧凑伴随工具适合标准分栏。主任务不明确时，先给用户布局建议并确认。标准分栏要检查宿主通用引导与业务面板并列的状态；customFrame 要自行提供首次使用入口，并在需要时放置宿主的 conversation 节点。再按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。业务区按自身容器宽度重排，不只依赖整窗断点。分别检查首次无会话、已关联会话、侧栏展开/收起及较窄窗口，用真实长度的中英文内容确认没有单字竖排、控件裁切或整页横向溢出，并保留宿主公共入口。
 
-完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。本地安装成功后，支持自动检测的 DSH Desktop 会在几秒内检测安装变更并显示顶部重启提示，无需 Agent 另行调用接口。请在开发、安装和检查任务结束后，引导用户点击「立即重启」；若当前版本不支持自动提示或未显示横幅，使用菜单「Harness → 重启 Harness」。未确认安装成功时，不得声称已触发提示；提示只表示需要重新加载，不代表工作台已加载或验收通过。若你正运行在这台需要重启的 DSH Desktop 会话内，不要自行关闭或重启 DSH Desktop、Harness，也不要用 ps、pgrep 等进程探测来尝试管理重启；用户重启 Harness 后，给用户两条可选路径：① 直接试用：展开左侧栏，点击左上角「工作台」右侧的当前工作台名称／切换区域，选择新工作台；若未显示，进入工作台市场的「已安装」检查条目和运行状态，加载或启用成功后再切换。新本地工作台加载后会自动加入切换菜单，不存在单独的「添加」按钮。② 继续 Agent 验收：回到原开发对话告诉 Agent「重启好了」，由 Agent 按第 8 节继续检查加载、已安装列表、切换入口和真实业务界面。用户可自行试用，不必返回对话；Agent 尚未实测的项目仍标为待验证，安装成功不能表述为全部验收通过。按规范第 8 节“本地自测清单”分别记录「已安装的工作台」、左侧入口和界面证据。若你运行在目标应用之外，可按正常重启流程操作。
+完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。模型完成构建和包校验后，直接调用 install_local_workbench({ path: "<本机 .tgz 绝对路径>", replace: false })，内部统一使用 Plugin Manager 的 installBundle，无需用户填写路径或操作安装页面。更新用户已授权修改的同名工作台时传 replace: true。读取 application：applied 时直接核验界面，只有 restart-required 才提示用户重启 Harness；失败、取消和 overridden 不算已生效。若你正运行在这台需要重启的 DSH Desktop 会话内，不要自行关闭或重启 DSH Desktop、Harness，也不要用 ps、pgrep 等进程探测来尝试管理重启；用户重启 Harness 后，给用户两条可选路径：① 直接试用：展开左侧栏，点击左上角「工作台」右侧的当前工作台名称／切换区域，选择新工作台；若未显示，进入工作台市场的「已安装」检查条目和运行状态，加载或启用成功后再切换。新本地工作台加载后会自动加入切换菜单，不存在单独的「添加」按钮。② 继续 Agent 验收：回到原开发对话告诉 Agent「重启好了」，由 Agent 按第 8 节继续检查加载、已安装列表、切换入口和真实业务界面。用户可自行试用，不必返回对话；Agent 尚未实测的项目仍标为待验证，安装成功不能表述为全部验收通过。按规范第 8 节“本地自测清单”分别记录「已安装的工作台」、左侧入口和界面证据。若你运行在目标应用之外，可按正常重启流程操作。
 
 若当前版本没有可用的本地安装方式，或你不能操作这台 DSH Desktop，请保留经过校验的包，准确说明缺少的步骤，不要声称已加载。报告修改的文件、自测结果、实际加载状态和未验证的项目。
 
@@ -2164,6 +2239,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
 
             h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus(null) } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? tr('返回工作台市场') : tr('制作我的工作台')))),
         h(Notice, { service, showCatalogStatus: true }),
+        service.getSnapshot().registrationFailures?.length > 0 && h('div', { role: 'alert', className: 'dshWbFailureHint' },
+          h('strong', null, registrationText(service.ctx, 'failed')),
+          h('p', null, registrationText(service.ctx, 'guidance')),
+          ...service.getSnapshot().registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` },
+            `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`))),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': tr('工作台集合') },
             h(Button, { id: 'dsh-workbench-market-tab', role: 'tab', tabIndex: tab === 'market' ? 0 : -1, 'aria-selected': tab === 'market', 'aria-controls': 'dsh-workbench-market-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('market') }, tr('市场')),
@@ -2190,7 +2270,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '2'),
               h('strong', null, tr('重启 Harness，试试你的工作台')),
-              h('p', null, both('你可以在左上角的「工作台」中切换到自己制作的工作台。安装完成后，等 AI 助手完成任务，点击顶部提示中的「立即重启」（或菜单「Harness → 重启 Harness」），再打开工作台试试你平时会用到的功能，看看是否符合预期。有问题或想调整的地方，继续告诉 AI 助手，让它帮你修改。只想自己用的话，到这一步就完成了。', 'You can switch to the workbench you created from “Workbench” in the top-left corner. Once installation is complete and your AI assistant has finished, click “Restart now” in the top banner (or choose Harness → Restart Harness), open your workbench, try the features you would normally use, and see if they work as expected. Tell your AI assistant about any problems or changes you want so it can help you adjust it. For personal use, you can stop here.'))),
+              h('p', null, both('你可以在左上角的「工作台」中切换到自己制作的工作台。安装完成后，仅当提示需要重启时，等 AI 助手完成任务，再点击顶部提示中的「立即重启」（或菜单「Harness → 重启 Harness」），再打开工作台试试你平时会用到的功能，看看是否符合预期。有问题或想调整的地方，继续告诉 AI 助手，让它帮你修改。只想自己用的话，到这一步就完成了。', 'You can switch to the workbench you created from “Workbench” in the top-left corner. If installation requires a restart, wait until your AI assistant has finished, then click “Restart now” in the top banner (or choose Harness → Restart Harness), open your workbench, try the features you would normally use, and see if they work as expected. Tell your AI assistant about any problems or changes you want so it can help you adjust it. For personal use, you can stop here.'))),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '3'),
               h('strong', null, tr('想上架？把提交指令发给 AI 助手')),
@@ -2500,6 +2580,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
     function apply(ctx) {
       hostLocale = ctx.locale
       ctx.effect(() => ctx.locale.register(DOWNLOAD_NS, downloadCopy), 'workbenches: download dictionaries')
+      ctx.effect(() => ctx.locale.register(REGISTRATION_NS, registrationCopy), 'workbenches: registration dictionaries')
       const service = new Workbenches(ctx)
       ctx.effect(() => ctx.reflect.provide('desktopWorkbenches', service), 'workbenches: service')
       ctx.effect(() => ctx.modules?.entries?.state?.subscribe?.(() => service.publish()), 'workbenches: client module failures')

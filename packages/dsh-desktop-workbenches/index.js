@@ -1,3 +1,4 @@
+import { localWorkbenchInstallTool } from './local-install-tool.mjs'
 import { createRestartStatus, readLocalWorkbenchSnapshot } from './restart-status.mjs'
 import { readInstallEvidence } from './install-evidence.mjs'
 import { randomUUID } from 'node:crypto'
@@ -237,6 +238,11 @@ export function apply(ctx, config) {
       }
       catch (error) { return installFailure(error, 'Could not read workbench market installs.') }
     }
+  })
+  // Agent-scoped tools inherit the current Profile manager. Installation stays
+  // behind the same escalation boundary as upstream plugin_manager tools.
+  ctx.inject(['tools', 'pluginManager', 'sandboxPolicy'], scoped => {
+    scoped.tools.register(localWorkbenchInstallTool(scoped, restartStatus))
   })
   // The manager owns package selection, activation, switches and removal. Market
   // records identify catalog provenance only; they are not runtime state.

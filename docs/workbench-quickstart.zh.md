@@ -1,6 +1,8 @@
 # 工作台开发：六步速览
 
-版本：2026-10-12 · 详细规则见[工作台开发规范](https://dshdesktop.com/workbench/docs/development/)；投稿见[工作台市场验收规范](https://dshdesktop.com/workbench/docs/market-acceptance/)。
+版本：2026-10-27 · 详细规则见[工作台开发规范](https://dshdesktop.com/workbench/docs/development/)；投稿见[工作台市场验收规范](https://dshdesktop.com/workbench/docs/market-acceptance/)。
+
+本地开发、安装和使用不需要 GitHub 账号或仓库 URL；默认调用 `register({ title }, BusinessPanel)`，省略 `repository` 且不要填写 `id`。宿主从真实客户端 npm 包名派生 `local:<npm 包名>`（scoped 包为 `local:@scope/name`）。版本或目录变化不改身份，包名变化生成新身份。市场投稿另用真实仓库，不会自动迁移本地会话。注册失败时检查工作台管理中的包名、阶段和原因；修复重载成功后诊断清除。使用当前版本支持的原生插件安装界面或 CLI，不依赖未提供的本地安装 API。
 
 **面向用户的沟通**：需求引导、布局建议、确认选项以及安装和完成状态都使用业务语言，例如“整页展示业务内容，需要时再打开 AI 对话”或“边对话边查看辅助资料”。不要要求普通用户确认 `customFrame`、`register()`、`repository`、`dshHomePath`、`reconcileLocalProviders` 等代码字段、内部身份或占位仓库地址，也不要大段呈现内部实现后让用户选择。技术字段由 Agent 在开发执行时按本规范处理；缺少发布身份不能阻断已明确的本地开发，不得捏造真实仓库。确实需要用户提供信息时，只询问影响业务或安装的实际问题，例如“要保存在哪个文件夹？”；用户主动询问技术细节时再简短解释。完成汇报先说明能做什么、哪些操作已实测和哪些仍待验证，修改文件与技术检查作为简短附录，最后按下方要求提示用户如何开始使用。
 
@@ -16,7 +18,7 @@
 5. **包校验**：运行 `pnpm pack`；检查 `.tgz` 内有声明的服务端/客户端入口和 `cordis.patch.yml`，没有凭证或用户数据。
 6. **本机安装实测**：按开发规范 3.6 探测当前 Desktop 可用的本地安装方式并安装该包；完成所需重启后，通过下方两条可选路径试用或继续 Agent 验收，按第 8 节记录实际结果。无法安装时交付校验过的包，并列出未实测项。
 
-本地安装成功后，支持自动检测的 DSH Desktop 会在几秒内检测安装变更并显示顶部重启提示，无需 Agent 另行调用接口。请在开发、安装和检查任务结束后，引导用户点击「立即重启」；若当前版本不支持自动提示或未显示横幅，使用菜单「Harness → 重启 Harness」。未确认安装成功时，不得声称已触发提示；提示只表示需要重新加载，不代表工作台已加载或验收通过。
+模型完成构建和包校验后，直接调用 `install_local_workbench({ path: "<本机 .tgz 绝对路径>", replace: false })`，内部统一使用 Plugin Manager 的 `installBundle`，无需用户填写路径或操作安装页面。更新用户已授权修改的同名工作台时传 `replace: true`。读取 `application`：`applied` 时直接核验界面，只有 `restart-required` 才提示用户重启 Harness；失败、取消和 overridden 不算已生效。
 
 **在目标 DSH Desktop 内开发时**：Agent 不要自行关闭或重启 DSH Desktop、Harness，也不要用 `ps`、`pgrep` 等进程探测管理重启；请用户手动重启。用户重启 Harness 后，给用户两条可选路径：① 直接试用：展开左侧栏，点击左上角「工作台」右侧的当前工作台名称／切换区域，选择新工作台；若未显示，进入工作台市场的「已安装」检查条目和运行状态，加载或启用成功后再切换。新本地工作台加载后会自动加入切换菜单，不存在单独的「添加」按钮。② 继续 Agent 验收：回到原开发对话告诉 Agent「重启好了」，由 Agent 按第 8 节继续检查加载、已安装列表、切换入口和真实业务界面。用户可自行试用，不必返回对话；Agent 尚未实测的项目仍标为待验证，安装成功不能表述为全部验收通过。运行在目标应用之外的 Agent 可按正常重启流程操作。
 

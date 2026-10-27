@@ -77,8 +77,11 @@ describe('bundled workbench development guide', () => {
         ? ['最终回复必须以醒目的「接下来怎么用」三点提示收尾', '放在所有修改说明、自测结果、文件链接和技术附录之后', '不能在这三点之后追加内容', '1. 开发结果：', '安装失败', '2. 如何重启：', '点击顶部提示中的「立即重启」', 'Harness → 重启 Harness', '通常只需重启 Harness', '3. 去哪里打开：', '左上角「工作台」', '工作台市场 → 已安装', '带「本地」标识']
         : ['final response must end with a prominent three-point “What to do next” block', 'after all change descriptions, self-test results, file links, and technical appendices', 'do not append any content after these three points', '1. Development result:', 'installation failed', '2. How to restart:', 'click “Restart now” in the top banner', 'Harness → Restart Harness', 'normally only Harness needs restarting', '3. Where to open it:', 'upper left', 'Workbench Market → Installed', 'marked “Local,”']
       for (const phrase of phrases) expect(guide).toContain(phrase)
-      expect(guide).toContain(path.endsWith('.zh.md') ? '无需 Agent 另行调用接口' : 'no separate Agent API call is needed')
-      expect(guide).toContain(path.endsWith('.zh.md') ? '不支持自动提示或未显示横幅' : 'does not support the automatic notice or no banner appears')
+      if ([GUIDE_SOURCE, GUIDE_EN_SOURCE].includes(path)) {
+        expect(guide).toContain('installBundle')
+        expect(guide).toContain('install_local_workbench')
+        expect(guide).toContain('restart-required')
+      }
     }
   })
 
@@ -91,6 +94,26 @@ describe('bundled workbench development guide', () => {
     }
     expect(read(GUIDE_SOURCE)).toContain('customFrame: true')
     expect(read(GUIDE_EN_SOURCE)).toContain('customFrame: true')
+  })
+
+  it('documents local identity separately from market publication in both languages', () => {
+    for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE]) {
+      const guide = read(path)
+      expect(guide).toContain('2026-10-27')
+      expect(guide).toContain('local:@scope/name')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不需要 GitHub 账号' : 'require no GitHub account')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不会自动迁移本地会话' : 'does not automatically migrate local sessions')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '阶段和原因' : 'stage, and reason')
+    }
+    for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE]) {
+      const guide = read(path)
+      const clientExample = guide.split('window.__ModuleLoader__.load({')[1].split('```')[0]
+      expect(clientExample).toContain('desktopWorkbenches.register({')
+      expect(clientExample).not.toContain('repository:')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '仅在准备市场投稿' : 'Only when preparing a market submission')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不能替代真实 UI 验收' : 'do not replace real UI acceptance')
+      expect(guide).not.toMatch(/(?:必须|must)\*\*提供.*(?:规范的 GitHub|canonical GitHub)/)
+    }
   })
 
   it('covers development and the local self-test only', () => {
@@ -142,7 +165,7 @@ describe('bundled workbench development guide', () => {
     try {
       const routes = []
       const connection = { fetch: { register(route) { routes.push(route) } } }
-      apply({ effect: fn => fn(), inject: (_deps, callback) => callback({ connection, pluginManager: {}, effect: fn => fn() }), reflect: { provide() {} }, connection }, { root })
+      apply({ effect: fn => fn(), inject: (deps, callback) => { if (!deps.includes('tools')) callback({ connection, pluginManager: {}, effect: fn => fn() }) }, reflect: { provide() {} }, connection }, { root })
       expect(routes.length).toBeGreaterThan(5)
       for (const route of routes) expect([route.path, route.requestBody]).toEqual([route.path, 'buffered'])
     } finally { await rm(root, { recursive: true, force: true }) }

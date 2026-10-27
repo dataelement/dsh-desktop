@@ -72,6 +72,17 @@ export function createRestartStatus(readSnapshot, { minimumInterval = 1000 } = {
   let lastRead = 0
   let lastStatus
   return {
+    /** @param {string} name Package whose managed activation completed. */
+    async acknowledge(name) {
+      // Let an earlier poll finish before changing its baseline and cached result.
+      await inFlight
+      const before = await baseline
+      const current = await readSnapshot()
+      if (current[name] !== undefined) before[name] = current[name]
+      else delete before[name]
+      pending.delete(name)
+      lastStatus = undefined
+    },
     read() {
       if (inFlight) return inFlight
       if (lastStatus && Date.now() - lastRead < minimumInterval) return Promise.resolve(lastStatus)

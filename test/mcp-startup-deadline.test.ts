@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 const serverSource = String.raw`
 import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
-const [mode, trace] = process.argv.slice(2);
+const [mode, trace, pageDelay = '150', startupBudget = '900'] = process.argv.slice(2);
 const record = value => appendFileSync(trace, JSON.stringify({ pid: process.pid, ...value }) + '\n');
 record({ event: 'spawn' });
 let page = 0;
@@ -24,7 +24,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   }
   if (request.method === 'initialize' && mode !== 'silent') {
     const initialize = () => reply({ protocolVersion: '2025-11-25', capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'fixture', version: '1' } });
-    if (mode === 'slow-connect') setTimeout(initialize, 350);
+    if (mode === 'slow-connect') setTimeout(initialize, Number(startupBudget) * 0.375);
     else initialize();
   }
   if (request.method === 'tools/call') {
@@ -37,7 +37,8 @@ createInterface({ input: process.stdin }).on('line', line => {
     lists++;
     if (mode.startsWith('runtime-')) {
       if (lists === 1) reply({ tools: [tool] });
-      else setTimeout(() => reply({ tools: [{ ...tool, name: 'runtime' }] }), 1000);
+      // Runtime refresh must finish even after a whole startup budget passes.
+      else setTimeout(() => reply({ tools: [{ ...tool, name: 'runtime' }] }), Number(startupBudget) + 250);
       return;
     }
     if (mode.startsWith('notify-')) {
@@ -51,8 +52,8 @@ createInterface({ input: process.stdin }).on('line', line => {
     }
     if (mode === 'pages') {
       page++;
-      setTimeout(() => reply({ tools: [], nextCursor: String(page) }), 150);
-    } else if (mode === 'slow-connect') setTimeout(() => reply({ tools: [tool] }), 900);
+      setTimeout(() => reply({ tools: [], nextCursor: String(page) }), Number(pageDelay));
+    } else if (mode === 'slow-connect') setTimeout(() => reply({ tools: [tool] }), Number(startupBudget) * 0.75);
     else reply({ tools: [tool] });
   }
 });
@@ -63,9 +64,12 @@ interface FixtureOptions {
   mode?: string
   strict?: boolean
   startupTimeoutMs?: number
+  pageDelayMs?: number
 }
 
-async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 900 }: FixtureOptions = {}) {
+// Include cold Node startup headroom: this fixture exercises real stdio children,
+// whose initialization can exceed a subsecond budget under full-suite load.
+async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 4000, pageDelayMs = 150 }: FixtureOptions = {}) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-mcp-deadline-'))
   try {
     const profile = join(home, 'profiles', 'fixture')
@@ -75,7 +79,7 @@ async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 90
     await writeFile(server, serverSource)
     const config = (serverName: string, serverMode: string) => ({
       transport: 'stdio', serverName, command: process.execPath,
-      args: [server, serverMode, trace], startupTimeoutMs,
+      args: [server, serverMode, trace, String(pageDelayMs), String(startupTimeoutMs)], startupTimeoutMs,
       ...(serverName === 'stalled' && strict ? { failOnStartupError: true } : {}),
       reconnect: { enabled: false }
     })
@@ -132,30 +136,33 @@ async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 90
 
 describe('MCP entry startup deadline through the real Profile loader', () => {
   it.each([false, true])('bounds notifications queued during initial discovery (strict=%s)', async strict => {
-    const result = await runProfile({ mode: 'notify-stall', strict })
+    const startupTimeoutMs = 4000
+    const result = await runProfile({ mode: 'notify-stall', strict, startupTimeoutMs })
     expect(result.status, result.stderr).toBe(strict ? 1 : 0)
     expect(result.traffic.filter(item => item.method === 'tools/list').length).toBeGreaterThanOrEqual(3)
-    expect(result.stderr).toContain('mcp-client(stalled): tools/list startup deadline exceeded after 900ms')
+    expect(result.stderr).toContain(`mcp-client(stalled): tools/list startup deadline exceeded after ${startupTimeoutMs}ms`)
     if (strict) expect(result.stdout).not.toContain('PROFILE_READY:')
     else expect(result.stdout).toContain('PROFILE_READY:["mcp__healthy__ping"]')
   }, 15_000)
 
   it('waits until every startup notification refresh has published its final tool set', async () => {
-    const result = await runProfile({ mode: 'notify-drain', strict: true })
+    // These cases test queue semantics, not startup speed. Leave room for the
+    // real child process to initialize even while the full suite is busy.
+    const result = await runProfile({ mode: 'notify-drain', strict: true, startupTimeoutMs: 4000 })
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('mcp__stalled__final')
     expect(result.stdout).not.toContain('mcp__stalled__ping')
   }, 15_000)
 
   it('propagates a startup notification refresh error instead of swallowing the queue rejection', async () => {
-    const result = await runProfile({ mode: 'notify-error', strict: true })
+    const result = await runProfile({ mode: 'notify-error', strict: true, startupTimeoutMs: 4000 })
     expect(result.status, result.stderr).toBe(1)
     expect(result.stdout).not.toContain('PROFILE_READY:')
     expect(result.stderr).toContain('more than once')
   }, 15_000)
 
   it('preserves strict startup registration failure from a queued notification', async () => {
-    const result = await runProfile({ mode: 'notify-register-error', strict: true })
+    const result = await runProfile({ mode: 'notify-register-error', strict: true, startupTimeoutMs: 4000 })
     expect(result.status, result.stderr).toBe(1)
     expect(result.stdout).not.toContain('PROFILE_READY:')
     expect(result.stderr).toContain('fixture registry rejection')
@@ -200,7 +207,7 @@ describe('MCP entry startup deadline through the real Profile loader', () => {
     expect(result.traffic.some(item => item.method === 'tools/list')).toBe(true)
     expect(result.stdout).toContain('PROFILE_READY:["mcp__healthy__ping"]')
     expect(result.stdout).toContain('PROFILE_DISPOSED:0')
-    expect(result.stderr).toContain('mcp-client(stalled): tools/list startup deadline exceeded after 900ms')
+    expect(result.stderr).toContain('mcp-client(stalled): tools/list startup deadline exceeded after 4000ms')
     expect(result.elapsed).toBeLessThan(8_000)
   }, 15_000)
 
@@ -208,29 +215,37 @@ describe('MCP entry startup deadline through the real Profile loader', () => {
     const result = await runProfile({ strict: true })
     expect(result.status, result.stderr).toBe(1)
     expect(result.stdout).not.toContain('PROFILE_READY:')
-    expect(result.stderr).toContain('mcp-client(stalled): tools/list startup deadline exceeded after 900ms')
+    expect(result.stderr).toContain('mcp-client(stalled): tools/list startup deadline exceeded after 4000ms')
     expect(result.stderr).not.toContain('loader timeout waiting')
   }, 15_000)
 
   it('bounds a silent initialize rather than waiting for the SDK request timeout', async () => {
     const result = await runProfile({ mode: 'silent' })
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stderr).toContain('mcp-client(stalled): initialize startup deadline exceeded after 900ms')
+    expect(result.stderr).toContain('mcp-client(stalled): initialize startup deadline exceeded after 4000ms')
     expect(result.stdout).toContain('PROFILE_READY:["mcp__healthy__ping"]')
   }, 15_000)
 
   it('uses one budget across all tools/list pages, not a new budget for each page', async () => {
-    const result = await runProfile({ mode: 'pages' })
+    // Every page answers well inside the budget, but pagination never ends.
+    // A per-page reset would hit the outer process timeout instead of returning
+    // the expected shared-deadline diagnostic and booting the healthy entry.
+    const startupTimeoutMs = 4000
+    const result = await runProfile({ mode: 'pages', startupTimeoutMs, pageDelayMs: startupTimeoutMs / 8 })
     expect(result.status, result.stderr).toBe(0)
     expect(result.traffic.filter(item => item.cursor !== undefined).length).toBeGreaterThan(1)
-    expect(result.stderr).toContain('mcp-client(stalled): tools/list startup deadline exceeded after 900ms')
+    expect(result.stderr).toContain(`mcp-client(stalled): tools/list startup deadline exceeded after ${startupTimeoutMs}ms`)
     expect(result.stdout).toContain('PROFILE_READY:["mcp__healthy__ping"]')
+    expect(result.elapsed).toBeLessThan(8_000)
   }, 15_000)
 
   it('includes time spent connecting in the initial tools/list budget', async () => {
-    const result = await runProfile({ mode: 'slow-connect', startupTimeoutMs: 1100 })
+    // Connecting and listing each fit individually; their combined delay does
+    // not. Leave startup headroom while retaining this distinction.
+    const startupTimeoutMs = 4000
+    const result = await runProfile({ mode: 'slow-connect', startupTimeoutMs })
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stderr).toContain('mcp-client(stalled): tools/list startup deadline exceeded after 1100ms')
+    expect(result.stderr).toContain(`mcp-client(stalled): tools/list startup deadline exceeded after ${startupTimeoutMs}ms`)
     expect(result.stdout).toContain('PROFILE_READY:["mcp__healthy__ping"]')
   }, 15_000)
 })
