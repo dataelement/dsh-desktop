@@ -53,3 +53,7 @@ macOS 双架构打包、Apple 签名/公证、Windows UKey 内层签名/重打�
 - 签名、公证、时间戳和证书校验是正式分发链路的要求；受签名设备、Apple 服务和重试影响，development 模式不执行。
 - UKey 依赖单个签名 worker，排队时间与实际签名时间要分别统计。复用 unsigned artifact 的 resign 模式避免从头重建。
 - 发布资产和索引写入必须等待所有目标完成；上传耗时由文件体积和网络决定。发布说明生成与 Feishu 通知只在相应发布模式执行，不应混入普通测试路径。
+
+## Windows 归档修复
+
+原生 tar 的 Unicode 路径回归在 Windows CI 复现访问冲突（0xC0000005）。#801 的修复合入本 PR 后改用已锁定的 Node tar 实现，保留流式压缩、超时、完整性校验和失败保护。发布必跑；development 通过 `windows_archive_check=true` 验证完整产物，默认省去无签名用途的压缩。

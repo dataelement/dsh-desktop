@@ -115,6 +115,16 @@ describe('release CI scheduling', () => {
     }
   })
 
+  it('archives release payloads and only opt-in development builds', () => {
+    const archive = step('windows-x64', 'Archive and verify unpacked Windows payload')
+    expect(enabled(archive.if)).toBe(false)
+    expect(enabled(archive.if, { event: 'pull_request' })).toBe(false)
+    for (const input of [{ mode: 'signed' }, { mode: 'prerelease' }, { windows_archive_check: true }, { event: 'push', ref: 'refs/tags/v1.0.0' }]) {
+      expect(enabled(archive.if, input)).toBe(true)
+    }
+    expect(workflow.on.workflow_dispatch.inputs.windows_archive_check.default).toBe(false)
+  })
+
   it('resigns existing artifacts without rebuilding either native platform', () => {
     const input = { mode: 'resign', target: 'windows' }
     expect(enabled(jobs.macos.if, input)).toBe(false)
