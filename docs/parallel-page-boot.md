@@ -40,7 +40,7 @@ the cover once the client shell mounts; a failed removal keeps the cover and
 retries on the next synchronization.
 
 CSS insertion/removal belongs to each window and document generation. Late
-insertion is removed after navigation or an explicit reveal, failed removals
+insertion is removed after navigation or client readiness, failed removals
 remain retryable, and recovery/splash documents are not covered. Renderer
 navigation continues using the existing bounded recovery owner, including its
 `ERR_ABORTED` handling. Inspector/WebSocket errors do not select another transport;

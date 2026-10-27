@@ -1,3 +1,4 @@
+import { encodePopupNotesMetadata } from '../../shared/update-release-notes'
 import { join } from 'node:path'
 import { ApplicationRollback, type ApplicationRollbackStatus } from './application-rollback'
 import { checkDesktopUpdate } from '../desktop-service'
@@ -442,7 +443,7 @@ function configureUpdater(): void {
     }
     // Offered, not fetched: nothing leaves the network until the user accepts
     // the update, which is the same click that starts the download.
-    transition({ type: 'available', version: info.version, releaseNotes: normalizeReleaseNotes(info.releaseNotes) })
+    transition({ type: 'available', version: info.version, releaseNotes: encodePopupNotesMetadata(info) ?? normalizeReleaseNotes(info.releaseNotes) })
   })
   autoUpdater.on('download-progress', (progress) =>
     transition({ type: 'progress', percent: progress.percent })

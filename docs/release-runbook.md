@@ -78,3 +78,72 @@ If Apple accepts the upload but the SDK fails with a transient network timeout w
 ### Signed test notifications
 
 Signed test builds use the same `MODELS_TOKEN` secret and `RELEASE_NOTES_MODEL` as release summaries. Copilot summarizes bounded commit and code-diff evidence into Chinese “功能” and “问题修复” sections, following bisheng-work. Item counts follow actual changes, with empty categories explicitly marked; each item is limited to 100 characters. Generation has a 180-second timeout and structural/length validation. Missing credentials, CLI failures or invalid output produce an explicitly unavailable summary with short Chinese test guidance; raw commits are never substituted into the chat. Full commit evidence remains in the uploaded `test-changes.md`. Notification still waits for successful uploads and public download verification.
+
+## Formal release popup notes and Feishu confirmation
+
+Formal `v*` tag releases now require a Feishu confirmation **before** GitHub Release
+creation/update, ModelScope latest/archive uploads, and rollout configuration.
+Detailed bilingual GitHub Release notes and the post-publication Feishu summary keep
+their existing format. A separate short bilingual summary feeds the existing desktop
+update popup (not the About dialog). Pre-release and signed-test workflows are unchanged.
+
+Configure these on the GitHub repository before releasing:
+
+- Secrets `FEISHU_APP_ID`, `FEISHU_APP_SECRET`: a Feishu self-built application bot.
+- Variable `FEISHU_RELEASE_CHAT_ID`: the existing release notification group's chat ID;
+  add the application bot to this group. The webhook URL cannot supply this ID.
+- Optional variable `FEISHU_RELEASE_REVIEWER_ID`: an open ID under that same application
+  to restrict approval. Leave unset to accept any human member of the release group.
+  No individual is mentioned by default.
+- `MODELS_TOKEN` remains required for generating the concise summary.
+
+The bot needs permission to send and update its own messages (`im:message:send_as_bot`
+and `im:message:update`). In the Feishu Developer Console, enable **Events & Callbacks →
+Callback Configuration → long connection** and subscribe to **card.action.trigger**.
+The runner uses pinned `lark-oapi` and `websockets` Python packages in an isolated CI venv;
+these are not Desktop dependencies and have no installed-app size/platform impact. The
+SDK handles the authenticated long connection without exposing a public callback server.
+Do not share this application connection with another consumer: Feishu may distribute
+callbacks across connections. Formal publishes remain serialized by the existing workflow
+concurrency group. Missing credentials, a failed connection, or a 60-minute approval timeout
+blocks publication. A successful WebSocket connection does not prove the callback subscription
+is enabled; verify that setting in the console before production use.
+
+After packaging, CI generates `zh` and `en` bullet lists (1–12 lines, at most 1000 characters
+each, matching the card input limit). Invalid generation blocks release; there is no invented
+fallback. The review card initially shows only the bilingual preview and two actions:
+
+- **确认并发布** approves the generated bilingual text and continues CI.
+- **重写** replaces the preview with a Chinese input prefilled with the current text. No
+  English input is shown. Only the user who opened the editor may submit or cancel it.
+- In editing mode, **提交并发布** authorizes publication using that Chinese text. The
+  runner disables card actions, translates via Copilot CLI using `MODELS_TOKEN` and the
+  configured `RELEASE_NOTES_MODEL`, validates the output, and continues automatically.
+  There is **no second confirmation**. Chinese is retained exactly as submitted (outer
+  whitespace trimmed); translation cannot overwrite it. Tools are denied to the translation
+  subprocess, and Feishu credentials are omitted from its environment.
+- **取消** discards edits and restores the original preview; it does not approve release.
+- Empty, malformed or unchanged submissions stay in the editor. Translation failure or
+  timeout retains Chinese and offers resubmission; it never silently publishes the old text.
+
+Callbacks must match the actual chat/message, current revision and optional configured
+reviewer. Event IDs are deduplicated, and revisions change on every transition so old buttons
+cannot release new text. The listener ACKs quickly; translation and API updates happen outside
+the callback. Connection/API failures stop the job. Retrying creates a fresh card and requires
+a new action; previous approvals cannot authorize the new run. If a run stops while someone
+is editing, use a fresh run instead of the stale card. "CI will continue" is not publication
+success: later GitHub/ModelScope operations may fail or require recovery after partial publication.
+
+CI stores the approved text, reviewer/message/event IDs, revision, commit, run and attempt in
+`approved-popup.json`, retained with generation evidence as the `release-review-*` workflow
+artifact for 30 days. Injection verifies run/version and the text digest before modifying
+`latest.yml` and `latest-mac.yml`; installer files and checksums are unchanged. Both metadata
+files carry `dshPopupNotes` translations plus readable bilingual `releaseNotes` for older
+clients. Updated clients select the current UI language; older clients display both languages.
+The release heading date is the publication date in Asia/Shanghai. The same metadata is
+uploaded to latest and per-version archives, so rollback uses the corresponding notes.
+
+Acceptance before enabling production: use a test bot/group to exercise sending, button callbacks,
+Chinese edits and automatic translation/publication, cancellation, timeout and stale actions; confirm the
+approved YAML reaches the authenticated updater and both languages render in a packaged
+application. Unit tests do not establish Feishu permissions or installed-app acceptance.

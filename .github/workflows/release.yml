@@ -962,6 +962,42 @@ jobs:
             echo "MODELS_TOKEN not set; using the deterministic GitHub release note."
             python3 .github/scripts/github_release_notes.py generate-fallback --tag "$RELEASE_TAG" --output "$out"
           fi
+      - name: Generate concise bilingual popup notes
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test -n "$COPILOT_GITHUB_TOKEN" || { echo "::error::Missing MODELS_TOKEN; popup notes cannot be generated"; exit 1; }
+          python3 .github/scripts/update_popup_notes.py prompt --tag "$RELEASE_TAG" --file .github/release-artifacts/popup-prompt.txt
+          copilot -p "$(cat .github/release-artifacts/popup-prompt.txt)" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user --deny-tool '*' > .github/release-artifacts/popup-notes.json
+          python3 .github/scripts/update_popup_notes.py validate --file .github/release-artifacts/popup-notes.json
+      - name: Install Feishu card callback transport
+        run: |
+          python3 -m venv "$RUNNER_TEMP/release-review-env"
+          "$RUNNER_TEMP/release-review-env/bin/pip" install -r .github/scripts/release-review-requirements.txt
+          "$RUNNER_TEMP/release-review-env/bin/python" test/feishu-card-sdk.py
+      - name: Wait for Feishu release confirmation
+        timeout-minutes: 65
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_RELEASE_CHAT_ID: ${{ vars.FEISHU_RELEASE_CHAT_ID }}
+          FEISHU_RELEASE_REVIEWER_ID: ${{ vars.FEISHU_RELEASE_REVIEWER_ID }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: '"$RUNNER_TEMP/release-review-env/bin/python" .github/scripts/confirm_popup_release.py'
+      - name: Inject approved popup notes into update feeds
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/inject-popup-notes.mjs
+      - name: Preserve release review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .github/release-artifacts/
+          retention-days: 30
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
