@@ -131,6 +131,7 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
   let renderSidebar
   let stateIndex = 0
   const state = []
+  const layoutEffects = []
   const react = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     Component: class {},
@@ -140,14 +141,16 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
       return [state[index], value => { state[index] = typeof value === 'function' ? value(state[index]) : value }]
     },
     useRef: initial => ({ current: initial }),
-    useLayoutEffect: () => {},
-      useRef: () => ({ current: null }),
+    useLayoutEffect: effect => { layoutEffects.push(effect) },
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   const sandbox = { window: { sessionStorage, localStorage: clientWindow.localStorage, __ModuleLoader__: { load({ factory }) {
     factory(name => name === 'react' ? react : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null })
   } } }, document, setTimeout, clearTimeout, AbortController }
   vm.runInNewContext(code.replace('    function MetaItem(', '    globalThis.__testSidebarSwitcher = WorkbenchSidebarSwitcher\n    function MetaItem('), sandbox)
+  sandbox.window.innerHeight = 800
+  sandbox.window.addEventListener = vi.fn()
+  sandbox.window.removeEventListener = vi.fn()
   renderSidebar = sandbox.__testSidebarSwitcher
   const entry = { id: workbenchId, title, icon: '✦' }
   const service = {
@@ -166,7 +169,7 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
     if (!node || typeof node !== 'object') return []
     return [...(predicate(node) ? [node] : []), ...find(node.props?.children, predicate)]
   }
-  return { render, find, service, selectPanel: id => { activePanelId = id } }
+  return { render, find, service, window: sandbox.window, runMenuLayout: () => layoutEffects.at(-1)(), selectPanel: id => { activePanelId = id } }
 }
 
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); sidebarWide = false; sidebarCollapsed = false; sessionStorage.clear() })
@@ -2267,6 +2270,28 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('@container workbench-market (max-width:520px){.dshWbGrid{grid-template-columns:1fr}}')
     expect(fullSource).toContain('.dshWbMeta{display:flex;flex-wrap:wrap;')
     expect(fullSource).not.toContain('未安装')
+  })
+
+  it('fits the mode menu below its anchor and updates and cleans up on window resize', () => {
+    const fixture = sidebarSwitcher({ pinned: ['writer'] })
+    let tree = fixture.render()
+    fixture.find(tree, node => node.props?.className === 'dshWbModeSwitch')[0].props.onClick()
+    tree = fixture.render()
+    const menu = fixture.find(tree, node => node.props?.className === 'dshWbModeMenu')[0]
+    const element = { style: {}, getBoundingClientRect: () => ({ top: 205 }) }
+    menu.props.ref.current = element
+    const cleanup = fixture.runMenuLayout()
+    expect(element.style.maxHeight).toBe('587px')
+    const [event, resize] = fixture.window.addEventListener.mock.calls[0]
+    expect(event).toBe('resize')
+    fixture.window.innerHeight = 400
+    resize()
+    expect(element.style.maxHeight).toBe('187px')
+    fixture.window.innerHeight = 100
+    resize()
+    expect(element.style.maxHeight).toBe('0px')
+    cleanup()
+    expect(fixture.window.removeEventListener).toHaveBeenCalledWith('resize', resize)
   })
 
   it('renders a persistent Workbench home area beside the current mode and switch button', () => {
