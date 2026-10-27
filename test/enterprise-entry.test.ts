@@ -12,15 +12,35 @@ describe('Enterprise app menu entry', () => {
     const showUnexpectedError = vi.fn()
     const buildFromTemplate = vi.fn(value => value)
     // Execute the actual menu builder without starting Electron or touching a Profile.
+    const hide = vi.fn()
+    const quit = vi.fn()
+    const sendActionToFirstResponder = vi.fn()
     const context = {
-      harnessLocale: () => locale, process: { platform: 'darwin' }, app: { name: 'DSH Desktop' },
+      harnessLocale: () => locale, process: { platform: 'darwin' }, app: { name: 'DSH Desktop', hide, quit },
       shell: { openExternal }, showUnexpectedError, developmentRepairDemo: undefined,
-      Menu: { buildFromTemplate, setApplicationMenu: vi.fn() }
+      Menu: { buildFromTemplate, setApplicationMenu: vi.fn(), sendActionToFirstResponder }
     }
     vm.runInNewContext(ts.transpile(source.slice(start, end)) + '\ninstallMenu()', context)
     const menu = buildFromTemplate.mock.calls[0]?.[0][0].submenu
+    expect(menu[0].label).toBe(locale === 'zh' ? '关于 DSH Desktop' : 'About DSH Desktop')
     expect(menu[1].label).toBe(locale === 'zh' ? '检查更新…' : 'Check for Updates…')
     expect(menu[2].label).toBe(locale === 'zh' ? '了解企业版' : 'Explore Enterprise')
+    expect(menu[4].label).toBe(locale === 'zh' ? '隐藏 DSH Desktop' : 'Hide DSH Desktop')
+    expect(menu[4].accelerator).toBe('Command+H')
+    expect(menu[4].role).toBeUndefined()
+    expect(menu[5].label).toBe(locale === 'zh' ? '隐藏其他' : 'Hide Others')
+    expect(menu[5].accelerator).toBe('Command+Alt+H')
+    expect(menu[6].label).toBe(locale === 'zh' ? '全部显示' : 'Show All')
+    expect(menu[8].label).toBe(locale === 'zh' ? '退出 DSH Desktop' : 'Quit DSH Desktop')
+    expect(menu[8].accelerator).toBe('Command+Q')
+    menu[4].click()
+    menu[5].click()
+    menu[6].click()
+    menu[8].click()
+    expect(hide).toHaveBeenCalledOnce()
+    expect(sendActionToFirstResponder).toHaveBeenNthCalledWith(1, 'hideOtherApplications:')
+    expect(sendActionToFirstResponder).toHaveBeenNthCalledWith(2, 'unhideAllApplications:')
+    expect(quit).toHaveBeenCalledOnce()
     menu[2].click()
     await Promise.resolve()
     expect(openExternal).toHaveBeenCalledWith('https://dshdesktop.com/zh/enterprise/')

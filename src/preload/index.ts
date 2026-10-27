@@ -170,6 +170,15 @@ function runDomSync(): void {
   syncBootCover()
 }
 
+// Harness reads this before its client mounts and reports the language the
+// user picks in Desktop settings. The shell menu follows that report.
+contextBridge.exposeInMainWorld('__DSH_LOCALE__', {
+  read: (): Promise<unknown> => ipcRenderer.invoke('desktop:locale-bootstrap'),
+  onChange: (locale: unknown): void => {
+    if (typeof locale === 'string') ipcRenderer.send('desktop:locale-changed', locale)
+  }
+})
+
 contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
   pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
 })

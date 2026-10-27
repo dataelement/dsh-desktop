@@ -31,6 +31,7 @@ import {
   shell,
   Tray,
   utilityProcess,
+  type IpcMainEvent,
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
@@ -170,7 +171,14 @@ import {
 } from './update/update-manager'
 import type { RuntimeSnapshot } from '../shared/contracts'
 import { rollbackUnavailableDescription } from './update/rollback-description'
-import { applicationText, resolveHarnessLocale } from './application-locale'
+import {
+  applicationText,
+  chosenHarnessLocale,
+  explicitHarnessLocale,
+  localePreferenceFromProfilePatch,
+  resolveHarnessLocale,
+  type HarnessLocale
+} from './application-locale'
 import { installContextMenu } from './context-menu'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
@@ -730,18 +738,54 @@ function dshBrandLogoPath(variant: 'light' | 'dark'): string {
   )
 }
 
-function harnessLocale(): 'en' | 'zh' {
+/** Language last reported by the page. It wins over the files until the next report. */
+let reportedHarnessLocale: HarnessLocale | undefined
+
+function readProfileLocalePreference(): unknown {
+  try {
+    const profile = safeModeVisible || startInSafeMode ? SAFE_MODE_PROFILE : 'web'
+    const patchText = readFileSync(
+      join(app.getPath('userData'), 'harness', 'profiles', profile, 'cordis.patch.yml'),
+      'utf8'
+    )
+    return localePreferenceFromProfilePatch(patchText)
+  } catch {
+    return undefined
+  }
+}
+
+function readLegacySettingsLocalePreference(): unknown {
   try {
     const settings = parse(
       readFileSync(join(app.getPath('userData'), 'harness', 'settings.yaml'), 'utf8')
-    ) as { locale?: { preference?: unknown } }
-    return resolveHarnessLocale(
-      settings.locale?.preference,
-      app.getPreferredSystemLanguages()
-    )
+    ) as { locale?: { preference?: unknown } } | null
+    if (!settings || typeof settings !== 'object') return undefined
+    return settings.locale?.preference
   } catch {
-    return resolveHarnessLocale(undefined, app.getPreferredSystemLanguages())
+    return undefined
   }
+}
+
+/** The language chosen in Desktop, or undefined when the user has not chosen one. */
+function chosenDesktopLocale(): HarnessLocale | undefined {
+  if (reportedHarnessLocale) return reportedHarnessLocale
+  return chosenHarnessLocale([
+    readProfileLocalePreference(),
+    readLegacySettingsLocalePreference()
+  ])
+}
+
+function harnessLocale(): HarnessLocale {
+  return chosenDesktopLocale()
+    ?? resolveHarnessLocale(undefined, app.getPreferredSystemLanguages())
+}
+
+function applyReportedHarnessLocale(locale: unknown): void {
+  const resolved = explicitHarnessLocale(locale)
+  if (!resolved) return
+  const previous = harnessLocale()
+  reportedHarnessLocale = resolved
+  if (resolved !== previous) installMenu()
 }
 
 function gpuFallbackStatePath(): string {
@@ -1932,6 +1976,21 @@ function registerHarnessHandlers(): void {
     return { ok: true }
   })
 
+  ipcMain.removeHandler('desktop:locale-bootstrap')
+  ipcMain.handle('desktop:locale-bootstrap', (event) => {
+    assertTrustedMainWindowEvent(event)
+    return {
+      languages: [...app.getPreferredSystemLanguages()],
+      preference: chosenDesktopLocale() ?? null
+    }
+  })
+
+  ipcMain.removeAllListeners('desktop:locale-changed')
+  ipcMain.on('desktop:locale-changed', (event, locale: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    applyReportedHarnessLocale(locale)
+  })
+
   ipcMain.removeHandler('desktop:about-info')
   ipcMain.handle('desktop:about-info', (event) => {
     assertTrustedMainWindowEvent(event)
@@ -1945,7 +2004,7 @@ function registerHarnessHandlers(): void {
   })
 }
 
-function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
+function assertTrustedMainWindowEvent(event: IpcMainEvent | IpcMainInvokeEvent): void {
   if (
     !mainWindow ||
     mainWindow.isDestroyed() ||
@@ -3259,11 +3318,28 @@ function installMenu(): void {
               click: () => void shell.openExternal('https://dshdesktop.com/zh/enterprise/').catch(showUnexpectedError)
             },
             { type: 'separator' as const },
-            { role: 'hide' as const },
-            { role: 'hideOthers' as const },
-            { role: 'unhide' as const },
+            // Role titles stay in Electron's English and can be rewritten to the
+            // machine language. These labels follow the language chosen in Desktop.
+            {
+              label: isChinese ? `隐藏 ${app.name}` : `Hide ${app.name}`,
+              accelerator: 'Command+H',
+              click: () => app.hide()
+            },
+            {
+              label: isChinese ? '隐藏其他' : 'Hide Others',
+              accelerator: 'Command+Alt+H',
+              click: () => Menu.sendActionToFirstResponder('hideOtherApplications:')
+            },
+            {
+              label: isChinese ? '全部显示' : 'Show All',
+              click: () => Menu.sendActionToFirstResponder('unhideAllApplications:')
+            },
             { type: 'separator' as const },
-            { role: 'quit' as const }
+            {
+              label: isChinese ? `退出 ${app.name}` : `Quit ${app.name}`,
+              accelerator: 'Command+Q',
+              click: () => app.quit()
+            }
           ]
         }
       ]
