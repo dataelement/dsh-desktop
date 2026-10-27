@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
 import { rename, rm, stat } from 'node:fs/promises'
-import { resolve, join } from 'node:path'
+import { resolve, join, dirname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { createGzip } from 'node:zlib'
@@ -9,8 +9,8 @@ import { pipeline } from 'node:stream/promises'
 import { createInterface } from 'node:readline'
 
 // Keep process completion separate from stream completion: tar code 1 is never success.
-async function runTar(command, args, stage, consume, timeoutMs, log) {
-  const child = spawn(command[0], [...command.slice(1), ...args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+async function runTar(command, args, stage, consume, timeoutMs, log, cwd) {
+  const child = spawn(command[0], [...command.slice(1), ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
   let stderr = '', spawnError, timedOut = false
   child.stderr.setEncoding('utf8')
   child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-16_384) })
@@ -47,7 +47,7 @@ async function runTar(command, args, stage, consume, timeoutMs, log) {
 export async function validateWindowsArchive(archive, { tarCommand = ['tar'], timeoutMs = 600_000, log = console.error } = {}) {
   if (!(await stat(archive)).size) throw new Error('Archive is empty: ' + archive)
   let root = false, entries = 0
-  await runTar(tarCommand, ['-tzf', archive], 'archive listing', async stdout => {
+  await runTar(tarCommand, ['-tzf', basename(archive)], 'archive listing', async stdout => {
     const lines = createInterface({ input: stdout, crlfDelay: Infinity })
     try {
       for await (const name of lines) {
@@ -59,7 +59,7 @@ export async function validateWindowsArchive(archive, { tarCommand = ['tar'], ti
     } finally {
       lines.close()
     }
-  }, timeoutMs, log)
+  }, timeoutMs, log, dirname(resolve(archive)))
   if (!root || !entries) throw new Error('Archive must contain a nonempty win-unpacked/ root')
 }
 
@@ -71,8 +71,9 @@ export async function archiveWindowsRelease(dist = 'dist', options = {}) {
   let failure
   log('Archive tool: ' + JSON.stringify(tarCommand) + '; input: ' + join(directory, 'win-unpacked'))
   try {
-    await runTar(tarCommand, ['-cf', '-', '-C', directory, 'win-unpacked'], 'archive packing',
-      stdout => pipeline(stdout, createGzip(), createWriteStream(temporary, { flags: 'wx' })), timeoutMs, log)
+    // Windows tar can lose Unicode in -C arguments; CreateProcess receives cwd as UTF-16.
+    await runTar(tarCommand, ['-cf', '-', 'win-unpacked'], 'archive packing',
+      stdout => pipeline(stdout, createGzip(), createWriteStream(temporary, { flags: 'wx' })), timeoutMs, log, directory)
     log('Packing/compression complete: ' + (await stat(temporary)).size + ' bytes; validating archive')
     await validateWindowsArchive(temporary, options)
     await rename(temporary, output)

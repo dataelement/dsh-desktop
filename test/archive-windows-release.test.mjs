@@ -44,7 +44,7 @@ it('roundtrips actual tar with binary data and spaces/Unicode and replaces a pre
   await validateWindowsArchive(output, { log })
   const unpack = join(directory, 'extracted')
   await mkdir(unpack)
-  execFileSync('tar', ['-xzf', output, '-C', unpack])
+  execFileSync('tar', ['-xzf', '../win-unpacked.tar.gz'], { cwd: unpack })
   expect(await readFile(join(unpack, 'win-unpacked', 'DSH Desktop.exe'))).toEqual(binary)
   expect(await readFile(join(unpack, 'win-unpacked', 'resources', '中文 space.bin'))).toEqual(binary)
   expect((await readdir(directory)).some(name => name.endsWith('.tmp'))).toBe(false)
@@ -102,10 +102,10 @@ it('rejects a corrupt gzip and an empty archive with real validation', async () 
 
 it('rejects actual archives with extra roots or an empty win-unpacked root', async () => {
   await writeFile(join(directory, 'outside'), 'must not ship')
-  execFileSync('tar', ['-czf', output, '-C', directory, 'win-unpacked', 'outside'])
+  execFileSync('tar', ['-czf', 'win-unpacked.tar.gz', 'win-unpacked', 'outside'], { cwd: directory })
   await expect(validateWindowsArchive(output, { log })).rejects.toThrow(/Unexpected archive entry: outside/)
   await rm(join(directory, 'win-unpacked', 'resources'), { recursive: true })
-  execFileSync('tar', ['-czf', output, '-C', directory, 'win-unpacked'])
+  execFileSync('tar', ['-czf', 'win-unpacked.tar.gz', 'win-unpacked'], { cwd: directory })
   await expect(validateWindowsArchive(output, { log })).rejects.toThrow(/nonempty win-unpacked/)
 })
 
