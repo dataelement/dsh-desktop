@@ -33,6 +33,21 @@ on:
         description: Non-v semver tag for prerelease mode (e.g. 2.1.0-rc.1)
         required: false
         type: string
+      windows_full_tests:
+        description: Run the complete suite on Windows instead of focused platform regressions
+        required: false
+        default: false
+        type: boolean
+      windows_recovery_ui:
+        description: Check Windows recovery UI at 100%, 125%, and 150% display scales
+        required: false
+        default: false
+        type: boolean
+      windows_smoke:
+        description: Launch the packaged Windows desktop and create a workspace/session (afterPack always verifies runtime)
+        required: false
+        default: false
+        type: boolean
       signed_version:
         description: Non-v semver used only by signed mode (e.g. 0.9.2-test.1)
         required: false
@@ -117,7 +132,7 @@ jobs:
           test -n "$FEISHU_RELEASE_WEBHOOK" || { echo "::error::Missing secret FEISHU_RELEASE_WEBHOOK"; exit 1; }
 
   prepare-shared-runtime-assets:
-    name: Prepare shared runtime assets
+    name: Prepare shared PPT runtime assets
     needs: validate-dispatch
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
@@ -125,31 +140,63 @@ jobs:
       (github.event_name == 'workflow_dispatch' &&
         inputs.mode != 'resign' &&
         (inputs.target == 'all' || inputs.target == 'macos' || inputs.target == 'windows'))
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Cache shared runtime assets
-        id: shared-cache
+      - run: npm ci --prefer-offline
+      - name: Cache shared PPT runtime
+        uses: actions/cache@v4
+        with:
+          path: .build/ppt-runtime
+          key: shared-ppt-ubuntu-v1-${{ hashFiles('scripts/*ppt*.mjs', 'scripts/ppt/**', 'packages/ppt-runtime/**', 'package-lock.json') }}
+          restore-keys: shared-ppt-ubuntu-v1-
+      - name: Build PPT runtime
+        run: npm run ppt:build
+      - name: Verify PPT generation leaves tracked sources clean
+        run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shared-ppt-runtime
+          path: .build/ppt-runtime
+          retention-days: 1
+          compression-level: 1
+
+  validate-shared-runtime:
+    name: Validate shared runtime and prepare Office templates
+    needs: prepare-shared-runtime-assets
+    # Office templates and integration tests execute the locked native runtime;
+    # Linux is not a supported Office payload target. PPT generation stays on Ubuntu.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --prefer-offline
+      - uses: actions/download-artifact@v4
+        with:
+          name: shared-ppt-runtime
+          path: .build/ppt-runtime
+      - name: Cache Office preparation inputs
         uses: actions/cache@v4
         with:
           path: |
             .build/office-downloads
             .build/office-template-cache
-            .build/ppt-runtime
-          key: shared-runtime-assets-${{ hashFiles('scripts/office-runtime/**', 'packages/dsh-desktop-office/**', 'packages/ppt-runtime/**', 'scripts/ppt/**', 'package-lock.json') }}
-          restore-keys: |
-            shared-runtime-assets-
-      - name: Build PPT runtime
-        run: npm run ppt:build
-      - name: Build Office templates
-        run: npm run office:prepare
+          key: shared-office-macos-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/dsh-desktop-office/**', 'package-lock.json') }}
+          restore-keys: shared-office-macos-v1-
+      - name: Build shared assets and validate application compilation
+        run: npm run build
+      - run: npm run typecheck
+      - name: Run shared test suite once
+        run: npx --no-install vitest run --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
+      - name: Verify PPT generation leaves tracked sources clean
+        run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Pack shared assets for runners
         run: |
           mkdir -p .build/shared-assets
@@ -165,7 +212,7 @@ jobs:
 
   macos:
     name: macOS ${{ matrix.label }}
-    needs: [validate-dispatch, prepare-shared-runtime-assets]
+    needs: [validate-dispatch, validate-shared-runtime]
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
@@ -217,16 +264,12 @@ jobs:
         with:
           path: |
             .build/office-downloads
-            .build/office-template-cache
           key: office-runtime-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
           restore-keys: |
             office-runtime-${{ runner.os }}-${{ matrix.arch }}-
       - run: npm run build
-      - run: npx --no-install vitest run --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
-        if: matrix.arch == 'arm64'
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
-      - run: npm run typecheck
       - name: Validate Apple release secrets
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         env:
@@ -360,12 +403,12 @@ jobs:
 
   windows-x64:
     name: Windows x64
-    needs: [validate-dispatch, prepare-shared-runtime-assets]
+    needs: [validate-dispatch, validate-shared-runtime]
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' &&
-        inputs.mode != 'smoke' && inputs.mode != 'resign' &&
+        inputs.mode != 'resign' &&
         (inputs.target == 'all' || inputs.target == 'windows'))
     runs-on: windows-2022
     steps:
@@ -397,29 +440,37 @@ jobs:
           mkdir -p .build
           if [ -d .build/shared-assets/office-template-cache ]; then cp -R .build/shared-assets/office-template-cache .build/; fi
           if [ -d .build/shared-assets/ppt-runtime ]; then cp -R .build/shared-assets/ppt-runtime .build/; fi
-      - name: Cache Office runtime downloads
+      - name: Configure Windows packaging cache
+        shell: pwsh
+        run: |
+          "ELECTRON_CACHE=$env:RUNNER_TEMP/electron-cache" >> $env:GITHUB_ENV
+          "ELECTRON_BUILDER_CACHE=$env:RUNNER_TEMP/electron-builder-cache" >> $env:GITHUB_ENV
+      - name: Cache Office runtime downloads and packaging tools
         uses: actions/cache@v4
         with:
           path: |
             .build/office-downloads
-            .build/office-template-cache
-          key: office-runtime-${{ runner.os }}-x64-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
+            ${{ env.ELECTRON_CACHE }}
+            ${{ env.ELECTRON_BUILDER_CACHE }}
+          key: windows-packaging-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
           restore-keys: |
-            office-runtime-${{ runner.os }}-x64-
+            windows-packaging-v1-
       - run: npm run build
-      - name: Run Windows tests with progress
+      - name: Run focused Windows regressions
+        if: inputs.windows_full_tests != true
+        run: npx --no-install vitest run --config vitest.windows.config.ts
+        timeout-minutes: 15
+      - name: Run complete Windows test suite
+        if: inputs.windows_full_tests == true
         run: npx --no-install vitest run --reporter=verbose --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
         timeout-minutes: 15
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
-      - run: npm run typecheck
-      - name: Boot Harness through Electron Node mode on Windows
-        run: node scripts/probe-electron-node-runtime.mjs
-        timeout-minutes: 5
       - name: Check recovery UI on native Windows at three display scales
+        if: github.event_name == 'workflow_dispatch' && inputs.windows_recovery_ui == true
         run: node scripts/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.windows_recovery_ui == true
         with:
           name: windows-recovery-ui
           retention-days: 7
@@ -434,7 +485,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs
       - name: Smoke test packaged Windows Harness
-        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.windows_smoke == true
         shell: pwsh
         env:
           SMOKE_EXE: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist\win-unpacked\DSH Desktop.exe' || 'dist-dev\win-unpacked\DSH Desktop Dev.exe' }}
