@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import baseConfig from './vitest.config'
 
-// Shared validation retains the full suite. Keep Windows coverage on native
+// All-platform builds run the common suite on macOS. Keep Windows coverage on native
 // processes, path handling, Profile loading, installation, and updates.
 export default defineConfig({
   ...baseConfig,

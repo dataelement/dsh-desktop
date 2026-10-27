@@ -464,16 +464,15 @@ describe('GitHub release contract', () => {
     const workflow = parse(await readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')) as {
       jobs: Record<string, { steps: Array<{ run?: string; uses?: string; with?: Record<string, unknown> }> }>
     }
-    for (const name of ['validate-shared-runtime', 'macos', 'windows-x64']) {
+    for (const name of ['macos', 'windows-x64']) {
       const steps = workflow.jobs[name]?.steps ?? []
       const buildIndex = steps.findIndex(step => step.run === 'npm run build')
       const testIndex = steps.findIndex(step => step.run?.startsWith('npx --no-install vitest run'))
       expect(buildIndex).toBeGreaterThanOrEqual(0)
-      if (name === 'macos') expect(testIndex).toBe(-1)
-      else expect(testIndex).toBeGreaterThan(buildIndex)
+      expect(testIndex).toBeGreaterThan(buildIndex)
       expect(steps.filter(step => step.run === 'npm run build')).toHaveLength(1)
       const packages = steps.filter(step => step.run?.includes('--publish never'))
-      expect(packages).toHaveLength(name === 'validate-shared-runtime' ? 0 : 2)
+      expect(packages).toHaveLength(2)
       for (const step of packages) {
         expect(step.run).toContain('verify-target.mjs')
         expect(step.run).not.toContain('npm run build')

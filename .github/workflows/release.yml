@@ -131,132 +131,9 @@ jobs:
           test -n "$MODELSCOPE_TOKEN" || { echo "::error::Missing secret MODELSCOPE_TOKEN"; exit 1; }
           test -n "$FEISHU_RELEASE_WEBHOOK" || { echo "::error::Missing secret FEISHU_RELEASE_WEBHOOK"; exit 1; }
 
-  prepare-shared-runtime-assets:
-    name: Prepare shared PPT runtime assets
-    needs: validate-dispatch
-    if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_dispatch' &&
-        inputs.mode != 'resign' &&
-        (inputs.target == 'all' || inputs.target == 'macos' || inputs.target == 'windows'))
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Configure native download caches before dependency installation
-        shell: bash
-        run: |
-          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
-          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
-          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
-          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
-      - name: Cache Electron downloads before dependency installation
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ELECTRON_CACHE }}
-          key: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
-      - name: Install dependencies with timings
-        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
-      - name: Upload dependency installation timings
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-timings-${{ github.job }}-${{ runner.arch }}
-          path: ${{ runner.temp }}/npm-timings/*-timing.json
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Cache shared PPT runtime
-        uses: actions/cache@v4
-        with:
-          path: .build/ppt-runtime
-          key: shared-ppt-ubuntu-v1-${{ hashFiles('scripts/*ppt*.mjs', 'scripts/ppt/**', 'packages/ppt-runtime/**', 'package-lock.json') }}
-          restore-keys: shared-ppt-ubuntu-v1-
-      - name: Build PPT runtime
-        run: npm run ppt:build
-      - name: Verify PPT generation leaves tracked sources clean
-        run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: shared-ppt-runtime
-          path: .build/ppt-runtime
-          retention-days: 1
-          compression-level: 1
-
-  validate-shared-runtime:
-    name: Validate shared runtime and prepare Office templates
-    needs: prepare-shared-runtime-assets
-    # Office templates and integration tests execute the locked native runtime;
-    # Linux is not a supported Office payload target. PPT generation stays on Ubuntu.
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Configure native download caches before dependency installation
-        shell: bash
-        run: |
-          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
-          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
-          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
-          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
-      - name: Cache Electron downloads before dependency installation
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ELECTRON_CACHE }}
-          key: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
-      - name: Install dependencies with timings
-        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
-      - name: Upload dependency installation timings
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-timings-${{ github.job }}-${{ runner.arch }}
-          path: ${{ runner.temp }}/npm-timings/*-timing.json
-          if-no-files-found: ignore
-          retention-days: 7
-      - uses: actions/download-artifact@v4
-        with:
-          name: shared-ppt-runtime
-          path: .build/ppt-runtime
-      - name: Cache Office preparation inputs
-        uses: actions/cache@v4
-        with:
-          path: |
-            .build/office-downloads
-            .build/office-template-cache
-          key: shared-office-macos-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/dsh-desktop-office/**', 'package-lock.json') }}
-          restore-keys: shared-office-macos-v1-
-      - name: Build shared assets and validate application compilation
-        run: npm run build
-      - run: npm run typecheck
-      - name: Run shared test suite once
-        run: npx --no-install vitest run --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
-      - name: Verify PPT generation leaves tracked sources clean
-        run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
-      - name: Pack shared assets for runners
-        run: |
-          mkdir -p .build/shared-assets
-          cp -R .build/office-template-cache .build/shared-assets/
-          cp -R .build/ppt-runtime .build/shared-assets/
-      - name: Upload shared runtime assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: shared-runtime-assets
-          path: .build/shared-assets
-          retention-days: 1
-          compression-level: 1
-
   macos:
     name: macOS ${{ matrix.label }}
-    needs: [validate-dispatch, validate-shared-runtime]
+    needs: validate-dispatch
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
@@ -315,16 +192,6 @@ jobs:
           path: ${{ runner.temp }}/npm-timings/*-timing.json
           if-no-files-found: ignore
           retention-days: 7
-      - name: Download shared runtime assets
-        uses: actions/download-artifact@v4
-        with:
-          name: shared-runtime-assets
-          path: .build/shared-assets
-      - name: Restore shared runtime assets
-        run: |
-          mkdir -p .build
-          if [ -d .build/shared-assets/office-template-cache ]; then cp -R .build/shared-assets/office-template-cache .build/; fi
-          if [ -d .build/shared-assets/ppt-runtime ]; then cp -R .build/shared-assets/ppt-runtime .build/; fi
       - name: Cache Office runtime downloads
         uses: actions/cache@v4
         with:
@@ -333,7 +200,22 @@ jobs:
           key: office-runtime-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
           restore-keys: |
             office-runtime-${{ runner.os }}-${{ matrix.arch }}-
+      - name: Cache generated Office and PPT assets
+        uses: actions/cache@v4
+        with:
+          enableCrossOsArchive: true
+          path: |
+            .build/office-template-cache
+            .build/ppt-runtime
+          key: desktop-generated-assets-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/dsh-desktop-office/**', 'scripts/*ppt*.mjs', 'scripts/ppt/**', 'packages/ppt-runtime/**', 'package-lock.json') }}
+          restore-keys: desktop-generated-assets-v1-
       - run: npm run build
+      - name: Typecheck shared code on macOS
+        if: matrix.arch == 'arm64'
+        run: npm run typecheck
+      - name: Run shared tests on macOS
+        if: matrix.arch == 'arm64'
+        run: npx --no-install vitest run --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Validate Apple release secrets
@@ -469,7 +351,7 @@ jobs:
 
   windows-x64:
     name: Windows x64
-    needs: [validate-dispatch, validate-shared-runtime]
+    needs: validate-dispatch
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       github.event_name == 'pull_request' ||
@@ -524,24 +406,25 @@ jobs:
           path: ${{ runner.temp }}/npm-timings/*-timing.json
           if-no-files-found: ignore
           retention-days: 7
-      - name: Download shared runtime assets
-        uses: actions/download-artifact@v4
+      - name: Cache generated Office and PPT assets
+        uses: actions/cache@v4
         with:
-          name: shared-runtime-assets
-          path: .build/shared-assets
-      - name: Restore shared runtime assets
-        shell: bash
-        run: |
-          mkdir -p .build
-          if [ -d .build/shared-assets/office-template-cache ]; then cp -R .build/shared-assets/office-template-cache .build/; fi
-          if [ -d .build/shared-assets/ppt-runtime ]; then cp -R .build/shared-assets/ppt-runtime .build/; fi
+          enableCrossOsArchive: true
+          path: |
+            .build/office-template-cache
+            .build/ppt-runtime
+          key: desktop-generated-assets-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/dsh-desktop-office/**', 'scripts/*ppt*.mjs', 'scripts/ppt/**', 'packages/ppt-runtime/**', 'package-lock.json') }}
+          restore-keys: desktop-generated-assets-v1-
       - run: npm run build
+      - name: Typecheck shared code on Windows
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
+        run: npm run typecheck
       - name: Run focused Windows regressions
-        if: inputs.windows_full_tests != true
+        if: inputs.windows_full_tests != true && github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
         run: npx --no-install vitest run --config vitest.windows.config.ts
         timeout-minutes: 15
       - name: Run complete Windows test suite
-        if: inputs.windows_full_tests == true
+        if: inputs.windows_full_tests == true || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
         run: npx --no-install vitest run --reporter=verbose --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
         timeout-minutes: 15
       - name: Verify PPT generation leaves tracked sources clean

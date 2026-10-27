@@ -2,6 +2,10 @@
 
 本次实测来自 [开发构建 40464243986](https://github.com/dataelement/dsh-desktop/actions/runs/40464243986)，提交 `b9476b1bda`，target=windows、mode=development。对照为 [40439065931](https://github.com/dataelement/dsh-desktop/actions/runs/40439065931)。两次都是托管 runner；第一次验证缓存修正前的调度，不能据此宣称后续缓存修正的提速已经验收，也不能把一次冷缓存运行当作稳定基准。
 
+最终方案取消独立 prepare/validate job：通用检查在本来就要构建的平台执行一次（all/macOS 选 Apple Silicon，Windows-only/PR 选 Windows）；Office/PPT 生成回到原有 build，并用可跨 OS 的生成资产缓存复用。以下表格保留拆分方案的过程基线，不表示最终调度仍保留这些独立阶段。
+
+第二轮 [40467160649](https://github.com/dataelement/dsh-desktop/actions/runs/40467160649) 中，缓存命中后的 npm ci：Ubuntu 23 秒、macOS 31 秒。结构化计时分别显示 reify:unpack 15.6 秒和 26.4 秒，说明热缓存后仍有大量解包/磁盘工作；依赖节点的 timer 互相重叠，不能逐项相加。该轮尚未采用最后取消独立阶段的调度。
+
 ## 已测阶段
 
 | 阶段 | 本次耗时 | 原因及必要性 | 处理 |
@@ -41,7 +45,9 @@ prepare-templates 对脚本和模板源文件的原始字节做 hash。使用同
 
 ## 本次未执行的发布阶段
 
-macOS 双架构打包、Apple 签名/公证、Windows UKey 内层签名/重打包、正式发布/ModelScope 镜像及发布说明生成没有在本次 Windows development 运行中执行，不能给出本次实测时间。
+macOS 双架构打包、Apple 签名/公证、Windows UKey 内层签名/重打包、正式发布/ModelScope 镜像及发布说明生成没有在本次 Windows development 运行中执行。
+
+补充对照原始失败运行 [40458660225](https://github.com/dataelement/dsh-desktop/actions/runs/40458660225)：其中成功的 Apple Silicon signed package 为 451 秒、DMG 签名/公证/staple 为 199 秒；Intel 分别为 679 秒和 195 秒。signed package 本身包含 app 签名/公证及压缩，不应全算作 TypeScript 编译。DMG 对最终分发容器签名、公证和 stapling；它与 app 的处理对象不同，当前没有实验证明可安全删去任一门禁。Windows 在 tar 归档步骤失败，因此该次 UKey 和发布阶段均跳过，不能给出实测耗时。
 
 - 双架构 native packaging 和 verify-target 保证安装包对应目标平台；不能仅靠 arm64 单测替代 Intel 包验收。
 - 签名、公证、时间戳和证书校验是正式分发链路的要求；受签名设备、Apple 服务和重试影响，development 模式不执行。
