@@ -48,12 +48,13 @@ def translate_chinese(chinese):
         'Do not add claims, headings or links. Maximum 1000 characters. Do not use tools.\n'
         + json.dumps({'source_zh': chinese}, ensure_ascii=False)
     )
-    # No shell or tools; do not expose Feishu credentials to the model subprocess.
+    # An empty tool allowlist hides all tools; a bare deny wildcard is not valid CLI syntax.
+    # Do not expose Feishu credentials to the model subprocess.
     env = {key: value for key, value in os.environ.items() if key in {
         'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'COPILOT_GITHUB_TOKEN', 'SYSTEMROOT'}}
     result = subprocess.run(['copilot', '-p', instruction, '-s', '--model',
                              os.environ.get('RELEASE_NOTES_MODEL', 'gpt-6-luna'),
-                             '--no-ask-user', '--available-tools='],
+                             '--no-ask-user', '--available-tools=', '--disable-builtin-mcps'],
                             env=env, capture_output=True, text=True, timeout=120, check=True)
     if len(result.stdout) > 12000:
         raise ValueError('Translation output too large')
