@@ -89,6 +89,7 @@ class GateTests(unittest.TestCase):
         self.assertEqual(len(inputs), 1)
         self.assertEqual(inputs[0]['name'], 'rewrite_zh')
         self.assertEqual(inputs[0]['default_value'], '- 修复保存')
+        self.assertEqual(inputs[0]['width'], 'fill')
         self.assertNotIn('确认并发布', json.dumps(self.review.card(), ensure_ascii=False))
 
     def test_approve_publishes_without_translation(self):
@@ -122,6 +123,22 @@ class GateTests(unittest.TestCase):
             self.assertIsNone(self.review.handle(self.event('submit', text)))
             self.assertEqual(self.review.state, 'editing')
             self.assertTrue(self.review.error)
+        self.assertEqual(self.translations, [])
+
+    def test_invalid_draft_is_preserved_with_visible_actionable_error(self):
+        self.review.handle(self.event('rewrite'))
+        cases = [('修复保存', '减号和空格'), ('-修复保存', '减号和空格'),
+                 ('\n'.join(['- 修改'] * 13), '1–12'),
+                 ('- https://example.com', '不能包含链接'), ('', '请填写')]
+        for draft, hint in cases:
+            self.assertIsNone(self.review.handle(self.event('submit', draft)))
+            self.assertEqual(self.review.state, 'editing')
+            self.assertEqual(self.review.draft, draft)
+            self.assertIn(hint, self.review.error)
+            elements = self.review.card()['body']['elements']
+            form_index = next(i for i, item in enumerate(elements) if item['tag'] == 'form')
+            self.assertTrue(any('尚未发布' in item.get('content', '')
+                                for item in elements[:form_index]))
         self.assertEqual(self.translations, [])
 
     def test_old_card_other_chat_and_missing_actor_do_not_release(self):

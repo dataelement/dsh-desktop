@@ -11,7 +11,7 @@ import time
 import urllib.request
 from pathlib import Path
 from feishu_release_card import render
-from update_popup_notes import translate_chinese, validate
+from update_popup_notes import chinese_draft_error, translate_chinese, validate
 
 
 class Feishu:
@@ -167,14 +167,11 @@ class Review:
                 return None
             fields = action.get('form_value')
             draft = fields.get('rewrite_zh') if isinstance(fields, dict) else None
-            if not isinstance(draft, str) or len(draft) > 1000:
-                self.change('editing', '请输入中文列表，最多 1000 字符。')
-                return None
-            self.draft = draft.strip()
-            try:
-                validate({'zh': self.draft, 'en': self.draft})
-            except ValueError:
-                self.change('editing', '内容不能为空；请输入 1–12 条中文文案，每条以减号和空格（- ）开头。')
+            error = chinese_draft_error(draft)
+            if isinstance(draft, str) and len(draft) <= 1000:
+                self.draft = draft.strip()
+            if error:
+                self.change('editing', error)
                 return None
             if self.draft == self.notes['zh'].strip():
                 self.change('editing', '内容未修改，可取消编辑后直接确认并发布。')

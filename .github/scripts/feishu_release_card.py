@@ -38,13 +38,15 @@ def render(tag, notes, state, revision, draft='', error=''):
     if state == 'editing':
         elements.append({'tag': 'markdown', 'content':
                          '仅最初点击“重写”的人可以提交或取消；其他成员点击不会生效。如需换人，请由原编辑者先取消。'})
+        if error:
+            elements.append({'tag': 'markdown', 'content': '**尚未发布：** ' + escape(error)})
         elements.append({'tag': 'form', 'name': 'release_edit', 'vertical_spacing': '12px', 'elements': [
-            {'tag': 'input', 'name': 'rewrite_zh', 'label': plain('中文发布文案'),
+            {'tag': 'input', 'name': 'rewrite_zh', 'label': plain('中文发布文案'), 'width': 'fill',
              'default_value': draft, 'input_type': 'multiline_text', 'rows': 6, 'max_length': 1000,
              'placeholder': plain('每条以减号和空格（- ）开头；英文由系统翻译，无需填写')},
             row([button('提交并发布', 'submit', revision, True, True), button('取消', 'cancel', revision, form=True)])]})
         elements.append({'tag': 'markdown', 'text_size': 'notation', 'content':
-                         escape(error or '提交即批准发布。系统生成英文并校验后自动继续，无需再次确认。')})
+                         '提交表示同意发布。文案校验及英文翻译通过后自动继续，无需再次确认。'})
     else:
         elements.extend([panel('中文', notes['zh']), panel('English', notes['en'])])
         if state == 'preview':

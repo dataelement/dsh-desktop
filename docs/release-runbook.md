@@ -149,6 +149,9 @@ fallback. The review card initially shows only the bilingual preview and two act
 If submit/cancel leaves the card unchanged, check who originally opened the editor: another
 member's actions are ignored. The original editor must cancel before a different member can
 open a new edit. Each Chinese bullet must start with a hyphen followed by a space (`- `).
+The editor fills the available card width. Format errors return an immediate error toast
+and remain visible above the input with the draft preserved; receipt of a callback is not
+reported as successful submission. Translation and publication still run outside the callback.
 
 Callbacks must match the actual chat/message, current revision and optional configured
 reviewer. Event IDs are deduplicated, and revisions change on every transition so old buttons

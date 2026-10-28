@@ -33,6 +33,22 @@ try:
     assert action['operator'] == 'actor'
     assert action['action']['form_value']['rewrite_zh'] == '- 修改'
     assert response.toast.type == 'info'
+    assert '成功' not in response.toast.content
+    for draft, hint in [('', '请填写'), ('没有列表', '减号和空格'), ('-没有空格', '减号和空格'),
+                        ('\n'.join(['- 修改'] * 13), '1–12'), ('- ' + '字' * 1000, '1000'),
+                        ('- https://example.com', '不能包含链接')]:
+        event['event']['action']['form_value'] = {'rewrite_zh': draft}
+        with contextlib.redirect_stdout(stream):
+            response = client._event_handler.do_without_validation(json.dumps(event).encode())
+        assert response.toast.type == 'error', draft
+        assert hint in response.toast.content
+        # The parent still receives the action so it can preserve the draft and
+        # display the same error on the card, without translation/publication.
+        assert json.loads(stream.getvalue().splitlines()[-1])['action']['form_value']['rewrite_zh'] == draft
+    event['event']['action'] = {'tag': 'button', 'name': 'cancel_nonce'}
+    with contextlib.redirect_stdout(stream):
+        response = client._event_handler.do_without_validation(json.dumps(event).encode())
+    assert response.toast.type == 'info'
     assert not client._auto_reconnect
     async def lifecycle():
         with patch.object(lark.ws.Client, '_connect', new_callable=AsyncMock), \
