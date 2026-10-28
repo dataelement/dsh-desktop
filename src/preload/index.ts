@@ -36,7 +36,7 @@ const bootCover = mountBootCover(location.href, {
   locale
 })
 
-installHarnessBootBridge(() => {
+const reportHarnessBootFailure = installHarnessBootBridge(() => {
   bootFailureTriggered = true
   bootCover?.holdForFailure()
 })
@@ -104,7 +104,10 @@ function queueBootFailure(message?: string): void {
     if (!errorText) return
 
     bootFailureTriggered = true
-    void ipcRenderer.invoke('harness:open-recovery', errorText)
+    const report = reportHarnessBootFailure
+      ? reportHarnessBootFailure(errorText)
+      : ipcRenderer.invoke('harness:open-recovery', errorText)
+    void report.catch((error: unknown) => console.error('[desktop] could not report boot failure', error))
   }, BOOT_FAILURE_SETTLE_MS)
 }
 

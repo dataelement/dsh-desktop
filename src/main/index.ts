@@ -1,3 +1,4 @@
+import { HarnessBootFailures } from './harness-boot-failures'
 import { isMemoryExit } from './resource-diagnostics'
 import { ProcessRecovery } from './process-recovery'
 import { ApplicationRollbackFlow } from './application-rollback-flow'
@@ -36,7 +37,7 @@ import {
   type MessageBoxOptions
 } from 'electron'
 import { HarnessShell } from './harness-shell'
-import { HARNESS_SHELL_URL, HARNESS_BOOT_CHANNEL, HARNESS_BOOT_FAILED_CHANNEL, isHarnessShellUrl, isHarnessBootPage } from '../shared/harness-boot'
+import { HARNESS_SHELL_URL, HARNESS_BOOT_DOCUMENT_CHANNEL, HARNESS_BOOT_CHANNEL, HARNESS_BOOT_FAILED_CHANNEL, isHarnessShellUrl, isHarnessBootPage } from '../shared/harness-boot'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
@@ -248,6 +249,7 @@ let mainWindow: BrowserWindow | undefined
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
+const harnessBootFailures = new HarnessBootFailures()
 let harnessShell: HarnessShell
 let harnessPagePreparation: Promise<boolean> | undefined
 let desktopStorageManager: DesktopStorageManager | undefined
@@ -3563,6 +3565,11 @@ async function bootstrap(): Promise<void> {
     }
   )
   registerHarnessHandlers()
+  ipcMain.handle(HARNESS_BOOT_DOCUMENT_CHANNEL, (event, documentId: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (!isHarnessShellUrl(event.sender.getURL())) throw new Error('The Harness shell is not active.')
+    harnessBootFailures.bind(documentId, mainWindowNavigationVersion)
+  })
   ipcMain.handle(HARNESS_BOOT_CHANNEL, async event => {
     assertTrustedMainWindowEvent(event)
     if (!isHarnessShellUrl(event.sender.getURL())) throw new Error('The Harness shell is not active.')
@@ -3574,10 +3581,14 @@ async function bootstrap(): Promise<void> {
     }
     return payload
   })
-  ipcMain.handle(HARNESS_BOOT_FAILED_CHANNEL, (event, message: unknown) => {
+  ipcMain.handle(HARNESS_BOOT_FAILED_CHANNEL, (event, message: unknown, documentId: unknown) => {
     assertTrustedMainWindowEvent(event)
     if (!isHarnessShellUrl(event.sender.getURL()) || typeof message !== 'string' || message.length > 20_000) {
       throw new Error('Invalid Harness boot failure report.')
+    }
+    if (!harnessBootFailures.isCurrent(documentId, mainWindowNavigationVersion)) {
+      runtime.note('[desktop] ignored a superseded Harness document boot failure')
+      return { ok: true, ignored: true }
     }
     return handleFrontendPluginFailure(message)
   })
