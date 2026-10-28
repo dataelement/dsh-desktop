@@ -4,13 +4,13 @@ export const BOOT_COVER_ID = 'dsh-desktop-boot-cover'
 export const BOOT_COVER_STYLE_ID = 'dsh-desktop-boot-cover-style'
 export const BOOT_COVER_STALL_MS = 20_000
 /** Same files splash.html loads, served by the desktop protocol so the Harness origin can paint them. */
-export const BOOT_COVER_LIGHT_MARK_URL = 'dsh-desktop://desktop/dsh-loader.gif'
-export const BOOT_COVER_DARK_MARK_URL = 'dsh-desktop://desktop/dsh-loader-dark.gif'
+export const BOOT_COVER_MARK_URL = 'dsh-desktop://desktop/startup-whale.gif'
 
-const LIGHT_BACKGROUND = '#f8f8f6'
-const DARK_BACKGROUND = '#141416'
-const MARK_WIDTH_PX = 196
-const MARK_ASPECT_RATIO = '640 / 360'
+// The supplied GIF has an opaque background and an embedded caption. Match
+// splash.html in both themes rather than recoloring or duplicating that caption.
+const BACKGROUND = '#fbfbfb'
+const MARK_WIDTH_PX = 280
+const MARK_ASPECT_RATIO = '480 / 276'
 
 export interface BootCoverOptions {
   document: Document
@@ -20,7 +20,6 @@ export interface BootCoverOptions {
   platform?: string
   schedule?: (callback: () => void, delayMs: number) => number
   cancel?: (timer: number) => void
-  matchMedia?: (query: string) => MediaQueryList
   subscribePageHide?: (listener: () => void) => () => void
 }
 
@@ -91,10 +90,7 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
   // Hide the whole boot tree, then explicitly paint the cover which lives
   // outside body so Harness cannot replace it with the failure screen.
   pageStyle.textContent = `
-    html { background: ${LIGHT_BACKGROUND} !important; }
-    @media (prefers-color-scheme: dark) {
-      html { background: ${DARK_BACKGROUND} !important; }
-    }
+    html { background: ${BACKGROUND} !important; }
     body, body * { visibility: hidden !important; }
     #${BOOT_COVER_ID}, #${BOOT_COVER_ID} * { visibility: visible !important; }
   `
@@ -107,7 +103,7 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     'position:fixed',
     'inset:0',
     'z-index:2147483646',
-    `background:${LIGHT_BACKGROUND}`,
+    `background:${BACKGROUND}`,
     'color:#17181a'
   ].join(';')
   const shadow = cover.attachShadow({ mode: 'open' })
@@ -129,39 +125,37 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
       text-align:center;
     }
     :host([data-platform="windows"]) .panel { padding-top:70px; }
-    .markFrame { display:grid; place-items:center; }
+    .markFrame { display:grid; place-items:center; width:100%; transform:translateY(-80px); }
     .mark {
       grid-area:1 / 1;
-      width:${MARK_WIDTH_PX}px;
+      width:min(${MARK_WIDTH_PX}px, 100%);
       aspect-ratio:${MARK_ASPECT_RATIO};
       height:auto;
-      image-rendering:pixelated;
+      display:block;
+      object-fit:contain;
     }
-    .markDark { display:none; }
+    .startupCopy { position:absolute; display:grid; gap:12px; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); }
+    :host([data-stalled]) .startupCopy {
+      top:calc(50% + 28px); left:32px; right:32px; width:auto; height:auto;
+      overflow:visible; clip-path:none;
+    }
     h1 { margin:0; font-size:23px; font-weight:650; letter-spacing:-0.02em; }
     p { margin:-4px 0 0; color:#777a80; font-size:13px; }
-    :host([data-theme="dark"]) { color:#f3f4f6; background:${DARK_BACKGROUND}; color-scheme:dark; }
-    :host([data-theme="dark"]) .markLight { display:none; }
-    :host([data-theme="dark"]) .markDark {
-      display:block;
-      filter:brightness(2.4) saturate(0.72) drop-shadow(0 0 7px rgba(111, 134, 255, 0.16));
-    }
-    :host([data-theme="dark"]) p { color:#9ca0a8; }
   `
   const panel = doc.createElement('div')
   panel.className = 'panel'
   const markFrame = doc.createElement('div')
   markFrame.className = 'markFrame'
   markFrame.setAttribute('aria-hidden', 'true')
-  const markLight = doc.createElement('img')
-  markLight.className = 'mark markLight'
-  markLight.alt = ''
-  markLight.src = BOOT_COVER_LIGHT_MARK_URL
-  const markDark = doc.createElement('img')
-  markDark.className = 'mark markDark'
-  markDark.alt = ''
-  markDark.src = BOOT_COVER_DARK_MARK_URL
-  markFrame.append(markLight, markDark)
+  const mark = doc.createElement('img')
+  mark.className = 'mark'
+  mark.alt = ''
+  mark.src = BOOT_COVER_MARK_URL
+  mark.width = 480
+  mark.height = 276
+  markFrame.append(mark)
+  const copy = doc.createElement('div')
+  copy.className = 'startupCopy'
   const title = doc.createElement('h1')
   const status = doc.createElement('p')
   const starting = locale === 'zh'
@@ -178,19 +172,9 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     }
   title.textContent = starting.title
   status.textContent = starting.status
-  panel.append(markFrame, title, status)
+  copy.append(title, status)
+  panel.append(markFrame, copy)
   shadow.append(style, panel)
-
-  const colorScheme = options.matchMedia ?? doc.defaultView?.matchMedia?.bind(doc.defaultView)
-  const darkQuery = colorScheme?.('(prefers-color-scheme: dark)')
-  const applyTheme = (): void => {
-    const dark = darkQuery?.matches === true
-    cover.dataset.theme = dark ? 'dark' : 'light'
-    cover.style.background = dark ? DARK_BACKGROUND : LIGHT_BACKGROUND
-    cover.style.color = dark ? '#f3f4f6' : '#17181a'
-  }
-  applyTheme()
-  darkQuery?.addEventListener('change', applyTheme)
 
   let failureHeld = false
   let disposed = false
@@ -237,6 +221,7 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
   const revealStall = (): void => {
     stallTimer = undefined
     if (disposed) return
+    cover.setAttribute('data-stalled', '')
     title.textContent = stalled.title
     status.textContent = stalled.status
   }
@@ -263,7 +248,6 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     if (disposed) return
     disposed = true
     detach()
-    darkQuery?.removeEventListener('change', applyTheme)
     unsubscribePageHide()
     covers.delete(doc)
   }

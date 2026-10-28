@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-index 4b1e5adba9..c8e755cbde 100644
+index 0520d6f80b..a1e812f324 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -1446,8 +1446,9 @@ function mapUsage(usage) {
+@@ -1455,8 +1455,9 @@ function mapUsage(usage) {
  	};
  }
  function classifyPiAiError(message) {
@@ -13,7 +13,7 @@ index 4b1e5adba9..c8e755cbde 100644
  	if (/\b429\b|rate.?limit/i.test(message)) return "RATE_LIMIT";
  	if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return "INVALID_REQUEST";
  	if (/\b400\b|invalid.?request/i.test(message)) return "INVALID_REQUEST";
-@@ -1522,6 +1523,14 @@ function mapStopReason(message, contextWindow) {
+@@ -1531,6 +1532,14 @@ function mapStopReason(message, contextWindow) {
  		}
  	}
  }
@@ -28,15 +28,15 @@ index 4b1e5adba9..c8e755cbde 100644
  /**
  * Translate the pi-ai event stream into StreamChunks. pi-ai never throws
  * mid-stream — failures arrive as `error` events, which become error/aborted
-@@ -1536,6 +1545,7 @@ function mapStopReason(message, contextWindow) {
+@@ -1547,6 +1556,7 @@ function mapStopReason(message, contextWindow) {
  */
  async function* toStreamChunks(events, contextWindow, callerSignal, requestedModel) {
  	const toolIds = /* @__PURE__ */ new Map();
 +	const completed = /* @__PURE__ */ new Map();
+ 	let argumentsError;
  	for await (const event of events) switch (event.type) {
  		case "start": break;
- 		case "text_start":
-@@ -1552,16 +1562,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
+@@ -1564,16 +1574,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
  				text: event.delta
  			};
  			break;
@@ -61,7 +61,7 @@ index 4b1e5adba9..c8e755cbde 100644
  		case "thinking_start":
  			yield {
  				type: "block-start",
-@@ -1576,16 +1589,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
+@@ -1588,16 +1601,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
  				text: event.delta
  			};
  			break;
@@ -86,33 +86,19 @@ index 4b1e5adba9..c8e755cbde 100644
  		case "toolcall_start": {
  			const partial = event.partial.content[event.contentIndex];
  			const id = partial?.type === "toolCall" ? partial.id : "";
-@@ -1612,29 +1628,34 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
- 			};
+@@ -1625,6 +1641,7 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
  			break;
  		}
--		case "toolcall_end":
-+		case "toolcall_end": {
-+			const block = {
-+				type: "tool-call",
-+				id: brandString(event.toolCall.id),
-+				name: event.toolCall.name,
-+				arguments: JSON.stringify(event.toolCall.arguments)
-+			};
+ 		case "toolcall_end":
 +			completed.set(event.contentIndex, event.toolCall);
- 			yield {
- 				type: "block-end",
- 				index: event.contentIndex,
--				block: {
--					type: "tool-call",
--					id: brandString(event.toolCall.id),
--					name: event.toolCall.name,
--					arguments: JSON.stringify(event.toolCall.arguments)
--				}
-+				block
+ 			if (event.toolCall.argumentsError !== void 0) {
+ 				argumentsError ??= `Tool call "${event.toolCall.name}": ${event.toolCall.argumentsError}`;
+ 				break;
+@@ -1640,18 +1657,20 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
+ 				}
  			};
  			break;
 -		case "done":
-+		}
 +		case "done": {
 +			const message = completeTerminalMessage(event.message, completed);
  			yield {
@@ -120,6 +106,8 @@ index 4b1e5adba9..c8e755cbde 100644
 -				usage: mapUsage(event.message.usage)
 +				usage: mapUsage(message.usage)
  			};
+-			if (argumentsError !== void 0 && event.message.stopReason !== "length") throw new LlmError(argumentsError, "MALFORMED_RESPONSE");
++			if (argumentsError !== void 0 && message.stopReason !== "length") throw new LlmError(argumentsError, "MALFORMED_RESPONSE");
  			yield {
  				type: "finish",
 -				reason: mapStopReason(event.message, contextWindow),
@@ -132,7 +120,7 @@ index 4b1e5adba9..c8e755cbde 100644
  		case "error":
  			yield {
  				type: "usage",
-@@ -1814,8 +1835,11 @@ function reasoningInfo(model, defaultLevel) {
+@@ -1831,8 +1850,11 @@ function reasoningInfo(model, defaultLevel) {
  	} };
  }
  /** Merge deployment headers while removing case-insensitive attribution collisions. */
@@ -146,7 +134,7 @@ index 4b1e5adba9..c8e755cbde 100644
  	const reserved = new Set(Object.keys(attribution).map((name) => name.toLowerCase()));
  	return {
  		...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => !reserved.has(name.toLowerCase()))),
-@@ -1986,7 +2010,7 @@ var PiAiAdapter = class extends LlmAdapter {
+@@ -2003,7 +2025,7 @@ var PiAiAdapter = class extends LlmAdapter {
  					...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens },
  					...options.sessionId === void 0 ? {} : { sessionId: String(options.sessionId) },
  					signal: watchdog.signal,

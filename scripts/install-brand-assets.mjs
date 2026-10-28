@@ -51,7 +51,9 @@ function replaceIconLink(contents, file) {
  *
  * Edited as JSON rather than as text: upstream added `"purpose": "any"` to the
  * entry in 0.1.2-alpha.1, which a pinned multi-line string could not survive,
- * and key order is not a contract. The entry still has to exist.
+ * and key order is not a contract. 0.2.2 uses sized PNG and maskable entries;
+ * replace the known upstream set with one ordinary Desktop icon. The logo is
+ * not authored for maskable safe areas, so do not advertise that capability.
  * @param contents - manifest source.
  * @param file - path shown in the failure message.
  * @returns manifest JSON with the desktop icon.
@@ -59,14 +61,18 @@ function replaceIconLink(contents, file) {
 function replaceManifestIcon(contents, file) {
   const manifest = JSON.parse(contents)
   const icons = Array.isArray(manifest.icons) ? manifest.icons : []
-  const target = icons.find((icon) => icon?.src === '/dsh-desktop-logo.png')
-    ?? icons.find((icon) => typeof icon?.src === 'string' && icon.src.endsWith('favicon.svg'))
-  if (target === undefined) {
+  const isBrandIcon = (icon) => typeof icon?.src === 'string'
+    && (icon.src === '/dsh-desktop-logo.png'
+      || /^(?:\.\/|\/)?(?:favicon\.svg|icon-(?:192|512|maskable-512)\.png)$/u.test(icon.src))
+  const first = icons.findIndex(isBrandIcon)
+  if (first === -1) {
     throw new Error(`Could not update DSH Desktop branding in ${file}: no icon entry to replace`)
   }
-  target.src = '/dsh-desktop-logo.png'
-  target.sizes = '1254x1254'
-  target.type = 'image/png'
+  manifest.icons = icons.flatMap((icon, index) => {
+    if (!isBrandIcon(icon)) return [icon]
+    if (index !== first) return []
+    return [{ ...icon, src: '/dsh-desktop-logo.png', sizes: '1254x1254', type: 'image/png', purpose: 'any' }]
+  })
   return `${JSON.stringify(manifest, null, 2)}\n`
 }
 

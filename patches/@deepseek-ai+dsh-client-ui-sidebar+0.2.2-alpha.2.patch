@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index c61f2f26c3..01879b9efe 100644
+index 6a8cb49bad..1a6cd2f4bf 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-@@ -382,6 +382,8 @@ window.__ModuleLoader__.load({
+@@ -391,6 +391,8 @@ window.__ModuleLoader__.load({
  			});
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -11,7 +11,7 @@ index c61f2f26c3..01879b9efe 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -465,6 +467,7 @@ window.__ModuleLoader__.load({
+@@ -484,6 +486,7 @@ window.__ModuleLoader__.load({
  							})]
  						})
  					}),
@@ -19,7 +19,7 @@ index c61f2f26c3..01879b9efe 100644
  					panels.length > 0 && (0, react_jsx_runtime.jsxs)("nav", {
  						className: SidebarRoot_module_css_default.panelList,
  						"aria-label": t("panels.label"),
-@@ -514,8 +517,9 @@ window.__ModuleLoader__.load({
+@@ -540,8 +543,9 @@ window.__ModuleLoader__.load({
  							className: SidebarRoot_module_css_default.footerActions,
  							children: renderSlot("sidebar.footer.action", { wide })
  						}), (0, react_jsx_runtime.jsx)("div", {
@@ -30,7 +30,7 @@ index c61f2f26c3..01879b9efe 100644
  						})]
  					})
  				]
-@@ -624,6 +628,10 @@ window.__ModuleLoader__.load({
+@@ -718,6 +722,10 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "root"
  					},
@@ -41,7 +41,7 @@ index c61f2f26c3..01879b9efe 100644
  					"sidebar.panellist": {
  						kind: "list",
  						scope: "root"
-@@ -640,6 +648,10 @@ window.__ModuleLoader__.load({
+@@ -734,6 +742,10 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "root"
  					},

@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js b/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+index 10de8e00b3..d2c9b68549 100644
 --- a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
 +++ b/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
-@@ -150,13 +150,41 @@
- 	getTasks() {
+@@ -216,11 +216,39 @@ var EntryTree = class EntryTree {
  		return [...this.entries()].map((entry) => entry._initTask || entry.fiber?.inertia).filter(isNonNullable);
  	}
  	/** Wait until this tree has no pending import or lifecycle tasks. */
@@ -44,9 +44,7 @@ diff --git a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js b/node_
  		}
  	}
  	ensureId(options) {
- 		if (!options.id) do
-@@ -308,8 +336,9 @@
- }
+@@ -377,6 +405,7 @@ function sortKeys(object, prepend = ["id", "name"], append = ["config"]) {
  /** One configured plugin node inside an `EntryTree`. */
  var Entry = class Entry {
  	loader;
@@ -54,9 +52,7 @@ diff --git a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js b/node_
  	static key = Symbol.for("cordis.entry");
  	ctx;
  	fiber;
- 	/** Raw import result before export normalization; HMR updates it after a successful reload. */
-@@ -433,8 +462,25 @@
- 			entry = entry.parent.ctx.fiber.entry;
+@@ -502,6 +531,23 @@ var Entry = class Entry {
  		} while (entry);
  		return result;
  	};
@@ -80,9 +76,7 @@ diff --git a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js b/node_
  	/** Import and start the configured plugin if it is not already running. */
  	async init() {
  		try {
- 			await (this._initTask ??= this._init());
-@@ -450,9 +496,11 @@
- 	async _init() {
+@@ -519,7 +565,9 @@ var Entry = class Entry {
  		let moduleNamespace;
  		try {
  			moduleNamespace = await this.parent.tree.import(this.options.name, this.getOuterStack);
@@ -92,4 +86,3 @@ diff --git a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js b/node_
  			this.ctx.logger.error(error);
  			return;
  		} finally {
- 			this._initTask = void 0;

@@ -2,9 +2,9 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   initProfile,
-  PROFILE_TEMPLATES,
   resolveProfileDir
 } from '@deepseek-ai/dsh-app-boot'
+import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import {
   disableGeneration,
   isGenerationPlugin,

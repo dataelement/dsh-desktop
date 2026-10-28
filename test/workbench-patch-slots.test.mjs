@@ -37,12 +37,12 @@ function loadSidebar() {
   })
 }
 
-describe('rc.3 workbench patch slots', () => {
+describe('0.2.2 workbench patch slots', () => {
   it.each([
     { panels: [], unpinned: [], hasActions: false },
     { panels: [{ id: 'plugins', label: 'Plugins' }], unpinned: [], hasActions: false },
     { panels: [{ id: 'plugins', label: 'Plugins' }, { id: 'schedules', label: 'Schedules' }, { id: 'custom', label: 'Custom panel' }], unpinned: ['plugins', 'schedules'], hasActions: true }
-  ])('keeps one quick switcher and its native action alongside rc3 panel pinning: $hasActions / $unpinned', async ({ panels, unpinned, hasActions }) => {
+  ])('keeps one quick switcher and its native action alongside upstream panel pinning: $hasActions / $unpinned', async ({ panels, unpinned, hasActions }) => {
     const sidebar = await loadSidebar()
     const registrations = []
     const startSession = vi.fn()
@@ -71,6 +71,7 @@ describe('rc.3 workbench patch slots', () => {
     const markup = renderToStaticMarkup(React.createElement(shell.Component, {
       collapsed: false, width: 250, startSession, toggleSidebar: () => {}, selectPanel, setPinned, trackEntryClick,
       usePanels: () => panels, useEntryPins: () => unpinned, useEntryActions: () => hasActions,
+      useRemoteAccess: () => true,
       useShortcuts: () => [], usePanelInfo: selector => selector({ activePanelId: 'schedules' }), t: key => key,
       renderSlot: (name, owner) => {
         rendered.push({ name, owner })

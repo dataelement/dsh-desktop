@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js b/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js
-index 2eb5735e35..981ff9222c 100644
+index 3c78c94b01..5fd842d3e8 100644
 --- a/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js
 @@ -394,7 +394,26 @@ window.__ModuleLoader__.load({
@@ -39,10 +39,10 @@ index 2eb5735e35..981ff9222c 100644
  					this.managed.set(id, loader.resolve(entryId));
  				}
 diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
-index c42ccbeb80..114df7a1c8 100644
+index d42b27083c..512c351b7c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
-@@ -284,7 +284,7 @@ function readSourceMap(clientPath) {
+@@ -340,7 +340,7 @@ function readSourceMap(clientPath) {
  /** Count generated lines while assembling indexed-map section offsets. */
  function newlineCount(value) {
  	let count = 0;
@@ -51,7 +51,7 @@ index c42ccbeb80..114df7a1c8 100644
  	return count;
  }
  /** Resolve section sources against their original per-plugin map URL before combo relocation. */
-@@ -306,7 +306,8 @@ function comboSectionMap(resource, original) {
+@@ -362,7 +362,8 @@ function comboSectionMap(resource, original) {
  }
  /** Map each generated line to the same line in a bundled JavaScript source. */
  function identitySectionMap(source, sourceUrl) {
@@ -61,7 +61,7 @@ index c42ccbeb80..114df7a1c8 100644
  	return {
  		version: 3,
  		names: [],
-@@ -385,6 +386,16 @@ function buildCombo(records, sourceMapOf, revision) {
+@@ -441,6 +442,16 @@ function buildCombo(records, sourceMapOf, revision) {
  		sourceMapBody: lazyBody(() => buildComboSourceMap(resources, sourceMapOf))
  	};
  }
@@ -78,7 +78,7 @@ index c42ccbeb80..114df7a1c8 100644
  /** Add initial-load scheduling metadata to a combo artifact. */
  function buildBatch(phase, records, sourceMapOf) {
  	const artifact = buildCombo(records, sourceMapOf);
-@@ -685,7 +696,7 @@ var ClientModuleRegistry = class extends Service {
+@@ -746,7 +757,7 @@ var ClientModuleRegistry = class extends Service {
  		}
  		const responses = new Map(batchResponses);
  		for (const record of this.table.values()) {
@@ -87,7 +87,7 @@ index c42ccbeb80..114df7a1c8 100644
  			responses.set(artifact.url, responses.get(artifact.url) ?? this.responses.get(artifact.url) ?? {
  				body: artifact.scriptBody,
  				contentType: "text/javascript; charset=utf-8"
-@@ -786,7 +797,15 @@ var ClientModuleRegistry = class extends Service {
+@@ -837,7 +848,15 @@ var ClientModuleRegistry = class extends Service {
  				attributes: {}
  			}).url : internal.resolveSync(loaderName, baseUrl, {}).url;
  		} catch {

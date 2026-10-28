@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
-index 3253a36..e6c4d0c 100644
+index 3253a36065..e6c4d0ca06 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
 @@ -39,6 +39,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {

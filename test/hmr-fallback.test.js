@@ -117,7 +117,11 @@ describe('desktop HMR fallback', () => {
     manager.profile = { dir: directory }
     manager.abort = new AbortController()
     manager.lockWaitMs = 1000
-    manager.ownerContext = { get: (key) => key === 'hmr' ? service : undefined, emit }
+    manager.ownerContext = {
+      get: (key) => key === 'hmr' ? service : undefined,
+      emit,
+      parallel: vi.fn(async () => {})
+    }
     manager.selectBundle = vi.fn(async () => {
       await writeFile(join(directory, 'package.json'), JSON.stringify({ enabled }))
     })

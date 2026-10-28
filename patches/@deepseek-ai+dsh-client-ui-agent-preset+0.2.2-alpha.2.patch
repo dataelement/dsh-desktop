@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-index 0bd1c92eae..e1da6c5303 100644
+index 96cd2e839f..9a77b48ce9 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-@@ -905,6 +905,7 @@ window.__ModuleLoader__.load({
+@@ -1297,6 +1297,7 @@ window.__ModuleLoader__.load({
  		/** Locale bundles for the agent-preset hero chip, header label, and management section. */
  		/** English copy. */
  		const en = {
@@ -10,7 +10,7 @@ index 0bd1c92eae..e1da6c5303 100644
  			...guideEn,
  			builtInGroup: "Built-in",
  			customGroup: "Custom",
-@@ -937,6 +938,7 @@ window.__ModuleLoader__.load({
+@@ -1329,6 +1330,7 @@ window.__ModuleLoader__.load({
  		};
  		/** Simplified Chinese copy. */
  		const zh = {
@@ -18,7 +18,7 @@ index 0bd1c92eae..e1da6c5303 100644
  			...guideZh,
  			builtInGroup: "内置",
  			customGroup: "自定义",
-@@ -1689,6 +1691,85 @@ window.__ModuleLoader__.load({
+@@ -2273,6 +2275,85 @@ window.__ModuleLoader__.load({
  		function AgentPresetSection({ useAgentPresetSection, load, view, closeView, makeDefault, startCreatorDraft, close: closeSettings, useDeveloperTools, t }) {
  			const state = useAgentPresetSection((value) => value);
  			const developerTools = useDeveloperTools((enabled) => enabled);
@@ -104,7 +104,7 @@ index 0bd1c92eae..e1da6c5303 100644
  			const [guide, setGuide] = (0, react.useState)(null);
  			const viewTrigger = (0, react.useRef)(null);
  			const closeViewOnUnmount = (0, react.useRef)(closeView);
-@@ -1722,21 +1803,53 @@ window.__ModuleLoader__.load({
+@@ -2306,21 +2387,53 @@ window.__ModuleLoader__.load({
  			return (0, react_jsx_runtime.jsxs)("section", {
  				className: AgentPresetSection_module_css_default.section,
  				children: [
@@ -163,7 +163,7 @@ index 0bd1c92eae..e1da6c5303 100644
  						const entry = builtIn ? null : creatorButton;
  						if (rows.length === 0 && entry === null) return null;
  						return (0, react_jsx_runtime.jsxs)("section", {
-@@ -1844,7 +1957,13 @@ window.__ModuleLoader__.load({
+@@ -2428,7 +2541,13 @@ window.__ModuleLoader__.load({
  														view(row.id);
  													},
  													children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBrowseOutlineRegular, {})
@@ -178,7 +178,7 @@ index 0bd1c92eae..e1da6c5303 100644
  											})]
  										}, row.id);
  									})
-@@ -1861,6 +1980,34 @@ window.__ModuleLoader__.load({
+@@ -2445,6 +2564,34 @@ window.__ModuleLoader__.load({
  							setGuide(null);
  						}
  					}),

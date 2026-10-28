@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.1-rc.3'
+const HARNESS_VERSION = '0.2.2-alpha.2'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -151,13 +151,13 @@ describe('GitHub release contract', () => {
       expect(packageJson.dependencies[packageName]).toBeUndefined()
       expect(packageLock.packages[`node_modules/${packageName}`]).toBeUndefined()
     }
-    // Official bundles own these, including retrieval, model badges and entry customization.
+    // Official bundles own these, including retrieval and entry customization.
+    // 0.2.2 no longer ships the dated deepseek-model-label-1017 web plugin.
     for (const packageName of [
       '@deepseek-ai/dsh-tool-terminal',
       '@deepseek-ai/dsh-tool-session-query',
       '@deepseek-ai/dsh-session-title-all-prompts-llm',
       '@deepseek-ai/dsh-web-deepseek-api',
-      '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017',
       '@deepseek-ai/dsh-client-ui-entry-customization'
     ]) {
       expect(packageJson.dependencies[packageName]).toBeUndefined()

@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index bf57a02484..57ca1b31aa 100644
+index 8295565097..24965dd495 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-@@ -1096,6 +1096,7 @@ window.__ModuleLoader__.load({
+@@ -1086,6 +1086,7 @@ window.__ModuleLoader__.load({
  			const currentGroup = current === void 0 ? void 0 : owningGroupKey(workspaces, current);
  			const groups = [];
  			for (const g of groupByWorkspace(list, workspaces, archived, rowState.archivedFilter, view.ungroupedOrder)) {
@@ -10,7 +10,7 @@ index bf57a02484..57ca1b31aa 100644
  				const expanded = expandedGroups.has(g.key);
  				groups.push({
  					key: g.key,
-@@ -1269,10 +1270,18 @@ window.__ModuleLoader__.load({
+@@ -1259,10 +1260,18 @@ window.__ModuleLoader__.load({
  					orderBy: "updated",
  					groupExpansion: {},
  					sessionOrderByAccount: {},
@@ -29,7 +29,7 @@ index bf57a02484..57ca1b31aa 100644
  					setGroupBy: (d, mode) => {
  						d.groupBy = mode;
  					},
-@@ -1368,6 +1377,16 @@ window.__ModuleLoader__.load({
+@@ -1358,6 +1367,16 @@ window.__ModuleLoader__.load({
  			lifetime = new AbortController();
  			selection = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({}, { persist: { name: "dsh.sessions.current" } });
  			mainReference;
@@ -43,10 +43,10 @@ index bf57a02484..57ca1b31aa 100644
 +			workspaceFilterUnsubscribe = null;
 +			workspaceVisibility = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)(0);
 +			workspaceDeleteHandler = null;
+ 			restorationNavigation;
  			/**
  			* @param ctx - Client root Context.
- 			* @param directoryPicker - the directory-picking Remote namespace.
-@@ -1421,7 +1440,7 @@ window.__ModuleLoader__.load({
+@@ -1412,7 +1431,7 @@ window.__ModuleLoader__.load({
  				const blank = sessions.ids.find((id) => {
  					const summary = sessions.byId[id];
  					const listed = summary?.projectionValues?.agentPreset;
@@ -55,7 +55,7 @@ index bf57a02484..57ca1b31aa 100644
  				});
  				return this.createNamed({
  					workspaceId: workspace.workspaceId,
-@@ -1468,7 +1487,82 @@ window.__ModuleLoader__.load({
+@@ -1459,7 +1478,82 @@ window.__ModuleLoader__.load({
  					return this.createNamed(request);
  				}
  			}
@@ -139,7 +139,7 @@ index bf57a02484..57ca1b31aa 100644
  				this.replaceMain(target, this.lifetime.signal, "reveal");
  			}
  			openWorkspace(workspaceId, beforeOpen, options = {}) {
-@@ -1476,6 +1570,7 @@ window.__ModuleLoader__.load({
+@@ -1467,6 +1561,7 @@ window.__ModuleLoader__.load({
  			}
  			async openWorkspaceSession(workspaceId, beforeOpen, reuse) {
  				const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal]);
@@ -147,7 +147,7 @@ index bf57a02484..57ca1b31aa 100644
  				let sessionId;
  				try {
  					sessionId = await this.connectBlank(workspaceId, reuse);
-@@ -1487,6 +1582,8 @@ window.__ModuleLoader__.load({
+@@ -1478,6 +1573,8 @@ window.__ModuleLoader__.load({
  					throw error;
  				}
  				if (navigation.aborted) return;
@@ -156,7 +156,7 @@ index bf57a02484..57ca1b31aa 100644
  				this.replaceMain(sessionId, navigation, "reveal", beforeOpen);
  			}
  			async forkSession(sessionId, onCreated, options) {
-@@ -1497,10 +1594,21 @@ window.__ModuleLoader__.load({
+@@ -1488,10 +1585,21 @@ window.__ModuleLoader__.load({
  					...options?.allowMigration === void 0 ? {} : { allowMigration: options.allowMigration }
  				});
  			}
@@ -178,7 +178,7 @@ index bf57a02484..57ca1b31aa 100644
  				const workspace = this.workspaces.list.getSnapshot();
  				const sessions = this.sessions.list.getSnapshot();
  				const current = this.mainReference?.sessionId;
-@@ -1546,6 +1654,24 @@ window.__ModuleLoader__.load({
+@@ -1537,6 +1645,24 @@ window.__ModuleLoader__.load({
  			async unarchiveSession(sessionId) {
  				await this.workspaces.unarchiveSession(sessionId);
  			}
@@ -203,16 +203,16 @@ index bf57a02484..57ca1b31aa 100644
  			async pinSession(sessionId) {
  				await this.workspaces.pinSession(sessionId);
  				const { items, pinnedSessionIds, archivedSessionIds } = this.workspaces.list.getSnapshot();
-@@ -2176,7 +2302,7 @@ window.__ModuleLoader__.load({
+@@ -2231,7 +2357,7 @@ window.__ModuleLoader__.load({
  		* @param props.t - Workspace-browser translation seat.
  		* @returns the result row.
  		*/
--		function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }) {
-+		function SearchResultItem({ result, currentId, onOpen, onUnarchive, renderSlot, t }) {
+-		function SearchResultItem({ result, currentId, onOpen, onUnarchive, useSessionAccess, t }) {
++		function SearchResultItem({ result, currentId, onOpen, onUnarchive, useSessionAccess, renderSlot, t }) {
  			const selected = result.id === currentId;
+ 			const canUnarchive = useSessionAccess(result.id, "workspace/unarchiveSession");
  			const statuses = sessionStatuses(result, t);
- 			const primaryStatus = statuses[0];
-@@ -2191,6 +2317,7 @@ window.__ModuleLoader__.load({
+@@ -2247,6 +2373,7 @@ window.__ModuleLoader__.load({
  				children: [(0, react_jsx_runtime.jsxs)("span", {
  					className: Rows_module_css_default.searchResultHeading,
  					children: [
@@ -220,16 +220,16 @@ index bf57a02484..57ca1b31aa 100644
  						(0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
  							children: !result.archived && primaryStatus.state !== "idle" && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
-@@ -2252,7 +2379,7 @@ window.__ModuleLoader__.load({
+@@ -2315,7 +2442,7 @@ window.__ModuleLoader__.load({
  		* @param props.t - the browser root's locale seat.
  		* @returns the session row.
  		*/
--		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, t }) {
-+		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, unread = false, onUnreadChange, t }) {
+-		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, home, useSessionAccess, t }) {
++		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, home, useSessionAccess, unread = false, onUnreadChange, t }) {
  			const row = node;
  			const title = displayTitle(node, t);
  			const selected = node.id === currentId;
-@@ -2281,6 +2408,11 @@ window.__ModuleLoader__.load({
+@@ -2352,6 +2479,11 @@ window.__ModuleLoader__.load({
  					onClick: () => {
  						onOpen(node.id);
  					},
@@ -238,10 +238,10 @@ index bf57a02484..57ca1b31aa 100644
 +						event.stopPropagation();
 +						if (!row.blank) setMenuOpen(true);
 +					},
- 					onPointerEnter: marquee.enter,
- 					onPointerLeave: marquee.leave,
- 					draggable,
-@@ -2304,11 +2436,12 @@ window.__ModuleLoader__.load({
+ 					onKeyDown: (event) => {
+ 						if (event.target !== event.currentTarget || event.key !== "Enter" && event.key !== " ") return;
+ 						if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+@@ -2384,11 +2516,12 @@ window.__ModuleLoader__.load({
  					children: [
  						(0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
@@ -252,10 +252,10 @@ index bf57a02484..57ca1b31aa 100644
  							ref: titleRef,
  							className: Rows_module_css_default.title,
 +							style: unread ? { fontWeight: 600 } : void 0,
- 							onDoubleClick: row.blank ? void 0 : (e) => {
- 								e.stopPropagation();
- 								onRenameRequest(node.id, row.title);
-@@ -2344,7 +2477,9 @@ window.__ModuleLoader__.load({
+ 							onMouseDown: (e) => {
+ 								if (e.detail !== 1) return;
+ 								renameArmed.current = true;
+@@ -2437,7 +2570,9 @@ window.__ModuleLoader__.load({
  								}),
  								children: renderSlot("sidebar.workspaces.session.menu.item", {
  									sessionId: node.id,
@@ -264,20 +264,18 @@ index bf57a02484..57ca1b31aa 100644
 +									unread,
 +									onUnreadChange
  								}, { hookContext: menuOpenState })
- 							}), renderSlot("sidebar.workspaces.session.row.action", {
- 								sessionId: node.id,
-@@ -3021,8 +3156,8 @@ window.__ModuleLoader__.load({
- 				]
+ 							}), (0, react_jsx_runtime.jsx)("span", {
+ 								className: Rows_module_css_default.rowQuickActions,
+@@ -3006,7 +3141,7 @@ window.__ModuleLoader__.load({
  			});
  		}
--		/** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
--		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
-+		/** The scrolling session tree; unmounting drops the sessions subscription and local row limits. */
-+		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
+ 		/** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
+-		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
++		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const current = panelActive ? void 0 : Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
-@@ -3300,6 +3435,8 @@ window.__ModuleLoader__.load({
+@@ -3286,6 +3421,8 @@ window.__ModuleLoader__.load({
  								onOpen: open,
  								onRenameRequest: onSessionRenameRequest,
  								renderSlot,
@@ -286,16 +284,16 @@ index bf57a02484..57ca1b31aa 100644
  								onReveal: node.id === revealSessionId && group.key === revealGroup ? () => {
  									onSessionRevealed(node.id);
  								} : void 0,
-@@ -3353,7 +3490,7 @@ window.__ModuleLoader__.load({
+@@ -3342,7 +3479,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
--		function FlatList({ list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t }) {
-+		function FlatList({ list, sessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t }) {
+-		function FlatList({ list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, useSessionAccess, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, home, t }) {
++		function FlatList({ list, sessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, useSessionStatus, useSessionAccess, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, home, t }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, rowState, statuses), [
-@@ -3394,8 +3531,10 @@ window.__ModuleLoader__.load({
+@@ -3384,8 +3521,10 @@ window.__ModuleLoader__.load({
  							currentId,
  							now,
  							onOpen: open,
@@ -308,31 +306,31 @@ index bf57a02484..57ca1b31aa 100644
  							onReveal: node.id === revealSessionId ? () => {
  								onSessionRevealed(node.id);
  							} : void 0,
-@@ -3439,9 +3578,8 @@ window.__ModuleLoader__.load({
+@@ -3431,9 +3570,8 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Flat search body: local metadata matches plus the current Host result page. */
--		function SearchResults({ useSessions, useSessionStatus, open, onUnarchive, workspaces, archivedSessionIds, archivedFilter, query, remote, resultLimit, usePanelInfo, t }) {
-+		function SearchResults({ list, useSessionStatus, open, onUnarchive, workspaces, archivedSessionIds, archivedFilter, query, remote, resultLimit, usePanelInfo, renderSlot, t }) {
+-		function SearchResults({ useSessions, useSessionStatus, open, onUnarchive, workspaces, archivedSessionIds, archivedFilter, query, remote, resultLimit, usePanelInfo, useSessionAccess, t }) {
++		function SearchResults({ list, renderSlot, useSessionStatus, open, onUnarchive, workspaces, archivedSessionIds, archivedFilter, query, remote, resultLimit, usePanelInfo, useSessionAccess, t }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
 -			const list = useSessions((s) => s);
  			const statuses = useSessionStatus((s) => s);
  			const currentRemote = remote.query === query ? remote : {
  				query,
-@@ -3475,6 +3613,7 @@ window.__ModuleLoader__.load({
+@@ -3467,6 +3605,7 @@ window.__ModuleLoader__.load({
  								currentId,
  								onOpen: open,
  								onUnarchive,
 +								renderSlot,
+ 								useSessionAccess,
  								t
  							}, result.id))
- 						}),
-@@ -3507,19 +3646,27 @@ window.__ModuleLoader__.load({
+@@ -3500,19 +3639,27 @@ window.__ModuleLoader__.load({
  		* @param props - composed slot props (shell owner share + store + injected actions).
  		* @returns the region element tree.
  		*/
--		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t }) {
-+		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, isSessionVisible, isWorkspaceVisible, useDirectoryFlow, useHostInfo, useSessionVisibility, useWorkspaceVisibility, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, dismissForkError, renderSlot, t }) {
+-		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useRemoteAccess, useSessionAccess, useWorkspaceAccess, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t }) {
++		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useRemoteAccess, useSessionAccess, useWorkspaceAccess, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, isSessionVisible, isWorkspaceVisible, useSessionVisibility, useWorkspaceVisibility, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t }) {
  			const home = useHostInfo((info) => info.home);
  			const shortcuts = useShortcuts((rows) => rows);
  			const searchShortcut = shortcuts.find((row) => row.id === "session.search");
@@ -359,7 +357,7 @@ index bf57a02484..57ca1b31aa 100644
  			const workspacePhase = useWorkspaces((state) => state.phase);
  			const workspaceStreamState = useWorkspaces((state) => state.state);
  			const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
-@@ -3530,6 +3677,11 @@ window.__ModuleLoader__.load({
+@@ -3523,6 +3670,11 @@ window.__ModuleLoader__.load({
  			const archivedFilter = useStore((s) => s.archivedFilter ?? "default");
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
@@ -371,7 +369,7 @@ index bf57a02484..57ca1b31aa 100644
  			const guardedOpen = (sessionId) => {
  				if (archivedSessionIds.includes(sessionId)) {
  					notifyArchivedNotOpenable();
-@@ -3799,6 +3951,11 @@ window.__ModuleLoader__.load({
+@@ -3804,6 +3956,11 @@ window.__ModuleLoader__.load({
  			const [deleting, setDeleting] = (0, react.useState)(false);
  			const [deleteCommittedId, setDeleteCommittedId] = (0, react.useState)(null);
  			const [deleteError, setDeleteError] = (0, react.useState)(null);
@@ -383,7 +381,7 @@ index bf57a02484..57ca1b31aa 100644
  			(0, react.useEffect)(() => {
  				if (deleteCommittedId === null || workspaces.some((workspace) => workspace.workspaceId === deleteCommittedId)) return;
  				setDeleting(false);
-@@ -3813,6 +3970,10 @@ window.__ModuleLoader__.load({
+@@ -3818,6 +3975,10 @@ window.__ModuleLoader__.load({
  			const confirmDelete = () => {
  				/* v8 ignore next -- the Modal is absent without a target and its button is disabled while deleting. */
  				if (deleting || deleteTarget === null) return;
@@ -394,16 +392,16 @@ index bf57a02484..57ca1b31aa 100644
  				setDeleting(true);
  				setDeleteCommittedId(null);
  				setDeleteError(null);
-@@ -3965,7 +4126,7 @@ window.__ModuleLoader__.load({
- 						className: WorkspaceBrowser_module_css_default.listArea,
+@@ -3971,7 +4132,7 @@ window.__ModuleLoader__.load({
  						children: wide && (normalizedQuery !== "" ? (0, react_jsx_runtime.jsx)(SearchResults, {
  							usePanelInfo,
+ 							useSessionAccess,
 -							useSessions,
 +							list,
  							useSessionStatus,
  							open: openSearchResult,
  							onUnarchive: onSessionUnarchive,
-@@ -3981,6 +4142,8 @@ window.__ModuleLoader__.load({
+@@ -3988,6 +4149,8 @@ window.__ModuleLoader__.load({
  							list,
  							sessionIds: orderedFlatSessionIds,
  							rowState,
@@ -412,7 +410,7 @@ index bf57a02484..57ca1b31aa 100644
  							onLeaveArchivedOnly: leaveArchivedOnly,
  							workspaceReady,
  							animationResetKey: `${groupBy}/${orderBy}/${archivedFilter}`,
-@@ -4008,6 +4171,8 @@ window.__ModuleLoader__.load({
+@@ -4019,6 +4182,8 @@ window.__ModuleLoader__.load({
  							setGroupExpanded: actions.setGroupExpanded,
  							setSessionOrder: saveSessionOrder,
  							rowState,
@@ -421,7 +419,7 @@ index bf57a02484..57ca1b31aa 100644
  							onLeaveArchivedOnly: leaveArchivedOnly,
  							startSession,
  							open: guardedOpen,
-@@ -4027,7 +4192,8 @@ window.__ModuleLoader__.load({
+@@ -4038,7 +4203,8 @@ window.__ModuleLoader__.load({
  							onDeleteRequest: (workspaceId, title) => {
  								setDeleteTarget({
  									workspaceId,
@@ -431,7 +429,7 @@ index bf57a02484..57ca1b31aa 100644
  								});
  								setDeleteError(null);
  							}
-@@ -4857,6 +5023,7 @@ window.__ModuleLoader__.load({
+@@ -4879,6 +5045,7 @@ window.__ModuleLoader__.load({
  			"status.compact.planReview": "计划待审",
  			"status.compact.answer": "待回答",
  			"status.completed": "已完成",
@@ -439,7 +437,7 @@ index bf57a02484..57ca1b31aa 100644
  			"hover.created": "创建于 {time}",
  			"hover.copied": "已复制",
  			"date.ymd": "{y}年{m}月{d}日",
-@@ -4979,6 +5146,7 @@ window.__ModuleLoader__.load({
+@@ -5001,6 +5168,7 @@ window.__ModuleLoader__.load({
  			"status.compact.planReview": "Plan review",
  			"status.compact.answer": "Answer",
  			"status.completed": "Completed",
@@ -447,7 +445,7 @@ index bf57a02484..57ca1b31aa 100644
  			"hover.created": "Created {time}",
  			"hover.copied": "Copied",
  			"date.ymd": "{y}-{m}-{d}",
-@@ -5180,6 +5348,8 @@ window.__ModuleLoader__.load({
+@@ -5940,6 +6108,8 @@ window.__ModuleLoader__.load({
  				}
  			});
  			const browserInjected = () => ({
@@ -456,7 +454,7 @@ index bf57a02484..57ca1b31aa 100644
  				startSession: (workspaceId, options) => {
  					uiWorkspace.startSession(workspaceId, options);
  				},
-@@ -5194,7 +5364,7 @@ window.__ModuleLoader__.load({
+@@ -5954,7 +6124,7 @@ window.__ModuleLoader__.load({
  					await workspaces.rename(workspaceId, title);
  				},
  				deleteWorkspace: async (workspaceId) => {
@@ -465,7 +463,7 @@ index bf57a02484..57ca1b31aa 100644
  				},
  				insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
  					await workspaces.insertBefore(workspaceId, beforeWorkspaceId);
-@@ -5210,6 +5380,8 @@ window.__ModuleLoader__.load({
+@@ -5970,6 +6140,8 @@ window.__ModuleLoader__.load({
  				hooks: {
  					directoryFlow: browserFlowSource,
  					hostInfo,
@@ -475,10 +473,10 @@ index bf57a02484..57ca1b31aa 100644
  					shortcuts: ctx.shortcuts.catalog
  				}
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
-index ef666cc3a2..3dfb317b76 100644
+index 0317cf5966..c985cb24a9 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
-@@ -226,6 +226,8 @@ export type WorkspaceBrowserInjected = {
+@@ -247,6 +247,8 @@ export type WorkspaceBrowserInjected = {
           * saw. Select the field the surface needs (`info => info.home`).
           */
          hostInfo: HostObservable<RemoteHostFacts>;
@@ -487,7 +485,7 @@ index ef666cc3a2..3dfb317b76 100644
          workspaceShortcuts: HostObservable<WorkspaceShortcutState>;
          shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>;
      };
-@@ -255,13 +257,15 @@ export type WorkspaceBrowserInjected = {
+@@ -276,13 +278,15 @@ export type WorkspaceBrowserInjected = {
      }>;
      /** Maximum number of merged rows rendered for one search. */
      searchResultLimit: number;
@@ -505,7 +503,7 @@ index ef666cc3a2..3dfb317b76 100644
      /**
       * Reorder a Workspace in the durable registry display order.
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
-index fe88429a26..f00c532ad0 100644
+index 90c08e65bf..6941872c2a 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
 @@ -114,6 +114,7 @@ export declare const zh: {
@@ -525,10 +523,10 @@ index fe88429a26..f00c532ad0 100644
      'hover.copied': string;
      'date.ymd': string;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
-index 27b4d6c8ed..e740ab6b5a 100644
+index 6d2eb61428..91c72cf98b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
-@@ -5,6 +5,11 @@ import type { ISessions, SessionTarget } from '@deepseek-ai/dsh-api-session-cont
+@@ -6,6 +6,11 @@ import type { ISessions, SessionTarget } from '@deepseek-ai/dsh-api-session-cont
  import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client';
  import type { SessionId } from '@deepseek-ai/dsh-session/types';
  import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client';
@@ -540,7 +538,7 @@ index 27b4d6c8ed..e740ab6b5a 100644
  import type { RowToast } from './contract/slots.ts';
  import type { WorkspaceViewStoreActions } from './stores.ts';
  /** Content preparation and Agent preset for the Session a Workspace flow opens. */
-@@ -18,7 +23,16 @@ export interface UiWorkspace {
+@@ -19,7 +24,16 @@ export interface UiWorkspace {
       * Select a Session and show its Conversation as one UI navigation action.
       * @param target - known Session identity or durable direct-parent subagent address to display.
       */
@@ -558,15 +556,15 @@ index 27b4d6c8ed..e740ab6b5a 100644
      /**
       * Connect a Workspace and open its Session unless a later navigation supersedes it.
       * @param workspaceId - target Workspace.
-@@ -38,6 +52,7 @@ export interface UiWorkspace {
+@@ -39,6 +53,7 @@ export interface UiWorkspace {
       * @returns the child SessionId after creation and inherited-title increment.
       */
      forkSession(sessionId: SessionId, onCreated?: (childId: SessionId) => void, options?: Pick<Parameters<ISessions['fork']>[0], 'allowMigration'>): Promise<SessionId>;
 +    deleteSession(sessionId: SessionId): Promise<void>;
      /**
-      * Resolve the Session for a new conversation in a Workspace: navigation names the first
-      * reusable blank member, skipping blanks that list a preset other than a requested one, and
-@@ -55,6 +70,7 @@ export interface UiWorkspace {
+      * Resolve the Session for a new conversation in a Workspace: navigation names the first reusable
+      * blank member — listed in the Workspace, not archived, and listing no preset or the requested one —
+@@ -57,6 +72,7 @@ export interface UiWorkspace {
       * @param options - initial content, the blank's preset, and `whenDraftExists`, which decides
       * whether existing text or attachments are kept, replaced, or followed by the prompt.
       */
@@ -574,7 +572,7 @@ index 27b4d6c8ed..e740ab6b5a 100644
      startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void;
      /**
       * Archive a Session and clear it when it is the current selection.
-@@ -127,6 +143,16 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -140,6 +156,16 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
      private readonly lifetime;
      private readonly selection;
      private mainReference;
@@ -583,15 +581,15 @@ index 27b4d6c8ed..e740ab6b5a 100644
 +    private sessionReuseFilter;
 +    private sessionFilter;
 +    private sessionFilterUnsubscribe;
-+    sessionVisibility: import('@deepseek-ai/dsh-client-store').SnapshotStore<number>;
++    sessionVisibility: import("@deepseek-ai/dsh-client-store").SnapshotStore<number>;
 +    private workspaceFilter;
 +    private workspaceFilterUnsubscribe;
-+    workspaceVisibility: import('@deepseek-ai/dsh-client-store').SnapshotStore<number>;
++    workspaceVisibility: import("@deepseek-ai/dsh-client-store").SnapshotStore<number>;
 +    private workspaceDeleteHandler;
+     private restorationNavigation;
      /**
       * @param ctx - Client root Context.
-      * @param directoryPicker - the directory-picking Remote namespace.
-@@ -135,7 +161,7 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -149,7 +175,7 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
       * @param view - the browser's viewing-store write set (one instance shared with its registration).
       * @param notify - show one notice through the Workspace notice channel.
       */
@@ -600,7 +598,7 @@ index 27b4d6c8ed..e740ab6b5a 100644
      connectWorkspace(workspaceId: WorkspaceId, options?: Pick<StartSessionOptions, 'agentPreset'>): Promise<SessionId>;
      /**
       * @param reuse - preset for the reused or created blank.
-@@ -157,10 +183,21 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -171,10 +197,21 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
       * that still awaits a format migration reloads only those cached hints.
       */
      private restoreBlank;
@@ -623,19 +621,50 @@ index 27b4d6c8ed..e740ab6b5a 100644
      startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void;
      private prepareDraft;
      private draftPreparationFailed;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
+index ae02ecb9ed..d63dd0cbe8 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
+@@ -75,13 +75,13 @@ export declare function ProjectRowItem(props: ProjectRowItemProps): import("reac
+  * @param props.t - Workspace-browser translation seat.
+  * @returns the result row.
+  */
+-export declare function SearchResultItem({ result, currentId, onOpen, onUnarchive, useSessionAccess, t, }: {
++export declare function SearchResultItem({ result, currentId, onOpen, onUnarchive, useSessionAccess, renderSlot, t, }: {
+     result: SearchResultNode;
+     currentId: string | undefined;
+     onOpen: (id: SearchResultNode['id']) => void;
+     onUnarchive: (id: SearchResultNode['id']) => void;
+     t: RowTranslate;
+-} & Pick<WorkspaceBrowserProps, 'useSessionAccess'>): import("react").JSX.Element;
++} & Pick<WorkspaceBrowserProps, 'useSessionAccess'> & PropsRenderSlots<'sidebar.session.row.trailing'>): import("react").JSX.Element;
+ /**
+  * One top-level 32px session row: leading 16px cell (status dot, or the
+  * leading seat while the row's primary state is idle), title, relative time or
+@@ -109,8 +109,10 @@ export declare function SearchResultItem({ result, currentId, onOpen, onUnarchiv
+  * @param props.t - the browser root's locale seat.
+  * @returns the session row.
+  */
+-export declare function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, home, useSessionAccess, t, }: {
++export declare function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, home, useSessionAccess, unread, onUnreadChange, t, }: {
+     node: SessionNode;
++    unread?: boolean;
++    onUnreadChange?: (sessionId: SessionNode["id"], unread: boolean) => void;
+     currentId: string | undefined;
+     now: number;
+     onOpen: (id: SessionNode['id']) => void;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
-index 4532194113..8abccfeecd 100644
+index 9e8725efba..5ae8f3d8be 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
 @@ -4,5 +4,5 @@ import type { WorkspaceBrowserProps } from '../contract/slots.ts';
   * @param props - composed slot props (shell owner share + store + injected actions).
   * @returns the region element tree.
   */
--export declare function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
--//# sourceMappingURL=WorkspaceBrowser.d.ts.map
+-export declare function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useRemoteAccess, useSessionAccess, useWorkspaceAccess, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
++export declare function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useRemoteAccess, useSessionAccess, useWorkspaceAccess, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, isSessionVisible, isWorkspaceVisible, useSessionVisibility, useWorkspaceVisibility, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
+ //# sourceMappingURL=WorkspaceBrowser.d.ts.map
 \ No newline at end of file
-+export declare function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, isSessionVisible, isWorkspaceVisible, useDirectoryFlow, useHostInfo, useSessionVisibility, useWorkspaceVisibility, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, dismissForkError, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
-+//# sourceMappingURL=WorkspaceBrowser.d.ts.map
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
 index 4e20866c4e..d4d260f864 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts

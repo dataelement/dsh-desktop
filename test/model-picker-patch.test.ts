@@ -22,7 +22,7 @@ describe('DSH Desktop available-model picker', () => {
     const client = await readFile(settingsModelsClient, 'utf8')
 
     expect(client).toContain('const allVisibleCandidatesPicked =')
-    expect(client).toContain('visibleCandidates.every((candidate) => picked.has(candidate.id))')
+    expect(client).toContain('visibleCandidates.every((candidate) => isPicked(candidate.id))')
     expect(client).toContain(
       'children: t(allVisibleCandidatesPicked ? "fetchDeselectAll" : "fetchSelectAll")'
     )
@@ -55,10 +55,12 @@ describe('DSH Desktop model image-input declarations', () => {
     const client = await readFile(settingsModelsClient, 'utf8')
 
     expect(client).toContain('function ModelImageInputToggle(props)')
-    expect(client).toContain('field: "inputModalities"')
-    expect(client).toContain('field: "input"')
-    expect(client.match(/compact: true/g)).toHaveLength(2)
+    expect(client).toContain('inputField: "inputModalities"')
+    expect(client).toContain('inputField: "input"')
+    expect(client.match(/compact: true/g)).toHaveLength(1)
     expect(client).toContain('dshModelModalityToggleCompact')
+    // The upstream reorder handle is the first of six row controls in 0.2.2.
+    expect(client).toContain('.qy-_KG_modelRow{grid-template-columns:auto minmax(0,1.3fr) minmax(0,1fr) auto auto auto}')
     expect(client).toContain(
       '"data-tooltip": props.compact ? `${props.t("modelImageInput")}: ${props.t("modelImageInputHint")}`'
     )
@@ -88,7 +90,6 @@ describe('DSH Desktop model image-input declarations', () => {
     )
 
     expect(patch).toContain('ModelImageInputToggle')
-    expect(patch).toContain('field: "inputModalities"')
-    expect(patch).toContain('field: "input"')
+    expect(patch).toContain('field: props.inputField')
   })
 })

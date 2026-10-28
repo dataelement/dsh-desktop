@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js
-index b4e606124c..6e490aae2f 100644
+index 985a4383aa..d183bfb0de 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js
-@@ -190,6 +190,8 @@ window.__ModuleLoader__.load({
+@@ -239,6 +239,8 @@ window.__ModuleLoader__.load({
  			"details.error": "错误",
  			"details.lastAttemptError": "上次尝试错误",
  			"details.failure.auth": "API 密钥无效",
@@ -11,7 +11,7 @@ index b4e606124c..6e490aae2f 100644
  			"details.retry": "重试",
  			"details.retryDelay": "重试延迟",
  			"details.result": "结果",
-@@ -385,6 +387,8 @@ window.__ModuleLoader__.load({
+@@ -437,6 +439,8 @@ window.__ModuleLoader__.load({
  			"details.error": "Error",
  			"details.lastAttemptError": "Last attempt error",
  			"details.failure.auth": "API key is invalid",
@@ -20,7 +20,7 @@ index b4e606124c..6e490aae2f 100644
  			"details.retry": "Retry",
  			"details.retryDelay": "Retry delay",
  			"details.result": "Result",
-@@ -3865,6 +3869,8 @@ window.__ModuleLoader__.load({
+@@ -5107,6 +5111,8 @@ window.__ModuleLoader__.load({
  		}
  		function requestErrorMessage(request, t) {
  			if (request.errorCode === "AUTH") return t("details.failure.auth");

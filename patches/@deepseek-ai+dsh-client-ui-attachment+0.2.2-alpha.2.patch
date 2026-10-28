@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
-index f3220bf577..c6af7c4144 100644
+index 3e13878262..2d33b16c56 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
 @@ -363,7 +363,7 @@ window.__ModuleLoader__.load({
@@ -42,16 +42,16 @@ index f3220bf577..c6af7c4144 100644
  						children: [(0, react_jsx_runtime.jsx)("span", {
  							className: FileCard_module_css_default.name,
  							children: name
-@@ -608,7 +611,7 @@ window.__ModuleLoader__.load({
+@@ -2001,7 +2004,7 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/ComposerAttachments.js
  		/** Draft image previews, pending-file cards, drop target, and original-image preview. */
--		function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, dropLimits, t }) {
-+		function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, onOpenUploadedFile, dropLimits, t }) {
+-		function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, uploadFailureText, dropLimits, t, readFileDrag }) {
++		function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, onOpenUploadedFile, uploadFailureText, dropLimits, t, readFileDrag }) {
  			const [preview, setPreview] = (0, react.useState)(null);
  			const [dragActive, setDragActive] = (0, react.useState)(false);
  			const dragDepth = (0, react.useRef)(0);
-@@ -650,7 +653,10 @@ window.__ModuleLoader__.load({
+@@ -2047,7 +2050,10 @@ window.__ModuleLoader__.load({
  									},
  									onRetry: () => {
  										onRetryFile(attachment.id);
@@ -62,4 +62,20 @@ index f3220bf577..c6af7c4144 100644
 +									} : void 0
  								});
  							}
- 							return (0, react_jsx_runtime.jsxs)("div", {
+ 							const upload = uploads[attachment.id];
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/types/client/ComposerAttachments.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/types/client/ComposerAttachments.d.ts
+index 977853f948..34e30ff803 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/types/client/ComposerAttachments.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/types/client/ComposerAttachments.d.ts
+@@ -5,8 +5,8 @@ export interface ComposerAttachmentsInjected {
+     readonly readFileDrag: (transfer: DataTransfer) => File | undefined;
+ }
+ /** The owner share and locale seat the attachment rail reads from its slot props. */
+-type ComposerAttachmentsInput = Pick<ComposerAttachmentsProps, 'attachments' | 'canAcceptDrop' | 'onAddFiles' | 'onRemoveAttachment' | 'uploads' | 'onRetryFile' | 'uploadFailureText' | 'dropLimits' | 't'>;
++type ComposerAttachmentsInput = Pick<ComposerAttachmentsProps, 'attachments' | 'canAcceptDrop' | 'onAddFiles' | 'onRemoveAttachment' | 'uploads' | 'onRetryFile' | 'onOpenUploadedFile' | 'uploadFailureText' | 'dropLimits' | 't'>;
+ /** Draft image previews, pending-file cards, drop target, and original-image preview. */
+-export declare function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, uploadFailureText, dropLimits, t, readFileDrag, }: ComposerAttachmentsInput & InjectFace<ComposerAttachmentsInjected>): import("react").JSX.Element;
++export declare function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, onOpenUploadedFile, uploadFailureText, dropLimits, t, readFileDrag, }: ComposerAttachmentsInput & InjectFace<ComposerAttachmentsInjected>): import("react").JSX.Element;
+ export {};
+ //# sourceMappingURL=ComposerAttachments.d.ts.map
+\ No newline at end of file

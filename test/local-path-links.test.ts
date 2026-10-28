@@ -80,7 +80,7 @@ describe('assistant local path links', () => {
     expect(primitives).toContain('mention.kind === "folder" ? "folder"')
     expect(primitives).toContain('kind?: "file" | "folder"')
     expect(chat).toContain('options?.revealInFileManager === true')
-    expect(chat).toContain('openWorkspacePath({ path: hostPathForOpen(cwd, path) })')
+    expect(chat).toContain('openWorkspacePath({ path: hostPathForOpen(cwd, workingPath) })')
     expect(chat).toContain('if (!opened.ok) throw opened.error')
     expect(chat).toContain('requestOpenFile(fileOpenError.path, fileOpenError.options)')
     expect(chat).toContain('readonly revealInFileManager?: boolean')

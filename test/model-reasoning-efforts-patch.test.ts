@@ -215,7 +215,7 @@ describe('settings model reasoning effort field', () => {
       /props\.onChange\(nextReasoningEfforts\(props\.model, parseEffortList\(event\.target\.value\)\)\);/
     )
     expect(client).toContain(
-      'patch(index, { reasoningEfforts: next, reasoning: void 0 });'
+      'else next.reasoningEfforts = reasoningEfforts;'
     )
     expect(customProviderCard).toContain(
       'models: models.map((model) => ({ ...model }))'
@@ -279,8 +279,8 @@ describe('settings model reasoning effort field', () => {
     expect(patch).toContain('function configuredReasoningEfforts(model)')
     expect(patch).toContain('function reasoningEffortIds(model)')
     expect(patch).toContain('function nextReasoningEfforts(model, ids)')
-    expect(patch).toContain('reasoningEfforts: next')
-    expect(patch).toContain('reasoning: void 0')
+    expect(patch).toContain('else next.reasoningEfforts = reasoningEfforts;')
+    expect(patch).toContain('delete next.reasoning;')
     expect(patch).not.toContain(staleReasoningWrite)
     expect(patch).not.toContain(staleDefaultLocaleKey)
   })

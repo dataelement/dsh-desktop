@@ -34,7 +34,7 @@ async function fixture({ selected = false, patch = '[]\n' } = {}) {
   }) }
   const manager = Object.assign(Object.create(PluginManager.prototype), {
     profile: { dir, name: 'web', installAnchor: resolve('node_modules/@deepseek-ai/dsh/package.json') },
-    ownerContext: { get: name => name === 'profileBundlePackageBackend' ? backend : undefined, emit: vi.fn() },
+    ownerContext: { get: name => name === 'profileBundlePackageBackend' ? backend : undefined, emit: vi.fn(), parallel: vi.fn(async () => {}) },
     abort: new AbortController(),
     lockWaitMs: 1000,
     managementBundles: new Set(),

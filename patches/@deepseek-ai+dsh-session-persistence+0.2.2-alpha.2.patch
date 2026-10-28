@@ -20,10 +20,10 @@ index 5fa994b239..6358ccdf9b 100644
  //#endregion
  export { SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionFormatUnsupportedError, SessionHandleClosedError, SessionOwnershipLostError, SessionPersistence, SessionPersistence as default, SessionPersistenceCorruptionError, SessionPersistenceNotFoundError, SessionPersistenceRevision, SessionReadOnlyError, assertContiguous, assertStoredId, assertVersion, materializeAppendBatch, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents };
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts
-index fd44f3aa1f..beffee7aaa 100644
+index 051a6f48ac..c9316a0fb4 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts
-@@ -68,6 +68,11 @@ export interface SessionPersistenceStatOptions {
+@@ -75,6 +75,11 @@ export interface SessionPersistenceStatOptions {
      /** Optional cancellation for backend metadata reads. */
      readonly signal?: AbortSignal;
  }
@@ -35,7 +35,7 @@ index fd44f3aa1f..beffee7aaa 100644
  /** Options for {@link SessionPersistence.list}. */
  export interface SessionPersistenceListOptions {
      /** Optional cancellation for backend listing work. */
-@@ -157,6 +162,18 @@ export declare abstract class SessionPersistence extends Service {
+@@ -164,6 +169,18 @@ export declare abstract class SessionPersistence extends Service {
       * @returns one snapshot per stored session.
       */
      abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>;

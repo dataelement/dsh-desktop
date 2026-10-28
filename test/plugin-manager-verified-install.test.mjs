@@ -6,7 +6,7 @@ import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'
 import { TYPERT } from '@deepseek-ai/dsh-plugin-manager/typert'
 import remote from '@deepseek-ai/dsh-plugin-manager/remote'
 
-// Compatibility patch for manager 0.2.1-rc.2. Remove when upstream offers verified replacement.
+// Compatibility patch for manager 0.2.2-alpha.2. Remove when upstream offers verified replacement.
 const roots = []
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
@@ -34,7 +34,7 @@ async function fixture({ installed = false, backendSupported = true, target = 'd
   }
   const manager = Object.assign(Object.create(PluginManager.prototype), {
     profile: { dir, name: 'web', installAnchor: resolve('node_modules/@deepseek-ai/dsh/package.json') },
-    ownerContext: { get: name => name === 'profileBundlePackageBackend' ? backend : name === 'hmr' ? {} : undefined, emit: vi.fn() },
+    ownerContext: { get: name => name === 'profileBundlePackageBackend' ? backend : name === 'hmr' ? {} : undefined, emit: vi.fn(), parallel: vi.fn(async () => {}) },
     abort: new AbortController(), installs: new Map(), installedFrom: new Map(),
     managementBundles: new Set(), ownerEntryId: 'include:manager',
     bundleRows: vi.fn(() => []),

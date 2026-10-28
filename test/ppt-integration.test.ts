@@ -59,12 +59,12 @@ describe('DSH PPT built-in plugin', () => {
     }
   })
 
-  it('ships Harness 0.2.1-compatible peer ranges in both generated packages', async () => {
-    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1 || ^0.2.1-rc.1'
+  it('ships Harness 0.2.2-compatible peer ranges in both generated packages', async () => {
+    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-alpha.2'
     const core = JSON.parse((await artifact('core')).get('package/package.json')!.toString('utf8'))
     const adapter = JSON.parse((await artifact('adapter')).get('package/package.json')!.toString('utf8'))
-    expect(core.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
-    expect(adapter.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
+    expect(core.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4 || ^4.0.6-alpha.1')
+    expect(adapter.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4 || ^4.0.6-alpha.1')
 
     for (const [name, range] of Object.entries(core.peerDependencies as Record<string, string>)) {
       if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe(expected)

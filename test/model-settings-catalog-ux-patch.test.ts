@@ -42,7 +42,7 @@ function customProviderCardSource(client: string): string {
 }
 
 function modelListEditorSource(client: string): string {
-  const start = client.indexOf('function ModelListEditor(props) {')
+  const start = client.indexOf('function ModelRow(props) {')
   const end = client.indexOf('\n\t\t//#endregion', start)
 
   expect(start).toBeGreaterThanOrEqual(0)
@@ -80,7 +80,7 @@ describe('settings model catalog search', () => {
     const client = await readFile(settingsModelsClient, 'utf8')
 
     expect(client.match(/jsx\)\(ModelCatalogSearch/g)).toHaveLength(2)
-    expect(client.match(/visibleModels\.map\(\(\{ model, index \}\)/g)).toHaveLength(2)
+    expect(client.match(/visibleModels\.map\(\(\{ index \}\) => \{/g)).toHaveLength(2)
     expect(client).toContain('modelSearch: "Search models"')
     expect(client).toContain('modelSearch: "搜索模型"')
     expect(client).toContain('modelSearchEmpty: "没有找到匹配的模型。"')
@@ -173,15 +173,9 @@ describe('settings provider editor sticky actions', () => {
     expect(patch).toContain(
       'className: ModelsSection_module_css_default["addModelButton"]'
     )
-    expect(patch).toContain(
-      '_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular'
-    )
-    expect(patch).toContain(
-      '_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutlineRegular'
-    )
-    expect(patch).toContain(
-      '_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular'
-    )
+    // 0.2.2 owns row actions and stable row identities; the patch only adds capabilities/search.
+    expect(patch).toContain('ModelImageInputToggle, { model, field: props.inputField')
+    expect(patch).toContain('rowState.rows[index]')
     expect(patch).not.toMatch(/jsx\)\(Icon(?:Chevron|Trash)\b/)
   })
 })

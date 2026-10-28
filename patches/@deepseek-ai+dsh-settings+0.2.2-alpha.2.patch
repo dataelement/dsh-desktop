@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-settings/lib/index.js b/node_modules/@deepseek-ai/dsh-settings/lib/index.js
-index 5eb4ac6fb9..c920f2ec64 100644
+index 774e90b8c1..977318c5e6 100644
 --- a/node_modules/@deepseek-ai/dsh-settings/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-settings/lib/index.js
 @@ -510,6 +510,19 @@ var SettingsForms = class extends Service {

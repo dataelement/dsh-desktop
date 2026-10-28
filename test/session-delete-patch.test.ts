@@ -6,59 +6,52 @@ import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@de
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import '@deepseek-ai/dsh-session-persistence'
 import { describe, expect, it } from 'vitest'
+import { patchPath } from './patch-path'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
-// version tracks the patch-filename suffix; every Harness upgrade renames all of them
 const patchedPackages = [
   {
     name: 'dsh-session-persistence',
-    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['does not support deletion', 'delete(_id, _options)', 'Permanently remove one stored Session identity']
   },
   {
     name: 'dsh-session-persistence-jsonl',
-    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['async delete(id, options)', 'this.tracker.claimWrite(id)', 'this.coldLogMemo.delete(id)']
   },
   {
     name: 'dsh-workspace',
-    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['forgetSession(sessionId)', 'archivedSessionIds: state.archivedSessionIds.filter']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.2.1-rc.3',
     file: 'lib/index.js',
     markers: ['disposeOwned(sessionId)', 'await persistence.delete(request.sessionId)', 'workspaceRegistry.forgetSession(request.sessionId)']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.2.1-rc.3',
     file: 'lib/client.js',
     markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'uiWorkspace, which releases its main view before calling this method']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.2.1-rc.3',
     file: 'lib/typert.host.js',
     markers: ["id: '@deepseek-ai/dsh-api-session-controller#session/delete'", "method: 'delete'"]
   },
   {
     name: 'dsh-client-ui-workspace',
-    version: '0.2.1-rc.3',
     file: 'lib/client.js',
     markers: ['async deleteSession(sessionId)', 'this.clearMain()', 'const retention = this.sessions.retainInfo(sessionId)', 'timer = setTimeout(finish, 250)', 'await this.sessions.delete(sessionId)']
   }
 ] as const
 
 describe('permanent session deletion dependency patches', () => {
-  it.each(patchedPackages)('$name patch is reproducible and installed', async ({ name, file, markers, version }) => {
+  it.each(patchedPackages)('$name patch is reproducible and installed', async ({ name, file, markers }) => {
     const [patch, installed] = await Promise.all([
-      readFile(path.join(projectRoot, 'patches', `@deepseek-ai+${name}+${version}.patch`), 'utf8'),
+      readFile(patchPath(`@deepseek-ai/${name}`), 'utf8'),
       readFile(path.join(projectRoot, 'node_modules', '@deepseek-ai', name, file), 'utf8')
     ])
 
