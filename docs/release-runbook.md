@@ -9,7 +9,11 @@ The `Release desktop installers` workflow accepts a `mode` on `workflow_dispatch
 - `resign`: sign an existing `windows-x64-unsigned` artifact without rerunning the Windows build. Set `target=windows`, `unsigned_run_id` to its source release run, and `signed_version` to the exact version used for that artifact. The self-hosted signer downloads it directly and packages the signed installer.
 - `prerelease`: production-identity signed packages. Fill `prerelease_tag` with a non-`v` semver such as `2.1.0-rc.1`. Publish to GitHub `--prerelease` and ModelScope `releases/prerelease/` only when `target` is `all`. A single-platform prerelease signs that platform and skips publish.
 
-Official releases are still created by pushing a `v*` tag, not by filling the dispatch form. Do not put `v0.9.1` in `prerelease_tag` or `signed_version`.
+Official releases are created by pushing a `v*` tag. Do not put `v0.9.1` in `prerelease_tag` or `signed_version`.
+
+If publication fails after all native builds and signing succeed, dispatch `mode=publish`, `target=all`, `release_tag=vX.Y.Z` and `source_run_id=<original tag run>` from the reviewed recovery tooling on `main`. This reuses the three signed artifacts without rebuilding, moving the tag or changing installers. The workflow validates the original repository, tag SHA, release workflow, successful native/signing jobs and unexpired artifacts, then repeats asset checks and the Feishu human confirmation. Approval records retain the original release SHA and the new run/attempt. Source identity is rechecked before publication; a mismatch fails closed. Do not use `publish` to bypass failed packaging/signing or recover expired artifacts.
+
+Popup generation and Chinese-to-English translation use Copilot `--available-tools=` (an empty tool list). `--deny-tool '*'` is rejected by Copilot CLI 1.0.105 before model execution.
 
 ## Release history
 

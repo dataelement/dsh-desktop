@@ -247,7 +247,8 @@ class GenerationTests(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/release.yml').read_text(encoding='utf-8')
         command = next(line for line in workflow.splitlines()
                        if 'copilot -p' in line and 'popup-notes.json' in line)
-        self.assertIn("--deny-tool '*'", command)
+        self.assertIn("--available-tools=", command)
+        self.assertNotIn("--deny-tool", command)
 
 
 class TranslationTests(unittest.TestCase):
@@ -257,7 +258,7 @@ class TranslationTests(unittest.TestCase):
              patch.dict('os.environ', {'FEISHU_APP_SECRET': 'dummy', 'COPILOT_GITHUB_TOKEN': 'model-token'}):
             self.assertEqual(translate_chinese('- 修复 v1.2.3 保存'), {'zh': '- 修复 v1.2.3 保存', 'en': '- Fix v1.2.3 saving'})
         args, kwargs = run.call_args
-        self.assertEqual(args[0][-2:], ['--deny-tool', '*'])
+        self.assertEqual(args[0][-2:], ['--no-ask-user', '--available-tools='])
         self.assertNotIn('FEISHU_APP_SECRET', kwargs['env'])
         self.assertEqual(kwargs['timeout'], 120)
 

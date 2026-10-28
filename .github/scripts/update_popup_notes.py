@@ -53,7 +53,7 @@ def translate_chinese(chinese):
         'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'COPILOT_GITHUB_TOKEN', 'SYSTEMROOT'}}
     result = subprocess.run(['copilot', '-p', instruction, '-s', '--model',
                              os.environ.get('RELEASE_NOTES_MODEL', 'gpt-6-luna'),
-                             '--no-ask-user', '--deny-tool', '*'],
+                             '--no-ask-user', '--available-tools='],
                             env=env, capture_output=True, text=True, timeout=120, check=True)
     if len(result.stdout) > 12000:
         raise ValueError('Translation output too large')

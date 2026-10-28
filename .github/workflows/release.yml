@@ -20,7 +20,7 @@ on:
           - windows
           - macos
       mode:
-        description: development=unsigned Dev; signed=test packages and notify; resign=sign existing unsigned artifact; prerelease=publish
+        description: development=unsigned Dev; signed=test packages and notify; resign=sign existing unsigned artifact; prerelease=publish; publish=reuse signed official-tag artifacts
         required: false
         default: development
         type: choice
@@ -29,6 +29,15 @@ on:
           - signed
           - resign
           - prerelease
+          - publish
+      release_tag:
+        description: Existing official vX.Y.Z tag (publish recovery only; never created or moved)
+        required: false
+        type: string
+      source_run_id:
+        description: Original official tag release run with all signed artifacts (publish recovery only)
+        required: false
+        type: string
       prerelease_tag:
         description: Non-v semver tag for prerelease mode (e.g. 2.1.0-rc.1)
         required: false
@@ -86,10 +95,22 @@ jobs:
           PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
           SIGNED_VERSION: ${{ inputs.signed_version }}
           UNSIGNED_RUN_ID: ${{ inputs.unsigned_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
           set -euo pipefail
           semver_re='^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
           case "$MODE" in
+            publish)
+              if [ "$TARGET" != 'all' ] || ! [[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]] || ! [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::publish requires target=all, release_tag=vX.Y.Z and a positive source_run_id"
+                exit 1
+              fi
+              if [ -n "$PRERELEASE_TAG$SIGNED_VERSION$UNSIGNED_RUN_ID" ]; then
+                echo "::error::publish cannot be combined with prerelease_tag, signed_version or unsigned_run_id"
+                exit 1
+              fi
+              ;;
             prerelease)
               if [ -z "${PRERELEASE_TAG:-}" ]; then
                 echo "::error::prerelease mode requires prerelease_tag"
@@ -140,8 +161,8 @@ jobs:
     name: macOS ${{ matrix.label }}
     needs: validate-dispatch
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
+      inputs.mode != 'publish' && (startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos')))
     strategy:
       fail-fast: false
       matrix:
@@ -358,11 +379,11 @@ jobs:
     name: Windows x64
     needs: validate-dispatch
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
+      inputs.mode != 'publish' && (startsWith(github.ref, 'refs/tags/v') ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' &&
         inputs.mode != 'resign' &&
-        (inputs.target == 'all' || inputs.target == 'windows'))
+        (inputs.target == 'all' || inputs.target == 'windows')))
     runs-on: windows-2022
     steps:
       - name: Preserve shared asset fingerprints during checkout
@@ -659,7 +680,7 @@ jobs:
       contents: read
     if: >-
       always() &&
-      needs.validate-dispatch.result == 'success' &&
+      needs.validate-dispatch.result == 'success' && inputs.mode != 'publish' &&
       ((startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && needs.windows-x64.result == 'success' ||
        (github.event_name == 'workflow_dispatch' && inputs.mode == 'resign' && needs.windows-x64.result == 'skipped'))
     runs-on: [self-hosted, macOS, ARM64]
@@ -882,33 +903,64 @@ jobs:
       group: desktop-modelscope-release-history
       cancel-in-progress: false
     if: >-
-      always() &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      inputs.prerelease_tag == '' &&
-      needs.macos.result == 'success' &&
-      needs.sign-windows.result == 'success'
+      always() && needs.validate-dispatch.result == 'success' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.mode == 'publish') ||
+       (inputs.mode != 'publish' && startsWith(github.ref, 'refs/tags/v') &&
+        inputs.prerelease_tag == '' && needs.macos.result == 'success' &&
+        needs.sign-windows.result == 'success'))
     needs:
+      - validate-dispatch
       - macos
       - sign-windows
+    permissions:
+      actions: read
+      contents: write
     runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ inputs.mode == 'publish' && inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Validate original signed release source
+        if: inputs.mode == 'publish'
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: python3 .github/scripts/validate_publish_source.py
+      - name: Bind release identity
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$SOURCE_SHA"
+          echo "RELEASE_SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@v4
+        if: inputs.mode != 'publish'
         with:
           pattern: macos-*
           path: release-assets
           merge-multiple: true
       - uses: actions/download-artifact@v4
+        if: inputs.mode != 'publish'
         with:
           name: windows-x64
           path: release-assets
+      - name: Download verified signed artifacts from original run
+        if: inputs.mode == 'publish'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+          artifact-ids: ${{ steps.source.outputs.artifact_ids }}
+          path: release-assets
+          merge-multiple: true
       - name: Merge macOS update metadata
         run: |
           set -euo pipefail
@@ -922,10 +974,8 @@ jobs:
       - name: Verify release assets before publication
         run: |
           set -euo pipefail
-          node scripts/verify-release-assets.mjs release-assets "${GITHUB_REF_NAME#v}"
+          node scripts/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}"
       - name: Build GitHub release note prompt
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p .github/release-artifacts
@@ -936,7 +986,6 @@ jobs:
       - name: Generate GitHub release note
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           out=.github/release-artifacts/github-release-notes.md
@@ -965,12 +1014,11 @@ jobs:
       - name: Generate concise bilingual popup notes
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           test -n "$COPILOT_GITHUB_TOKEN" || { echo "::error::Missing MODELS_TOKEN; popup notes cannot be generated"; exit 1; }
           python3 .github/scripts/update_popup_notes.py prompt --tag "$RELEASE_TAG" --file .github/release-artifacts/popup-prompt.txt
-          copilot -p "$(cat .github/release-artifacts/popup-prompt.txt)" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user --deny-tool '*' > .github/release-artifacts/popup-notes.json
+          copilot -p "$(cat .github/release-artifacts/popup-prompt.txt)" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user --available-tools= > .github/release-artifacts/popup-notes.json
           python3 .github/scripts/update_popup_notes.py validate --file .github/release-artifacts/popup-notes.json
       - name: Install Feishu card callback transport
         run: |
@@ -985,12 +1033,9 @@ jobs:
           FEISHU_RELEASE_CHAT_ID: ${{ vars.FEISHU_RELEASE_CHAT_ID }}
           FEISHU_RELEASE_REVIEWER_ID: ${{ vars.FEISHU_RELEASE_REVIEWER_ID }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: '"$RUNNER_TEMP/release-review-env/bin/python" .github/scripts/confirm_popup_release.py'
+        run: 'env GITHUB_SHA="$RELEASE_SOURCE_SHA" "$RUNNER_TEMP/release-review-env/bin/python" .github/scripts/confirm_popup_release.py'
       - name: Inject approved popup notes into update feeds
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: node scripts/inject-popup-notes.mjs
+        run: env GITHUB_SHA="$RELEASE_SOURCE_SHA" node scripts/inject-popup-notes.mjs
       - name: Preserve release review evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -998,10 +1043,18 @@ jobs:
           name: release-review-${{ github.run_id }}-${{ github.run_attempt }}
           path: .github/release-artifacts/
           retention-days: 30
+      - name: Recheck immutable source after human approval
+        if: inputs.mode == 'publish'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate_publish_source.py > "$RUNNER_TEMP/rechecked-source.json"
+          python3 -c 'import json, os; assert json.load(open(os.environ["RUNNER_TEMP"] + "/rechecked-source.json"))["sha"] == os.environ["RELEASE_SOURCE_SHA"], "Release tag changed during approval"'
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           notes=.github/release-artifacts/github-release-notes.md
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -1030,7 +1083,7 @@ jobs:
           api = HubApi()
           token = os.environ["MODELSCOPE_TOKEN"]
           repo_id = os.environ["MODELSCOPE_REPO_ID"]
-          tag = os.environ.get("GITHUB_REF_NAME", "unknown")
+          tag = os.environ["RELEASE_TAG"]
           src = pathlib.Path("release-assets")
 
           version = tag[1:] if tag.startswith("v") else tag
@@ -1064,7 +1117,6 @@ jobs:
       - name: Configure initial 5% rollout on crash service
         env:
           CRASH_ADMIN_TOKEN: ${{ secrets.CRASH_ADMIN_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -z "${CRASH_ADMIN_TOKEN:-}" ]; then
@@ -1074,8 +1126,6 @@ jobs:
           node scripts/configure-rollout.mjs "${RELEASE_TAG#v}" 5
 
       - name: Build Feishu release note prompt
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p .github/release-artifacts
@@ -1087,7 +1137,6 @@ jobs:
       - name: Generate bilingual Feishu release note
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
@@ -1124,7 +1173,6 @@ jobs:
         if: success()
         env:
           FEISHU_RELEASE_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -z "${FEISHU_RELEASE_WEBHOOK:-}" ]; then
