@@ -45,3 +45,15 @@ remain retryable, and recovery/splash documents are not covered. Renderer
 navigation continues using the existing bounded recovery owner, including its
 `ERR_ABORTED` handling. Inspector/WebSocket errors do not select another transport;
 this change adds no HTTP fallback or compatibility-mode setting.
+
+## Failure ownership during repair
+
+The preload registers a per-document identity with main before reporting errors.
+Main binds it to the current navigation version. Both upstream boot failures and
+the host DOM fallback use that identity, including failures before boot data is
+ready. A repair restart advances the navigation version: delayed failures from
+the old document are acknowledged and ignored, while current errors retain their
+original message and recovery path. Repeated boot requests cannot rebind an old
+document to a new navigation. This applies to normal and Safe Mode shell pages;
+legacy HTTP pages retain their existing recovery path. Backend loading, Profile
+resolution and plugin disable policy are unchanged.

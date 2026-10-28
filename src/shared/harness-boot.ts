@@ -1,4 +1,5 @@
 export const HARNESS_SHELL_URL = 'dsh-desktop://harness/'
+export const HARNESS_BOOT_DOCUMENT_CHANNEL = 'harness:boot-document'
 export const HARNESS_BOOT_CHANNEL = 'harness:boot'
 export const HARNESS_BOOT_FAILED_CHANNEL = 'harness:boot-failed'
 
