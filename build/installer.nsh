@@ -67,7 +67,13 @@
     !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DshEnsureInstDirExists
 
     Function DshEnsureInstDirExists
+      dsh_target_mkdir_retry:
+      ClearErrors
       CreateDirectory "$INSTDIR"
+      ${If} ${Errors}
+        !insertmacro dshRetryInstallError "Could not create the installation directory:$\r$\n$INSTDIR$\r$\n$\r$\nCheck write permissions or select another directory. Retry tries again; Cancel returns to directory selection." "无法创建目标安装目录：$\r$\n$INSTDIR$\r$\n$\r$\n请检查写入权限或选择其他目录。“重试”将再次创建；“取消”将返回目录选择。" dsh_target_mkdir_retry
+        Abort
+      ${EndIf}
     FunctionEnd
 
     ; Accept any directory path the user types, even if it does not exist yet.

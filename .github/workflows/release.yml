@@ -473,6 +473,10 @@ jobs:
       - name: Build isolated Windows development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs
+      - name: Test installer failure cancellation on Windows
+        env:
+          DSH_TEST_NSIS: '1'
+        run: npx --no-install vitest run test/windows-installer-errors.test.ts
       - name: Smoke test packaged Windows Harness
         if: github.event_name == 'workflow_dispatch' && inputs.windows_smoke == true
         shell: pwsh
