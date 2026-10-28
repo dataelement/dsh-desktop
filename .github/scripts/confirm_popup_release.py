@@ -174,7 +174,7 @@ class Review:
             try:
                 validate({'zh': self.draft, 'en': self.draft})
             except ValueError:
-                self.change('editing', '内容不能为空；请输入 1–12 条以 - 开头的中文文案。')
+                self.change('editing', '内容不能为空；请输入 1–12 条中文文案，每条以减号和空格（- ）开头。')
                 return None
             if self.draft == self.notes['zh'].strip():
                 self.change('editing', '内容未修改，可取消编辑后直接确认并发布。')

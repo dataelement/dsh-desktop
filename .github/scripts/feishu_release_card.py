@@ -36,10 +36,12 @@ def row(buttons):
 def render(tag, notes, state, revision, draft='', error=''):
     elements = []
     if state == 'editing':
+        elements.append({'tag': 'markdown', 'content':
+                         '仅最初点击“重写”的人可以提交或取消；其他成员点击不会生效。如需换人，请由原编辑者先取消。'})
         elements.append({'tag': 'form', 'name': 'release_edit', 'vertical_spacing': '12px', 'elements': [
             {'tag': 'input', 'name': 'rewrite_zh', 'label': plain('中文发布文案'),
              'default_value': draft, 'input_type': 'multiline_text', 'rows': 6, 'max_length': 1000,
-             'placeholder': plain('每条以 - 开头；英文由系统翻译，无需填写')},
+             'placeholder': plain('每条以减号和空格（- ）开头；英文由系统翻译，无需填写')},
             row([button('提交并发布', 'submit', revision, True, True), button('取消', 'cancel', revision, form=True)])]})
         elements.append({'tag': 'markdown', 'text_size': 'notation', 'content':
                          escape(error or '提交即批准发布。系统生成英文并校验后自动继续，无需再次确认。')})

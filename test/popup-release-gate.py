@@ -136,9 +136,21 @@ class GateTests(unittest.TestCase):
 
     def test_another_user_cannot_submit_or_cancel_active_edit(self):
         self.review.handle(self.event('rewrite'))
+        revision, draft = self.review.revision, self.review.draft
         for action in ['submit', 'cancel']:
             self.assertIsNone(self.review.handle(self.event(action, '- 修改', 'other-human')))
         self.assertEqual(self.review.state, 'editing')
+        self.assertEqual((self.review.revision, self.review.draft), (revision, draft))
+        self.assertEqual(self.translations, [])
+        for error in ['', '文案格式错误']:
+            self.review.error = error
+            text = json.dumps(self.review.card(), ensure_ascii=False)
+            self.assertIn('仅最初点击“重写”的人可以提交或取消', text)
+            self.assertIn('其他成员点击不会生效', text)
+        self.review.handle(self.event('cancel'))
+        self.assertEqual(self.review.state, 'preview')
+        self.review.handle(self.event('rewrite', operator='other-human'))
+        self.assertIsNotNone(self.review.handle(self.event('submit', '- 修改', 'other-human')))
 
     def test_optional_reviewer(self):
         self.review.reviewer = 'reviewer'

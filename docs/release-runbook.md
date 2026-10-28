@@ -146,6 +146,10 @@ fallback. The review card initially shows only the bilingual preview and two act
 - Empty, malformed or unchanged submissions stay in the editor. Translation failure or
   timeout retains Chinese and offers resubmission; it never silently publishes the old text.
 
+If submit/cancel leaves the card unchanged, check who originally opened the editor: another
+member's actions are ignored. The original editor must cancel before a different member can
+open a new edit. Each Chinese bullet must start with a hyphen followed by a space (`- `).
+
 Callbacks must match the actual chat/message, current revision and optional configured
 reviewer. Event IDs are deduplicated, and revisions change on every transition so old buttons
 cannot release new text. The listener ACKs quickly; translation and API updates happen outside
