@@ -33,6 +33,25 @@ function pluginRealDirectory(profileNodeModules: string, pluginName: string): st
   }
 }
 
+/**
+ * Where a plugin component physically lives: nested under the plugin (npm
+ * layout), flat in the profile (shared tree), or shared beside the plugin in
+ * its generation directory — pnpm generation installs put every package under
+ * `<generation>/node_modules`, siblings of the plugin itself, so a CJS
+ * `require.resolve` probe cannot see them through the plugin's directory.
+ * Falls back to the flat profile path so a genuinely absent component keeps
+ * its historical "not installed in this profile" shape.
+ */
+function componentDirectory(pluginDir: string, profileNodeModules: string, componentName: string): string {
+  const nested = join(pluginDir, 'node_modules', componentName)
+  if (existsSync(nested)) return nested
+  const flat = join(profileNodeModules, componentName)
+  if (existsSync(flat)) return flat
+  const shared = join(dirname(pluginDir), componentName)
+  if (existsSync(shared)) return shared
+  return flat
+}
+
 export type ProfileCompatibilityIssueKind =
   | 'core-version-mismatch'
   | 'missing-client-module'
@@ -346,9 +365,11 @@ export async function inspectProfileCompatibility(
     const pluginDir = pluginRealDirectory(profileNodeModules, pluginName)
     for (const component of await pluginDependencyClosure(pluginDir, pluginName)) {
       const componentName = component.packageName
-      const componentManifest =
-        (await readManifest(join(pluginDir, 'node_modules', componentName, 'package.json'))) ??
-        (await readManifest(join(profileNodeModules, componentName, 'package.json')))
+      const componentDir =
+        componentName === pluginName
+          ? pluginDir
+          : componentDirectory(pluginDir, profileNodeModules, componentName)
+      const componentManifest = await readManifest(join(componentDir, 'package.json'))
       if (componentManifest === undefined) {
         if (
           !component.required ||
@@ -373,14 +394,6 @@ export async function inspectProfileCompatibility(
         continue
       }
 
-      // The component's own directory: inside the generation for a generation
-      // plugin, flat in the profile for a shared-tree one.
-      const componentDir =
-        componentName === pluginName
-          ? pluginDir
-          : existsSync(join(pluginDir, 'node_modules', componentName))
-            ? join(pluginDir, 'node_modules', componentName)
-            : join(profileNodeModules, componentName)
       for (const moduleSource of moduleSourcePaths(dirname(componentDir), basename(componentDir), componentManifest)) {
         let source: string
         try {
