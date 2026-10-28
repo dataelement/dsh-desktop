@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const NS = 'settings.imageGeneration'
     const zh = {
-      previewLoading: '正在加载图片…', previewRetry: '重新加载图片', generatedImage: '生成的图片', title: '生图工具', description: '接入生图，有生图能力的模型', provider: '服务商', bytedance: 'Seedream', openai: 'OpenAI',
+      previewLoading: '正在加载图片…', previewRetry: '重新加载图片', generatedImage: '生成的图片', title: '生图工具', description: '接入生图，有生图能力的模型', provider: '服务商', bytedance: 'Seedream', openai: 'OpenAI', xai: 'Grok Imagine (xAI)', agnes: 'Agnes',
       apiKey: 'API Key', keyPlaceholder: '输入服务商的 API Key', savedKey: '输入新 Key 可替换',
       advanced: '高级设置', model: '模型 ID', baseUrl: 'API 地址',
       save: '保存', saving: '正在校验…', saved: '已保存，连接校验通过', loading: '正在读取配置…', reload: '重新读取配置', readOnly: '当前配置由管理员管理。',
@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
       UNAVAILABLE: '连接失败，请检查网络和 API 地址后重新保存。', CANCELLED: '校验已取消，可以重新保存。', PROVIDER_ERROR: '服务商暂时不可用，请稍后重新保存。',
     }
     const en = {
-      previewLoading: 'Loading image…', previewRetry: 'Reload image', generatedImage: 'Generated image', title: 'Image generation', description: 'Connect models with image generation capabilities.', provider: 'Provider', bytedance: 'Seedream', openai: 'OpenAI',
+      previewLoading: 'Loading image…', previewRetry: 'Reload image', generatedImage: 'Generated image', title: 'Image generation', description: 'Connect models with image generation capabilities.', provider: 'Provider', bytedance: 'Seedream', openai: 'OpenAI', xai: 'Grok Imagine (xAI)', agnes: 'Agnes',
       apiKey: 'API Key', keyPlaceholder: 'Enter your provider API key', savedKey: 'Enter a new key to replace it',
       advanced: 'Advanced settings', model: 'Model ID', baseUrl: 'API URL',
       save: 'Save', saving: 'Validating…', saved: 'Saved. Connection validated.', loading: 'Loading settings…', reload: 'Reload settings', readOnly: 'These settings are managed by your administrator.',
@@ -67,10 +67,14 @@ window.__ModuleLoader__.load({
     const emptyDrafts = {
       bytedance: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedream-4-5-251128', configured: false, validation: null, apiKey: '' },
       openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-1.5', configured: false, validation: null, apiKey: '' },
+      xai: { baseUrl: 'https://api.x.ai/v1', model: 'grok-imagine-image', configured: false, validation: null, apiKey: '' },
+      agnes: { baseUrl: 'https://apihub.agnes-ai.com/v1', model: 'agnes-image-2.5-flash', configured: false, validation: null, apiKey: '' },
     }
     const emptyCatalogs = {
       openai: { source: 'builtin', canFetch: true, models: [emptyDrafts.openai.model] },
       bytedance: { source: 'builtin', canFetch: false, models: [emptyDrafts.bytedance.model] },
+      xai: { source: 'builtin', canFetch: false, models: [emptyDrafts.xai.model, 'grok-imagine-image-quality'] },
+      agnes: { source: 'builtin', canFetch: false, models: [emptyDrafts.agnes.model, 'agnes-image-2.1-flash', 'agnes-image-2.0-flash'] },
     }
     function ImageSelect({ name, label, value, options, onChange, disabled }) {
       const [open, setOpen] = React.useState(false)
@@ -240,7 +244,7 @@ window.__ModuleLoader__.load({
             !loadFailed && h('p', { className: 'dshImageHint' }, t(draft.configured ? 'configuredHint' : 'setupHint')),
             h('fieldset', { className: 'dshImageFields', disabled: busy || fetching || !writable },
               h(ImageSelect, { name: 'provider', label: t('provider'), value: provider, disabled: busy || fetching || !writable,
-                options: [{ id: 'bytedance', label: t('bytedance') }, { id: 'openai', label: t('openai') }],
+                options: [{ id: 'bytedance', label: t('bytedance') }, { id: 'openai', label: t('openai') }, { id: 'xai', label: t('xai') }, { id: 'agnes', label: t('agnes') }],
                 onChange: value => { setProvider(value); setStatus(''); setError('') } }),
               field('apiKey', 'apiKey', 'password', t(draft.configured ? 'savedKey' : 'keyPlaceholder')),
               h(ImageSelect, { name: 'model', label: t('modelSelect'), value: customModels[provider] || !catalog.models.includes(draft.model) ? '__custom__' : draft.model, disabled: busy || fetching || !writable,
