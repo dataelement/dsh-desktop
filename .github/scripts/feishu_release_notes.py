@@ -54,6 +54,12 @@ Content rules
 - Exclude admin tooling, internal analytics, refactoring, dependency upgrades,
   CI, and other internal work unless the evidence clearly shows a user-facing
   improvement.
+- Harness adaptation or upgrades are a user-facing exception to the dependency
+  upgrade exclusion: when supported by evidence, highlight Harness in an early,
+  distinct theme rather than hiding it under generic internal maintenance.
+  Include the Harness version only when confirmed, with the same version in both
+  languages. If only an upgrade is confirmed, state that fact alone; do not invent
+  compatibility, stability benefits, or verification. Omit this theme without evidence.
 - Combine related changes into 2 to 5 product themes. Do not retell commits one
   by one and do not use second-level numbering such as 1.1 or 1.2.
 - Give each theme one short, natural paragraph explaining the change and its
