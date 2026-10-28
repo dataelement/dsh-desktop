@@ -10,7 +10,7 @@ function enabled(job, inputs = {}, results = {}, ref = 'refs/heads/main', event 
   const expression = jobs[job].if.replace(/needs[.]([a-z0-9]+(?:-[a-z0-9]+)+)/g, (_, name) => `needs['${name}']`)
   return runInNewContext(expression, {
     github: { event_name: event, ref },
-    inputs: { mode: 'development', target: 'all', prerelease_tag: '', ...inputs },
+    inputs: { mode: 'development', target: 'all', version: '', ...inputs },
     needs: Object.fromEntries(['validate-dispatch', 'macos', 'windows-x64', 'sign-windows'].map(name =>
       [name, { result: results[name] ?? 'success' }])),
     always: () => true,
@@ -53,23 +53,31 @@ describe('official release publication recovery', () => {
     expect(enabled('windows-x64', { mode }, {}, 'refs/pull/1/merge', 'pull_request')).toBe(true)
   })
 
-  it('executes dispatch validation for old modes and rejects incomplete recovery requests', () => {
+  it('validates the five-field form for every operation and rejects mismatched inputs', () => {
     const script = jobs['validate-dispatch'].steps.find(item => item.name === 'Validate workflow_dispatch inputs').run
     const validate = overrides => spawnSync('bash', ['-c', script], { env: {
-      ...process.env, MODE: 'publish', TARGET: 'all', RELEASE_TAG: 'v1.2.3', SOURCE_RUN_ID: '42',
-      PRERELEASE_TAG: '', SIGNED_VERSION: '', UNSIGNED_RUN_ID: '', ...overrides
+      ...process.env, MODE: 'publish', TARGET: 'all', VERSION: 'v1.2.3', SOURCE_RUN_ID: '42',
+      CHECKS: 'standard', ...overrides
     }, encoding: 'utf8' }).status
     expect(validate({})).toBe(0)
-    for (const input of [{ TARGET: 'windows' }, { RELEASE_TAG: 'main' }, { SOURCE_RUN_ID: '' },
-      { SOURCE_RUN_ID: '0' }, { PRERELEASE_TAG: '1.2.3-rc.1' }, { SIGNED_VERSION: '1.2.3' }]) expect(validate(input)).toBe(1)
-    expect(validate({ MODE: 'development' })).toBe(0)
-    expect(validate({ MODE: 'signed', SIGNED_VERSION: '1.2.3-test.1' })).toBe(0)
-    expect(validate({ MODE: 'prerelease', PRERELEASE_TAG: '1.2.3-rc.1' })).toBe(0)
-    expect(validate({ MODE: 'resign', TARGET: 'windows', SIGNED_VERSION: '1.2.3', UNSIGNED_RUN_ID: '42' })).toBe(0)
+    for (const input of [{ TARGET: 'windows' }, { VERSION: 'main' }, { SOURCE_RUN_ID: '' },
+      { SOURCE_RUN_ID: '0' }, { VERSION: '1.2.3' }, { CHECKS: 'invalid' }, { MODE: 'unknown' }]) expect(validate(input)).toBe(1)
+    expect(validate({ MODE: 'development', VERSION: '', SOURCE_RUN_ID: '' })).toBe(0)
+    expect(validate({ MODE: 'development' })).toBe(1)
+    for (const mode of ['signed', 'prerelease']) {
+      expect(validate({ MODE: mode, VERSION: '1.2.3-test.1', SOURCE_RUN_ID: '' })).toBe(0)
+      expect(validate({ MODE: mode, VERSION: '', SOURCE_RUN_ID: '' })).toBe(1)
+      expect(validate({ MODE: mode, SOURCE_RUN_ID: '' })).toBe(1)
+      expect(validate({ MODE: mode, VERSION: '1.2.3' })).toBe(1)
+    }
+    expect(validate({ MODE: 'resign', TARGET: 'windows', VERSION: '1.2.3' })).toBe(0)
+    expect(validate({ MODE: 'resign', VERSION: '1.2.3' })).toBe(1)
+    expect(validate({ MODE: 'resign', TARGET: 'windows', VERSION: '1.2.3', SOURCE_RUN_ID: '0' })).toBe(1)
+    expect(validate({ CHECKS: 'extended' })).toBe(0)
   })
 
   it('binds release consumers to validated identity and retains the new run approval', () => {
-    expect(jobs.publish.env.RELEASE_TAG).toContain('inputs.release_tag')
+    expect(jobs.publish.env.RELEASE_TAG).toContain('inputs.version')
     for (const item of jobs.publish.steps) expect(item.env?.RELEASE_TAG).toBeUndefined()
     for (const name of ['Wait for Feishu release confirmation', 'Inject approved popup notes into update feeds']) {
       expect(step(name).run).toContain('env GITHUB_SHA="$RELEASE_SOURCE_SHA"')

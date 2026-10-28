@@ -417,8 +417,8 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain("Invoke-HarnessRpc 'workspace/create'")
     expect(workflow).toContain("Invoke-HarnessRpc 'session/create'")
     expect(workflow).toContain('Harness process exited after workspace and session creation.')
-    expect(workflow).toContain('prerelease_tag:')
-    expect(workflow).toContain('signed_version:')
+    expect(workflow).toContain('version:')
+    expect(workflow).not.toContain('signed_version:')
     expect(workflow).toContain('mode:')
     expect(workflow).toContain('--prerelease')
     expect(workflow).toContain('name: windows-x64-dev')
@@ -605,9 +605,10 @@ describe('prerelease parity workflow', () => {
   const load = () =>
     readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')
 
-  it('replaces the windows-only prerelease input with a general one', async () => {
+  it('uses a single version input for all dispatch modes', async () => {
     const yml = await load()
-    expect(yml).toContain('prerelease_tag:')
+    expect(yml).toContain('version:')
+    expect(yml).not.toContain('prerelease_tag:')
     expect(yml).not.toContain('windows_prerelease_tag')
     expect(yml).not.toContain('Publish validated Windows development pre-release')
   })
@@ -633,21 +634,21 @@ describe('prerelease parity workflow', () => {
     expect(yml).toContain('  - signed')
     expect(yml).toContain('  - prerelease')
     expect(yml).toContain('validate-dispatch:')
-    expect(yml).toContain('signed mode requires signed_version')
+    expect(yml).toContain('requires a non-v semver version')
     expect(windowsIf).toContain("inputs.target == 'all' || inputs.target == 'windows'")
     expect(windowsIf).not.toContain('prerelease_tag')
     expect(signWindows).toContain("inputs.mode == 'signed'")
     expect(signWindows).toContain("inputs.mode == 'prerelease'")
     expect(publishJob).toContain("startsWith(github.ref, 'refs/tags/v')")
-    expect(publishJob).toContain("inputs.prerelease_tag == ''")
+    expect(publishJob).toContain("inputs.version == ''")
     expect(publishPrerelease).toContain("inputs.mode == 'prerelease'")
     expect(publishPrerelease).toContain("inputs.target == 'all'")
-    expect(publishPrerelease).toContain("inputs.prerelease_tag != ''")
+    expect(publishPrerelease).toContain("inputs.version != ''")
     expect(
       yml.match(
-        /npm version --no-git-tag-version --allow-same-version "\$\{\{ inputs\.signed_version \}\}"/g
+        /npm version --no-git-tag-version --allow-same-version "\$\{\{ inputs\.version \}\}"/g
       )
-    ).toHaveLength(3)
+    ).toHaveLength(6)
   })
 
   it('mirrors a prerelease to an isolated ModelScope directory', async () => {

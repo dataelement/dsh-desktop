@@ -28,6 +28,20 @@ function scheduled(job, name, input) {
 }
 
 describe('release CI scheduling', () => {
+  it('shows only five fields with safe build defaults', () => {
+    const inputs = workflow.on.workflow_dispatch.inputs
+    expect(Object.keys(inputs)).toEqual(['mode', 'target', 'version', 'source_run_id', 'checks'])
+    expect(inputs.mode.default).toBe('development')
+    expect(inputs.target.default).toBe('all')
+    expect(inputs.checks.default).toBe('standard')
+    expect(inputs.version.required).toBe(false)
+    expect(inputs.source_run_id.required).toBe(false)
+    const text = readFileSync('.github/workflows/release.yml', 'utf8')
+    for (const [, field] of text.matchAll(/inputs\.([a-z_]+)/g)) {
+      expect(inputs, `dispatch consumer: ${field}`).toHaveProperty(field)
+    }
+  })
+
   it('has no standalone preparation/validation dependency before native builds', () => {
     expect(jobs['prepare-shared-runtime-assets']).toBeUndefined()
     expect(jobs['validate-shared-runtime']).toBeUndefined()
@@ -52,7 +66,7 @@ describe('release CI scheduling', () => {
   })
 
   it('allows explicitly repeating the full suite on Windows when diagnosing all-platform builds', () => {
-    const input = { target: 'all', windows_full_tests: true }
+    const input = { target: 'all', checks: 'extended' }
     expect(scheduled('macos', 'Run shared tests on macOS', input)).toBe(true)
     expect(scheduled('windows-x64', 'Run complete Windows test suite', input)).toBe(true)
     expect(scheduled('windows-x64', 'Run focused Windows regressions', input)).toBe(false)
@@ -71,16 +85,16 @@ describe('release CI scheduling', () => {
   })
 
   it('only schedules extra desktop probes when explicitly requested', () => {
-    for (const [name, flag] of [
-      ['Smoke test packaged Windows Harness', 'windows_smoke'],
-      ['Check recovery UI on native Windows at three display scales', 'windows_recovery_ui']
+    for (const name of [
+      'Smoke test packaged Windows Harness',
+      'Check recovery UI on native Windows at three display scales'
     ]) {
       const probe = step('windows-x64', name)
-      expect(workflow.on.workflow_dispatch.inputs[flag].default).toBe(false)
+      expect(workflow.on.workflow_dispatch.inputs.checks.default).toBe('standard')
       expect(enabled(probe.if)).toBe(false)
-      expect(enabled(probe.if, { [flag]: true })).toBe(true)
-      expect(enabled(probe.if, { event: 'pull_request', [flag]: true })).toBe(false)
-      expect(enabled(probe.if, { event: 'push', [flag]: true })).toBe(false)
+      expect(enabled(probe.if, { checks: 'extended' })).toBe(true)
+      expect(enabled(probe.if, { event: 'pull_request', checks: 'extended' })).toBe(false)
+      expect(enabled(probe.if, { event: 'push', checks: 'extended' })).toBe(false)
     }
     expect(jobs['windows-x64'].steps.some(candidate => candidate.run?.includes('probe-electron-node-runtime'))).toBe(false)
     const afterPack = readFileSync('scripts/after-pack.cjs', 'utf8')
@@ -119,10 +133,10 @@ describe('release CI scheduling', () => {
     const archive = step('windows-x64', 'Archive and verify unpacked Windows payload')
     expect(enabled(archive.if)).toBe(false)
     expect(enabled(archive.if, { event: 'pull_request' })).toBe(false)
-    for (const input of [{ mode: 'signed' }, { mode: 'prerelease' }, { windows_archive_check: true }, { event: 'push', ref: 'refs/tags/v1.0.0' }]) {
+    for (const input of [{ mode: 'signed' }, { mode: 'prerelease' }, { checks: 'extended' }, { event: 'push', ref: 'refs/tags/v1.0.0' }]) {
       expect(enabled(archive.if, input)).toBe(true)
     }
-    expect(workflow.on.workflow_dispatch.inputs.windows_archive_check.default).toBe(false)
+    expect(workflow.on.workflow_dispatch.inputs.checks.default).toBe('standard')
   })
 
   it('resigns existing artifacts without rebuilding either native platform', () => {

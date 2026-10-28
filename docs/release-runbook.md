@@ -2,18 +2,34 @@
 
 ## Manual workflow dispatch
 
-The `Release desktop installers` workflow accepts a `mode` on `workflow_dispatch`. `target` is always honored: `macos` does not start Windows jobs, and `windows` does not start macOS jobs.
+The `Release desktop installers` Run workflow form has five inputs:
 
-- `development` (default): unsigned Dev packages, no signing, no publish.
-- `signed`: production-identity signed packages only. Fill `signed_version` with a non-`v` semver such as `0.9.2-test.1`. Artifacts stay on the workflow run. After the selected platforms pass signing/notarization, CI uploads DMG/EXE installers and `test-changes.md` to ModelScope `test/<signed_version>/<run_id>/` and sends a Feishu test-build notification with public download links. The card groups features, fixes, improvements and other changes from commit subjects and descriptions since the nearest reachable version tag, with the baseline tag, build SHA and a code comparison link. Both `v` and `V` version tags are recognized; a build exactly on a tag compares against the preceding tag, and a first build without tags lists its full history. Long lists are abbreviated in the card with a link to the complete Markdown file. `MODELSCOPE_TOKEN` and `FEISHU_RELEASE_WEBHOOK` are required; history generation, upload, public-download verification, or notification failure fails the job. GitHub Release and rollout do not run. These builds use the production app id and update feed, so an installed copy may later see the live `latest` channel.
-- `resign`: sign an existing `windows-x64-unsigned` artifact without rerunning the Windows build. Set `target=windows`, `unsigned_run_id` to its source release run, and `signed_version` to the exact version used for that artifact. The self-hosted signer downloads it directly and packages the signed installer.
-- `prerelease`: production-identity signed packages. Fill `prerelease_tag` with a non-`v` semver such as `2.1.0-rc.1`. Publish to GitHub `--prerelease` and ModelScope `releases/prerelease/` only when `target` is `all`. A single-platform prerelease signs that platform and skips publish.
+| Input | Use |
+| --- | --- |
+| `mode` | `development` (default), `signed`, `prerelease`, `publish`, or `resign` |
+| `target` | `all` (default), `macos`, or `windows`; recovery publication requires `all`, resign requires `windows` |
+| `version` | Leave empty for development. Use non-`v` semver for signed/prerelease/resign; use the existing `vX.Y.Z` tag for publish |
+| `source_run_id` | Original workflow run ID, required only for publish/resign |
+| `checks` | `standard` (default) or `extended` (adds Windows full tests, three-scale recovery UI, packaged desktop smoke and development archive verification) |
 
-Official releases are created by pushing a `v*` tag. Do not put `v0.9.1` in `prerelease_tag` or `signed_version`.
+- `development`: unsigned Dev packages, no signing or publication; uses the checked-out package version. Leave version and source empty.
+- `signed`: production-identity signed test packages, e.g. `version=0.13.0-test.4`. After the selected platforms pass signing/notarization, CI uploads installers and `test-changes.md` to ModelScope `test/<version>/<run_id>/` and sends a Feishu test-build notification. The note groups changes since the nearest reachable version tag, with baseline, build SHA and a comparison link; long lists link to the complete Markdown file. Both `v` and `V` tags are recognized, and a build exactly on a tag compares against the preceding tag. `MODELSCOPE_TOKEN` and `FEISHU_RELEASE_WEBHOOK` are required; generation, upload, verification or notification failure fails the job. GitHub Release and rollout do not run. These builds use the production app id/update feed, so installed copies may later see the live `latest` channel.
+- `prerelease`: production-identity signed packages, e.g. `version=2.1.0-rc.1`. Publish to GitHub `--prerelease` and ModelScope `releases/prerelease/` only with `target=all`. Single-platform runs sign that platform without publication.
+- `resign`: reuse an existing `windows-x64-unsigned` artifact. Set `target=windows`, `source_run_id` to its original run and `version` to its exact version. Only signing/repackaging runs.
+- `publish`: recover official publication after all native builds and signing succeed. For example, from reviewed tooling on `main`:
 
-If publication fails after all native builds and signing succeed, dispatch `mode=publish`, `target=all`, `release_tag=vX.Y.Z` and `source_run_id=<original tag run>` from the reviewed recovery tooling on `main`. This reuses the three signed artifacts without rebuilding, moving the tag or changing installers. The workflow validates the original repository, tag SHA, release workflow, successful native/signing jobs and unexpired artifacts, then repeats asset checks and the Feishu human confirmation. Approval records retain the original release SHA and the new run/attempt. Source identity is rechecked before publication; a mismatch fails closed. Do not use `publish` to bypass failed packaging/signing or recover expired artifacts.
+  ```bash
+  gh workflow run release.yml --ref main -f mode=publish -f target=all \
+    -f version=v0.13.0 -f source_run_id=40618960397
+  ```
 
-Popup generation and Chinese-to-English translation use Copilot `--available-tools=` (an empty tool list). `--deny-tool '*'` is rejected by Copilot CLI 1.0.105 before model execution.
+  The workflow validates repository, unchanged tag SHA, original workflow, successful native/signing jobs and unexpired artifacts; reuses the three signed artifacts; repeats asset checks and Feishu human confirmation. Approval binds the original release SHA to the new run/attempt, and source identity is rechecked before publication. It never moves tags or changes installers. Do not use it to bypass failed packaging/signing or recover expired artifacts.
+
+Official releases still start by pushing a `v*` tag. The form is not an alternative to creating the official tag. `target` is honored: macOS-only runs do not build Windows and Windows-only runs do not build macOS.
+
+The former `signed_version`, `prerelease_tag` and `release_tag` fields are now `version`; `unsigned_run_id` is now `source_run_id`. Update saved CLI/API dispatch commands accordingly. The four `windows_*` diagnostic booleans are replaced by `checks=extended`; individual diagnostic toggles are no longer exposed.
+
+Popup generation and Chinese-to-English translation use Copilot `--available-tools=` (empty tool list) and `--disable-builtin-mcps`. A bare `--deny-tool '*'` is rejected by Copilot CLI 1.0.105 before model execution.
 
 ## Release history
 
@@ -25,11 +41,11 @@ An unavailable or malformed existing index, including a 404, fails the publicati
 
 Windows signing depends only on dispatch validation and the Windows build, not on macOS packaging or notarization. Once the unsigned Windows artifact is ready, the UKey signer can run while macOS jobs continue. Native builds start after dispatch validation; there is no separate preparation or validation job. The existing `npm run build` prepares Office/PPT assets and compiles the application. Cache-backed generation avoids paying another runner's checkout/install/transfer overhead for a PPT build measured at about eleven seconds.
 
-Common tests and typecheck run once on a platform already being built: Apple Silicon for `target=all`, release tags and macOS-only dispatch; Windows for Windows-only dispatch and PRs. Intel does not repeat common tests. When macOS owns the common suite, Windows uses `vitest.windows.config.ts` for platform regressions. `windows_full_tests=true` explicitly permits a second full suite on Windows during all-platform diagnosis. The existing full-suite exclusions for expensive document/PPT fidelity tests and the separate PPT font workflow are unchanged.
+Common tests and typecheck run once on a platform already being built: Apple Silicon for `target=all`, release tags and macOS-only dispatch; Windows for Windows-only dispatch and PRs. Intel does not repeat common tests. When macOS owns the common suite, Windows uses `vitest.windows.config.ts` for platform regressions. `checks=extended` explicitly permits a second full suite on Windows during all-platform diagnosis. The existing full-suite exclusions for expensive document/PPT fidelity tests and the separate PPT font workflow are unchanged.
 
 Both macOS architectures and Windows retain native packaging, `verify-target` and afterPack gates. Generated Office templates/PPT assets use a cross-OS cache keyed by source/lockfile inputs; only generated portable assets are shared, never node_modules or a target Python/Office runtime. A cold or stale generated cache is rebuilt by the native build; the existing fingerprints remain authoritative. Parallel cold jobs may each generate assets before the first cache is saved. This is preferable to a permanently serialized extra preparation stage for every build.
 
-The redundant source Harness startup probe is removed. Each package still runs the mandatory afterPack gates for Harness/bootstrap, dependency closure, terminal/speech natives, PPT and Office. The additional Windows desktop launch/workspace/session smoke is distinct from those gates and remains available with `windows_smoke=true`; three-scale recovery UI checks use `windows_recovery_ui=true`. Both switches default to false and apply only to manual dispatch. These extra checks are not scheduled for PRs or release tags; enable them when qualifying startup/recovery/runtime changes. These gates do not establish model-request or real user UI acceptance.
+The redundant source Harness startup probe is removed. Each package still runs the mandatory afterPack gates for Harness/bootstrap, dependency closure, terminal/speech natives, PPT and Office. The additional Windows desktop launch/workspace/session smoke and three-scale recovery UI checks are distinct from those gates; both are enabled by `checks=extended`. Standard validation is the default; extended checks apply only to manual dispatch. These extra checks are not scheduled for PRs or release tags; choose extended validation when qualifying startup/recovery/runtime changes. These gates do not establish model-request or real user UI acceptance.
 
 Office runtime downloads remain cached per native target, separately from generated template/PPT content. Windows checkout disables automatic CRLF conversion before checkout: the Office/PPT fingerprint hashes input bytes, so line-ending conversion would otherwise invalidate shared assets and regenerate previews. Native build jobs restore Electron downloads before `npm ci`; Electron 43's `electron_config_cache` and the builder's `ELECTRON_CACHE` point to the same restored directory. Windows additionally caches electron-builder downloads. Dependency installs keep postinstall enabled, use `--prefer-offline --no-audit --no-fund --timing`, and upload only structured npm timing JSON. The install-time advisory report was informational, not a failing security gate; audit findings should be handled separately from repeated build installs. npm's download cache avoids refetching packages but does not preserve `node_modules` or skip extraction, integrity verification or patch replay. Cache visibility remains scoped by GitHub to the current/default/base branch and platform; an identically named cache on an unrelated feature branch is not reusable. Local `npm test` and `package:*` commands still prepare their own inputs. Already compressed installer artifacts use `compression-level: 0` during upload.
 
@@ -111,7 +127,7 @@ Do not share this application connection with another consumer: Feishu may distr
 callbacks across connections. Formal publishes remain serialized by the existing workflow
 concurrency group. Missing credentials, a failed connection, or a 60-minute approval timeout
 blocks publication. A successful WebSocket connection does not prove the callback subscription
-is enabled; verify that setting in the console before production use.
+is enabled; verify that setting in the console before production use. If card buttons report that callbacks are not configured, open **Callback Configuration** (not Event Configuration), save persistent-connection mode, add **Card callback communication (`card.action.trigger`)**, and publish a new bot app version so the setting takes effect. A local SDK test or a ready WebSocket alone cannot validate this console setting.
 
 After packaging, CI generates `zh` and `en` bullet lists (1–12 lines, at most 1000 characters
 each, matching the card input limit). Invalid generation blocks release; there is no invented
