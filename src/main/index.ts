@@ -39,6 +39,7 @@ import { HarnessShell } from './harness-shell'
 import { HARNESS_SHELL_URL, HARNESS_BOOT_CHANNEL, HARNESS_BOOT_FAILED_CHANNEL, isHarnessShellUrl, isHarnessBootPage } from '../shared/harness-boot'
 import {
   DEFAULT_HARNESS_PORT,
+  extractDuplicateAgentPresetId,
   extractFailureCause,
   extractPluginFailureReferences,
   HarnessRuntime,
@@ -113,7 +114,7 @@ import {
   pruneUnresolvableProfileBundles
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
-import { migrateLegacyAgentPresets } from './state/legacy-preset-migration'
+import { disableMigratedLegacyPreset, migrateLegacyAgentPresets } from './state/legacy-preset-migration'
 import { WindowStateManager } from './state/window-state'
 import {
   isProjectedGenerationPlugin,
@@ -286,6 +287,8 @@ let webImportActionResolver: ((action: WebImportAction) => void) | undefined
 let mainWindowNavigationVersion = 0
 let rendererPluginFailureLogs: string[] = []
 let pluginRecoveryRemovedPlugins: string[] = []
+/** Migrated preset rows auto-disabled because a plugin registers the same id at runtime. */
+let autoDisabledPresetIds = new Set<string>()
 /** Plugins a deferred migration has not moved yet; their legacy copies may be manifest-only. */
 let migrationPendingPlugins = new Set<string>()
 let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
@@ -2292,6 +2295,19 @@ async function showPluginRecovery(options?: {
         timeoutMs: waitForRendererEvidence ? PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS : 0
       })
       if (!developmentDemoUnknown) detection.plugins = evidence.targets(detection.plugins, removedPlugins)
+
+      // A preset the user's plugin registers at runtime can also live as a row the
+      // legacy migration generated; the duplicate id aborts startup and the row
+      // regenerates nothing only if it stays present. Disable that one row and
+      // relaunch: the plugin's own registration keeps the preset alive (#814).
+      const duplicatePresetId = extractDuplicateAgentPresetId(detection.logs)
+      if (duplicatePresetId && !autoDisabledPresetIds.has(duplicatePresetId)) {
+        if (await disableMigratedLegacyPreset(dshHome, duplicatePresetId, (line) => runtime.note(line))) {
+          autoDisabledPresetIds.add(duplicatePresetId)
+          await launchWithFreshEvidence()
+          continue
+        }
+      }
       // A plugin the deferred migration left manifest-only is not broken; removing
       // it would delete a working plugin because of an install-time failure. A
       // pending plugin whose legacy copy is installed can still be the culprit.

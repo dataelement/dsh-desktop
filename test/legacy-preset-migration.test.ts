@@ -2,10 +2,14 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import jsYaml from 'js-yaml'
 import { applyEntryPatches, entryListSchema } from '@deepseek-ai/cordis-plugin-include'
-import { migrateLegacyAgentPresets } from '../src/main/state/legacy-preset-migration'
+import {
+  disableMigratedLegacyPreset,
+  migrateLegacyAgentPresets
+} from '../src/main/state/legacy-preset-migration'
+import { extractDuplicateAgentPresetId } from '../src/main/runtime/harness-runtime'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { resolveTestNodeExecutable } from './node-executable'
 
@@ -148,3 +152,88 @@ it('publishes a migrated custom preset through the real Harness web registry', a
     await runtime.stop()
   }
 }, 45_000)
+
+describe('disableMigratedLegacyPreset', () => {
+  const homes: string[] = []
+  afterEach(async () => {
+    await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
+    homes.length = 0
+  })
+
+  async function patchHome(patch: string): Promise<string> {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-preset-disable-'))
+    homes.push(home)
+    await mkdir(join(home, 'profiles', 'web'), { recursive: true })
+    await writeFile(join(home, 'profiles', 'web', 'cordis.patch.yml'), patch)
+    return home
+  }
+
+  it('disables only the named migrated preset row and stays idempotent', async () => {
+    const home = await patchHome(`# dsh-desktop legacy presets begin
+- insert:
+    - id: preset-aitoearn
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: aitoearn
+        plugins:
+          - aitoearn-plugin
+- insert:
+    - id: preset-other
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: other
+        plugins:
+          - other-plugin
+# dsh-desktop legacy presets end
+`)
+    const changedFirst = await disableMigratedLegacyPreset(home, 'aitoearn', () => {})
+    expect(changedFirst).toBe(true)
+    const first = await readFile(join(home, 'profiles', 'web', 'cordis.patch.yml'), 'utf8')
+    expect(first).toContain('    - id: preset-aitoearn\n      disabled: true')
+    expect(first).not.toContain('preset-other\n      disabled')
+
+    const changedSecond = await disableMigratedLegacyPreset(home, 'aitoearn', () => {})
+    expect(changedSecond).toBe(false)
+    const second = await readFile(join(home, 'profiles', 'web', 'cordis.patch.yml'), 'utf8')
+    expect(second.match(/disabled: true/g)).toHaveLength(1)
+  })
+
+  it('disables a built-in-style preset row at its own field indent', async () => {
+    const home = await patchHome(`# dsh-desktop legacy presets begin
+- id: preset-standard
+  config:
+    id: standard
+    plugins:
+      - standard-plugin
+# dsh-desktop legacy presets end
+`)
+    expect(await disableMigratedLegacyPreset(home, 'standard', () => {})).toBe(true)
+    const text = await readFile(join(home, 'profiles', 'web', 'cordis.patch.yml'), 'utf8')
+    expect(text).toContain('- id: preset-standard\n  disabled: true')
+  })
+
+  it('leaves rows outside the migration block alone', async () => {
+    const home = await patchHome(`- id: preset-aitoearn
+  config:
+    id: aitoearn
+# dsh-desktop legacy presets begin
+- insert:
+    - id: preset-real
+      name: '@deepseek-ai/dsh-agent-preset'
+# dsh-desktop legacy presets end
+`)
+    expect(await disableMigratedLegacyPreset(home, 'aitoearn', () => {})).toBe(false)
+  })
+})
+
+describe('extractDuplicateAgentPresetId', () => {
+  it('reads the duplicate preset id from the latest stderr attempt logs', () => {
+    const logs = [
+      '[stderr] older attempt: noise',
+      '[2026-10-27T00:00:00.000Z] attempt marker',
+      '[stderr] error agent-preset: Error: Duplicate agent preset: aitoearn'
+    ]
+    expect(extractDuplicateAgentPresetId(logs)).toBe('aitoearn')
+    expect(extractDuplicateAgentPresetId(['[stderr] unrelated'])).toBeUndefined()
+  })
+})

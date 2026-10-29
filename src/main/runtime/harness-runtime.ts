@@ -1024,6 +1024,17 @@ export function extractOffendingPlugins(logLines: readonly string[]): string[] {
   return extractPluginReferences(logLines, isActionablePluginReference)
 }
 
+export function extractDuplicateAgentPresetId(
+  logLines: readonly string[]
+): string | undefined {
+  for (const line of latestHarnessAttemptLogs(logLines)) {
+    if (!line.startsWith('[stderr] ')) continue
+    const match = line.slice(8).match(/Duplicate agent preset:\s*([^\s"']+)/i)
+    if (match?.[1]) return match[1].trim()
+  }
+  return undefined
+}
+
 export function extractDuplicateLoaderEntryId(
   logLines: readonly string[]
 ): string | undefined {
