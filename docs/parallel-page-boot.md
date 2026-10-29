@@ -22,10 +22,10 @@ Verification: behavior tests for local serving, traversal and origin rejection, 
 ## Startup failure cover
 
 The host cover applies during HTML bootstrapping and client activation, on both
-`dsh-desktop://harness/` and legacy loopback HTTP pages. It uses packaged Desktop
-loader images and a preload-owned shadow root because plugin slots are not yet
-available. It does not change Profile composition, module resolution, bootstrap
-ordering, API routing, or the normal/Safe Mode backend anchors.
+`dsh-desktop://harness/` and legacy loopback HTTP pages. It paints the same
+`startup-whale.gif` as the startup page, in a preload-owned shadow root,
+because plugin slots are not yet available. It does not change Profile composition,
+module resolution, bootstrap ordering, API routing, or the normal/Safe Mode backend anchors.
 
 A mounted sidebar releases the cover only when no startup failure is pending.
 The desktop boot-failure bridge holds the cover before sending the original
