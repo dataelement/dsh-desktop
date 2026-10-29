@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index d411b8cedd..af1df0c633 100644
+index d411b8c..0a44491 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -64,6 +64,38 @@ window.__ModuleLoader__.load({
@@ -284,7 +284,18 @@ index d411b8cedd..af1df0c633 100644
  					}),
  					(0, react_jsx_runtime.jsxs)("button", {
  						type: "button",
-@@ -1027,6 +1200,7 @@ window.__ModuleLoader__.load({
+@@ -985,7 +1158,9 @@ window.__ModuleLoader__.load({
+ 				...candidate.name === void 0 ? {} : { name: candidate.name },
+ 				...candidate.contextWindow === void 0 ? {} : { contextWindow: candidate.contextWindow },
+ 				...candidate.maxTokens === void 0 ? {} : { maxTokens: candidate.maxTokens },
+-				...candidate.inputModalities === void 0 ? {} : { input: [...candidate.inputModalities] }
++				...candidate.inputModalities === void 0 ? {} : { input: [...candidate.inputModalities] },
++				...candidate.reasoningEfforts === void 0 ? {} : { reasoningEfforts: candidate.reasoningEfforts === false ? false : { ...candidate.reasoningEfforts } },
++				...candidate.reasoningCompat === void 0 ? {} : { compat: { ...candidate.reasoningCompat } }
+ 			};
+ 		}
+ 		/**
+@@ -1027,6 +1202,7 @@ window.__ModuleLoader__.load({
  			const [flipped, setFlipped] = (0, react.useState)(/* @__PURE__ */ new Set());
  			const [candidateQuery, setCandidateQuery] = (0, react.useState)("");
  			const rowState = useModelRows(models, onChange, disabled);
@@ -292,7 +303,7 @@ index d411b8cedd..af1df0c633 100644
  			const editCapacity = (index, field, text) => {
  				rowState.edit(index, field, text);
  				patch(index, { [field]: parseCapacity(text) });
-@@ -1155,16 +1329,18 @@ window.__ModuleLoader__.load({
+@@ -1155,16 +1331,18 @@ window.__ModuleLoader__.load({
  							})
  						]
  					}),
@@ -313,7 +324,7 @@ index d411b8cedd..af1df0c633 100644
  							rowKey: key,
  							order,
  							model,
-@@ -1203,7 +1379,7 @@ window.__ModuleLoader__.load({
+@@ -1203,7 +1381,7 @@ window.__ModuleLoader__.load({
  								onChange(models.filter((_model, at) => at !== index));
  								rowState.forget(new Set([index]));
  							}
@@ -322,7 +333,7 @@ index d411b8cedd..af1df0c633 100644
  					}),
  					(0, react_jsx_runtime.jsxs)("button", {
  						type: "button",
-@@ -1652,10 +1828,10 @@ window.__ModuleLoader__.load({
+@@ -1652,10 +1830,10 @@ window.__ModuleLoader__.load({
  		* credential seam with a raw regular expression the user cannot act on.
  		*/
  		const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -336,7 +347,7 @@ index d411b8cedd..af1df0c633 100644
  			} catch {
  				return false;
  			}
-@@ -1674,6 +1850,7 @@ window.__ModuleLoader__.load({
+@@ -1674,6 +1852,7 @@ window.__ModuleLoader__.load({
  			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
  			const [keyDraft, setKeyDraft] = (0, react.useState)("");
  			const [models, setModels] = (0, react.useState)([]);
@@ -344,7 +355,7 @@ index d411b8cedd..af1df0c633 100644
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [listBusy, setListBusy] = (0, react.useState)(false);
  			(0, react.useEffect)(() => {
-@@ -1741,6 +1918,11 @@ window.__ModuleLoader__.load({
+@@ -1741,6 +1920,11 @@ window.__ModuleLoader__.load({
  					setBusy(false);
  				}
  			};
@@ -356,7 +367,7 @@ index d411b8cedd..af1df0c633 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["editor"],
  				children: [
-@@ -1853,6 +2035,8 @@ window.__ModuleLoader__.load({
+@@ -1853,6 +2037,8 @@ window.__ModuleLoader__.load({
  						models,
  						onChange: setModels,
  						reasoningLevels,
@@ -365,7 +376,7 @@ index d411b8cedd..af1df0c633 100644
  						probe: {
  							settingsNs: NS$1,
  							baseURL: normalizedBaseURL,
-@@ -1873,18 +2057,27 @@ window.__ModuleLoader__.load({
+@@ -1873,18 +2059,27 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: hint
  					}),
@@ -405,7 +416,7 @@ index d411b8cedd..af1df0c633 100644
  					})
  				]
  			});
-@@ -1978,6 +2171,8 @@ window.__ModuleLoader__.load({
+@@ -1978,6 +2173,8 @@ window.__ModuleLoader__.load({
  				onBusyChange
  			]);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -414,7 +425,7 @@ index d411b8cedd..af1df0c633 100644
  			const [committedOriginal, setCommittedOriginal] = (0, react.useState)(() => schema.getPath(namespace.user, settingsPath));
  			const [expectedRevision, setExpectedRevision] = (0, react.useState)(() => namespace.revision);
  			const root = (0, react.useMemo)(() => schema.rehydrate(namespace.schema), [namespace.schema, schema]);
-@@ -2017,6 +2212,7 @@ window.__ModuleLoader__.load({
+@@ -2017,6 +2214,7 @@ window.__ModuleLoader__.load({
  			const shownKeyFailure = (props.credentialRequired === true && keyDraft.length > 0 && keyValue.length === 0 ? "keyRequired" : void 0) ?? keyFailure;
  			const probeApi = stringAt(draft, "api") ?? stringAt(fallback, "api");
  			const probeBaseURL = stringAt(draft, "baseURL") ?? stringAt(fallback, "baseURL");
@@ -422,7 +433,7 @@ index d411b8cedd..af1df0c633 100644
  			const probe = {
  				settingsNs: namespace.ns,
  				provider: props.provider,
-@@ -2031,6 +2227,7 @@ window.__ModuleLoader__.load({
+@@ -2031,6 +2229,7 @@ window.__ModuleLoader__.load({
  			* outside the card. Ops name only the fields this card can see.
  			*/
  			const applyOnce = async () => {
@@ -430,7 +441,7 @@ index d411b8cedd..af1df0c633 100644
  				const ns = namespace.ns;
  				const next = layout === "pi-ai" && stringAt(draft, "apiKeyEnv") === void 0 && stringAt(fallback, "apiKeyEnv") === void 0 && keyValue.length > 0 ? schema.setPath(draft, ["apiKeyEnv"], keyRef) : draft;
  				if (props.credentialOnly !== true) {
-@@ -2094,6 +2291,15 @@ window.__ModuleLoader__.load({
+@@ -2094,6 +2293,15 @@ window.__ModuleLoader__.load({
  			const inheritedModels = () => {
  				return schema.getPath(namespace.base, [...settingsPath, "models"]) ?? schema.nodeAtPath(root, [...settingsPath, "models"])?.meta.default;
  			};
@@ -446,7 +457,7 @@ index d411b8cedd..af1df0c633 100644
  			/**
  			* The curated fields of one known adapter family. The family arrives
  			* narrowed so the per-family branches below are total: an unknown namespace
-@@ -2143,6 +2349,8 @@ window.__ModuleLoader__.load({
+@@ -2143,6 +2351,8 @@ window.__ModuleLoader__.load({
  				const catalogProps = {
  					models,
  					overridden: modelsOverridden,
@@ -455,7 +466,7 @@ index d411b8cedd..af1df0c633 100644
  					t,
  					disabled,
  					onChange: (next) => {
-@@ -2185,6 +2393,10 @@ window.__ModuleLoader__.load({
+@@ -2185,6 +2395,10 @@ window.__ModuleLoader__.load({
  					]
  				}), props.credentialOnly === true ? null : (0, react_jsx_runtime.jsxs)("details", {
  					className: ModelsSection_module_css_default["customized"],
@@ -466,7 +477,7 @@ index d411b8cedd..af1df0c633 100644
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -2224,7 +2436,7 @@ window.__ModuleLoader__.load({
+@@ -2224,7 +2438,7 @@ window.__ModuleLoader__.load({
  										"aria-label": t("baseUrl"),
  										disabled,
  										onChange: (event) => {
@@ -475,7 +486,7 @@ index d411b8cedd..af1df0c633 100644
  										}
  									}),
  									endpointHint === void 0 ? null : (0, react_jsx_runtime.jsx)("span", {
-@@ -2274,8 +2486,23 @@ window.__ModuleLoader__.load({
+@@ -2274,8 +2488,23 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -500,7 +511,7 @@ index d411b8cedd..af1df0c633 100644
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -2295,24 +2522,20 @@ window.__ModuleLoader__.load({
+@@ -2295,24 +2524,20 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["error"],
  						children: failure
  					}) : null,
@@ -535,7 +546,7 @@ index d411b8cedd..af1df0c633 100644
  					})
  				]
  			});
-@@ -2426,6 +2649,26 @@ window.__ModuleLoader__.load({
+@@ -2426,6 +2651,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -562,7 +573,7 @@ index d411b8cedd..af1df0c633 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -2476,6 +2719,7 @@ window.__ModuleLoader__.load({
+@@ -2476,6 +2721,7 @@ window.__ModuleLoader__.load({
  			const [deleting, setDeleting] = (0, react.useState)(false);
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
@@ -570,7 +581,7 @@ index d411b8cedd..af1df0c633 100644
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -2573,6 +2817,10 @@ window.__ModuleLoader__.load({
+@@ -2573,6 +2819,10 @@ window.__ModuleLoader__.load({
  					row,
  					namespace
  				}];
@@ -581,7 +592,7 @@ index d411b8cedd..af1df0c633 100644
  			});
  			const piAi = state.namespaces.get("llm-pi-ai");
  			const protocols = protocolChoices(piAi, schema);
-@@ -2995,9 +3243,24 @@ window.__ModuleLoader__.load({
+@@ -2995,9 +3245,24 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -608,7 +619,7 @@ index d411b8cedd..af1df0c633 100644
  		* @param props - settings-shell owner state and Models feature dependencies.
  		* @returns the onboarding modal or null when onboarding needs no intervention.
  		*/
-@@ -3006,6 +3269,16 @@ window.__ModuleLoader__.load({
+@@ -3006,6 +3271,16 @@ window.__ModuleLoader__.load({
  			const [apiKey, setApiKey] = (0, react.useState)(explicit);
  			const state = useModels((snapshot) => snapshot);
  			const readiness = onboardingReadiness(state);
@@ -625,7 +636,7 @@ index d411b8cedd..af1df0c633 100644
  			(0, react.useEffect)(() => {
  				if ((automatic || explicit) && state.status === "idle") controller.load();
  			}, [
-@@ -3358,6 +3631,8 @@ window.__ModuleLoader__.load({
+@@ -3358,6 +3633,8 @@ window.__ModuleLoader__.load({
  			addCatalogExhausted: "Every catalog provider is already configured.",
  			addCustomUnavailable: "No API protocol is available to declare.",
  			provider: "Provider",
@@ -634,7 +645,7 @@ index d411b8cedd..af1df0c633 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -3416,6 +3691,14 @@ window.__ModuleLoader__.load({
+@@ -3416,6 +3693,14 @@ window.__ModuleLoader__.load({
  			modelReasoningAdd: "Add level",
  			modelReasoningRemove: "Delete level",
  			modelReasoningOffValuePlaceholder: "Turns reasoning off",
@@ -649,7 +660,7 @@ index d411b8cedd..af1df0c633 100644
  			addModel: "Add model",
  			removeModel: "Delete model",
  			reorderModel: "Reorder model",
-@@ -3467,10 +3750,14 @@ window.__ModuleLoader__.load({
+@@ -3467,10 +3752,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 0.2 is still in preview, and many areas need continued improvement and refinement. We welcome feedback and suggestions from all developers and users. The new desktop app now targets a broad range of users, while developer-related advanced features can be enabled in the settings. DeepSeek Harness’s product features and plugin APIs are expected to continue rapid iteration and evolution, and will gradually stabilize over time.\n\nWe look forward to exploring the limits of intelligence together with users and developers around the world, building on open-source, reusable, and composable infrastructure. We welcome everyone to bring their ideas to life with DeepSeek Harness and participate in the community to enrich the plugin ecosystem.",
  			welcomeContinue: "Continue",
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -667,7 +678,7 @@ index d411b8cedd..af1df0c633 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -3556,6 +3843,14 @@ window.__ModuleLoader__.load({
+@@ -3556,6 +3845,14 @@ window.__ModuleLoader__.load({
  			modelReasoningAdd: "添加档位",
  			modelReasoningRemove: "删除档位",
  			modelReasoningOffValuePlaceholder: "关闭思考",
@@ -682,7 +693,7 @@ index d411b8cedd..af1df0c633 100644
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			reorderModel: "调整模型顺序",
-@@ -3607,10 +3902,14 @@ window.__ModuleLoader__.load({
+@@ -3607,10 +3904,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 目前的 0.2 版本仍处于预览阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者和用户的反馈建议。现在，新的桌面端面向广泛用户，开发者相关的进阶功能可在配置中开启使用。预计 DeepSeek Harness 的产品功能以及插件 API 都会继续快速迭代、持续演化，并逐渐趋于稳定。\n\n我们期待与全球用户和开发者一起，在开源、可复用、可组合的基础设施之上，共同探索智能上限。欢迎大家用 DeepSeek Harness 将想法变成现实，与社区一起丰富插件生态。",
  			welcomeContinue: "继续",
  			welcomeError: "暂时无法保存确认状态，请重试。",
@@ -700,7 +711,7 @@ index d411b8cedd..af1df0c633 100644
  			onboardingSaving: "保存中…",
  			keyRequired: "请输入 API 密钥后继续。"
  		};
-@@ -5461,22 +5760,7 @@ window.__ModuleLoader__.load({
+@@ -5461,22 +5762,7 @@ window.__ModuleLoader__.load({
  					}
  				}
  			}, ModelsSection));

@@ -1,3 +1,4 @@
+import { renderUpdateNotes } from './update-notes-view'
 import { popupReleaseNotes } from '../shared/update-release-notes'
 import { ipcRenderer } from 'electron'
 import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
@@ -153,8 +154,11 @@ function render(): void {
   if (centered && status.phase === 'available') {
     const label = element('p', 'notes-label')
     label.textContent = locale === 'zh' ? '更新日志' : 'What’s new'
-    const notes = element('p', 'release-notes')
-    notes.textContent = releaseNotes || (locale === 'zh' ? '此版本暂无更新日志。' : 'No release notes for this version.')
+    const notes = element('div', 'release-notes')
+    notes.tabIndex = 0
+    notes.setAttribute('role', 'region')
+    notes.setAttribute('aria-label', label.textContent)
+    renderUpdateNotes(notes, releaseNotes || (locale === 'zh' ? '此版本暂无更新日志。' : 'No release notes for this version.'))
     body.append(label, notes)
   }
   if (!centered && status.phase === 'available') {
@@ -522,7 +526,23 @@ const styles = `
   .title,.about-title { margin:16px 0 8px; font-size:18px; line-height:26px; font-weight:600; }
   .notification .title { margin:0; font-size:14px; line-height:20px; }
   .description,.about-line,.release-notes,.notes-label,.current-version { margin:8px 0; font-size:13px; line-height:20px; color:var(--dsw-alias-label-secondary,#666b73); }
-  .release-notes { white-space:pre-wrap; max-height:180px; overflow:auto; }
+  .release-notes { max-height:min(280px,35vh); overflow:auto; overflow-wrap:anywhere; padding-right:4px; overscroll-behavior:contain; }
+  .release-notes p { margin:0 0 8px; white-space:pre-wrap; }
+  .release-notes h3 { margin:16px 0 8px; font-size:13px; color:var(--dsw-alias-label-primary,inherit); }
+  .release-notes ul,.release-notes ol { margin:8px 0 12px; padding-left:22px; }
+  .release-notes li { margin:5px 0; padding-left:2px; }
+  .release-notes code { font-size:12px; padding:1px 4px; border-radius:4px; background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12)); }
+  .release-notes > :first-child { margin-top:0; }
+  .release-notes > :last-child { margin-bottom:0; }
+  .card,.release-notes,.version-picker-container { scrollbar-width:thin; scrollbar-color:var(--dsw-alias-border-l2,#b4b7be) transparent; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar { width:6px; height:6px; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-track { background:transparent; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-thumb { background:var(--dsw-alias-border-l2,#b4b7be); border-radius:999px; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-thumb:hover { background:var(--dsw-alias-label-secondary,#888d96); }
+  /* Hide only the visual scrollbar; preserve wheel, touch and keyboard scrolling. */
+  .release-notes { scrollbar-width:none; }
+  .release-notes::-webkit-scrollbar { display:none; width:0; height:0; }
+  .release-notes:focus-visible { outline:2px solid var(--dsw-alias-label-secondary,#888d96); outline-offset:3px; border-radius:4px; }
   .notes-label { margin-top:24px; }
   .current-version { text-align:center; font-size:12px; margin:14px 0 0; }
   button { appearance:none; border:0; font:inherit; cursor:pointer; border-radius:6px; min-height:32px; }
