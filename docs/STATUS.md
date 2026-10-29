@@ -1,3 +1,14 @@
+## macOS 删除会话确认弹窗中文化 — 2026-10-29
+
+- 基线：远端 `dataelement/dsh-desktop:main@7eac110fd516908771e4026bdb46a5ac92eae456`，包版本 `0.12.1`，实际安装 Harness `0.2.1-rc.3` / Electron `43.0.0`。远端 `v0.9.0` / `V0.9.0` 查询结果为空；本次沿用已定位问题的社区当前主分支。独立工作树 `.worktrees/dsh-desktop-session-delete-locale`，分支 `codex/session-delete-locale`；历史 v0.9.0 集成目录工作区干净。
+- 根因：删除入口向 `window.confirm` 传入本地化正文，Electron 为确认框生成固定的 `OK` / `Cancel` 按钮。现由现有 `shell.overlay` 根级列表出口承载 Harness `Modal`，菜单、正文、按钮、进度和失败提示统一使用 locale 服务；删除接口继续使用 `uiWorkspace.deleteSession`。
+- 菜单关闭后先归还焦点，再打开确认框；默认焦点位于“取消”。删除期间锁定重复提交与关闭，失败保留错误及重试入口；插件卸载清理请求与订阅，迟到结果仅对有效请求生效。
+- 扩展契约：复用 `shell.overlay`（list / root）与 `sidebar.workspaces.session.menu.item`，每个插件实例维护一份删除请求；原菜单关闭、会话行卸载后，根级弹窗继续管理请求。产品依赖、原生权限与第三方补丁沿用基线。
+- 自动验证：新增 `test/session-delete-locale.test.mjs` 的 8 项行为回归通过，覆盖中英文、应用语言与页面语言差异、打开后的语言切换、标题安全渲染、菜单卸载、焦点、取消、进行中锁定、同步/异步失败重试与插件卸载。旧代码运行这 8 项回归全部失败；`test/desktop-client-ui.test.ts` 同步增加根级弹窗注册断言。相关 23 项回归、类型检查、生产构建及差异检查通过。
+- 完整回归：最终运行 2,846 项通过、5 项条件跳过，Office 预览导出 1 项超时；上一轮出现 Excel 重算失败。包含这两组 Office 测试及全部删除会话相关测试的最终串行复测 46 项全部通过。
+- macOS 验证：使用临时用户目录的 Electron 43.0.0 / arm64 窗口，加载本次插件及已安装的真实 Menu / Modal / Button 实现，验证中文按钮、会话标题、取消、Tab 焦点约束、Esc、焦点返回、英文切换、删除中锁定、失败重试及成功关闭。后端删除使用受控替身；社区用户安装包、真实会话及 Windows 验收待执行。
+- 本地证据保存在总工作区 `outputs/dsh-session-delete-locale-20261029/`。本次交付为本地代码与验证，发布和安装包更新待后续安排。
+
 ## Windows 导入苹方 PPT 的字体与字重解析 — 2026-10-15
 
 - 基线：核实远端 `V0.12.0@8ade5b7cc3d391fe881dd2af64a8648e771653f5`；工作树 `codex/windows-ppt-font-layout`，Harness `0.2.0-rc.2`、Kit `0.1.3`、Electron `43.0.0`。

@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const React = require('react')
-    const { BrandWordmark, FishLogo, MenuItemButton, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { BrandWordmark, FishLogo, MenuItemButton, Tooltip, Modal, Button } = require('@deepseek-ai/dsh-client-ui-primitives')
 
     // Tight bounds of the mark inside its 1000x1000 source artwork.
     const BRAND_MARK_VIEWBOX = { x: 42, y: 218, width: 898, height: 564 }
@@ -59,23 +59,73 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState, deleteSession }) {
+    const DELETE_SESSION_NS = 'dsh-desktop-delete-session'
+
+    // The shell owns the request: closing a row menu unmounts its occupants.
+    function createSessionDeletion(deleteSession) {
+      let state = null
+      let active = true
+      const listeners = new Set()
+      const publish = (next) => {
+        state = next
+        listeners.forEach(listener => listener())
+      }
+      return {
+        subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
+        getSnapshot: () => state,
+        request: (sessionId, displayTitle) => {
+          if (active && state === null) publish({ sessionId, displayTitle, busy: false, error: null })
+        },
+        close: () => { if (state && state.busy === false) publish(null) },
+        confirm: async () => {
+          if (state === null || state.busy || active === false) return
+          const pending = { ...state, busy: true, error: null }
+          publish(pending)
+          try {
+            await deleteSession(pending.sessionId)
+            if (active && state === pending) publish(null)
+          } catch (reason) {
+            if (active && state === pending) {
+              publish({ ...pending, busy: false, error: reason instanceof Error ? reason.message : String(reason) })
+            }
+          }
+        },
+        dispose: () => { active = false; publish(null); listeners.clear() }
+      }
+    }
+
+    function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState, deletion, t }) {
       const [, setMenuOpen] = useMenuOpenState()
-      const chinese = document.documentElement.lang?.toLowerCase().startsWith('zh')
-      const label = chinese ? '永久删除会话' : 'Delete session permanently'
-      const warning = chinese
-        ? `确定删除“${displayTitle || sessionId}”？工作区文件会保留。此操作无法撤销。`
-        : `Delete “${displayTitle || sessionId}”? Workspace files are kept. This can’t be undone.`
       return React.createElement(MenuItemButton, {
         danger: true,
         onSelect: () => {
           setMenuOpen(false)
-          if (!window.confirm(warning)) return
-          void Promise.resolve().then(() => deleteSession(sessionId)).catch((reason) => {
-            window.alert(reason instanceof Error ? reason.message : String(reason))
-          })
+          // Let Menu restore its trigger focus before Modal captures return focus.
+          setTimeout(() => deletion.request(sessionId, displayTitle), 0)
         }
-      }, label)
+      }, t('menu'))
+    }
+
+    function DeleteSessionDialog({ deletion, t }) {
+      const request = React.useSyncExternalStore(deletion.subscribe, deletion.getSnapshot)
+      return React.createElement(Modal, {
+        open: request !== null,
+        onClose: deletion.close,
+        title: t('title'),
+        closeLabel: t('close'),
+        description: request ? t('description', { name: request.displayTitle || request.sessionId }) : '',
+        footer: request && React.createElement(React.Fragment, null,
+          React.createElement(Button, {
+            variant: 'outline', disabled: request.busy, onClick: deletion.close,
+            'data-modal-autofocus': true
+          }, t('cancel')),
+          React.createElement(Button, {
+            variant: 'primary', disabled: request.busy, onClick: deletion.confirm
+          }, t(request.busy ? 'pending' : 'confirm')))
+      }, request?.busy && React.createElement('p', { role: 'status' }, t('pending')),
+      request && request.error !== null && React.createElement('div', { role: 'alert' },
+        React.createElement('p', null, t('failed')),
+        React.createElement('p', null, request.error)))
     }
 
     function OpenSessionFolderMenuItem({ sessionId, useMenuOpenState, openInFinder }) {
@@ -195,6 +245,29 @@ window.__ModuleLoader__.load({
 
     const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace']
     function apply(ctx) {
+      ctx.effect(() => ctx.locale.register(DELETE_SESSION_NS, {
+        zh: {
+          menu: '永久删除会话', title: '删除会话', close: '关闭', cancel: '取消', confirm: '删除会话',
+          description: '确定删除“{name}”？工作区文件会保留。此操作无法撤销。',
+          pending: '正在删除会话…', failed: '删除失败，请重试。'
+        },
+        en: {
+          menu: 'Delete session permanently', title: 'Delete session', close: 'Close', cancel: 'Cancel', confirm: 'Delete session',
+          description: 'Delete “{name}”? Workspace files are kept. This can’t be undone.',
+          pending: 'Deleting session…', failed: 'Deletion failed. Please try again.'
+        }
+      }))
+      const deletion = createSessionDeletion((sessionId) => {
+        const workspace = ctx.get('uiWorkspace')
+        if (!workspace) throw new Error('Workspace navigation is unavailable')
+        return workspace.deleteSession(sessionId)
+      })
+      ctx.effect(() => () => deletion.dispose())
+      const deletionText = ctx.locale.bind(DELETE_SESSION_NS)
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name: 'shell.overlay', id: 'desktop-delete-session-dialog', locale: DELETE_SESSION_NS,
+        inject: () => ({ deletion, t: deletionText })
+      }, DeleteSessionDialog))
       ctx.effect(() => ctx.locale.register(ENTERPRISE_NS, {
         zh: { learnMore: '了解企业版' }, en: { learnMore: 'Explore Enterprise' }
       }))
@@ -298,13 +371,8 @@ window.__ModuleLoader__.load({
           name: 'sidebar.workspaces.session.menu.item',
           id: 'desktop-delete-session',
           order: 900,
-          inject: () => ({
-            deleteSession: (sessionId) => {
-              const workspace = ctx.get('uiWorkspace')
-              if (!workspace) throw new Error('Workspace navigation is unavailable')
-              return workspace.deleteSession(sessionId)
-            }
-          })
+          locale: DELETE_SESSION_NS,
+          inject: () => ({ deletion, t: deletionText })
         }, DeleteSessionMenuItem)
       )
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
