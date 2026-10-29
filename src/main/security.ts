@@ -1,7 +1,8 @@
 import { shell, type BrowserWindow } from 'electron'
-import { canGrantWindowPermission, isTrustedAppUrl } from './security-policy'
+import { isTrustedAppUrl } from './security-policy'
+import { installWindowPermissions } from './window-permissions'
 
-export function secureWindow(window: Pick<BrowserWindow, 'webContents'>): void {
+export function secureWindow(window: Pick<BrowserWindow, 'webContents'>, allowMicrophone = false): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isTrustedAppUrl(url)) return { action: 'allow' }
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
@@ -15,19 +16,5 @@ export function secureWindow(window: Pick<BrowserWindow, 'webContents'>): void {
   })
 
   window.webContents.on('will-attach-webview', (event) => event.preventDefault())
-  window.webContents.session.setPermissionCheckHandler(
-    (_webContents, permission, requestingOrigin, details) =>
-      canGrantWindowPermission(
-        permission,
-        details.requestingUrl ?? requestingOrigin,
-        details.isMainFrame
-      )
-  )
-  window.webContents.session.setPermissionRequestHandler(
-    (_webContents, permission, callback, details) => {
-      callback(
-        canGrantWindowPermission(permission, details.requestingUrl, details.isMainFrame)
-      )
-    }
-  )
+  installWindowPermissions(window.webContents.session, window.webContents, allowMicrophone)
 }

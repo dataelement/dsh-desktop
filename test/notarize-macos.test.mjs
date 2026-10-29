@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import afterSign, { notarizeWithStapleRetry } from '../scripts/notarize-macos.mjs'
+import { verifyMacOSMicrophonePermissions } from '../scripts/verify-macos-permissions.mjs'
+
+vi.mock('../scripts/verify-macos-permissions.mjs', () => ({ verifyMacOSMicrophonePermissions: vi.fn() }))
 
 const options = { appPath: '/fixture/DSH Desktop.app' }
 const stapleError = new Error('Failed to staple your application with code: 68\nThe network connection was lost.')
@@ -133,6 +136,21 @@ describe('macOS app notarization', () => {
     } finally {
       process.env = saved
     }
+  })
+
+  it('rejects a signed bundle missing microphone permissions before Apple submission', async () => {
+    const saved = { ...process.env }
+    try {
+      process.env.APPLE_API_KEY = '/fixture/key.p8'
+      process.env.APPLE_API_KEY_ID = 'fixture-key'
+      process.env.APPLE_API_ISSUER = 'fixture-issuer'
+      vi.mocked(verifyMacOSMicrophonePermissions).mockRejectedValueOnce(new Error('missing audio-input'))
+      await expect(afterSign({
+        electronPlatformName: 'darwin', appOutDir: '/fixture',
+        packager: { appInfo: { productFilename: 'DSH Desktop' } }
+      })).rejects.toThrow('missing audio-input')
+      expect(verifyMacOSMicrophonePermissions).toHaveBeenCalledWith('/fixture/DSH Desktop.app')
+    } finally { process.env = saved }
   })
 
   it('uses the explicit hook with built-in notarization disabled to avoid duplicate submissions', async () => {

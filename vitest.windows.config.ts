@@ -22,6 +22,7 @@ export default defineConfig({
       'test/office-templates.test.mjs',
       'test/node-pty-*.test.{ts,js,mjs}',
       'test/runtime.test.ts',
+      'test/window-permissions.test.mjs',
       'test/harness-node-entry.test.ts',
       'test/launch-root.test.ts',
       'test/desktop-plugin-closure.test.ts',
