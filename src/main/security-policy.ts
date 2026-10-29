@@ -1,3 +1,5 @@
+import { isHarnessShellUrl } from '../shared/harness-boot'
+
 function isHarnessUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl)
@@ -26,9 +28,11 @@ export function canGrantWindowPermission(
   isMainFrame: boolean
 ): boolean {
   return (
-    (permission === 'clipboard-sanitized-write' || permission === 'notifications') &&
+    (permission === 'clipboard-sanitized-write' ||
+      permission === 'notifications' ||
+      permission === 'media') &&
     isMainFrame &&
     requestingUrl !== undefined &&
-    isHarnessUrl(requestingUrl)
+    (isHarnessUrl(requestingUrl) || isHarnessShellUrl(requestingUrl))
   )
 }

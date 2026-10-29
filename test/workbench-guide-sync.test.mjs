@@ -6,19 +6,42 @@
 
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../packages/dsh-desktop-workbenches/index.js'
 import { renderDocumentPage } from '../scripts/workbench-doc-page.mjs'
-import { SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, ACCEPTANCE_EN_SOURCE, ACCEPTANCE_EN_TARGET, GUIDE_SOURCE, GUIDE_TARGET, GUIDE_EN_SOURCE, GUIDE_EN_TARGET, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE, renderAcceptanceFromSource, renderGuideFromSource, renderQuickstartFromSource, renderEnglishGuideFromSource, renderEnglishAcceptanceFromSource, renderEnglishQuickstartFromSource } from '../scripts/build-workbench-guide.mjs'
+import { renderBundledGuide, SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, ACCEPTANCE_EN_SOURCE, ACCEPTANCE_EN_TARGET, GUIDE_SOURCE, GUIDE_TARGET, GUIDE_EN_SOURCE, GUIDE_EN_TARGET, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE, renderAcceptanceFromSource, renderGuideFromSource, renderQuickstartFromSource, renderEnglishGuideFromSource, renderEnglishAcceptanceFromSource, renderEnglishQuickstartFromSource } from '../scripts/build-workbench-guide.mjs'
 
 const root = join(import.meta.dirname, '..')
 const read = path => readFileSync(join(root, path), 'utf8')
 
 describe('bundled workbench development guide', () => {
+  it('keeps offline fallback notices out of website output and requires online retrieval in prompts', () => {
+    for (const [render, language, notice] of [[renderGuideFromSource, 'zh', '内置离线快照'], [renderEnglishGuideFromSource, 'en', 'Bundled offline snapshot']]) {
+      const online = render(read)
+      expect(online).not.toContain(notice)
+      expect(renderBundledGuide(online, language)).toContain(notice)
+      expect(renderBundledGuide(online, language)).toContain(online)
+    }
+    const client = read('packages/dsh-desktop-workbenches/client.js')
+    for (const phrase of ['必须先实际获取', '记录实际获取地址和文档版本', '只有在线获取失败', '能力差异', 'actually fetch and read', 'Record the fetched URL and document version', 'Only if online retrieval fails', 'capability differences']) expect(client).toContain(phrase)
+  })
+
+  it('generates website Markdown and reading pages without bundled-copy notices', async () => {
+    const site = await mkdtemp(join(tmpdir(), 'dsh-workbench-site-'))
+    try {
+      execFileSync(process.execPath, [join(root, 'scripts/build-workbench-guide.mjs'), '--site', site])
+      for (const [doc, source, notice] of [[SITE_DOCUMENTS.development, GUIDE_SOURCE, '内置离线快照'], [SITE_DOCUMENTS.developmentEn, GUIDE_EN_SOURCE, 'Bundled offline snapshot']]) {
+        expect(readFileSync(join(site, doc.file), 'utf8')).toBe(read(source))
+        expect(readFileSync(join(site, doc.page), 'utf8')).not.toContain(notice)
+      }
+    } finally { await rm(site, { recursive: true, force: true }) }
+  })
+
   it('equals the development spec shipped to authors and Agents', () => {
-    expect(read(GUIDE_TARGET)).toBe(renderGuideFromSource(read))
+    expect(read(GUIDE_TARGET)).toBe(renderBundledGuide(renderGuideFromSource(read)))
   })
 
   it('guides progressive requirements conversations in both languages without a combined questionnaire', () => {
@@ -47,6 +70,21 @@ describe('bundled workbench development guide', () => {
     }
   })
 
+  it('requires the final usage handoff after technical details in both authoritative guides', () => {
+    for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE]) {
+      const guide = read(path)
+      const phrases = path.endsWith('.zh.md')
+        ? ['最终回复必须以醒目的「接下来怎么用」三点提示收尾', '放在所有修改说明、自测结果、文件链接和技术附录之后', '不能在这三点之后追加内容', '1. 开发结果：', '安装失败', '2. 如何重启：', '点击顶部提示中的「立即重启」', 'Harness → 重启 Harness', '通常只需重启 Harness', '3. 去哪里打开：', '左上角「工作台」', '工作台市场 → 已安装', '带「本地」标识']
+        : ['final response must end with a prominent three-point “What to do next” block', 'after all change descriptions, self-test results, file links, and technical appendices', 'do not append any content after these three points', '1. Development result:', 'installation failed', '2. How to restart:', 'click “Restart now” in the top banner', 'Harness → Restart Harness', 'normally only Harness needs restarting', '3. Where to open it:', 'upper left', 'Workbench Market → Installed', 'marked “Local,”']
+      for (const phrase of phrases) expect(guide).toContain(phrase)
+      if ([GUIDE_SOURCE, GUIDE_EN_SOURCE].includes(path)) {
+        expect(guide).toContain('installBundle')
+        expect(guide).toContain('install_local_workbench')
+        expect(guide).toContain('restart-required')
+      }
+    }
+  })
+
   it('keeps user-facing choices in business language while preserving technical guidance', () => {
     for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE]) {
       const guide = read(path)
@@ -58,9 +96,29 @@ describe('bundled workbench development guide', () => {
     expect(read(GUIDE_EN_SOURCE)).toContain('customFrame: true')
   })
 
+  it('documents local identity separately from market publication in both languages', () => {
+    for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE]) {
+      const guide = read(path)
+      expect(guide).toContain('2026-10-27')
+      expect(guide).toContain('local:@scope/name')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不需要 GitHub 账号' : 'require no GitHub account')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不会自动迁移本地会话' : 'does not automatically migrate local sessions')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '阶段和原因' : 'stage, and reason')
+    }
+    for (const path of [GUIDE_SOURCE, GUIDE_EN_SOURCE]) {
+      const guide = read(path)
+      const clientExample = guide.split('window.__ModuleLoader__.load({')[1].split('```')[0]
+      expect(clientExample).toContain('desktopWorkbenches.register({')
+      expect(clientExample).not.toContain('repository:')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '仅在准备市场投稿' : 'Only when preparing a market submission')
+      expect(guide).toContain(path.endsWith('.zh.md') ? '不能替代真实 UI 验收' : 'do not replace real UI acceptance')
+      expect(guide).not.toMatch(/(?:必须|must)\*\*提供.*(?:规范的 GitHub|canonical GitHub)/)
+    }
+  })
+
   it('covers development and the local self-test only', () => {
     const guide = read(GUIDE_TARGET)
-    expect(guide).toBe(read(GUIDE_SOURCE))
+    expect(guide).toBe(renderBundledGuide(read(GUIDE_SOURCE)))
     expect(guide).toContain('## 1. 执行原则')
     expect(guide).not.toContain('开发时可以把需求与本文一起交给 AI')
     expect(guide).toContain('## 3. 包格式')
@@ -91,9 +149,9 @@ describe('bundled workbench development guide', () => {
   })
 
   it('ships complete English development and acceptance sources for offline use', () => {
-    expect(read(GUIDE_EN_TARGET)).toBe(renderEnglishGuideFromSource(read))
+    expect(read(GUIDE_EN_TARGET)).toBe(renderBundledGuide(renderEnglishGuideFromSource(read), 'en'))
     expect(read(ACCEPTANCE_EN_TARGET)).toBe(renderEnglishAcceptanceFromSource(read))
-    expect(read(GUIDE_EN_TARGET)).toBe(read(GUIDE_EN_SOURCE))
+    expect(read(GUIDE_EN_TARGET)).toBe(renderBundledGuide(read(GUIDE_EN_SOURCE), 'en'))
     expect(read(ACCEPTANCE_EN_TARGET)).toBe(read(ACCEPTANCE_EN_SOURCE))
     expect(read(GUIDE_EN_TARGET)).toContain('## 8. Local self-test checklist')
     expect(read(ACCEPTANCE_EN_TARGET)).toContain('**Acceptance checklist**')
@@ -107,7 +165,7 @@ describe('bundled workbench development guide', () => {
     try {
       const routes = []
       const connection = { fetch: { register(route) { routes.push(route) } } }
-      apply({ effect: fn => fn(), inject: (_deps, callback) => callback({ connection, desktopPnpm: {} }), reflect: { provide() {} }, connection }, { root })
+      apply({ effect: fn => fn(), inject: (deps, callback) => { if (!deps.includes('tools')) callback({ connection, pluginManager: {}, effect: fn => fn() }) }, reflect: { provide() {} }, connection }, { root })
       expect(routes.length).toBeGreaterThan(5)
       for (const route of routes) expect([route.path, route.requestBody]).toEqual([route.path, 'buffered'])
     } finally { await rm(root, { recursive: true, force: true }) }

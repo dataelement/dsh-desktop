@@ -225,6 +225,120 @@ describe('windowsHide ESM built-in synchronization', () => {
   })
 })
 
+describe('windowsHide promisified child processes', () => {
+  it.each(['exec', 'execFile'])('preserves %s promises and callbacks through the real wrapper', (method) => {
+    const helperUrl = pathToFileURL(join(projectRoot, 'build', 'windows-child-process-hide.mjs')).href
+    const script = `
+      import assert from 'node:assert/strict'
+      import childProcess, { ChildProcess } from 'node:child_process'
+      import { syncBuiltinESMExports } from 'node:module'
+      import { promisify } from 'node:util'
+      import { enforceWindowsChildProcessHide } from ${JSON.stringify(helperUrl)}
+
+      const observed = []
+      const originalSpawn = ChildProcess.prototype.spawn
+      ChildProcess.prototype.spawn = function(options) {
+        observed.push(options.windowsHide)
+        return originalSpawn.call(this, options)
+      }
+      const method = ${JSON.stringify(method)}
+      const nativeHook = Object.getOwnPropertyDescriptor(childProcess[method], promisify.custom)
+      enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExports)
+      const named = await import('node:child_process')
+      assert.equal(named[method], childProcess[method])
+      const hook = Object.getOwnPropertyDescriptor(named[method], promisify.custom)
+      assert.equal(typeof hook.value, 'function')
+      for (const key of ['enumerable', 'writable', 'configurable']) assert.equal(hook[key], nativeHook[key])
+      const run = promisify(named[method])
+      const argsFor = (code) => method === 'execFile'
+        ? [process.execPath, ['-e', code]]
+        : [JSON.stringify(process.execPath) + ' -e ' + JSON.stringify(code)]
+      const code = "process.stdout.write('out');process.stderr.write('err')"
+
+      const success = run(...argsFor(code))
+      assert.ok(success.child instanceof ChildProcess)
+      assert.deepEqual(await success, { stdout: 'out', stderr: 'err' })
+      assert.equal(observed.pop(), true)
+
+      const buffers = run(...argsFor(code), { encoding: 'buffer', windowsHide: false })
+      assert.ok(buffers.child instanceof ChildProcess)
+      assert.deepEqual(await buffers, { stdout: Buffer.from('out'), stderr: Buffer.from('err') })
+      assert.equal(observed.pop(), false)
+
+      const failure = run(...argsFor(code + ';process.exit(7)'), { encoding: 'buffer' })
+      assert.ok(failure.child instanceof ChildProcess)
+      await assert.rejects(failure, (error) => {
+        assert.equal(error.code, 7)
+        assert.deepEqual(error.stdout, Buffer.from('out'))
+        assert.deepEqual(error.stderr, Buffer.from('err'))
+        return true
+      })
+      assert.equal(observed.pop(), true)
+      await assert.rejects(run(...argsFor(code + ';process.exit(3)')), (error) => {
+        assert.equal(error.code, 3)
+        assert.equal(error.stdout, 'out')
+        assert.equal(error.stderr, 'err')
+        return true
+      })
+      assert.equal(observed.pop(), true)
+      assert.throws(() => run(42), { code: 'ERR_INVALID_ARG_TYPE' })
+
+      await new Promise((resolve, reject) => {
+        const child = named[method](...argsFor(code), (error, stdout, stderr) => {
+          if (error) return reject(error)
+          try {
+            assert.deepEqual({ stdout, stderr }, { stdout: 'out', stderr: 'err' })
+            assert.ok(child instanceof ChildProcess)
+            assert.equal(observed.pop(), true)
+            resolve()
+          } catch (error) { reject(error) }
+        })
+      })
+
+      if (method === 'execFile') {
+        const noArgs = run(process.execPath, { windowsHide: false })
+        noArgs.child.stdin.end()
+        assert.deepEqual(await noArgs, { stdout: '', stderr: '' })
+        assert.equal(observed.pop(), false)
+        const defaultHide = run(process.execPath)
+        defaultHide.child.stdin.end()
+        assert.deepEqual(await defaultHide, { stdout: '', stderr: '' })
+        assert.equal(observed.pop(), true)
+        const binary = run(process.execPath, undefined, { encoding: 'buffer', windowsHide: false })
+        binary.child.stdin.end("process.stdout.write('binary')")
+        assert.deepEqual(await binary, { stdout: Buffer.from('binary'), stderr: Buffer.alloc(0) })
+        assert.equal(observed.pop(), false)
+        assert.throws(() => run(process.execPath, 'invalid args'), { code: 'ERR_INVALID_ARG_TYPE' })
+        await assert.rejects(run('dsh-missing-executable-for-test'), (error) => {
+          assert.equal(error.code, 'ENOENT')
+          assert.equal(error.stdout, '')
+          assert.equal(error.stderr, '')
+          return true
+        })
+        assert.equal(observed.pop(), true)
+
+        for (const optionArgs of [[], [{ windowsHide: false }]]) {
+          await new Promise((resolve, reject) => {
+            const child = named.execFile(process.execPath, ...optionArgs, (error, stdout, stderr) => {
+              if (error) return reject(error)
+              try {
+                assert.deepEqual({ stdout, stderr }, { stdout: 'stdin', stderr: '' })
+                assert.equal(observed.pop(), optionArgs.length === 0)
+                resolve()
+              } catch (error) { reject(error) }
+            })
+            child.stdin.end("process.stdout.write('stdin')")
+          })
+        }
+      }
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+      encoding: 'utf8', windowsHide: true, timeout: 20_000
+    })
+    expect(result.status, result.stderr).toBe(0)
+  })
+})
+
 describe('windowsHide patching for spawn', () => {
   let spawnSpy: ReturnType<typeof vi.fn>
 

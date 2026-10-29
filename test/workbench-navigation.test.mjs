@@ -392,12 +392,72 @@ describe('native Workspace navigation with workbench routing', () => {
     sessionState.ids.push(blankId)
     sessionState.byId[blankId] = { id: blankId, sessionId: blankId, blank: true, cwd: '/project' }
     workspaceState.items[0].sessionIds.push(blankId)
+    service.registerSessionReuseFilter(id => id !== blankId)
     service.startSession('project')
     await vi.waitFor(() => expect(service.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
     expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project' })
     expect(service.sessions.retain).not.toHaveBeenCalledWith(blankId, { source: 'mainView' })
     expect(sessionState.byId['new-session']).toMatchObject({ blank: true, cwd: '/project' })
     expect(workspaceState.items[0].sessionIds).toContain('new-session')
+  })
+
+  it.each([undefined, {}, { agentPreset: 'cordis' }])('reuses an eligible blank for native New Session with options %j without preparing its draft', async (options) => {
+    const { service, sessionState, workspaceState } = fixture()
+    const id = 'ordinary-blank'
+    sessionState.ids.push(id)
+    sessionState.byId[id] = { id, sessionId: id, blank: true, cwd: '/project', projectionValues: { agentPreset: 'cordis' } }
+    workspaceState.items[0].sessionIds.push(id)
+    const starter = vi.fn(() => false)
+    service.registerSessionStarter(starter)
+    service.prepareDraft = vi.fn()
+
+    service.startSession('project', options)
+
+    await vi.waitFor(() => expect(mainViewOf(sessionState)).toBe(id))
+    expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project', sessionId: id, ...(options?.agentPreset ? { agentPreset: options.agentPreset } : {}) })
+    expect(service.prepareDraft).not.toHaveBeenCalled()
+    expect(starter).toHaveBeenCalledTimes(options === undefined ? 1 : 0)
+  })
+
+  it.each(['cordis', undefined])('combines Desktop visibility and reuse exclusions with preset matching for %s', async (listed) => {
+    const { service, sessionState, workspaceState } = fixture()
+    const ids = ['hidden', 'workbench-owned', 'wrong-preset', 'eligible']
+    sessionState.ids.push(...ids)
+    for (const id of ids) sessionState.byId[id] = {
+      id, sessionId: id, blank: true, cwd: '/project',
+      projectionValues: { agentPreset: id === 'wrong-preset' ? 'other-agent' : listed }
+    }
+    workspaceState.items[0].sessionIds.push(...ids)
+    service.registerSessionFilter(id => id !== 'hidden', () => () => {})
+    service.registerSessionReuseFilter(id => id !== 'workbench-owned')
+
+    await expect(service.connectWorkspace('project', { agentPreset: 'cordis' })).resolves.toBe('eligible')
+
+    expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project', sessionId: 'eligible', agentPreset: 'cordis' })
+  })
+
+  it.each([
+    [{ whenDraftExists: 'replace' }, true],
+    [{ clearPreviousDraft: true }, true],
+    [{ whenDraftExists: 'keep', clearPreviousDraft: true }, false],
+    [{ whenDraftExists: 'append' }, false],
+    [{ prompt: 'Follow up', whenDraftExists: 'append' }, true]
+  ])('prepares draft options %j without passing explicit initialization to the Desktop starter', async (options, prepares) => {
+    const { service } = fixture()
+    const starter = vi.fn(() => true)
+    service.registerSessionStarter(starter)
+    const binding = { sessionId: 'blank' }
+    service.sessions.binding = vi.fn(() => binding)
+    const requestDraftInitialization = vi.fn(() => 'ready')
+    service.ctx.get = vi.fn(() => ({ input: { requestDraftInitialization } }))
+    service.openWorkspace = vi.fn(async (_workspaceId, beforeOpen) => beforeOpen?.('blank'))
+
+    service.startSession('project', options)
+
+    await vi.waitFor(() => expect(service.openWorkspace).toHaveBeenCalledOnce())
+    expect(starter).not.toHaveBeenCalled()
+    if (prepares) expect(requestDraftInitialization).toHaveBeenCalledWith(binding, options)
+    else expect(requestDraftInitialization).not.toHaveBeenCalled()
   })
 
   it('falls back to native New Session after the workbench is closed', async () => {

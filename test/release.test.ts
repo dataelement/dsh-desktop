@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.1-rc.2'
+const HARNESS_VERSION = '0.2.1-rc.3'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -151,13 +151,14 @@ describe('GitHub release contract', () => {
       expect(packageJson.dependencies[packageName]).toBeUndefined()
       expect(packageLock.packages[`node_modules/${packageName}`]).toBeUndefined()
     }
-    // Official bundles own these, including the rc.2 retrieval API and model badge.
+    // Official bundles own these, including retrieval, model badges and entry customization.
     for (const packageName of [
       '@deepseek-ai/dsh-tool-terminal',
       '@deepseek-ai/dsh-tool-session-query',
       '@deepseek-ai/dsh-session-title-all-prompts-llm',
       '@deepseek-ai/dsh-web-deepseek-api',
-      '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017'
+      '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017',
+      '@deepseek-ai/dsh-client-ui-entry-customization'
     ]) {
       expect(packageJson.dependencies[packageName]).toBeUndefined()
       expect(packageLock.packages[`node_modules/${packageName}`]).toBeDefined()
@@ -244,6 +245,10 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/splash.html',
       to: 'splash.html'
+    })
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/startup-whale.gif',
+      to: 'startup-whale.gif'
     })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/dsh-loader.gif',
@@ -403,12 +408,17 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('-SessionVariable harnessSession')
     expect(workflow).toContain('-WebSession $harnessSession')
     expect(workflow).toContain('Packaged Windows Harness smoke test passed.')
+    expect(workflow).toContain('$desktop.Kill($true)')
+    expect(workflow).toContain('$desktop.WaitForExit(10000)')
+    expect(workflow).toContain('node scripts/archive-windows-release.mjs "$env:ARCHIVE_DIST"')
+    expect(workflow).toContain("&& 'dist' || 'dist-dev'")
+    expect(workflow).not.toContain('tar -czf dist/win-unpacked.tar.gz')
     expect(workflow).toContain('payload = @{ args = @{ request = $request } }')
     expect(workflow).toContain("Invoke-HarnessRpc 'workspace/create'")
     expect(workflow).toContain("Invoke-HarnessRpc 'session/create'")
     expect(workflow).toContain('Harness process exited after workspace and session creation.')
-    expect(workflow).toContain('prerelease_tag:')
-    expect(workflow).toContain('signed_version:')
+    expect(workflow).toContain('version:')
+    expect(workflow).not.toContain('signed_version:')
     expect(workflow).toContain('mode:')
     expect(workflow).toContain('--prerelease')
     expect(workflow).toContain('name: windows-x64-dev')
@@ -459,7 +469,7 @@ describe('GitHub release contract', () => {
     )
   })
 
-  it('builds the runtime once per native job before tests and packaging', async () => {
+  it('builds once before shared checks and each native packaging job', async () => {
     const workflow = parse(await readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')) as {
       jobs: Record<string, { steps: Array<{ run?: string; uses?: string; with?: Record<string, unknown> }> }>
     }
@@ -595,9 +605,10 @@ describe('prerelease parity workflow', () => {
   const load = () =>
     readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')
 
-  it('replaces the windows-only prerelease input with a general one', async () => {
+  it('uses a single version input for all dispatch modes', async () => {
     const yml = await load()
-    expect(yml).toContain('prerelease_tag:')
+    expect(yml).toContain('version:')
+    expect(yml).not.toContain('prerelease_tag:')
     expect(yml).not.toContain('windows_prerelease_tag')
     expect(yml).not.toContain('Publish validated Windows development pre-release')
   })
@@ -623,21 +634,21 @@ describe('prerelease parity workflow', () => {
     expect(yml).toContain('  - signed')
     expect(yml).toContain('  - prerelease')
     expect(yml).toContain('validate-dispatch:')
-    expect(yml).toContain('signed mode requires signed_version')
+    expect(yml).toContain('requires a non-v semver version')
     expect(windowsIf).toContain("inputs.target == 'all' || inputs.target == 'windows'")
     expect(windowsIf).not.toContain('prerelease_tag')
     expect(signWindows).toContain("inputs.mode == 'signed'")
     expect(signWindows).toContain("inputs.mode == 'prerelease'")
     expect(publishJob).toContain("startsWith(github.ref, 'refs/tags/v')")
-    expect(publishJob).toContain("inputs.prerelease_tag == ''")
+    expect(publishJob).toContain("inputs.version == ''")
     expect(publishPrerelease).toContain("inputs.mode == 'prerelease'")
     expect(publishPrerelease).toContain("inputs.target == 'all'")
-    expect(publishPrerelease).toContain("inputs.prerelease_tag != ''")
+    expect(publishPrerelease).toContain("inputs.version != ''")
     expect(
       yml.match(
-        /npm version --no-git-tag-version --allow-same-version "\$\{\{ inputs\.signed_version \}\}"/g
+        /npm version --no-git-tag-version --allow-same-version "\$\{\{ inputs\.version \}\}"/g
       )
-    ).toHaveLength(3)
+    ).toHaveLength(6)
   })
 
   it('mirrors a prerelease to an isolated ModelScope directory', async () => {
@@ -684,7 +695,8 @@ describe('AI-organized GitHub release body', () => {
     const yml = await load()
     expect(yml).toContain('RELEASE_NOTES_MODEL: gpt-6-luna')
     expect(yml).not.toContain('gpt-5.6-sol')
-    expect(yml.match(/--model "\$RELEASE_NOTES_MODEL"/g)).toHaveLength(3)
+    // Three detailed notifications plus the separate, fail-closed popup summary.
+    expect(yml.match(/--model "\$RELEASE_NOTES_MODEL"/g)).toHaveLength(4)
     expect(yml.match(/2>"\$error_log"/g)).toHaveLength(3)
     expect(yml).not.toContain('2>/dev/null')
     expect(yml.match(/sed -n '1,20\{s\/\^\/copilot: \/;p;\}'/g)).toHaveLength(3)

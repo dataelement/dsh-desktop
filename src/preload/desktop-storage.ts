@@ -1,5 +1,16 @@
 import { ipcRenderer } from 'electron'
 
+/** Refresh navigation changed by main while the prepared shell waited for boot. */
+export function refreshDesktopStoragePersistence(): void {
+  const data: unknown = ipcRenderer.sendSync('dsh:storage-load-sync')
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Desktop storage snapshot.')
+  const script = document.createElement('script')
+  script.textContent = 'window.dispatchEvent(new CustomEvent("__dsh_storage_refresh__", { detail: ' +
+    JSON.stringify(data).replaceAll('<', '\u003c') + ' }));'
+  document.documentElement.appendChild(script)
+  script.remove()
+}
+
 export function setupDesktopStoragePersistence(): void {
   let initialData: Record<string, string> = {}
   try {
@@ -15,6 +26,17 @@ export function setupDesktopStoragePersistence(): void {
   try {
     const initial = ${serializedInitial};
     const memoryStore = new Map(Object.entries(initial));
+    // Page preparation precedes repair-session navigation updates. Refresh the
+    // in-memory snapshot when the authenticated boot gate opens, without writing
+    // the stale page snapshot back to the active Profile.
+    window.addEventListener('__dsh_storage_refresh__', function(event) {
+      const data = event.detail;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+      memoryStore.clear();
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === 'string') memoryStore.set(key, value);
+      }
+    });
 
     const originalGetItem = Storage.prototype.getItem;
     const originalSetItem = Storage.prototype.setItem;

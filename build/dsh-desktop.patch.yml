@@ -22,6 +22,11 @@
 - id: ui-settings-account
   disabled: true
 
+# Desktop keeps the existing web Profile; upstream only enables this for a
+# Profile named desktop. Enable the shipped browser in the Desktop overlay.
+- id: ui-sidebar-browser
+  disabled: false
+
 - insert:
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui

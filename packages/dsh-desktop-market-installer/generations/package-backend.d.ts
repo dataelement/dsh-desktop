@@ -12,6 +12,7 @@ export interface ProfileBundleInstallRequest {
   expectedName?: string
   registry?: string
   expectedVersion?: string
+  npmIntegrity?: string
   autoInstallPeers?: boolean
   minimumReleaseAge?: number
   signal?: AbortSignal
@@ -19,6 +20,7 @@ export interface ProfileBundleInstallRequest {
 }
 
 export interface ProfileBundlePackageBackend {
+  readonly supportsVerifiedInstall: true
   /** Resolves undefined for a shared-tree package (the market); pnpm installs it. */
   install(request: ProfileBundleInstallRequest): Promise<{
     packageResult: PackageResult
@@ -34,6 +36,8 @@ export interface ProfileBundlePackageBackend {
     signal?: AbortSignal
     onOutput?(text: string, stream: 'stdout' | 'stderr'): void
   }): Promise<{ packageResult: PackageResult } | undefined>
+  /** Side-effect-free validation before Plugin Manager persists bundle selection. */
+  validateSwitch(request: { name: string; enabled: boolean; rowIds?: readonly string[] }): Promise<void>
   switched(request: { name: string; enabled: boolean; rowIds?: readonly string[] }): Promise<void>
   removed(request: { name: string }): Promise<void>
 }
@@ -46,4 +50,5 @@ export function createGenerationPackageBackend(options: {
   environment?: NodeJS.ProcessEnv
   spawnProcess?: unknown
   runInstall?: unknown
+  fetchImpl?: typeof fetch
 }): ProfileBundlePackageBackend

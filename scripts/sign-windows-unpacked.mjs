@@ -107,15 +107,15 @@ async function signBinary(targetFile, config) {
   }
 
   let lastError
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 6; attempt++) {
     try {
       await execFileAsync('java', args)
       lastError = null
       break
     } catch (error) {
       lastError = error
-      console.warn(`[sign-windows] Warning: Signing attempt ${attempt}/3 failed for ${basename(targetFile)}: ${error.stderr || error.message}`)
-      if (attempt < 3) await sleep(2000 * attempt)
+      console.warn(`[sign-windows] Warning: Signing attempt ${attempt}/6 failed for ${basename(targetFile)}: ${error.stderr || error.message}`)
+      if (attempt < 6) await sleep(2000 * attempt)
     }
   }
   if (lastError) throw lastError

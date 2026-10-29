@@ -1,9 +1,14 @@
+import { classifyGpuExit, emptyGpuExitContext, type GpuExitContext } from '../gpu-fallback'
 import type { EventEmitter } from 'node:events'
+import { rendererDiagnosticUrl } from '../renderer-diagnostics'
 import type { RuntimeSnapshot } from '../../shared/contracts'
 import { DesktopService, type FailureKind } from './service'
 
 /** Bind before webContents are created. Capture synchronously before recovery can app.exit(). */
 export function attachDiagnostics(app: EventEmitter, service: DesktopService, options: {
+  getExitContext?: () => GpuExitContext
+  resourceEvidence?: () => string
+  platform?: NodeJS.Platform
   processEvents?: EventEmitter
   onError?: (error: unknown) => void
 } = {}) {
@@ -22,7 +27,10 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   let pendingPluginFailureEventId: string | undefined
   let suppressPluginFailure = false
   const capture = (kind: FailureKind, message: string, eventId?: string) => {
-    safe(() => service.capture(kind, message, eventId))
+    let evidence = ''
+    try { evidence = options.resourceEvidence?.() ?? '' }
+    catch (error) { options.onError?.(error) }
+    safe(() => service.capture(kind, evidence ? `${message.slice(0, 2200)}\nresources=${evidence.slice(0, 1700)}` : message, eventId))
     // A plugin-attributed startup failure waits: recovery may still discard it.
     if (canSend && (eventId === undefined || eventId !== pendingPluginFailureEventId)) flush()
   }
@@ -36,7 +44,7 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
         let urlInfo = ''
         try {
           const url = (contents as { getURL?: () => string }).getURL?.()
-          if (url) urlInfo = ` url=${url}`
+          if (url) urlInfo = ` url=${rendererDiagnosticUrl(url)}`
         } catch { /* ignore */ }
         capture('renderer-crash', `reason=${details.reason} exitCode=${details.exitCode}${urlInfo}`)
       }
@@ -47,7 +55,14 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   }
   app.on('web-contents-created', created)
   const childGone = (_event: unknown, details: { type: string; reason: string; exitCode: number }) => {
-    if (details.type === 'GPU' && !['clean-exit', 'killed'].includes(details.reason)) capture('gpu-crash', `reason=${details.reason} exitCode=${details.exitCode}`)
+    if (details.type === 'GPU' && !['clean-exit', 'killed'].includes(details.reason)) {
+      const context = options.getExitContext?.() ?? emptyGpuExitContext()
+      const classification = classifyGpuExit(options.platform ?? process.platform, details.exitCode, context)
+      // Keep all reports, including expected shutdown, for server-side triage.
+      capture('gpu-crash', `reason=${details.reason} exitCode=${details.exitCode}` +
+        ` classification=${classification} sessionEndRequested=${context.sessionEndRequested}` +
+        ` sessionEnding=${context.sessionEnding} quitRequested=${context.quitRequested} appExiting=${context.appExiting}`)
+    }
   }
   app.prependListener('child-process-gone', childGone)
   const clean = () => safe(() => service.markCleanExit())

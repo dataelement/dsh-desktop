@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, readFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { forgetPlugin, recordPluginSwitch } from '../plugin-state.mjs'
+import { forgetPlugin, recordPluginSwitch, validatePluginSwitch } from '../plugin-state.mjs'
+import { DEFAULT_NPM_REGISTRY } from '../market-registry.mjs'
 import { installGeneration, verifyGenerationPeers } from './installer.mjs'
 import {
   SHARED_TREE_ONLY,
@@ -94,6 +95,7 @@ export function createGenerationPackageBackend(options) {
   } = options
 
   return Object.freeze({
+    supportsVerifiedInstall: true,
     async install(request) {
       const log = await createOperationLog(dshHome)
       let activeChild
@@ -117,6 +119,19 @@ export function createGenerationPackageBackend(options) {
 
       try {
         request.signal?.throwIfAborted()
+        if (request.npmIntegrity !== undefined) {
+          if (!request.expectedName || !request.expectedVersion || typeof request.npmIntegrity !== 'string' || !request.npmIntegrity) {
+            throw new Error('Verified registry installation requires a package name, version and integrity.')
+          }
+          const registry = (request.registry ?? DEFAULT_NPM_REGISTRY).replace(/\/+$/u, '')
+          const response = await (options.fetchImpl ?? fetch)(registry + '/' + request.expectedName.replace('/', '%2F') + '/' + encodeURIComponent(request.expectedVersion), {
+            headers: { accept: 'application/json' }, signal: request.signal ?? AbortSignal.timeout(30_000)
+          })
+          if (!response.ok) throw new Error('Could not verify registry package integrity: HTTP ' + response.status)
+          if ((await response.json())?.dist?.integrity !== request.npmIntegrity) {
+            throw new Error('The package does not match the integrity listed in the workbench index.')
+          }
+        }
         let expectedPluginName = request.expectedName
         let sourceDirectory
         let sourceSpec = request.sourceSpec
@@ -315,6 +330,12 @@ export function createGenerationPackageBackend(options) {
         const captured = await log.close()
         return { packageResult: { exitCode: 1, ...captured, logPath: log.path } }
       }
+    },
+
+    async validateSwitch(request) {
+      await validatePluginSwitch(profileDirectory(dshHome), request.name, request.enabled, {
+        rowIds: request.rowIds ?? []
+      })
     },
 
     async switched(request) {

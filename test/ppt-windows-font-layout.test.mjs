@@ -101,8 +101,8 @@ it('uses matching Windows metrics in paragraph defaults and end marks and retain
   }
 });
 
-it('renders the imported Chinese heading at its authored width through Office and PDFium', async () => {
-  const converted = await convertPptxToPptd(await source(), 'native-font-layout.pptx');
+it.each(['PingFang SC Semibold', 'PingFangSC-Semibold', 'PingFang SC Regular', 'PingFangSC-Light'])('renders the imported %s Chinese heading at its authored width through Office and PDFium', async font => {
+  const converted = await convertPptxToPptd(await source(font), 'native-font-layout.pptx');
   const project = parsePptdProject(converted.source);
   const root = await mkdtemp(path.join(os.tmpdir(), 'ppt-native-font-layout-'));
   try {
@@ -120,9 +120,9 @@ it('renders the imported Chinese heading at its authored width through Office an
     if (process.env.DSH_PPT_FONT_EVIDENCE) {
       const destination = process.env.DSH_PPT_FONT_EVIDENCE;
       await mkdir(destination, { recursive: true });
-      await writeFile(path.join(destination, 'metrics.json'), JSON.stringify({ platform: process.platform, inkWidth, width: info.width, height: info.height, ...metadata }, null, 2));
-      await copyFile(path.join(root, 'preview/pages/page-1.png'), path.join(destination, 'preview.png'));
-      await copyFile(path.join(root, 'preview-deck.pptx'), path.join(destination, 'preview-deck.pptx'));
+      await writeFile(path.join(destination, `${font}-metrics.json`), JSON.stringify({ platform: process.platform, inkWidth, width: info.width, height: info.height, ...metadata }, null, 2));
+      await copyFile(path.join(root, 'preview/pages/page-1.png'), path.join(destination, `${font}-preview.png`));
+      await copyFile(path.join(root, 'preview-deck.pptx'), path.join(destination, `${font}-preview-deck.pptx`));
     }
     // Four 36 pt Han glyphs need approximately 144 pt; collapsed advances
     // leave a narrow stack. A blank render also fails this gate.

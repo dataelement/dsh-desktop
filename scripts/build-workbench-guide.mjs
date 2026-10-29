@@ -7,7 +7,8 @@
 // The website is the one public home of both documents: --site takes the
 // homepage repository's workbench/ directory and writes each document's
 // Markdown (for Agents) and a reading page (for people) at SITE_DOCUMENTS
-// below. Desktop bundles the same Markdown for offline reading only.
+// below. Desktop adds an offline-snapshot notice to development guides only; website
+// output remains authoritative Markdown without that bundled-copy notice.
 //
 //   node scripts/build-workbench-guide.mjs                  rewrite Desktop's bundled copies
 //   node scripts/build-workbench-guide.mjs --check          fail if they drifted
@@ -68,6 +69,14 @@ SITE_DOCUMENTS.quickstart.alternatePageUrl = SITE_DOCUMENTS.quickstartEn.pageUrl
 
 const withTrailingNewline = text => (text.endsWith('\n') ? text : `${text}\n`)
 
+// Offline notices belong only to Desktop outputs, never to website documents.
+export function renderBundledGuide(markdown, language = 'zh') {
+  const notice = language === 'en'
+    ? '> Bundled offline snapshot: use only after online retrieval fails. This is not guaranteed to be the latest standard and must not override the online version. Report the retrieval failure, this offline source, and document version.\n\n'
+    : '> 内置离线快照：仅在在线获取失败后备用，不保证是最新规范，不得覆盖在线版本。请报告获取失败原因、本离线来源和文档版本。\n\n'
+  return notice + markdown
+}
+
 export function renderGuideFromSource(readFile = path => readFileSync(join(root, path), 'utf8')) {
   return withTrailingNewline(readFile(GUIDE_SOURCE))
 }
@@ -102,9 +111,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           { destination: join(siteDir, doc.page), label: doc.pageUrl, rendered: renderDocumentPage(markdown, { markdownUrl: doc.url, language: doc.language || 'zh-CN', alternatePageUrl: doc.alternatePageUrl }) }
         ])
     : [
-        { destination: target, label: GUIDE_TARGET, rendered: renderGuideFromSource() },
+        { destination: target, label: GUIDE_TARGET, rendered: renderBundledGuide(renderGuideFromSource()) },
         { destination: join(root, ACCEPTANCE_TARGET), label: ACCEPTANCE_TARGET, rendered: renderAcceptanceFromSource() },
-        { destination: join(root, GUIDE_EN_TARGET), label: GUIDE_EN_TARGET, rendered: renderEnglishGuideFromSource() },
+        { destination: join(root, GUIDE_EN_TARGET), label: GUIDE_EN_TARGET, rendered: renderBundledGuide(renderEnglishGuideFromSource(), 'en') },
         { destination: join(root, ACCEPTANCE_EN_TARGET), label: ACCEPTANCE_EN_TARGET, rendered: renderEnglishAcceptanceFromSource() }
       ]
   let stale = false

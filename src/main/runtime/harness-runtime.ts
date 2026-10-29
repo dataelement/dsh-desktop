@@ -1,3 +1,4 @@
+import { isMemoryExit } from '../resource-diagnostics'
 import { execFile, execFileSync, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
@@ -571,7 +572,7 @@ export class HarnessRuntime {
 
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })
-    this.logStream ??= createWriteStream(this.options.logPath, { flags: 'a' })
+    this.logStream ??= this.openLogStream()
     for (const lock of await removeStaleWriterLocks(this.options.dshHome)) {
       this.writeLog(`[desktop] removed stale writer lock ${lock}`)
     }
@@ -627,12 +628,16 @@ export class HarnessRuntime {
       return
     }
     this.child = child
+    let fatalMemoryFailure = false
+    let memoryEvidenceTail = ''
 
     child.stdout.on('data', (chunk: Buffer) => {
       if (this.child === child) this.writeChunk('stdout', chunk)
     })
     child.stderr.on('data', (chunk: Buffer) => {
       if (this.child !== child) return
+      memoryEvidenceTail = (memoryEvidenceTail + chunk.toString()).slice(-8192)
+      fatalMemoryFailure ||= /(?:^|\n)FATAL ERROR:.*(?:heap|[Aa]llocation)|OOM error in V8:/.test(memoryEvidenceTail)
       this.writeChunk('stderr', chunk)
       if (this.child !== child || this.phase !== 'starting') return
 
@@ -672,7 +677,8 @@ export class HarnessRuntime {
         cause
           ? `Harness stopped unexpectedly (${detail}).
 ${cause}`
-          : `Harness stopped unexpectedly (${detail}).`
+          : `Harness stopped unexpectedly (${detail}).`,
+        fatalMemoryFailure || isMemoryExit('', code ?? -1) ? 'memory-exhausted' : undefined
       )
     })
 
@@ -791,12 +797,22 @@ ${cause}`
     if (!this.logStream) {
       try {
         mkdirSync(dirname(this.options.logPath), { recursive: true })
-        this.logStream = createWriteStream(this.options.logPath, { flags: 'a' })
+        this.logStream = this.openLogStream()
       } catch {
         // Keep the line in the in-memory buffer regardless.
       }
     }
     this.writeLog(line)
+  }
+
+  private openLogStream(): WriteStream {
+    const stream = createWriteStream(this.options.logPath, { flags: 'a' })
+    // File-stream errors are asynchronous. Keep diagnostics best effort instead of
+    // letting an unwritable log abort the native recovery path with an unhandled event.
+    stream.on('error', (error: NodeJS.ErrnoException) => {
+      console.warn('[desktop] Harness log write failed:', error.code ?? 'UNKNOWN')
+    })
+    return stream
   }
 
   private writeLog(line: string): void {
@@ -821,6 +837,7 @@ ${cause}`
 
   flushLog(): Promise<void> {
     const stream = this.logStream
+    if (stream?.errored) return Promise.reject(stream.errored)
     if (!stream || stream.destroyed || stream.writableEnded) return Promise.resolve()
     return new Promise((resolve, reject) => {
       stream.write('', error => error ? reject(error) : resolve())
@@ -1005,6 +1022,17 @@ export function extractPluginFailureReferences(logLines: readonly string[]): str
 
 export function extractOffendingPlugins(logLines: readonly string[]): string[] {
   return extractPluginReferences(logLines, isActionablePluginReference)
+}
+
+export function extractDuplicateAgentPresetId(
+  logLines: readonly string[]
+): string | undefined {
+  for (const line of latestHarnessAttemptLogs(logLines)) {
+    if (!line.startsWith('[stderr] ')) continue
+    const match = line.slice(8).match(/Duplicate agent preset:\s*([^\s"']+)/i)
+    if (match?.[1]) return match[1].trim()
+  }
+  return undefined
 }
 
 export function extractDuplicateLoaderEntryId(

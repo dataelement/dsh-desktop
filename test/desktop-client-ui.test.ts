@@ -84,10 +84,13 @@ describe('DSH Desktop client slot occupants', () => {
         return () => undefined
       }
     }
-    plugin.apply({ slots, effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() } })
+    plugin.apply({ slots, locale: { register: () => () => undefined, bind: () => (key: string) => key }, effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() } })
 
-    expect(plugin.inject).toEqual(['slots', 'remote.session', 'sessions', 'uiWorkspace'])
+    expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
+      'settings.sidebar.footer',
+      'sidebar.settings.action',
+      'conversation.input.dock',
       'sidebar.brand.mark',
       'sidebar.brand.name',
       'conversation.hero.brand.mark',
@@ -96,6 +99,14 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item'
     ])
+    const enterprise = registrations.find(({ config }) => config.name === 'settings.sidebar.footer')
+    expect(enterprise?.config.id).toBe('desktop-enterprise-entry')
+    const entry = enterprise!.component({ t: () => '了解企业版' }) as { type: unknown; props: Record<string, unknown> }
+    expect(entry.type).toBe('a')
+    expect(entry.props.href).toBe('https://dshdesktop.com/zh/enterprise/')
+    expect(entry.props.target).toBe('_blank')
+    expect(entry.props.rel).toBe('noopener noreferrer')
+    expect(entry.props.children).toContain('了解企业版')
     // Desktop toolbar styles have an owned lifetime; branding stays in currentColor.
     expect(appended).toHaveLength(1)
     expect(appended[0]?.textContent).toContain("[data-dsh-preset-search]")

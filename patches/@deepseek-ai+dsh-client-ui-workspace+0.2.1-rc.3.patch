@@ -1,0 +1,660 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+index bf57a02484..57ca1b31aa 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+@@ -1096,6 +1096,7 @@ window.__ModuleLoader__.load({
+ 			const currentGroup = current === void 0 ? void 0 : owningGroupKey(workspaces, current);
+ 			const groups = [];
+ 			for (const g of groupByWorkspace(list, workspaces, archived, rowState.archivedFilter, view.ungroupedOrder)) {
++				if (g.sessions.length === 0) continue;
+ 				const expanded = expandedGroups.has(g.key);
+ 				groups.push({
+ 					key: g.key,
+@@ -1269,10 +1270,18 @@ window.__ModuleLoader__.load({
+ 					orderBy: "updated",
+ 					groupExpansion: {},
+ 					sessionOrderByAccount: {},
++					unreadSessionIds: [],
+ 					archivedFilter: "default"
+ 				}),
+ 				persist: "dsh.workspace.view.v5",
+ 				actions: {
++					markSessionUnread: (d, sessionId) => {
++						const unread = d.unreadSessionIds ?? (d.unreadSessionIds = []);
++						if (!unread.includes(sessionId)) unread.push(sessionId);
++					},
++					markSessionRead: (d, sessionId) => {
++						d.unreadSessionIds = (d.unreadSessionIds ?? []).filter((id) => id !== sessionId);
++					},
+ 					setGroupBy: (d, mode) => {
+ 						d.groupBy = mode;
+ 					},
+@@ -1368,6 +1377,16 @@ window.__ModuleLoader__.load({
+ 			lifetime = new AbortController();
+ 			selection = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({}, { persist: { name: "dsh.sessions.current" } });
+ 			mainReference;
++			sessionOpener = null;
++			sessionStarter = null;
++			sessionReuseFilter = null;
++			sessionFilter = null;
++			sessionFilterUnsubscribe = null;
++			sessionVisibility = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)(0);
++			workspaceFilter = null;
++			workspaceFilterUnsubscribe = null;
++			workspaceVisibility = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)(0);
++			workspaceDeleteHandler = null;
+ 			/**
+ 			* @param ctx - Client root Context.
+ 			* @param directoryPicker - the directory-picking Remote namespace.
+@@ -1421,7 +1440,7 @@ window.__ModuleLoader__.load({
+ 				const blank = sessions.ids.find((id) => {
+ 					const summary = sessions.byId[id];
+ 					const listed = summary?.projectionValues?.agentPreset;
+-					return summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(id) && !archived.includes(id) && (options.agentPreset === void 0 || typeof listed !== "string" || listed === options.agentPreset);
++					return summary !== void 0 && this.isSessionVisible(id) && this.sessionReuseFilter?.(id) !== false && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(id) && !archived.includes(id) && (options.agentPreset === void 0 || typeof listed !== "string" || listed === options.agentPreset);
+ 				});
+ 				return this.createNamed({
+ 					workspaceId: workspace.workspaceId,
+@@ -1468,7 +1487,82 @@ window.__ModuleLoader__.load({
+ 					return this.createNamed(request);
+ 				}
+ 			}
+-			openSession(target) {
++			registerSessionOpener(handler) {
++				if (this.sessionOpener !== null) throw new Error("uiWorkspace session opener already registered");
++				this.sessionOpener = handler;
++				let active = true;
++				return () => {
++					if (!active) return;
++					active = false;
++					if (this.sessionOpener === handler) this.sessionOpener = null;
++				};
++			}
++			registerSessionReuseFilter(handler) {
++				if (this.sessionReuseFilter !== null) throw new Error("uiWorkspace session reuse filter already registered");
++				this.sessionReuseFilter = handler;
++				return () => {
++					if (this.sessionReuseFilter === handler) this.sessionReuseFilter = null;
++				};
++			}
++			registerSessionFilter(filter, subscribe) {
++				if (this.sessionFilter !== null) throw new Error('uiWorkspace session filter already registered');
++				this.sessionFilter = filter;
++				const invalidate = () => this.sessionVisibility.set(this.sessionVisibility.getSnapshot() + 1);
++				this.sessionFilterUnsubscribe = subscribe(invalidate);
++				invalidate();
++				let active = true;
++				return () => {
++					if (!active) return;
++					active = false;
++					this.sessionFilterUnsubscribe?.();
++					this.sessionFilterUnsubscribe = null;
++					if (this.sessionFilter === filter) this.sessionFilter = null;
++					invalidate();
++				};
++			}
++			isSessionVisible(sessionId) {
++				return this.sessionFilter?.(sessionId) ?? true;
++			}
++			registerWorkspaceFilter(filter, subscribe) {
++				if (this.workspaceFilter !== null) throw new Error("uiWorkspace workspace filter already registered");
++				this.workspaceFilter = filter;
++				const invalidate = () => this.workspaceVisibility.set(this.workspaceVisibility.getSnapshot() + 1);
++				this.workspaceFilterUnsubscribe = subscribe(invalidate);
++				invalidate();
++				let active = true;
++				return () => {
++					if (!active) return;
++					active = false;
++					this.workspaceFilterUnsubscribe?.();
++					this.workspaceFilterUnsubscribe = null;
++					if (this.workspaceFilter === filter) this.workspaceFilter = null;
++					invalidate();
++				};
++			}
++			isWorkspaceVisible(workspaceId) {
++				return this.workspaceFilter?.(workspaceId) ?? true;
++			}
++			registerWorkspaceDeleteHandler(handler) {
++				if (this.workspaceDeleteHandler !== null) throw new Error("uiWorkspace workspace delete handler already registered");
++				this.workspaceDeleteHandler = handler;
++				let active = true;
++				return () => {
++					if (!active) return;
++					active = false;
++					if (this.workspaceDeleteHandler === handler) this.workspaceDeleteHandler = null;
++				};
++			}
++			async deleteWorkspace(workspaceId) {
++				if (this.workspaceDeleteHandler !== null) {
++					const handled = await this.workspaceDeleteHandler(workspaceId);
++					if (handled === true) return;
++					if (handled !== false) throw new Error("uiWorkspace workspace delete handler must return a boolean");
++				}
++				await this.workspaces.delete(workspaceId);
++			}
++			openSession(target, source = "explicit-session") {
++				if (typeof target === "string") this.view.markSessionRead(target);
++				if (typeof target === "string" && this.sessionOpener?.(target, source) === true) return;
+ 				this.replaceMain(target, this.lifetime.signal, "reveal");
+ 			}
+ 			openWorkspace(workspaceId, beforeOpen, options = {}) {
+@@ -1476,6 +1570,7 @@ window.__ModuleLoader__.load({
+ 			}
+ 			async openWorkspaceSession(workspaceId, beforeOpen, reuse) {
+ 				const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal]);
++				const knownSessions = new Set(this.sessions.list.getSnapshot().ids);
+ 				let sessionId;
+ 				try {
+ 					sessionId = await this.connectBlank(workspaceId, reuse);
+@@ -1487,6 +1582,8 @@ window.__ModuleLoader__.load({
+ 					throw error;
+ 				}
+ 				if (navigation.aborted) return;
++				this.view.markSessionRead(sessionId);
++				if (this.sessionOpener?.(sessionId, "workspace", { workspaceId, created: !knownSessions.has(sessionId) }) === true) return;
+ 				this.replaceMain(sessionId, navigation, "reveal", beforeOpen);
+ 			}
+ 			async forkSession(sessionId, onCreated, options) {
+@@ -1497,10 +1594,21 @@ window.__ModuleLoader__.load({
+ 					...options?.allowMigration === void 0 ? {} : { allowMigration: options.allowMigration }
+ 				});
+ 			}
++			registerSessionStarter(handler) {
++				if (this.sessionStarter !== null) throw new Error("uiWorkspace session starter already registered");
++				this.sessionStarter = handler;
++				let active = true;
++				return () => {
++					if (!active) return;
++					active = false;
++					if (this.sessionStarter === handler) this.sessionStarter = null;
++				};
++			}
+ 			startSession(workspaceId, options) {
+ 				const { agentPreset, ...draft } = options ?? {};
+ 				const draftOptions = options === void 0 ? void 0 : draft;
+ 				const initializeDraft = draftOptions !== void 0 && (draftOptions.prompt !== void 0 || (draftOptions.whenDraftExists ?? (draftOptions.clearPreviousDraft === true ? "replace" : "keep")) === "replace");
++				if (options === void 0 && this.sessionStarter?.(workspaceId) === true) return;
+ 				const workspace = this.workspaces.list.getSnapshot();
+ 				const sessions = this.sessions.list.getSnapshot();
+ 				const current = this.mainReference?.sessionId;
+@@ -1546,6 +1654,24 @@ window.__ModuleLoader__.load({
+ 			async unarchiveSession(sessionId) {
+ 				await this.workspaces.unarchiveSession(sessionId);
+ 			}
++			/** Release the main view before deleting its durable Session. */
++			async deleteSession(sessionId) {
++				if (this.mainReference?.sessionId === sessionId) {
++					this.clearMain();
++					const retention = this.sessions.retainInfo(sessionId);
++					if (retention.getSnapshot().referenceCount > 0) await new Promise((resolve) => {
++						let unsubscribe = () => {};
++						let timer;
++						const finish = () => { clearTimeout(timer); unsubscribe(); resolve(); };
++						unsubscribe = retention.subscribe(() => {
++							if (retention.getSnapshot().referenceCount === 0) finish();
++						});
++						timer = setTimeout(finish, 250);
++						if (retention.getSnapshot().referenceCount === 0) finish();
++					});
++				}
++				await this.sessions.delete(sessionId);
++			}
+ 			async pinSession(sessionId) {
+ 				await this.workspaces.pinSession(sessionId);
+ 				const { items, pinnedSessionIds, archivedSessionIds } = this.workspaces.list.getSnapshot();
+@@ -2176,7 +2302,7 @@ window.__ModuleLoader__.load({
+ 		* @param props.t - Workspace-browser translation seat.
+ 		* @returns the result row.
+ 		*/
+-		function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }) {
++		function SearchResultItem({ result, currentId, onOpen, onUnarchive, renderSlot, t }) {
+ 			const selected = result.id === currentId;
+ 			const statuses = sessionStatuses(result, t);
+ 			const primaryStatus = statuses[0];
+@@ -2191,6 +2317,7 @@ window.__ModuleLoader__.load({
+ 				children: [(0, react_jsx_runtime.jsxs)("span", {
+ 					className: Rows_module_css_default.searchResultHeading,
+ 					children: [
++
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: Rows_module_css_default.slot,
+ 							children: !result.archived && primaryStatus.state !== "idle" && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
+@@ -2252,7 +2379,7 @@ window.__ModuleLoader__.load({
+ 		* @param props.t - the browser root's locale seat.
+ 		* @returns the session row.
+ 		*/
+-		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, t }) {
++		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, unread = false, onUnreadChange, t }) {
+ 			const row = node;
+ 			const title = displayTitle(node, t);
+ 			const selected = node.id === currentId;
+@@ -2281,6 +2408,11 @@ window.__ModuleLoader__.load({
+ 					onClick: () => {
+ 						onOpen(node.id);
+ 					},
++					onContextMenu: (event) => {
++						event.preventDefault();
++						event.stopPropagation();
++						if (!row.blank) setMenuOpen(true);
++					},
+ 					onPointerEnter: marquee.enter,
+ 					onPointerLeave: marquee.leave,
+ 					draggable,
+@@ -2304,11 +2436,12 @@ window.__ModuleLoader__.load({
+ 					children: [
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: Rows_module_css_default.slot,
+-							children: !row.archived && !row.blank && (showStatus ? (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses }) : renderSlot("sidebar.session.row.leading", { sessionId: node.id }))
++							children: !row.archived && !row.blank && (showStatus ? (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses }) : unread ? (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: "done" }), (0, react_jsx_runtime.jsx)("span", { className: Rows_module_css_default.visuallyHidden, children: t("status.unread") })] }) : renderSlot("sidebar.session.row.leading", { sessionId: node.id }))
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							ref: titleRef,
+ 							className: Rows_module_css_default.title,
++							style: unread ? { fontWeight: 600 } : void 0,
+ 							onDoubleClick: row.blank ? void 0 : (e) => {
+ 								e.stopPropagation();
+ 								onRenameRequest(node.id, row.title);
+@@ -2344,7 +2477,9 @@ window.__ModuleLoader__.load({
+ 								}),
+ 								children: renderSlot("sidebar.workspaces.session.menu.item", {
+ 									sessionId: node.id,
+-									displayTitle: row.title
++									displayTitle: row.title,
++									unread,
++									onUnreadChange
+ 								}, { hookContext: menuOpenState })
+ 							}), renderSlot("sidebar.workspaces.session.row.action", {
+ 								sessionId: node.id,
+@@ -3021,8 +3156,8 @@ window.__ModuleLoader__.load({
+ 				]
+ 			});
+ 		}
+-		/** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
+-		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
++		/** The scrolling session tree; unmounting drops the sessions subscription and local row limits. */
++		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
+ 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
+ 			const statuses = useSessionStatus((s) => s);
+ 			const current = panelActive ? void 0 : Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
+@@ -3300,6 +3435,8 @@ window.__ModuleLoader__.load({
+ 								onOpen: open,
+ 								onRenameRequest: onSessionRenameRequest,
+ 								renderSlot,
++								unread: unreadSessionIds.includes(node.id),
++								onUnreadChange,
+ 								onReveal: node.id === revealSessionId && group.key === revealGroup ? () => {
+ 									onSessionRevealed(node.id);
+ 								} : void 0,
+@@ -3353,7 +3490,7 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		/** The flat "In one list" body: every session is one draggable top-level row. */
+-		function FlatList({ list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t }) {
++		function FlatList({ list, sessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t }) {
+ 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
+ 			const statuses = useSessionStatus((s) => s);
+ 			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, rowState, statuses), [
+@@ -3394,8 +3531,10 @@ window.__ModuleLoader__.load({
+ 							currentId,
+ 							now,
+ 							onOpen: open,
+-							onRenameRequest: onSessionRenameRequest,
+-							renderSlot,
++								onRenameRequest: onSessionRenameRequest,
++								renderSlot,
++								unread: unreadSessionIds.includes(node.id),
++								onUnreadChange,
+ 							onReveal: node.id === revealSessionId ? () => {
+ 								onSessionRevealed(node.id);
+ 							} : void 0,
+@@ -3439,9 +3578,8 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		/** Flat search body: local metadata matches plus the current Host result page. */
+-		function SearchResults({ useSessions, useSessionStatus, open, onUnarchive, workspaces, archivedSessionIds, archivedFilter, query, remote, resultLimit, usePanelInfo, t }) {
++		function SearchResults({ list, useSessionStatus, open, onUnarchive, workspaces, archivedSessionIds, archivedFilter, query, remote, resultLimit, usePanelInfo, renderSlot, t }) {
+ 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
+-			const list = useSessions((s) => s);
+ 			const statuses = useSessionStatus((s) => s);
+ 			const currentRemote = remote.query === query ? remote : {
+ 				query,
+@@ -3475,6 +3613,7 @@ window.__ModuleLoader__.load({
+ 								currentId,
+ 								onOpen: open,
+ 								onUnarchive,
++								renderSlot,
+ 								t
+ 							}, result.id))
+ 						}),
+@@ -3507,19 +3646,27 @@ window.__ModuleLoader__.load({
+ 		* @param props - composed slot props (shell owner share + store + injected actions).
+ 		* @returns the region element tree.
+ 		*/
+-		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t }) {
++		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, isSessionVisible, isWorkspaceVisible, useDirectoryFlow, useHostInfo, useSessionVisibility, useWorkspaceVisibility, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, dismissForkError, renderSlot, t }) {
+ 			const home = useHostInfo((info) => info.home);
+ 			const shortcuts = useShortcuts((rows) => rows);
+ 			const searchShortcut = shortcuts.find((row) => row.id === "session.search");
+ 			const addShortcut = shortcuts.find((row) => row.id === "workspace.add");
+ 			const shortcutState = useWorkspaceShortcuts((state) => state);
+-			const list = useSessions((state) => state);
++			const sourceList = useSessions((state) => state);
++			const sessionVisibilityRevision = useSessionVisibility((revision) => revision);
++			const workspaceVisibilityRevision = useWorkspaceVisibility((revision) => revision);
++			const list = (0, react.useMemo)(() => {
++				const ids = sourceList.ids.filter(isSessionVisible);
++				const visible = new Set(ids);
++				return { ...sourceList, ids, byId: Object.fromEntries(Object.entries(sourceList.byId).filter(([id]) => visible.has(id))) };
++			}, [isSessionVisible, sessionVisibilityRevision, sourceList]);
+ 			const storedWorkspaces = useWorkspaces((state) => state.items);
+ 			const defaultWorkspaceName = t("workspace.defaultName");
+-			const workspaces = (0, react.useMemo)(() => storedWorkspaces.map((workspace) => ({
++			const workspaces = (0, react.useMemo)(() => storedWorkspaces.filter((workspace) => isWorkspaceVisible(workspace.workspaceId)).map((workspace) => ({
+ 				...workspace,
++				sessionIds: workspace.sessionIds.filter(isSessionVisible),
+ 				title: workspaceDisplayTitle(workspace.title, defaultWorkspaceName)
+-			})), [storedWorkspaces, defaultWorkspaceName]);
++			})).filter((workspace) => workspace.sessionIds.length > 0), [storedWorkspaces, defaultWorkspaceName, isSessionVisible, sessionVisibilityRevision, isWorkspaceVisible, workspaceVisibilityRevision]);
+ 			const workspacePhase = useWorkspaces((state) => state.phase);
+ 			const workspaceStreamState = useWorkspaces((state) => state.state);
+ 			const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
+@@ -3530,6 +3677,11 @@ window.__ModuleLoader__.load({
+ 			const archivedFilter = useStore((s) => s.archivedFilter ?? "default");
+ 			const groupExpansion = useStore((s) => s.groupExpansion);
+ 			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
++			const unreadSessionIds = useStore((s) => s.unreadSessionIds ?? []);
++			const onUnreadChange = (sessionId, unread) => {
++				if (unread) actions.markSessionUnread(sessionId);
++				else actions.markSessionRead(sessionId);
++			};
+ 			const guardedOpen = (sessionId) => {
+ 				if (archivedSessionIds.includes(sessionId)) {
+ 					notifyArchivedNotOpenable();
+@@ -3799,6 +3951,11 @@ window.__ModuleLoader__.load({
+ 			const [deleting, setDeleting] = (0, react.useState)(false);
+ 			const [deleteCommittedId, setDeleteCommittedId] = (0, react.useState)(null);
+ 			const [deleteError, setDeleteError] = (0, react.useState)(null);
++			(0, react.useEffect)(() => {
++				if (deleting || deleteTarget === null || deleteTarget.visibilityRevision === workspaceVisibilityRevision) return;
++				setDeleteTarget(null);
++				setDeleteError(null);
++			}, [deleting, deleteTarget, workspaceVisibilityRevision]);
+ 			(0, react.useEffect)(() => {
+ 				if (deleteCommittedId === null || workspaces.some((workspace) => workspace.workspaceId === deleteCommittedId)) return;
+ 				setDeleting(false);
+@@ -3813,6 +3970,10 @@ window.__ModuleLoader__.load({
+ 			const confirmDelete = () => {
+ 				/* v8 ignore next -- the Modal is absent without a target and its button is disabled while deleting. */
+ 				if (deleting || deleteTarget === null) return;
++				if (deleteTarget.visibilityRevision !== workspaceVisibilityRevision) {
++					setDeleteTarget(null);
++					return;
++				}
+ 				setDeleting(true);
+ 				setDeleteCommittedId(null);
+ 				setDeleteError(null);
+@@ -3965,7 +4126,7 @@ window.__ModuleLoader__.load({
+ 						className: WorkspaceBrowser_module_css_default.listArea,
+ 						children: wide && (normalizedQuery !== "" ? (0, react_jsx_runtime.jsx)(SearchResults, {
+ 							usePanelInfo,
+-							useSessions,
++							list,
+ 							useSessionStatus,
+ 							open: openSearchResult,
+ 							onUnarchive: onSessionUnarchive,
+@@ -3981,6 +4142,8 @@ window.__ModuleLoader__.load({
+ 							list,
+ 							sessionIds: orderedFlatSessionIds,
+ 							rowState,
++							unreadSessionIds,
++							onUnreadChange,
+ 							onLeaveArchivedOnly: leaveArchivedOnly,
+ 							workspaceReady,
+ 							animationResetKey: `${groupBy}/${orderBy}/${archivedFilter}`,
+@@ -4008,6 +4171,8 @@ window.__ModuleLoader__.load({
+ 							setGroupExpanded: actions.setGroupExpanded,
+ 							setSessionOrder: saveSessionOrder,
+ 							rowState,
++							unreadSessionIds,
++							onUnreadChange,
+ 							onLeaveArchivedOnly: leaveArchivedOnly,
+ 							startSession,
+ 							open: guardedOpen,
+@@ -4027,7 +4192,8 @@ window.__ModuleLoader__.load({
+ 							onDeleteRequest: (workspaceId, title) => {
+ 								setDeleteTarget({
+ 									workspaceId,
+-									title
++									title,
++									visibilityRevision: workspaceVisibilityRevision
+ 								});
+ 								setDeleteError(null);
+ 							}
+@@ -4857,6 +5023,7 @@ window.__ModuleLoader__.load({
+ 			"status.compact.planReview": "计划待审",
+ 			"status.compact.answer": "待回答",
+ 			"status.completed": "已完成",
++			"status.unread": "未读",
+ 			"hover.created": "创建于 {time}",
+ 			"hover.copied": "已复制",
+ 			"date.ymd": "{y}年{m}月{d}日",
+@@ -4979,6 +5146,7 @@ window.__ModuleLoader__.load({
+ 			"status.compact.planReview": "Plan review",
+ 			"status.compact.answer": "Answer",
+ 			"status.completed": "Completed",
++			"status.unread": "Unread",
+ 			"hover.created": "Created {time}",
+ 			"hover.copied": "Copied",
+ 			"date.ymd": "{y}-{m}-{d}",
+@@ -5180,6 +5348,8 @@ window.__ModuleLoader__.load({
+ 				}
+ 			});
+ 			const browserInjected = () => ({
++				isSessionVisible: (sessionId) => uiWorkspace.isSessionVisible(sessionId),
++				isWorkspaceVisible: (workspaceId) => uiWorkspace.isWorkspaceVisible(workspaceId),
+ 				startSession: (workspaceId, options) => {
+ 					uiWorkspace.startSession(workspaceId, options);
+ 				},
+@@ -5194,7 +5364,7 @@ window.__ModuleLoader__.load({
+ 					await workspaces.rename(workspaceId, title);
+ 				},
+ 				deleteWorkspace: async (workspaceId) => {
+-					await workspaces.delete(workspaceId);
++					await uiWorkspace.deleteWorkspace(workspaceId);
+ 				},
+ 				insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
+ 					await workspaces.insertBefore(workspaceId, beforeWorkspaceId);
+@@ -5210,6 +5380,8 @@ window.__ModuleLoader__.load({
+ 				hooks: {
+ 					directoryFlow: browserFlowSource,
+ 					hostInfo,
++					sessionVisibility: uiWorkspace.sessionVisibility,
++					workspaceVisibility: uiWorkspace.workspaceVisibility,
+ 					workspaceShortcuts: shortcutControls.state,
+ 					shortcuts: ctx.shortcuts.catalog
+ 				}
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+index ef666cc3a2..3dfb317b76 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+@@ -226,6 +226,8 @@ export type WorkspaceBrowserInjected = {
+          * saw. Select the field the surface needs (`info => info.home`).
+          */
+         hostInfo: HostObservable<RemoteHostFacts>;
++        sessionVisibility: HostObservable<number>;
++        workspaceVisibility: HostObservable<number>;
+         workspaceShortcuts: HostObservable<WorkspaceShortcutState>;
+         shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>;
+     };
+@@ -255,13 +257,15 @@ export type WorkspaceBrowserInjected = {
+     }>;
+     /** Maximum number of merged rows rendered for one search. */
+     searchResultLimit: number;
++    isSessionVisible: (sessionId: SessionId) => boolean;
++    isWorkspaceVisible: (workspaceId: WorkspaceId) => boolean;
+     /** Open the Session rename dialog (a row title double-click); the rename action entry raises the same request. */
+     requestSessionRename: (sessionId: SessionId, currentTitle: string) => void;
+     /** Tell the user an archived row cannot be opened (a click on it). */
+     notifyArchivedNotOpenable: () => void;
+     /** Rename a Host Workspace (rejects on name conflict; resolves on durability). */
+     renameWorkspace: (workspaceId: WorkspaceId, title: string) => Promise<void>;
+-    /** Delete only a Host Workspace registration; directory and Session logs remain. */
++    /** Delete a Workspace from the active view; without a handler, delete its Host registration. */
+     deleteWorkspace: (workspaceId: WorkspaceId) => Promise<void>;
+     /**
+      * Reorder a Workspace in the durable registry display order.
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
+index fe88429a26..f00c532ad0 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
+@@ -114,6 +114,7 @@ export declare const zh: {
+     'status.compact.planReview': string;
+     'status.compact.answer': string;
+     'status.completed': string;
++    'status.unread': string;
+     'hover.created': string;
+     'hover.copied': string;
+     'date.ymd': string;
+@@ -238,6 +239,7 @@ export declare const en: {
+     'status.compact.planReview': string;
+     'status.compact.answer': string;
+     'status.completed': string;
++    'status.unread': string;
+     'hover.created': string;
+     'hover.copied': string;
+     'date.ymd': string;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
+index 27b4d6c8ed..e740ab6b5a 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
+@@ -5,6 +5,11 @@ import type { ISessions, SessionTarget } from '@deepseek-ai/dsh-api-session-cont
+ import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client';
+ import type { SessionId } from '@deepseek-ai/dsh-session/types';
+ import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client';
++export type SessionNavigationSource = 'explicit-session' | 'workspace';
++export interface SessionNavigationContext {
++    workspaceId: WorkspaceId;
++    created: boolean;
++}
+ import type { RowToast } from './contract/slots.ts';
+ import type { WorkspaceViewStoreActions } from './stores.ts';
+ /** Content preparation and Agent preset for the Session a Workspace flow opens. */
+@@ -18,7 +23,16 @@ export interface UiWorkspace {
+      * Select a Session and show its Conversation as one UI navigation action.
+      * @param target - known Session identity or durable direct-parent subagent address to display.
+      */
+-    openSession(target: SessionTarget): void;
++    registerSessionOpener(handler: (sessionId: SessionId, source?: SessionNavigationSource, context?: SessionNavigationContext) => boolean): () => void;
++    registerSessionReuseFilter(handler: (sessionId: SessionId) => boolean): () => void;
++    registerSessionFilter(filter: (sessionId: SessionId) => boolean, subscribe: (listener: () => void) => () => void): () => void;
++    isSessionVisible(sessionId: SessionId): boolean;
++    registerWorkspaceFilter(filter: (workspaceId: WorkspaceId) => boolean, subscribe: (listener: () => void) => () => void): () => void;
++    isWorkspaceVisible(workspaceId: WorkspaceId): boolean;
++    /** Return true after a scoped delete, or false to use the native global delete. A rejection never falls back. */
++    registerWorkspaceDeleteHandler(handler: (workspaceId: WorkspaceId) => boolean | Promise<boolean>): () => void;
++    deleteWorkspace(workspaceId: WorkspaceId): Promise<void>;
++    openSession(target: SessionTarget, source?: SessionNavigationSource): void;
+     /**
+      * Connect a Workspace and open its Session unless a later navigation supersedes it.
+      * @param workspaceId - target Workspace.
+@@ -38,6 +52,7 @@ export interface UiWorkspace {
+      * @returns the child SessionId after creation and inherited-title increment.
+      */
+     forkSession(sessionId: SessionId, onCreated?: (childId: SessionId) => void, options?: Pick<Parameters<ISessions['fork']>[0], 'allowMigration'>): Promise<SessionId>;
++    deleteSession(sessionId: SessionId): Promise<void>;
+     /**
+      * Resolve the Session for a new conversation in a Workspace: navigation names the first
+      * reusable blank member, skipping blanks that list a preset other than a requested one, and
+@@ -55,6 +70,7 @@ export interface UiWorkspace {
+      * @param options - initial content, the blank's preset, and `whenDraftExists`, which decides
+      * whether existing text or attachments are kept, replaced, or followed by the prompt.
+      */
++    registerSessionStarter(handler: (workspaceId?: WorkspaceId) => boolean): () => void;
+     startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void;
+     /**
+      * Archive a Session and clear it when it is the current selection.
+@@ -127,6 +143,16 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+     private readonly lifetime;
+     private readonly selection;
+     private mainReference;
++    private sessionOpener;
++    private sessionStarter;
++    private sessionReuseFilter;
++    private sessionFilter;
++    private sessionFilterUnsubscribe;
++    sessionVisibility: import('@deepseek-ai/dsh-client-store').SnapshotStore<number>;
++    private workspaceFilter;
++    private workspaceFilterUnsubscribe;
++    workspaceVisibility: import('@deepseek-ai/dsh-client-store').SnapshotStore<number>;
++    private workspaceDeleteHandler;
+     /**
+      * @param ctx - Client root Context.
+      * @param directoryPicker - the directory-picking Remote namespace.
+@@ -135,7 +161,7 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+      * @param view - the browser's viewing-store write set (one instance shared with its registration).
+      * @param notify - show one notice through the Workspace notice channel.
+      */
+-    constructor(ctx: Context, directoryPicker: ClientRemote['directoryPicker'], workspaces: IWorkspaces, sessions: ISessions, view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>, notify: (toast: RowToast) => void);
++    constructor(ctx: Context, directoryPicker: ClientRemote['directoryPicker'], workspaces: IWorkspaces, sessions: ISessions, view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder' | 'markSessionRead'>, notify: (toast: RowToast) => void);
+     connectWorkspace(workspaceId: WorkspaceId, options?: Pick<StartSessionOptions, 'agentPreset'>): Promise<SessionId>;
+     /**
+      * @param reuse - preset for the reused or created blank.
+@@ -157,10 +183,21 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+      * that still awaits a format migration reloads only those cached hints.
+      */
+     private restoreBlank;
+-    openSession(target: SessionTarget): void;
++    registerSessionOpener(handler: (sessionId: SessionId, source?: SessionNavigationSource, context?: SessionNavigationContext) => boolean): () => void;
++    registerSessionReuseFilter(handler: (sessionId: SessionId) => boolean): () => void;
++    registerSessionFilter(filter: (sessionId: SessionId) => boolean, subscribe: (listener: () => void) => () => void): () => void;
++    isSessionVisible(sessionId: SessionId): boolean;
++    registerWorkspaceFilter(filter: (workspaceId: WorkspaceId) => boolean, subscribe: (listener: () => void) => () => void): () => void;
++    isWorkspaceVisible(workspaceId: WorkspaceId): boolean;
++    /** Return true after a scoped delete, or false to use the native global delete. A rejection never falls back. */
++    registerWorkspaceDeleteHandler(handler: (workspaceId: WorkspaceId) => boolean | Promise<boolean>): () => void;
++    deleteWorkspace(workspaceId: WorkspaceId): Promise<void>;
++    openSession(target: SessionTarget, source?: SessionNavigationSource): void;
+     openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void, options?: Pick<StartSessionOptions, 'agentPreset'>): Promise<void>;
+     private openWorkspaceSession;
+     forkSession(sessionId: SessionId, onCreated?: (childId: SessionId) => void, options?: Pick<Parameters<ISessions['fork']>[0], 'allowMigration'>): Promise<SessionId>;
++    deleteSession(sessionId: SessionId): Promise<void>;
++    registerSessionStarter(handler: (workspaceId?: WorkspaceId) => boolean): () => void;
+     startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void;
+     private prepareDraft;
+     private draftPreparationFailed;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
+index 4532194113..8abccfeecd 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
+@@ -4,5 +4,5 @@ import type { WorkspaceBrowserProps } from '../contract/slots.ts';
+  * @param props - composed slot props (shell owner share + store + injected actions).
+  * @returns the region element tree.
+  */
+-export declare function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
+-//# sourceMappingURL=WorkspaceBrowser.d.ts.map
+\ No newline at end of file
++export declare function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, isSessionVisible, isWorkspaceVisible, useDirectoryFlow, useHostInfo, useSessionVisibility, useWorkspaceVisibility, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, dismissForkError, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
++//# sourceMappingURL=WorkspaceBrowser.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
+index 4e20866c4e..d4d260f864 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
+@@ -23,6 +23,8 @@ type WorkspaceViewState = {
+     groupExpansion: Record<string, boolean>;
+     /** Saved manual order per Workspace group plus the browser-local flat-list account. */
+     sessionOrderByAccount: Record<string, string[]>;
++    /** Desktop unread markers; absent in older persisted v5 snapshots. */
++    unreadSessionIds?: string[];
+     /** Archived-row visibility; omitted in pre-filter v5 snapshots and read as 'default'. */
+     archivedFilter?: ArchivedFilter;
+ };
+@@ -36,6 +38,8 @@ type SessionOrderSource = {
+  * return type); drift fails assignability at the defineStore call.
+  */
+ type WorkspaceViewActions = {
++    markSessionUnread: (draft: WorkspaceViewState, sessionId: string) => void;
++    markSessionRead: (draft: WorkspaceViewState, sessionId: string) => void;
+     setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void;
+     setOrderBy: (draft: WorkspaceViewState, mode: SessionOrderBy, initialOrders: Readonly<Record<string, readonly string[]>>) => void;
+     setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void;
