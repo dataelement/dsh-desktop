@@ -1127,7 +1127,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 640,
     show: false,
-    title: '',
+    title: app.getName(),
     icon: desktopIconPath(),
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset' as const,
@@ -1185,7 +1185,7 @@ function createWindow(): BrowserWindow {
   })
   window.on('page-title-updated', (event) => {
     event.preventDefault()
-    window.setTitle('')
+    window.setTitle(app.getName())
   })
   window.webContents.on('console-message', (details) => {
     if (details.level !== 'error') return
