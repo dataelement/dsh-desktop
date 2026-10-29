@@ -420,7 +420,11 @@ jobs:
         timeout-minutes: 15
       - name: Run complete Windows test suite
         if: inputs.checks == 'extended' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
-        run: npx --no-install vitest run --reporter=verbose --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
+        run: |
+          npx --no-install vitest run --mode windows-parallel --reporter=verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx --no-install vitest run --mode windows-serial --reporter=verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         timeout-minutes: 15
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
