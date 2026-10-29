@@ -28,7 +28,7 @@ with patch.object(update_popup_notes, 'collect_release_evidence', return_value=S
     release_range='v1.0..v1.1', commit_details='upgrade Harness',
     diff_summary='package.json', code_diff='- rc.2\\n+ rc.3')):
     print(update_popup_notes.prompt('v1.1'))
-`], { cwd: root, encoding: 'utf8' })
+`], { cwd: root, encoding: 'utf8' }).replaceAll('\r\n', '\n')
     expect(output).toContain('必须在靠前位置单独列出')
     expect(output).toContain('中英文均保留 Harness 名称及相同版本')
     expect(output).toContain('没有证据时不添加此项')

@@ -577,6 +577,7 @@ describe('GitHub release contract', () => {
   it('does not change Windows security settings during installation', async () => {
     const installer = await readFile(path.join(projectRoot, 'build', 'installer.nsh'), 'utf8')
     expect(installer).not.toMatch(/Add-MpPreference|HKLM|ExecShell\s+"runas"/)
+    expect(installer).toMatch(/!macro customHeader\s+RequestExecutionLevel highest\s+!macroend/)
   })
 
   it('routes stable downloads through the website and previews through GitHub', async () => {
