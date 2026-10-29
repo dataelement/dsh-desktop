@@ -156,11 +156,13 @@ describe('boot cover lifecycle', () => {
     cover?.dispose()
   })
 
-  it('insets the splash below the Windows caption, matching the startup page', () => {
-    const { doc, cover } = mountHarnessCover({ platform: 'win32' })
+  it('does not push the splash below a Windows caption the startup page no longer reserves', () => {
+    const { doc, cover } = mountHarnessCover()
     const root = doc.getElementById(BOOT_COVER_ID)
-    expect(root?.dataset.platform).toBe('windows')
-    expect(root?.shadowRoot?.querySelector('style')?.textContent).toContain('padding-top:70px')
+    const css = root?.shadowRoot?.querySelector('style')?.textContent ?? ''
+    expect(root?.dataset.platform).toBeUndefined()
+    expect(css).not.toContain('data-platform')
+    expect(css).not.toContain('padding-top:70px')
     cover?.dispose()
   })
 

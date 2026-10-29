@@ -16,8 +16,6 @@ export interface BootCoverOptions {
   document: Document
   locale: 'en' | 'zh'
   stallMs?: number
-  /** Defaults to the current process. Tests pass this to check the Windows inset. */
-  platform?: string
   schedule?: (callback: () => void, delayMs: number) => number
   cancel?: (timer: number) => void
   subscribePageHide?: (listener: () => void) => () => void
@@ -59,7 +57,6 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
 
   const doc = options.document
   const locale = options.locale
-  const platform = options.platform ?? process.platform
   const stallMs = options.stallMs ?? BOOT_COVER_STALL_MS
   const schedule = options.schedule ?? ((callback, delayMs): number => {
     const view = doc.defaultView
@@ -98,7 +95,6 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
   cover.id = BOOT_COVER_ID
   cover.setAttribute('role', 'status')
   cover.setAttribute('aria-live', 'polite')
-  if (platform === 'win32') cover.dataset.platform = 'windows'
   cover.style.cssText = [
     'position:fixed',
     'inset:0',
@@ -124,7 +120,6 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
       padding:32px;
       text-align:center;
     }
-    :host([data-platform="windows"]) .panel { padding-top:70px; }
     .markFrame { display:grid; place-items:center; width:100%; transform:translateY(-80px); }
     .mark {
       grid-area:1 / 1;
