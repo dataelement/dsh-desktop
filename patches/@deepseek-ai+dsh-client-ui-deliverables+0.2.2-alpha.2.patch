@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-index 3d7675f21b..8951693184 100644
+index 3d7675f..559b892 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-@@ -1271,19 +1271,82 @@ window.__ModuleLoader__.load({
+@@ -1271,19 +1271,105 @@ window.__ModuleLoader__.load({
  		* @returns The resolver MarkdownText consumes; the full path rides `title`,
  		* the same disambiguator the row's chips carry.
  		*/
@@ -10,16 +10,35 @@ index 3d7675f21b..8951693184 100644
 +		* A known or heuristic path. Folders open in the system file manager;
 +		* files stay on the document-preview opener. `kind` selects the icon.
 +		*/
-+		function fileMention(path, kind, openFile, label) {
++		function fileMention(path, kind, openFile, label, line) {
 +			return {
 +				open: () => {
 +					if (kind === "folder") openFile(path, { revealInFileManager: true });
++					else if (line !== void 0) openFile(path, { line });
 +					else openFile(path);
 +				},
 +				label: label(path, kind),
 +				title: path,
 +				kind
 +			};
++		}
++		/**
++		* Split a trailing `#L<line>` or `:<line>` suffix from a trimmed candidate
++		* path, returning `{ path, line }` where `line` is a 1-based safe integer
++		* when the suffix names a positive line number.
++		*/
++		function splitLineSuffix(candidate) {
++			const hash = /^(.*?)#L(\d+)(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/.exec(candidate);
++			if (hash !== null) {
++				const line = Number(hash[2]);
++				return line >= 1 && Number.isSafeInteger(line) ? { path: hash[1], line } : { path: hash[1] };
++			}
++			const colon = /^(.*?):(\d+)(?::\d+)?(?:-\d+(?::\d+)?)?$/.exec(candidate);
++			if (colon !== null && colon[1] !== "" && !/^[a-z]:$/i.test(colon[1])) {
++				const line = Number(colon[2]);
++				return line >= 1 && Number.isSafeInteger(line) ? { path: colon[1], line } : { path: colon[1] };
++			}
++			return { path: candidate };
 +		}
 +		/**
 +		* Resolve local path references that were not produced by a tool in the
@@ -38,9 +57,9 @@ index 3d7675f21b..8951693184 100644
 +		function localPathReference(value) {
 +			const candidate = value.trim();
 +			if (candidate === "" || /[\r\n]/.test(candidate)) return void 0;
-+			if (/^[a-z][a-z\d+.-]*:/i.test(candidate) && !/^[a-z]:[\\/]/i.test(candidate)) return void 0;
-+			const path = candidate.replace(/(?:#L\d+(?:C\d+)?|:\d+(?::\d+)?)$/, "");
++			const { path, line } = splitLineSuffix(candidate);
 +			if (path === "") return void 0;
++			if (/^[a-z][a-z\d+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path)) return void 0;
 +			if (/^@[^\\/@\s]+\/[^\\/@\s]+(?:@[^\\/\s]+)?$/.test(path)) return void 0;
 +			if (/^[^@\s\\/]+@[^@\s\\/]+\.[A-Za-z]{2,}$/.test(path)) return void 0;
 +			if (/^v?\d+(?:\.\d+){1,4}(?:-[A-Za-z0-9.-]+)?$/.test(path)) return void 0;
@@ -52,9 +71,11 @@ index 3d7675f21b..8951693184 100644
 +			const separated = /[\\/]/.test(path);
 +			const worktree = segments.some((segment) => /[A-Z]/.test(rawSuffix(segment)));
 +			if (!explicit && !trailingDir && !(separated && extension !== "") && !worktree) return void 0;
++			const kind = !trailingDir && extension !== "" ? "file" : "folder";
 +			return {
 +				path,
-+				kind: !trailingDir && extension !== "" ? "file" : "folder"
++				kind,
++				...kind === "file" && line !== void 0 ? { line } : {}
 +			};
 +		}
 +		/** Characters after the segment's last dot, or "" when there is none. */
@@ -75,8 +96,8 @@ index 3d7675f21b..8951693184 100644
 +		}
  		function producedFileMentions(paths, openFile, label, operations = []) {
  			return { resolve(value) {
- 				const matches = new Set(paths.filter((path) => path === value || basename(path) === value));
- 				for (const operation of operations) if (operation.argumentPath === value) matches.add(operation.path);
+-				const matches = new Set(paths.filter((path) => path === value || basename(path) === value));
+-				for (const operation of operations) if (operation.argumentPath === value) matches.add(operation.path);
 -				const path = matches.size === 1 ? matches.values().next().value : void 0;
 -				if (path === void 0) return void 0;
 -				return {
@@ -86,15 +107,19 @@ index 3d7675f21b..8951693184 100644
 -					label: label(path),
 -					title: path
 -				};
++				const suffix = splitLineSuffix(value.trim());
++				const target = suffix.path;
++				const matches = new Set(paths.filter((path) => path === value || basename(path) === value || path === target || basename(path) === target));
++				for (const operation of operations) if (operation.argumentPath === value || operation.argumentPath === target) matches.add(operation.path);
 +				const known = matches.size === 1 ? matches.values().next().value : void 0;
-+				if (known !== void 0) return fileMention(known, "file", openFile, label);
++				if (known !== void 0) return fileMention(known, "file", openFile, label, suffix.line);
 +				const local = localPathReference(value);
 +				if (local === void 0) return void 0;
-+				return fileMention(local.path, local.kind, openFile, label);
++				return fileMention(local.path, local.kind, openFile, label, local.line);
  			} };
  		}
  		//#endregion
-@@ -2104,6 +2167,7 @@ window.__ModuleLoader__.load({
+@@ -2104,6 +2190,7 @@ window.__ModuleLoader__.load({
  			"presented.hostError": "无法读取主机桌面信息",
  			"presented.preview": "在侧边栏预览",
  			"presented.previewButton": "在侧边栏打开 {name}",
@@ -102,7 +127,7 @@ index 3d7675f21b..8951693184 100644
  			"presented.previewCard": "在侧边栏预览 {name}",
  			"presented.all": "全部 {count} 个文件",
  			"presented.expandAria": "展开全部 {count} 个交付文件",
-@@ -2164,6 +2228,7 @@ window.__ModuleLoader__.load({
+@@ -2164,6 +2251,7 @@ window.__ModuleLoader__.load({
  			"presented.hostError": "Could not read the Host desktop information",
  			"presented.preview": "Preview in sidebar",
  			"presented.previewButton": "Open {name} in sidebar",
@@ -110,7 +135,7 @@ index 3d7675f21b..8951693184 100644
  			"presented.previewCard": "Preview {name} in sidebar",
  			"presented.all": "All {count} files",
  			"presented.expandAria": "Show all {count} delivered files",
-@@ -2672,8 +2737,7 @@ window.__ModuleLoader__.load({
+@@ -2672,8 +2760,7 @@ window.__ModuleLoader__.load({
  			ctx.provide("chatFileMentions", { forClosing(owner) {
  				const paths = selectProducedFiles(owner);
  				const presented = presentedForClosing(owner);
@@ -121,7 +146,7 @@ index 3d7675f21b..8951693184 100644
  		}
  		//#endregion
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
-index 59725309e1..6ae6fbba70 100644
+index 5972530..6ae6fbb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
 @@ -13,6 +13,7 @@ export declare const zh: {
@@ -133,7 +158,7 @@ index 59725309e1..6ae6fbba70 100644
      'presented.all': string;
      'presented.expandAria': string;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
-index 14677b6dfc..6fe940766d 100644
+index 14677b6..a5cfd4e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
 @@ -82,5 +82,5 @@ export { basename } from '../presented.ts';
@@ -141,7 +166,5 @@ index 14677b6dfc..6fe940766d 100644
   * the same disambiguator the row's chips carry.
   */
 -export declare function producedFileMentions(paths: readonly string[], openFile: (path: string) => void, label: (path: string) => string, operations?: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[]): MarkdownFileMentions;
--//# sourceMappingURL=turn-deliverables.d.ts.map
-\ No newline at end of file
-+export declare function producedFileMentions(paths: readonly string[], openFile: (path: string, options?: { readonly revealInFileManager?: boolean }) => void, label: (path: string, kind?: 'file' | 'folder') => string, operations?: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[]): MarkdownFileMentions;
-+//# sourceMappingURL=turn-deliverables.d.ts.map
++export declare function producedFileMentions(paths: readonly string[], openFile: (path: string, options?: { readonly line?: number; readonly revealInFileManager?: boolean }) => void, label: (path: string, kind?: 'file' | 'folder') => string, operations?: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[]): MarkdownFileMentions;
+ //# sourceMappingURL=turn-deliverables.d.ts.map

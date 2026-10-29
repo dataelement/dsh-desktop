@@ -62,6 +62,26 @@ afterEach(() => {
 const status = (phase: UpdateStatus['phase'], extra: Partial<UpdateStatus> = {}): UpdateStatus => ({ phase, currentVersion: '1.0.0', manual: true, presentationId: 7, ...extra })
 
 describe('desktop update presentation at the IPC boundary', () => {
+  it.each(['zh', 'en'] as const)('renders safe Markdown notes in %s with a keyboard-scrollable region', async locale => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.emit(status('checking', { locale, presentationId: 8 }))
+    ui.emit(status('available', { locale, presentationId: 8, availableVersion: '1.1.0', releaseNotes: '# Changes\n- **Fixed** scrolling\n- Use `code`\n\n3. Third\n4. Fourth\n\n<script>alert(1)</script>\n<img src=x onerror=alert(1)>\n[unsafe](javascript:alert(1))' }))
+    const notes = required(ui.shadow.querySelector<HTMLElement>('.release-notes'))
+    expect(notes.querySelector('h3')?.textContent).toBe('Changes')
+    expect(notes.querySelectorAll('ul > li')).toHaveLength(2)
+    expect(notes.querySelector('strong')?.textContent).toBe('Fixed')
+    expect(notes.querySelector('code')?.textContent).toBe('code')
+    expect(notes.querySelector('ol')?.getAttribute('start')).toBe('3')
+    expect(notes.querySelectorAll('ol > li')).toHaveLength(2)
+    expect(notes.querySelector('script,img,a')).toBeNull()
+    expect(notes.textContent).toContain('<script>alert(1)</script>')
+    expect(notes.tabIndex).toBe(0)
+    expect(notes.getAttribute('aria-label')).toBe(locale === 'zh' ? '更新日志' : 'What’s new')
+    ui.emit(status('available', { locale, presentationId: 8, availableVersion: '1.1.0', releaseNotes: '- Refreshed' }))
+    expect(ui.shadow.querySelectorAll('.release-notes')).toHaveLength(1)
+    expect(ui.shadow.querySelectorAll('.release-notes li')).toHaveLength(1)
+  })
+
   it.each(['up-to-date', 'error', 'unsupported', 'checking'] as const)('does not replay historical manual %s snapshots or same-request events', async phase => {
     const ui = await mount(Promise.resolve(status(phase)))
     expect(ui.host.style.display).toBe('none')

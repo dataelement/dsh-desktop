@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-index 0520d6f80b..a1e812f324 100644
+index 0520d6f..b195eb2 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 @@ -1455,8 +1455,9 @@ function mapUsage(usage) {
@@ -143,3 +143,106 @@ index 0520d6f80b..a1e812f324 100644
  				}), model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]();
  				let exhausted = false;
  				try {
+@@ -2346,7 +2368,64 @@ async function readBounded(response, url) {
+ * a working endpoint's catalog. Missing names fall back to the adopted id so
+ * the Web form receives a complete human-readable row.
+ */
+-function readListing(body) {
++/** Only documented, well-shaped metadata is adopted; unknown capabilities stay editable by hand. */
++function discoveryObject(value) {
++	return value !== null && typeof value === "object" && !Array.isArray(value);
++}
++function listingCapabilities(entry, api) {
++	const result = {};
++	const modalities = entry.architecture?.input_modalities;
++	if (Array.isArray(modalities) && modalities.length > 0 && modalities.every((value) => ["text", "image", "file", "audio", "video"].includes(value))) {
++		const input = modalities.filter((value) => value === "text" || value === "image");
++		if (input.length > 0) result.inputModalities = [...new Set(input)];
++	}
++	if (api === "anthropic-messages") {
++		const capabilities = entry.capabilities;
++		if (typeof capabilities?.image_input?.supported === "boolean") result.inputModalities = capabilities.image_input.supported ? ["text", "image"] : ["text"];
++		const thinking = capabilities?.thinking;
++		if (thinking?.supported === false) result.reasoningEfforts = false;
++		// pi-ai's budget path ignores effort strings. Only adaptive thinking can send these levels exactly.
++		else if (thinking?.supported === true && thinking.types?.adaptive?.supported === true && capabilities?.effort?.supported === true) {
++			const efforts = {};
++			for (const level of ["low", "medium", "high", "xhigh", "max"]) if (capabilities.effort[level]?.supported === true) efforts[level] = level;
++			if (Object.keys(efforts).length > 0) {
++				if (thinking.types.disabled?.supported === true) efforts.off = null;
++				result.reasoningEfforts = efforts;
++				result.reasoningCompat = { forceAdaptiveThinking: true };
++			}
++		}
++	} else if (api === "openai-completions") {
++		const reasoning = entry.reasoning;
++		const allowed = ["max", "xhigh", "high", "medium", "low", "minimal", "none"];
++		if (discoveryObject(reasoning) && typeof reasoning.mandatory === "boolean" && (reasoning.default_enabled === void 0 || typeof reasoning.default_enabled === "boolean") && (reasoning.default_effort === void 0 || reasoning.default_effort === null || allowed.includes(reasoning.default_effort)) && (reasoning.supports_max_tokens === void 0 || typeof reasoning.supports_max_tokens === "boolean")) {
++			const disclosed = reasoning.supported_efforts;
++			if (disclosed === null || Array.isArray(disclosed) && disclosed.every((level) => level === null || allowed.includes(level))) {
++				const efforts = {};
++				for (const level of disclosed === null ? allowed : disclosed) {
++					if (level === null || level === "none" && reasoning.mandatory) continue;
++					efforts[level === "none" ? "off" : level] = level;
++				}
++				if (Object.keys(efforts).some((level) => level !== "off")) {
++					result.reasoningEfforts = efforts;
++					result.reasoningCompat = { thinkingFormat: "openrouter" };
++				}
++			}
++		}
++	}
++	return result;
++}
++/** Preserve the installed catalog's supported levels and explicit wire spellings, never invent extended levels. */
++function catalogReasoning(model) {
++	if (!model.reasoning) return false;
++	const efforts = {};
++	for (const level of THINKING_LEVELS) {
++		const wire = model.thinkingLevelMap?.[level];
++		if (wire === null || wire === void 0 && (level === "xhigh" || level === "max")) continue;
++		efforts[level] = wire ?? (level === "off" ? null : model.api === "anthropic-messages" && level === "minimal" ? "low" : level);
++	}
++	return Object.keys(efforts).some((level) => level !== "off") ? efforts : void 0;
++}
++function readListing(body, api) {
+ 	const listing = body;
+ 	const data = listing?.data;
+ 	let listed;
+@@ -2361,6 +2440,7 @@ function readListing(body) {
+ 	}
+ 	const models = [];
+ 	for (const { key, raw } of listed) {
++		if (!discoveryObject(raw)) continue;
+ 		const entry = raw;
+ 		const id = label(key, entry?.id);
+ 		if (id === void 0) continue;
+@@ -2371,7 +2451,8 @@ function readListing(body) {
+ 			id,
+ 			name,
+ 			...contextWindow === void 0 ? {} : { contextWindow },
+-			...maxTokens === void 0 ? {} : { maxTokens }
++			...maxTokens === void 0 ? {} : { maxTokens },
++			...listingCapabilities(entry, api)
+ 		});
+ 	}
+ 	return models;
+@@ -2407,7 +2488,8 @@ async function discoverModels(request, storedProfile) {
+ 			name: model.name,
+ 			contextWindow: model.contextWindow,
+ 			maxTokens: model.maxTokens,
+-			inputModalities: [...model.input]
++			inputModalities: [...model.input],
++			...catalogReasoning(model) === void 0 ? {} : { reasoningEfforts: catalogReasoning(model) }
+ 		}));
+ 	}
+ 	if (request.baseURL === void 0 || request.baseURL.length === 0) throw new LlmError(`pi-ai ships no catalog for provider "${request.provider ?? ""}", so its models can only come from its endpoint; set a baseURL, or enter this provider's models by hand`, "DISCOVERY_FAILED");
+@@ -2449,7 +2531,7 @@ async function discoverModels(request, storedProfile) {
+ 	} catch (error) {
+ 		throw new LlmError(`${url} did not answer with JSON`, "DISCOVERY_FAILED", { cause: error });
+ 	}
+-	return readListing(body);
++	return readListing(body, api);
+ }
+ //#endregion
+ //#region lib/types/login.js

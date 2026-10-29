@@ -1,18 +1,41 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-index 5b6450c675..4b5673c9d5 100644
+index 5b6450c..f0dd986 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-@@ -10428,7 +10428,7 @@ function renderNode(node, key, context) {
+@@ -10006,10 +10006,20 @@ function parseFileLink(value) {
+ 	} catch (_error) {
+ 		return;
+ 	}
++	let colonLine;
++	if (hash < 0) {
++		const colon = /^(.*?):([1-9]\d*)(?::[1-9]\d*)?(?:-[1-9]\d*(?::[1-9]\d*)?)?$/.exec(path);
++		if (colon !== null && colon[1] !== "" && !/^[a-z]:$/i.test(colon[1]) && (/[\\/]/.test(colon[1]) || /\.[a-z][a-z\d]{0,9}$/i.test(colon[1]))) {
++			const parsedLine = Number(colon[2]);
++			if (!Number.isSafeInteger(parsedLine)) return void 0;
++			path = colon[1];
++			colonLine = parsedLine;
++		}
++	}
+ 	if (path.length === 0 || /[\u0000-\u001f\u007f]/.test(path) || /^[\\/]{2}/.test(path) || /^[a-z][a-z\d+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path)) return void 0;
+-	if (hash < 0) return { path };
++	if (hash < 0) return colonLine === void 0 ? { path } : { path, line: colonLine };
+ 	const fragment = value.slice(hash + 1);
+-	const match = /^L([1-9]\d*)(?:-L([1-9]\d*))?$/.exec(fragment);
++	const match = /^L([1-9]\d*)(?:C[1-9]\d*)?(?:-L?([1-9]\d*)(?:C[1-9]\d*)?)?$/.exec(fragment);
+ 	if (match === null) return void 0;
+ 	const line = Number(match[1]);
+ 	const end = match[2] === void 0 ? line : Number(match[2]);
+@@ -10428,7 +10438,7 @@ function renderNode(node, key, context) {
  				"aria-label": mention.label,
  				onClick: mention.open,
  				children: [jsx(LinkIconMedium, {
 -					kind: classifyLinkPath(value),
-+					kind: mention.kind === "folder" ? "folder" : classifyLinkPath(value),
++					kind: mention.kind === "folder" ? "folder" : classifyLinkPath(mention.title || value),
  					className: markdownCss.linkIcon
  				}), value]
  			}) }, key);
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts
-index bf96376990..cbbbf81e48 100644
+index bf96376..cbbbf81 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts
 @@ -86,6 +86,11 @@ export interface MarkdownFileMentions {
