@@ -112,10 +112,23 @@ async function profileManifest(dshHome: string): Promise<{
 
 async function communityPlugins(dshHome: string): Promise<string[]> {
   const manifest = await profileManifest(dshHome)
-  const names = new Set([
-    ...Object.keys(manifest.dependencies ?? {}),
-    ...(manifest.dsh?.profile?.bundles ?? [])
-  ])
+  const names = new Set(manifest.dsh?.profile?.bundles ?? [])
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    // Why per-package metadata: a plain runtime dependency (no dsh metadata, e.g. node-pty
+    // inherited from a CLI-managed profile) is not a profile plugin — migrating it would
+    // demand a bundle patch it can never have and freeze the whole migration (#708).
+    try {
+      const installed = JSON.parse(
+        await readFile(join(profileDir(dshHome), 'node_modules', name, 'package.json'), 'utf8')
+      )
+      if (installed && typeof installed === 'object' && 'dsh' in installed) {
+        names.add(name)
+      }
+    } catch {
+      // Missing or unreadable install metadata cannot prove plugin status; leave the
+      // package in the shared tree rather than freeze the migration on it.
+    }
+  }
   return [...names].filter((name) => !KEEP_IN_SHARED_TREE.has(name))
 }
 
