@@ -97,6 +97,12 @@ Plugin switch reconciliation treats `cordis.patch.yml` as structured user config
 
 Plugin Manager calls the optional, side-effect-free `profileBundlePackageBackend.validateSwitch` hook after its bundle/protected-manager checks and before saving selection, including unchanged selections. Existing backends without this hook retain their behavior. The normal `switched` callback still commits afterward and revalidates current input; preflight is not a cross-process transaction or proof of recovery from every I/O interruption. This preserves user configuration on explicit toggles; it does not establish the cause of a reported bulk bundle reset or repair already-corrupted rows. Remove the matching Plugin Manager patch hunks when upstream supplies this preflight boundary.
 
+## Plugin metadata queries
+
+The packaged pnpm runner sends `view` / `info` / `show` / `v` to an installation-owned npm CLI using the existing Electron Node executable. pnpm 10 otherwise forwards these commands to PATH `npm`, which is absent on clean Desktop installations. Resolve npm from the packaged pnpm entry, including when the runner is staged under `.desktop-bin`; never from the Profile or caller cwd. npm preserves registry selection, scoped authentication, proxy and certificate configuration; translate pnpm `--config.*` arguments to npm flags. Mutation commands keep their pnpm path. Missing query resources fail explicitly instead of falling back to a system npm.
+
+The pinned npm package adds JavaScript dependencies (about 13 MB unpacked before packaging filters), not another Node runtime or native addon. Keep it until the bundled pnpm supplies equivalent native metadata queries. The after-pack Harness gate exercises a local-registry query with no system tools on PATH; the common and Windows suites cover authenticated scoped queries and nonzero registry errors.
+
 ## Mobile access boundary
 
 Harness itself stays on a random loopback port. Phone access is provided by a separate bridge:

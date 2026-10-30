@@ -32,6 +32,7 @@ export default defineConfig({
       'test/migration-failure-paths.test.ts',
       'test/legacy-preset-migration.test.ts',
       'test/pnpm-runner.test.js',
+      'test/packaged-plugin-query.test.mjs',
       'test/local-path-links.test.ts',
       'test/office-engine-resolution.test.ts',
       'test/remove-tree.test.ts',

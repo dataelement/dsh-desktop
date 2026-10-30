@@ -286,6 +286,7 @@
     "dsh-ppt": "file:packages/ppt-runtime/core",
     "dsh-ppt-composer": "file:packages/ppt-runtime/adapter",
     "electron-updater": "^6.8.9",
+    "npm": "11.21.1",
     "pnpm": "10.34.5",
     "qrcode": "^1.5.4",
     "react": "18.3.1",
