@@ -44,24 +44,24 @@ it('requires the deliverable column and consistent row dimensions', async () => 
   expect((await validate(header + '| 核对 | 陈晨 | 下周 |')).passed).toBe(false)
 })
 
-it('renders the government picture without editor boundaries and keeps the original editable source', async () => {
+it('renders the government notice from editable text and keeps the curated source', async () => {
   const { stdout } = await promisify(execFile)(python, ['-I', '-B', '-c', `
 import json
+import zipfile
 from pathlib import Path
 from PIL import Image
 root = Path('.build/office-runtime/templates')
 image = Image.open(root / 'government-notice/pages/1.webp').convert('RGB')
-grey = sum(1 for y in range(265,365) for x in range(120,720)
-           if (lambda p: max(p)-min(p)<6 and 100<min(p)<235)(image.getpixel((x,y))))
-red = sum(1 for y in range(265,365) for x in range(120,720)
-          if (lambda p: p[0]>160 and p[1]<100 and p[2]<100)(image.getpixel((x,y))))
-same = (root / 'government-notice/example.docx').read_bytes() == Path('packages/dsh-desktop-office/sources/legacy/government-notice/example.docx').read_bytes()
-print(json.dumps({'grey':grey,'red':red,'originalSource':same}))
+source = Path('packages/dsh-desktop-office/sources/curated/government-notice/example.docx')
+with zipfile.ZipFile(root / 'government-notice/example.docx') as archive:
+    media = [name for name in archive.namelist() if name.startswith('word/media/')]
+red_page = sum(1 for pixel in image.getdata() if pixel[0] > 160 and pixel[1] < 100 and pixel[2] < 100)
+print(json.dumps({'redPage': red_page, 'media': media, 'originalSource': (root / 'government-notice/example.docx').read_bytes() == source.read_bytes()}))
 `])
   const result = JSON.parse(stdout)
   expect(result.originalSource).toBe(true)
-  expect(result.red).toBeGreaterThan(1000)
-  expect(result.grey).toBeLessThan(50)
+  expect(result.media).toEqual([])
+  expect(result.redPage).toBeGreaterThan(1000)
 })
 
 it('keeps the approved meeting editable with native headings, fifteen actions and preserved relative deadlines', async () => {

@@ -69,8 +69,8 @@ async function probe(appRoot, resources) {
       const exec = { agent: { id: 'packaged-notice', session: { header: { cwd: scratch } } }, signal: new AbortController().signal }
       await writeFile(join(scratch, 'source.docx'), await library.asset(item.id, item.sampleFile))
       const prepared = await workflow.run('prepare', { path: 'source.docx' }, exec)
-      assert(prepared.paragraphs.some(p => p.id === 'p1' && p.text === '中国中车股份有限公司文件'))
-      await workflow.run('write', { output_path: 'notice.docx', replacements: [{ id: 'p1', text: '示例单位文件' }] }, exec)
+      assert(prepared.paragraphs.some(p => p.id === 'p0' && p.text === '示例市公共服务中心文件'))
+      await workflow.run('write', { output_path: 'notice.docx', replacements: [{ id: 'p0', text: '示例单位文件' }] }, exec)
       const verified = await workflow.run('validate', { path: 'notice.docx' }, exec)
       assert(verified.checks.includes('paragraph-and-run-styles'))
       console.log('Packaged native Word template editor, embedded-font retention and layout validation passed')

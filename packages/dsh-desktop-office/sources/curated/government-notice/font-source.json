@@ -1,0 +1,23 @@
+{
+  "familyName": "DSH Gov Song",
+  "postScriptName": "DSHGovSong",
+  "styleName": "Regular",
+  "outlineWeight": 600,
+  "subsetSha256": "dd90fea8c670db387e9014dda49e0bcb504553d431a968f4f1d521815b640f64",
+  "subsetBytes": 3139120,
+  "charsetCount": 3884,
+  "charsetSha256": "cd24daf08c6d6b9b0ac273c286c5202ce4ad18b8f95d5b984bc2d318c062cff9",
+  "charset": "GB/T 2312 level 1, ASCII, common punctuation, and the sample text",
+  "source": {
+    "family": "Source Han Serif",
+    "file": "SourceHanSerifSC-VF.ttf",
+    "version": "2.003R",
+    "url": "https://github.com/adobe-fonts/source-han-serif/raw/release/Variable/TTF/SourceHanSerifSC-VF.ttf",
+    "sha256": "04f163fb935acd9c0caa79e535a43d510a724d25e584d36212e494a9f9db64f4",
+    "license": "OFL-1.1"
+  },
+  "modified": true,
+  "reservedFontNameRemoved": true,
+  "fontTools": "4.68.0",
+  "build": "subset the variable font, instantiate wght=600 with overlap removal, then rename the family to DSH Gov Song"
+}

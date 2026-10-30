@@ -80,6 +80,9 @@ def normalize(parts, profile):
     if header:
         paragraphs = root.findall('.//w:body/w:p', NS)
         paragraph = paragraphs[header['paragraph']]
+        # New templates already store an editable text issuer. Older packages used one drawing.
+        if len(paragraph.findall('.//w:drawing', NS)) == 0:
+            return parts
         if len(paragraph.findall('.//w:drawing', NS)) != 1:
             raise ValueError('The issuer-header source requires its recorded drawing')
         extent = paragraph.find('.//wp:extent', NS)
@@ -190,9 +193,13 @@ def validate(source, candidate, profile):
         if canonical(left) != canonical(right):
             raise ValueError('Preserve the template page geometry, section settings and header/footer references')
     checks.append('page-geometry')
-    for query, message in [('.//w:pBdr', 'Preserve the template paragraph borders and red divider'), ('.//wp:extent', 'Preserve the template drawing frames'), ('.//w:tblPr', 'Preserve the template table layout'), ('.//w:tblGrid', 'Preserve the template table columns')]:
+    for query, message in [('.//w:pBdr', 'Preserve the template paragraph borders and red divider'), ('.//wp:extent', 'Preserve the template drawing frames')]:
         reference = Counter(canonical(e) for e in expected.findall(query, NS)); proposed = Counter(canonical(e) for e in actual.findall(query, NS))
         if reference - proposed: raise ValueError(message)
+    if actual.findall('.//w:tbl', NS):
+        for query, message in [('.//w:tblPr', 'Preserve the template table layout'), ('.//w:tblGrid', 'Preserve the template table columns')]:
+            reference = Counter(canonical(e) for e in expected.findall(query, NS)); proposed = Counter(canonical(e) for e in actual.findall(query, NS))
+            if reference - proposed: raise ValueError(message)
     checks.append('borders-and-drawing-frames')
     allowed = set(expected.xpath('.//w:rFonts/@w:ascii | .//w:rFonts/@w:hAnsi | .//w:rFonts/@w:eastAsia', namespaces=NS))
     proposed = set(actual.xpath('.//w:rFonts/@w:ascii | .//w:rFonts/@w:hAnsi | .//w:rFonts/@w:eastAsia', namespaces=NS))
@@ -210,6 +217,13 @@ def validate(source, candidate, profile):
         if not matches: raise ValueError('Keep an editable issuer header in the template red type style')
     checks.append('editable-issuer-header')
     return checks
+
+
+def enclosing_table(paragraph):
+    node = paragraph.getparent()
+    while node is not None and node.tag != Q('tbl'):
+        node = node.getparent()
+    return node
 
 
 def edit(parts, profile, args):
@@ -237,9 +251,19 @@ def edit(parts, profile, args):
         clone = copy.deepcopy(origin); set_text(clone, addition['text'], addition.get('runs'), prototypes)
         for marker in clone.xpath('.//w:bookmarkStart | .//w:bookmarkEnd', namespaces=NS): marker.getparent().remove(marker)
         anchor = tails.get(after, lookup[after]); anchor.addnext(clone); tails[after] = clone
+    removed_tables = set()
     for key in removals:
         if key not in lookup or key in seen: raise ValueError('Use distinct recorded paragraph IDs for removals')
         p = lookup[key]
+        table = enclosing_table(p)
+        if table is not None:
+            identity = id(table)
+            if identity not in removed_tables:
+                if table.getparent() is None: raise ValueError('Keep the template layout paragraphs and table structure')
+                table.getparent().remove(table)
+                removed_tables.add(identity)
+            seen.add(key)
+            continue
         if p.getparent().tag != Q('body') or protected(p, profile, paragraphs.index(p)): raise ValueError('Keep the template layout paragraphs and table structure')
         p.getparent().remove(p); seen.add(key)
     parts['word/document.xml'] = serialized(root)

@@ -35,10 +35,10 @@ async function fixture(templateId = 'government-notice') {
   const exec = { agent, signal: new AbortController().signal }
   await writeFile(join(workspace, 'working.docx'), source)
   const prepared = await workflow.run('prepare', { path: 'working.docx' }, exec)
-  const title = prepared.paragraphs.find(p => p.text.includes('关于开展2025'))
-  const normal = prepared.paragraphs.find(p => p.text.startsWith('为做好2025'))
-  const other = prepared.paragraphs.find(p => p.text === '一、活动主题和时间')
-  const plan = templateId === 'government-notice' ? { output_path: 'result.docx', replacements: [{ id: 'p1', text: '示例市公园管理局文件' }, { id: title.id, text: '关于公园节假日开放安排的通告' }, { id: normal.id, text: '现将公园节假日开放有关事项通告如下。' }], additions: [{ after: normal.id, source: normal.id, text: '具体开放时间以已确认的安排为准。' }], removals: [other.id] } : { output_path: 'result.docx', replacements: [{ id: prepared.paragraphs.find(p => p.text && p.can_remove).id, text: '当前材料的标题与内容' }] }
+  const title = prepared.paragraphs.find(p => p.text.includes('关于开展公园'))
+  const normal = prepared.paragraphs.find(p => p.text.startsWith('为做好公园'))
+  const other = prepared.paragraphs.find(p => p.text === '一、服务主题和时间')
+  const plan = templateId === 'government-notice' ? { output_path: 'result.docx', replacements: [{ id: 'p0', text: '示例市公园管理局文件' }, { id: title.id, text: '关于公园节假日开放安排的通告' }, { id: normal.id, text: '现将公园节假日开放有关事项通告如下。' }], additions: [{ after: normal.id, source: normal.id, text: '具体开放时间以已确认的安排为准。' }], removals: [other.id] } : { output_path: 'result.docx', replacements: [{ id: prepared.paragraphs.find(p => p.text && p.can_remove).id, text: '当前材料的标题与内容' }] }
   const call = async (name, args) => ctx.tools.execute({ name, arguments: args, callId: randomUUID(), ...exec })
   return { ctx, workflow, prepared, plan, call, delivered, workspace, modes, exec, setDirectory: value => { currentDirectory = value }, setMode: value => { mode = value }, clearSelection: () => { selection = {} } }
 }
@@ -69,7 +69,7 @@ it('keeps the Word worker off the Windows confinement command line', () => {
 it('returns Chinese layout JSON when the Windows code page is charmap', async () => {
   const { spawn } = await import('node:child_process')
   const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
-  const sourceRoot = resolve('packages/dsh-desktop-office/sources/legacy/government-notice')
+  const sourceRoot = resolve('packages/dsh-desktop-office/sources/curated/government-notice')
   const source = await readFile(join(sourceRoot, 'example.docx'))
   const profile = JSON.parse(await readFile(join(sourceRoot, 'generation.json'), 'utf8'))
   const workspace = await realpath(await mkdtemp(join(tmpdir(), 'docx-encoding-'))); cleanups.push(() => rm(workspace, { recursive: true, force: true }))
@@ -87,12 +87,12 @@ it('returns Chinese layout JSON when the Windows code page is charmap', async ()
     child.on('close', code => code === 0 ? resolvePromise(Buffer.concat(out).toString('utf8')) : reject(new Error(Buffer.concat(err).toString('utf8') || `exit ${code}`)))
     child.stdin.end(input)
   })
-  expect(JSON.parse(stdout).paragraphs.find(p => p.id === 'p1').text).toBe('中国中车股份有限公司文件')
+  expect(JSON.parse(stdout).paragraphs.find(p => p.id === 'p0').text).toBe('示例市公共服务中心文件')
 })
 it('edits the native template, retains layout and admits it through the real tools pipeline', async () => {
   const f = await fixture()
-  expect(f.prepared.paragraphs.find(p => p.id === 'p1').text).toBe('中国中车股份有限公司文件')
-  expect(f.prepared.paragraphs.find(p => p.id === 'p1').can_remove).toBe(false)
+  expect(f.prepared.paragraphs.find(p => p.id === 'p0').text).toBe('示例市公共服务中心文件')
+  expect(f.prepared.paragraphs.find(p => p.id === 'p0').can_remove).toBe(false)
   const created = await f.call('office_template_write', f.plan)
   expect(created.isError).toBe(false)
   expect((await f.workflow.run('validate', { path: 'result.docx' }, f.exec)).checks).toContain('template-font-assignments')
@@ -119,7 +119,7 @@ it('checks current bytes again after a previously valid output is changed', asyn
 })
 it('protects the editable issuer header, the red divider and existing output files', async () => {
   const f = await fixture()
-  const invalid = await f.call('office_template_write', { ...f.plan, removals: ['p1'] })
+  const invalid = await f.call('office_template_write', { ...f.plan, removals: ['p0'] })
   expect(invalid.isError).toBe(true)
   await expect(access(join(f.workspace, 'result.docx'))).rejects.toThrow()
   expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
@@ -184,7 +184,7 @@ with zipfile.ZipFile(p,'w',zipfile.ZIP_DEFLATED) as z:
 
 it('retains mixed heading/body typography with explicit native run references', async () => {
   const f = await fixture()
-  const heading = f.prepared.paragraphs.find(p => p.text.startsWith('（一）')), body = f.prepared.paragraphs.find(p => p.text.startsWith('为做好2025'))
+  const heading = f.prepared.paragraphs.find(p => p.text.startsWith('（一）')), body = f.prepared.paragraphs.find(p => p.text.startsWith('为做好公园'))
   const text = '（一）预约安排。当前材料中的开放安排。'
   f.plan.additions = [{ after: heading.id, source: heading.id, text, runs: [{ source: heading.runs.find(r => r.text).id, text: '（一）预约安排。' }, { source: body.runs.find(r => r.text).id, text: '当前材料中的开放安排。' }] }]
   expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
