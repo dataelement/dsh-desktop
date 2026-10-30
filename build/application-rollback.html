@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH Desktop</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#18191c;--muted:#6b6d75;--line:#dddfe4;--panel:#f6f7f8;--warning:#fff5df;--accent:#18191c;--on-accent:#fff} :root[data-theme="light"]{color-scheme:light}:root[data-theme="dark"]{color-scheme:dark;--bg:#161719;--fg:#f5f5f7;--muted:#a5a7af;--line:#393b40;--panel:#222428;--warning:#392e17;--accent:#f5f5f7;--on-accent:#18191c}@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161719;--fg:#f5f5f7;--muted:#a5a7af;--line:#393b40;--panel:#222428;--warning:#392e17;--accent:#f5f5f7;--on-accent:#18191c}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 system-ui,-apple-system,sans-serif}main{max-width:864px;margin:0 auto;padding:40px 32px 64px}header{font-weight:650;margin-bottom:44px}h1{font-size:24px;line-height:1.4;margin:0 0 12px}p{color:var(--muted);margin:8px 0 20px}.simulation{background:var(--warning);padding:12px 16px;border-radius:10px;margin-bottom:24px}.versions{background:var(--panel);border:1px solid var(--line);padding:20px;border-radius:12px;margin:24px 0}dl{display:grid;grid-template-columns:140px 1fr;gap:12px;margin:0}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}.actions{display:flex;justify-content:space-between;gap:16px;margin-top:28px}button{font:inherit;cursor:pointer;min-height:42px;padding:8px 20px;border-radius:10px;border:1px solid var(--line);color:var(--fg);background:var(--bg)}button.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);margin-left:auto}button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:2px solid #397bea;outline-offset:3px}[hidden]{display:none!important}#detail{white-space:pre-wrap;overflow-wrap:anywhere}#error{color:#cf3434}@media(max-width:500px){main{padding:24px 20px}dl{grid-template-columns:1fr;gap:4px}dd{margin-bottom:12px}}
+</style></head><body><main><header>DSH Desktop</header><aside id="simulation" class="simulation" hidden></aside><h1 id="heading"></h1><p id="description"></p><section class="versions"><dl><dt id="current-label"></dt><dd id="current"></dd><dt id="target-label"></dt><dd id="target"></dd></dl></section><p id="detail" role="status" aria-live="polite"></p><p id="error" role="alert"></p><div class="actions"><button id="cancel" hidden></button><button id="primary" class="primary" hidden></button></div></main>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search)
+  const theme = params.get('theme')
+  document.documentElement.dataset.theme = theme === 'light' || theme === 'dark' ? theme : 'system'
+  let state = {}
+  try { state = JSON.parse(params.get('state') || '{}') } catch { /* Invalid query cannot trigger an action. */ }
+  const en = state.locale === 'en'
+  const text = en ? {
+    simulation:'Simulation only — no application package is installed or downgraded.', current:'Current application', target:'Restore application', confirm:'Return to the previous application version?', description:'Restore the application version used before this update. Your workspaces, conversations and settings will be kept. The application will restart to verify startup.', cancel:'Cancel', submit:'Confirm rollback', progress:'Restoring the application version', progressDescription:'Please wait while the rollback and startup verification finish.', success:'Rollback completed', simulatedSuccess:'Simulated rollback completed', successDescription:'Startup verification passed. You can continue using DSH Desktop.', simulatedDescription:'The service started successfully after the simulated rollback. Continue to check the interface. The real application version has not changed.', continue:'Continue', error:'The action could not be completed. Please try again.', fallback:'Preparing rollback and startup verification…', invalid:'Unable to display rollback state.'
+  } : {
+    simulation:'模拟演示：不会安装或降级真实应用。', current:'当前应用版本', target:'回退目标版本', confirm:'回退到升级前的应用版本？', description:'将回退到本次升级前使用的应用版本。工作区、会话和设置会保留，完成后将重启并验证能否正常启动。', cancel:'取消', submit:'确认回退', progress:'正在回退应用版本', progressDescription:'正在处理回退并验证启动，请稍候。', success:'应用版本回退成功', simulatedSuccess:'模拟回退成功', successDescription:'正常启动验证通过，可以继续使用 DSH Desktop。', simulatedDescription:'模拟回退后，核心服务已成功启动。点击“继续使用”查看界面，实际应用版本未改变。', continue:'继续使用', error:'操作未完成，请重试。', fallback:'正在准备回退并验证启动…', invalid:'无法显示回退状态。'
+  }
+  document.documentElement.lang = en ? 'en' : 'zh-CN'
+  const el = (id) => document.getElementById(id)
+  const set = (id,value) => { el(id).textContent = value }
+  const stage = state.stage
+  const valid = ['confirm','progress','success'].includes(stage)
+  const simulated = state.simulation === true
+  el('simulation').hidden = !simulated
+  set('simulation',text.simulation)
+  set('current-label',text.current)
+  set('target-label',text.target)
+  set('current',typeof state.currentVersion === 'string' ? state.currentVersion : '—')
+  set('target',typeof state.targetVersion === 'string' ? state.targetVersion : '—')
+  set('heading',!valid ? text.invalid : stage === 'confirm' ? text.confirm : stage === 'progress' ? text.progress : simulated ? text.simulatedSuccess : text.success)
+  set('description',!valid ? '' : stage === 'confirm' ? text.description : stage === 'progress' ? text.progressDescription : simulated ? text.simulatedDescription : text.successDescription)
+  set('detail',typeof state.message === 'string' ? state.message : stage === 'progress' ? text.fallback : '')
+  if (typeof state.detail === 'string') set('detail',el('detail').textContent + '\n' + state.detail)
+  let pending = false
+  async function act(action) {
+    if (pending) return
+    pending = true
+    el('cancel').disabled = true
+    el('primary').disabled = true
+    try {
+      const result = await window.dshRollback.action(action)
+      if (!result || result.ok !== true) throw new Error('Rollback action rejected')
+    } catch {
+      set('error',text.error)
+      pending = false
+      el('cancel').disabled = false
+      el('primary').disabled = false
+    }
+  }
+  if (stage === 'confirm') {
+    el('cancel').hidden = false
+    set('cancel',text.cancel)
+    el('cancel').addEventListener('click',() => act('cancel'))
+    el('primary').hidden = false
+    set('primary',text.submit)
+    el('primary').addEventListener('click',() => act('confirm'))
+  } else if (stage === 'success') {
+    el('primary').hidden = false
+    set('primary',text.continue)
+    el('primary').addEventListener('click',() => act('continue'))
+  }
+})()
+</script></body></html>

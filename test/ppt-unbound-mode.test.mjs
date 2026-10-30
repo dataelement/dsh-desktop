@@ -212,11 +212,13 @@ describe('unbound PPT mode', () => {
   })
 
   it('reloads the catalog when the mode revision changes and does not stop because loading is true', () => {
-    const effect = slice(adapter, 'const catalogRevision = mode.revision(sessionId);', 'const deselect = () =>')
+    // The opening-template card has its own catalog effect; compare the chooser's.
+    const chooser = source => source.slice(source.indexOf('function OfficePptChooser('))
+    const effect = slice(chooser(adapter), 'const catalogRevision = mode.revision(sessionId);', 'const deselect = () =>')
     expect(effect).toContain('if (!loadTemplates || state.templates.length > 0 || state.error !== "") return;')
     expect(effect).not.toContain('state.loading ||')
     expect(effect).toContain('catalogRevision,')
-    expect(slice(core, 'const catalogRevision = mode.revision(sessionId);', 'const deselect = () =>')).toBe(effect)
+    expect(slice(chooser(core), 'const catalogRevision = mode.revision(sessionId);', 'const deselect = () =>')).toBe(effect)
   })
 
   it('leaves the revision unchanged for loading and error updates', () => {
@@ -270,14 +272,17 @@ describe('PPT hero and session dock routing', () => {
     const dock = () => null
     const mode = new Store()
     const injectHero = sessionId => ({ mode, sessionId })
-    const apply = new Function('officePptHeroInjection', 'OfficePptStandardModeAction', 'OfficePptStandardInputAccessory', 'OfficePptStandardComposerDock', 'NS',
+    const openingCard = () => null
+    const apply = new Function('officePptHeroInjection', 'OfficePptStandardModeAction', 'OfficePptStandardInputAccessory', 'OfficePptOpeningTemplateCard', 'OfficePptStandardComposerDock', 'NS',
       `${slice(adapter, 'function applyStandard(ctx)', '//#endregion')}\nreturn applyStandard;`
-    )(() => injectHero, () => null, () => null, dock, 'dsh-ppt')
+    )(() => injectHero, () => null, () => null, openingCard, dock, 'dsh-ppt')
     apply({ slots: { inject: (_name, register) => register(), register: (config, component) => registered.set(config.name, { config, component }) } })
     for (const name of ['conversation.hero.dock', 'conversation.composer.dock']) {
       expect(registered.get(name).component).toBe(dock)
       expect(registered.get(name).config.inject(undefined).mode).toBe(mode)
     }
+    expect(registered.get('conversation.chat.userMessageFooter').component).toBe(openingCard)
+    expect(registered.get('conversation.chat.userMessageFooter').config.inject(undefined).mode).toBe(mode)
     mode.setMode(undefined, 'ppt')
     expect(registered.get('conversation.hero.modeActions').config.inject(undefined).mode).toBe(mode)
   })

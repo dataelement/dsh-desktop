@@ -1,7 +1,9 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'
 import {
   ConfigWatchHmr,
   apply,
@@ -22,6 +24,14 @@ function fakeContext(internal) {
     plugin: (value) => plugins.push(value),
     plugins
   }
+}
+
+function bareService() {
+  const service = Object.create(ConfigWatchHmr.prototype)
+  service.ctx = { logger: { warn: () => undefined } }
+  service.operations = Promise.resolve()
+  service.executing = new AsyncLocalStorage()
+  return service
 }
 
 describe('desktop HMR fallback', () => {
@@ -57,14 +67,84 @@ describe('desktop HMR fallback', () => {
     expect(dshPatch).toContain('"dsh-desktop-hmr-fallback": "0.1.0"')
   })
 
+  it('serializes Plugin Manager mutations and recovers after failure', async () => {
+    const service = bareService()
+    const events = []
+    let release
+    const first = service.runExclusive(async () => {
+      events.push('first:start')
+      await new Promise((resolve) => { release = resolve })
+      events.push('first:end')
+      return 'first result'
+    })
+    const second = service.runExclusive(async () => {
+      events.push('second')
+      return 'second result'
+    })
+
+    await vi.waitFor(() => expect(events).toEqual(['first:start']))
+    release()
+    await expect(first).resolves.toBe('first result')
+    await expect(second).resolves.toBe('second result')
+    expect(events).toEqual(['first:start', 'first:end', 'second'])
+
+    await expect(service.runExclusive(async () => { throw new Error('failed mutation') })).rejects.toThrow('failed mutation')
+    await expect(service.runExclusive(async () => 'later mutation')).resolves.toBe('later mutation')
+  })
+
+  it('reports limited capabilities and defers reconciliation without claiming activation', async () => {
+    const service = bareService()
+    expect(service.capabilities).toEqual({
+      configWatching: true, profileReconciliation: false, moduleReplacement: false
+    })
+    await expect(service.reconcileProfile(['required-entry']))
+      .rejects.toThrow('HMR profile reconciliation must run inside runExclusive')
+    for (const ids of [undefined, [], ['required-entry']]) {
+      await expect(service.runExclusive(() => service.reconcileProfile(ids))).resolves.toEqual({
+        warnings: [], pending: [], restartReason: 'module-comparison'
+      })
+    }
+  })
+
+  it.each([true, false])('reports restart-required through PluginManager bundle switch (enabled=%s)', async (enabled) => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-hmr-manager-'))
+    const service = bareService()
+    const reconcile = vi.spyOn(service, 'reconcileProfile')
+    const emit = vi.fn()
+    // Keep the real configure/change/reload path; substitute only bundle storage
+    // and discovery, which are independent of this HMR service contract.
+    const manager = Object.create(PluginManager.prototype)
+    manager.profile = { dir: directory }
+    manager.abort = new AbortController()
+    manager.lockWaitMs = 1000
+    manager.ownerContext = { get: (key) => key === 'hmr' ? service : undefined, emit }
+    manager.selectBundle = vi.fn(async () => {
+      await writeFile(join(directory, 'package.json'), JSON.stringify({ enabled }))
+    })
+    manager.recordBundleSwitch = vi.fn(async () => undefined)
+    manager.bundleRows = () => [{ id: 'required-entry' }]
+
+    await expect(manager.setBundleEnabled('fixture-bundle', enabled)).resolves.toMatchObject({
+      changed: true, application: 'restart-required', restartReason: 'module-comparison',
+      warnings: []
+    })
+    expect(reconcile).toHaveBeenCalledWith(enabled ? ['required-entry'] : [])
+    expect(emit).toHaveBeenCalledWith('plugin-manager/changed', { reason: 'bundle' })
+  })
+
+  it('rejects a nested HMR transaction', async () => {
+    const service = bareService()
+    await expect(service.runExclusive(() => service.runExclusive(async () => undefined)))
+      .rejects.toThrow('HMR transactions cannot be nested')
+  })
+
   it('refreshes on a change to the watched config, and not on its neighbours', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-hmr-fallback-'))
     const watched = join(directory, 'cordis.patch.yml')
     await writeFile(watched, '[]\n', 'utf8')
     const refresh = vi.fn(async () => undefined)
 
-    const service = Object.create(ConfigWatchHmr.prototype)
-    service.ctx = { logger: { warn: () => undefined } }
+    const service = bareService()
     const dispose = await service.registerConfig(watched, refresh)
 
     await writeFile(join(directory, 'unrelated.yml'), 'x\n', 'utf8')

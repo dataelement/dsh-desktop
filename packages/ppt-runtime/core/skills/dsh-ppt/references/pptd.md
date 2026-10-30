@@ -80,3 +80,9 @@ content:
 `dsh-pptd check <工程目录> --json` 返回错误、警告和元素统计；`inspect` 可检查工程结构；`screenshot` 生成本地预览；`render` 生成 PPTX。CLI 预览不等同于 PowerPoint/WPS 的实际排版验证。
 
 模型工具的 `pptd_render` 将校验与交付结合，成功后返回工作区路径。完整保留 PPTD 工程，以便后续编辑；不要覆盖用户源文件。
+
+### 图表绘图区与轴显示
+
+`plotLayout: {x, y, w, h}` 按图表框的比例描述内绘图区，x/y 为左上位置，w/h 为正宽高。源图表使用 inner / edge 手工布局时贯通此属性。`plotBorder` 与 `border` 使用相同的线条结构，分别控制绘图区和整个图表边框；省略时输出透明边框。
+
+xAxis / yAxis 可使用 `majorUnit`（数值轴主刻度单位）、`hidden`、`label: {position, fontFamily, fontSize, color}`、`line: false` 或 `{color, width}`，以及 `gridLine: false` 或 `{color, style}`。标签 position 取 none、low、high、nextTo。水平图的 xAxis 为数值轴，yAxis 为分类轴；纵向图使用相反映射。

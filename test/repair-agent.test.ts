@@ -6,6 +6,47 @@ import {
 } from '../src/main/repair-agent'
 
 describe('RepairAgentService', () => {
+  it('keeps normal repair in its running Harness and selects the built-in repair mode', async () => {
+    const requests: Array<{ endpoint: string; request: Record<string, unknown> }> = []
+    const ensureHarnessReady = vi.fn()
+    vi.stubGlobal('fetch', vi.fn(async (url: URL | string, init?: RequestInit) => {
+      const endpoint = new URL(String(url)).pathname.replace('/api/', '')
+      if (endpoint === '/') return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+      const args = JSON.parse(String(init?.body)).payload.args
+      requests.push({ endpoint, request: args.request })
+      return Response.json({ result: { ok: true, value: endpoint === 'session/create' ? { sessionId: 'normal-repair' } : { workspaceId: 'repair-home' } } })
+    }))
+    const service = new RepairAgentService({
+      harnessUrl: () => 'http://127.0.0.1:1', harnessAuthToken: () => 'normal-token',
+      environment: () => 'normal', ensureHarnessReady, workspaceDirectory: '/data/harness', locale: () => 'en',
+      crashEvidence: () => ({ logs: [], plugins: ['old-startup-failure'] })
+    })
+    const [first, duplicate] = await Promise.all([service.initSession(), service.initSession()])
+    expect(first.sessionId).toBe('normal-repair')
+    expect(duplicate.sessionId).toBe(first.sessionId)
+    expect(first.diagnosticFinding).toBeUndefined()
+    expect(ensureHarnessReady).not.toHaveBeenCalled()
+    expect(requests.filter(item => item.endpoint === 'session/create')).toEqual([
+      { endpoint: 'session/create', request: { workspaceId: 'repair-home', agentPreset: 'desktop-repair' } }
+    ])
+    await service.sendPrompt('normal-repair', 'The conversation could not load')
+    const prompt = requests.find(item => item.endpoint === 'session/prompt')?.request.content as Array<{ text: string }>
+    expect(prompt[0]?.text).toContain('normal application (not Safe Mode)')
+    expect(prompt[0]?.text).not.toContain('old-startup-failure')
+    expect(await service.initSession()).toMatchObject({ sessionId: first.sessionId, created: false, needsBriefing: false })
+  })
+
+  it('does not start a Safe Mode runtime when normal repair has no running Harness', async () => {
+    const ensureHarnessReady = vi.fn()
+    const service = new RepairAgentService({
+      harnessUrl: () => undefined, harnessAuthToken: () => undefined, environment: () => 'normal',
+      ensureHarnessReady, workspaceDirectory: '/data/harness', locale: () => 'zh'
+    })
+    expect((await service.initSession()).ok).toBe(false)
+    expect((await service.checkModelAvailability()).ok).toBe(false)
+    expect(ensureHarnessReady).not.toHaveBeenCalled()
+  })
+
   it('extracts relevant crash logs and diagnoses export mismatch correctly', () => {
     const logs = [
       '[desktop] launch requested',
@@ -53,7 +94,8 @@ describe('RepairAgentService', () => {
       workspaceDirectory: '/data/harness',
       harnessLogPath: '/logs/harness.log',
       locale: () => 'en',
-      crashEvidence: () => ({ logs: ['[desktop] starting web'], plugins: ['broken-plugin'] })
+      crashEvidence: () => ({ logs: ['[desktop] starting web'], plugins: ['broken-plugin'] }),
+      repairHistory: async () => [{ action: 'upgrade', status: 'failed', plugins: ['broken-plugin'] }]
     })
 
     const session = await service.initSession()
@@ -64,7 +106,12 @@ describe('RepairAgentService', () => {
     expect(await service.sendPrompt('s1', 'help')).toEqual({ ok: true })
     expect(await service.sendPrompt('s1', 'again')).toEqual({ ok: true })
     expect(prompts[0]).toContain('broken-plugin')
+    expect(prompts[0]).not.toContain('Known failures and fixes')
+    expect(prompts[0]).not.toContain('How to work')
+    expect(prompts[0]).not.toContain('Disabling a plugin')
     expect(prompts[0]).not.toContain('safe mode ready')
+    expect(prompts[0]).toContain('Previous repair attempts')
+    expect(prompts[0]).toContain('"action":"upgrade"')
     expect(prompts[0]).toContain("Harness home (this session's workspace): `/data/harness`")
     expect(prompts[0]).toContain('Full startup log: `/logs/harness.log`')
     expect(prompts[0]).toMatch(/\[User Request\]\nhelp$/)
@@ -84,7 +131,7 @@ describe('RepairAgentService', () => {
         const request = JSON.parse(String(init?.body)).payload.args.request
         prompts.push({ sessionId: request.sessionId, text: request.content[0].text })
       }
-      const value = endpoint === 'session/create' ? { sessionId: `s${++created}` } : { workspaceId: 'w1' }
+      const value = endpoint === 'session/create' ? { sessionId: `s${++created}` } : endpoint === 'session/projections' ? { kind: 'sequenced', values: { agentPreset: 'desktop-repair' } } : { workspaceId: 'w1' }
       return Response.json({ result: { ok: true, value } })
     }))
     const service = new RepairAgentService({
@@ -103,12 +150,12 @@ describe('RepairAgentService', () => {
 
     expect([first.sessionId, second.sessionId]).toEqual(['s1', 's2'])
     expect(prompts.map((prompt) => prompt.sessionId)).toEqual(['s1', 's2', 's1'])
-    expect(prompts[0]!.text).toContain('[System Context]')
-    expect(prompts[1]!.text).toContain('[System Context]')
+    expect(prompts[0]!.text).toContain('[Repair Environment and Facts]')
+    expect(prompts[1]!.text).toContain('[Repair Environment and Facts]')
     expect(prompts[2]!.text).toBe('follow up')
   })
 
-  it('starts a new session after the Harness process changes', async () => {
+  it('restores the durable repair session after the Harness process changes', async () => {
     let created = 0
     vi.stubGlobal('fetch', vi.fn(async (url: URL | string) => {
       const target = new URL(String(url))
@@ -116,7 +163,7 @@ describe('RepairAgentService', () => {
         return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
       }
       const endpoint = target.pathname.replace('/api/', '')
-      const value = endpoint === 'session/create' ? { sessionId: `s${++created}` } : { workspaceId: 'w1' }
+      const value = endpoint === 'session/create' ? { sessionId: `s${++created}` } : endpoint === 'session/projections' ? { kind: 'sequenced', values: { agentPreset: 'desktop-repair' } } : { workspaceId: 'w1' }
       return Response.json({ result: { ok: true, value } })
     }))
     let token = 'token-1'
@@ -130,7 +177,8 @@ describe('RepairAgentService', () => {
     expect((await service.initSession()).sessionId).toBe('s1')
     expect((await service.initSession()).sessionId).toBe('s1')
     token = 'token-2'
-    expect((await service.initSession()).sessionId).toBe('s2')
+    expect((await service.initSession()).sessionId).toBe('s1')
+    expect(created).toBe(1)
   })
 
   describe('checkModelAvailability', () => {

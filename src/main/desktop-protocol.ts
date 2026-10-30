@@ -51,13 +51,17 @@ export function desktopResourceUrl(name: string, query: Record<string, string> =
 /** Must run before the app is ready. */
 export function registerDesktopScheme(): void {
   protocol.registerSchemesAsPrivileged([
-    { scheme: DESKTOP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
+    { scheme: DESKTOP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }
   ])
 }
 
 /** Runs once the app is ready; `resolvePath` maps a resource name to its file. */
-export function installDesktopProtocol(resolvePath: (name: string) => string): void {
+export function installDesktopProtocol(
+  resolvePath: (name: string) => string,
+  harness?: (request: Request) => Promise<Response>
+): void {
   protocol.handle(DESKTOP_SCHEME, async (request) => {
+    if (new URL(request.url).host === 'harness' && harness) return harness(request)
     const name = resolveDesktopResourceName(request.url)
     if (!name) return new Response('Not found', { status: 404 })
     try {

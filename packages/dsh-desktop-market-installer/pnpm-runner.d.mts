@@ -6,3 +6,9 @@ export interface SuspendedGenerationProjection {
 export function suspendGenerationProjectionForPnpm(
   profileDirectory: string
 ): Promise<SuspendedGenerationProjection>
+
+export function pnpmLaunchArguments(
+  args: readonly string[],
+  env?: NodeJS.ProcessEnv,
+  platform?: NodeJS.Platform
+): string[]

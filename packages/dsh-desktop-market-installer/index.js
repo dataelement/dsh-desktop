@@ -19,11 +19,13 @@ import {
   withRegistryLock,
   writeDesired
 } from './generations/registry.mjs'
-import { resolveMarketRegistry } from './market-registry.mjs'
+import { DEFAULT_NPM_REGISTRY, resolveMarketRegistry } from './market-registry.mjs'
+import { forgetPlugin } from './plugin-state.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
+import { hideConsoleCmdAssignment, hideConsoleImportArguments } from './windows-hide-console.mjs'
 
-export const RECOMMENDED_MARKET_VERSION = '^1.65.1'
+export const RECOMMENDED_MARKET_VERSION = '^1.66.47'
 export const MARKET_PACKAGE = 'dshmarket'
 export const MARKET_PROFILE = 'web'
 export const STATUS_PATH = '/dsh-desktop/market-installer/status'
@@ -203,8 +205,12 @@ export function resolvePnpmEntry(requireFrom = import.meta.url) {
  */
 export async function stagePnpmRunner(directory) {
   const source = fileURLToPath(new URL('./pnpm-runner.mjs', import.meta.url))
+  const helperSource = fileURLToPath(new URL('./windows-hide-console.mjs', import.meta.url))
   const staged = join(directory, 'pnpm-runner.mjs')
   try {
+    // The staged runner imports this sibling. Copy it first so a failed helper
+    // copy cannot leave a runner that resolves the helper from .desktop-bin.
+    await copyFile(helperSource, join(directory, 'windows-hide-console.mjs'))
     await copyFile(source, staged)
     return staged
   } catch {
@@ -212,11 +218,14 @@ export async function stagePnpmRunner(directory) {
   }
 }
 
-export async function ensurePnpmShim(home = dshHome()) {
+export async function ensurePnpmShim(home = dshHome(), options = {}) {
   const directory = join(home, '.desktop-bin')
   await mkdir(directory, { recursive: true })
   const pnpmEntry = resolvePnpmEntry()
   const executable = process.execPath
+  const hideConsoleAssignment = hideConsoleCmdAssignment(
+    options.hideConsoleBootstrapPath ?? process.env.DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP
+  )
 
   // pnpm is reached through this shim by every profile package operation —
   // DSH Desktop's installer and the community market alike — so the runner it
@@ -245,7 +254,7 @@ export async function ensurePnpmShim(home = dshHome()) {
     const pnpmPath = join(directory, 'pnpm.cmd')
     await writeFile(
       pnpmPath,
-      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" ${pnpmCommand.map((part) => `\"${part}\"`).join(' ')} %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n${hideConsoleAssignment}\"${executable}\" ${pnpmCommand.map((part) => `\"${part}\"`).join(' ')} %*\r\n`,
       'utf8'
     )
     const nodePath = join(directory, 'node.cmd')
@@ -527,7 +536,7 @@ export function createDesktopPnpmService(options) {
       const addArgs = args.includes('--workspace-root') ? args : [...args, '--workspace-root']
       write(`Updating ${spec} in the shared profile…`)
       const child = spawnProcess(executablePath,
-        [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...addArgs], {
+        pluginCommandArguments(dshEntryPath, addArgs, env), {
           cwd: invokingDir, env, stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true, detached: process.platform !== 'win32'
         })
@@ -651,6 +660,97 @@ export function createDesktopPnpmService(options) {
     return handle
   }
 
+  // Workbench market targets can be npm versions, verified Release archives,
+  // or pinned GitHub sources. Keep its existing handle contract while using
+  // the same generation backend and rollback path as the official market.
+  const installWorkbenchGeneration = (request, invokingDir, signal) => {
+    const { pluginSpec, expectedPluginName, expectedVersion, npmIntegrity } = request ?? {}
+    validatePluginOperation(['add', pluginSpec], invokingDir)
+    if (typeof expectedPluginName !== 'string' || !expectedPluginName || expectedPluginName === MARKET_PACKAGE) {
+      throw new Error('A workbench install needs the package name it provides.')
+    }
+    if (typeof expectedVersion !== 'string' || !expectedVersion) throw new Error('A workbench install needs an exact version.')
+    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
+    if (active) throw new Error('Another desktop pnpm operation is already running.')
+
+    const handle = asHandle(async ({ write, isCancelled, setCancel }) => {
+      const registry = await resolveMarketRegistry({ profileDir: profileDirectory(home), args: [], environment })
+      if (npmIntegrity !== undefined) {
+        const base = (registry ?? DEFAULT_NPM_REGISTRY).replace(/\/+$/u, '')
+        const response = await (options.fetchImpl ?? fetch)(`${base}/${expectedPluginName.replace('/', '%2F')}/${encodeURIComponent(expectedVersion)}`, {
+          headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30_000)
+        })
+        if (!response.ok) return { exitCode: 1, message: `Registry metadata for ${expectedPluginName}@${expectedVersion} returned HTTP ${response.status}.` }
+        const published = (await response.json())?.dist?.integrity
+        if (published !== npmIntegrity) {
+          return { exitCode: 1, message: `${expectedPluginName}@${expectedVersion} does not match the integrity listed in the workbench index.` }
+        }
+      }
+      if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+      write(`Installing ${expectedPluginName}@${expectedVersion} as an isolated generation…`)
+      const control = new AbortController()
+      setCancel(() => control.abort())
+      const mutation = await marketGenerationBackend.install({
+        kind: 'registry',
+        spec: pluginSpec,
+        expectedName: expectedPluginName,
+        expectedVersion,
+        sourceSpec: pluginSpec.startsWith('file:') ? undefined : pluginSpec,
+        minimumReleaseAge: 0,
+        registry,
+        signal: control.signal,
+        onOutput: chunk => write(chunk.replace(/\r?\n$/u, ''))
+      })
+      if (isCancelled()) {
+        await mutation.rollback?.()
+        return { exitCode: 1, message: 'The package operation was aborted.' }
+      }
+      if (mutation.packageResult.exitCode !== 0 || !mutation.bundle) {
+        return { exitCode: 1, message: mutation.packageResult.output || 'generation install failed' }
+      }
+      mutation.commit?.()
+      setCancel(() => {})
+      write(`published in profile: ${mutation.bundle}@${expectedVersion}; activation may require restart`)
+      return { exitCode: 0 }
+    })
+    active = handle
+    signal?.addEventListener('abort', handle.cancel, { once: true })
+    void handle.done.finally(() => {
+      signal?.removeEventListener('abort', handle.cancel)
+      if (active === handle) active = undefined
+    })
+    return handle
+  }
+
+  const removeWorkbenchGeneration = (pluginName, invokingDir, signal) => {
+    validatePluginOperation(['remove', pluginName], invokingDir)
+    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
+    if (active) throw new Error('Another desktop pnpm operation is already running.')
+    const handle = asHandle(async ({ write, isCancelled }) =>
+      withRegistryLock(home, async () => {
+        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+        const disabled = await disableGeneration(home, pluginName)
+        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+        const published = await publishGenerationManifest(home, MARKET_PROFILE, { syncBundles: true })
+        // A removed package leaves no switch behind; a reinstall starts enabled.
+        await forgetPlugin(profileDirectory(home), pluginName)
+        write(disabled
+          ? `staged for next restart: ${published.plugins.join(', ')}`
+          : `already absent from the next restart: ${pluginName}`)
+        return { exitCode: 0 }
+      })
+    )
+    active = handle
+    signal?.addEventListener('abort', handle.cancel, { once: true })
+    void handle.done.finally(() => {
+      signal?.removeEventListener('abort', handle.cancel)
+      if (active === handle) active = undefined
+    })
+    return handle
+  }
+
   const runPlugin = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
     if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
@@ -671,6 +771,7 @@ export function createDesktopPnpmService(options) {
           const published = await publishGenerationManifest(home, MARKET_PROFILE, {
             syncBundles: true
           })
+          await forgetPlugin(profileDirectory(home), generationRemoval)
           write(`staged for next restart: ${published.plugins.join(', ')}`)
           return { exitCode: 0 }
         })
@@ -688,7 +789,7 @@ export function createDesktopPnpmService(options) {
 
     const child = spawnProcess(
       executablePath,
-      [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...args],
+      pluginCommandArguments(dshEntryPath, args, environment),
       {
         cwd: invokingDir,
         env: buildPnpmEnvironment(binDirectory, environment, executablePath),
@@ -698,11 +799,22 @@ export function createDesktopPnpmService(options) {
       }
     )
     const cancel = () => killProcessTree(child)
+    const removed = removalTarget(args)
     const done = new Promise((resolveDone, rejectDone) => {
       child.once('error', rejectDone)
       child.once('close', (exitCode, exitSignal) => {
         resolveDone({ exitCode, signal: exitSignal })
       })
+    }).then(async (exit) => {
+      // pnpm removed a Profile-owned package; its switch must not outlive it.
+      if (removed !== undefined && exit.exitCode === 0) {
+        await forgetPlugin(profileDirectory(home), removed).catch((error) => {
+          process.stderr.write(
+            `dsh-desktop: could not clear the package switch for ${removed}: ${error instanceof Error ? error.message : String(error)}\n`
+          )
+        })
+      }
+      return exit
     })
     const handle = {
       stdout: child.stdout,
@@ -726,6 +838,8 @@ export function createDesktopPnpmService(options) {
   return Object.freeze({
     runPlugin,
     runExternalMarketPluginInstall,
+    installWorkbenchGeneration,
+    removeWorkbenchGeneration,
     async dispose() {
       closed = true
       const operation = active
@@ -742,6 +856,17 @@ export function resolveDshEntry(argv = process.argv) {
     throw new Error('The running DSH entry could not be identified.')
   }
   return resolve(entry)
+}
+
+export function pluginCommandArguments(dshEntryPath, args, env = process.env, platform = process.platform) {
+  return [
+    ...hideConsoleImportArguments(env, platform),
+    dshEntryPath,
+    'plugin',
+    '--profile',
+    MARKET_PROFILE,
+    ...args
+  ]
 }
 
 export function buildInstallArguments(dshEntry = resolveDshEntry()) {

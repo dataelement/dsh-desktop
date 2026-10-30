@@ -1,5 +1,6 @@
 import { watch } from 'node:fs'
 import { stat } from 'node:fs/promises'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, resolve } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 
@@ -19,9 +20,9 @@ import { Service } from '@deepseek-ai/cordis'
  *
  * Module-level hot replacement genuinely needs those internals and is not
  * reproduced here. Watching the user patch layer does not — that is a file
- * watcher and a callback — and it is the capability profile boot actually
- * asks for. The desktop already owns a full Harness restart for everything
- * else.
+ * watcher and a callback. Plugin Manager also asks for profile reconciliation;
+ * without module-cache inspection that operation must report a restart, not
+ * claim that replacement code was loaded or activated.
  */
 export const name = 'dsh-desktop-hmr-fallback'
 export const inject = ['loader']
@@ -31,6 +32,48 @@ const DEBOUNCE_MS = 100
 export class ConfigWatchHmr extends Service {
   constructor(ctx) {
     super(ctx, 'hmr')
+    this.operations = Promise.resolve()
+    this.executing = new AsyncLocalStorage()
+  }
+
+  /** Host capability description; service presence alone does not imply full HMR. */
+  get capabilities() {
+    return { configWatching: true, profileReconciliation: false, moduleReplacement: false }
+  }
+
+  /**
+   * Match the upstream ProfileReconciliation result without applying a generation.
+   * Node's internal module cache is unavailable, so even required entry ids must
+   * wait for a restart; no modules were compared and no activation was judged.
+   * Callers hold runExclusive, as required by the upstream public contract.
+   * @param {readonly string[]} [requiredIds] Entries requested by the caller.
+   * @returns {Promise<import('@deepseek-ai/dsh-hmr').ProfileReconciliation>}
+   */
+  async reconcileProfile(requiredIds = []) {
+    if (this.executing.getStore() !== true) {
+      throw new Error('HMR profile reconciliation must run inside runExclusive')
+    }
+    return { warnings: [], pending: [], restartReason: 'module-comparison' }
+  }
+
+  /**
+   * Serialize a caller-owned profile mutation with config refreshes.
+   *
+   * Plugin Manager calls this method when a service named `hmr` is present.
+   * Keep its error and nesting semantics aligned with the upstream HMR service:
+   * a rejected operation does not poison later work, and an operation cannot
+   * recursively acquire the same transaction.
+   * @param operation - asynchronous mutation to run exclusively.
+   * @returns the operation's result.
+   */
+  runExclusive(operation) {
+    if (this.executing.getStore()) {
+      return Promise.reject(new Error('HMR transactions cannot be nested'))
+    }
+
+    const task = this.operations.then(() => this.executing.run(true, operation))
+    this.operations = task.catch(() => undefined)
+    return task
   }
 
   /**
@@ -50,16 +93,14 @@ export class ConfigWatchHmr extends Service {
       // Directory events do not reliably name the file that changed — macOS
       // omits it often enough that trusting the name refreshes on every
       // neighbour. The file's own mtime and size do say.
-      queue = queue
-        .then(async () => {
-          const next = await stamp(target)
-          if (next === signature) return
-          signature = next
-          // Serially, like the service this replaces: a refresh overlapping
-          // itself would compose the patch layer against a half-applied tree.
-          await refresh()
-        })
-        .catch((error) => this.ctx.logger?.warn?.(error))
+      queue = this.runExclusive(async () => {
+        const next = await stamp(target)
+        if (next === signature) return
+        signature = next
+        // Serially, like the service this replaces: a refresh overlapping
+        // itself would compose the patch layer against a half-applied tree.
+        await refresh()
+      }).catch((error) => this.ctx.logger?.warn?.(error))
     }
     const watcher = watch(dirname(target), { persistent: false }, () => {
       clearTimeout(pending)

@@ -2,7 +2,9 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
+import semver from 'semver'
+import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
 /**
@@ -39,6 +41,65 @@ const GENERATION_INSTALL_TIMEOUT_MS = 90 * 1000
 
 function isHostSingleton(name) {
   return HOST_SINGLETON_PATTERNS.some((pattern) => pattern.test(name))
+}
+
+function requiredPrivatePeers(manifest) {
+  const providers = Object.create(null)
+  for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
+    if (name === manifest.name || isHostSingleton(name) ||
+        manifest.peerDependenciesMeta?.[name]?.optional === true ||
+        Object.hasOwn(manifest.dependencies ?? {}, name) ||
+        Object.hasOwn(manifest.optionalDependencies ?? {}, name)) continue
+    if (!PACKAGE_NAME_PATTERN.test(name) || typeof range !== 'string' || semver.validRange(range) === null) {
+      throw new Error('ERR_PRIVATE_PEER_RANGE: invalid required peer ' + name)
+    }
+    providers[name] = range
+  }
+  return providers
+}
+
+async function inspectPrivatePeerProviders(stagingDir, manifestPath, providers) {
+  const { createRequire } = await import('node:module')
+  const requireFromPlugin = createRequire(manifestPath)
+  const missing = Object.create(null)
+  const problems = []
+  const record = (name, range, detail) => { missing[name] = range; problems.push(detail) }
+  const root = await realpath(stagingDir)
+  for (const [name, range] of Object.entries(providers)) {
+    let entry
+    try { entry = requireFromPlugin.resolve(name) } catch (error) {
+      if (!['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND', 'ERR_PACKAGE_PATH_NOT_EXPORTED'].includes(error.code)) throw error
+      entry = await resolveNonRootPackage(requireFromPlugin, name)
+    }
+    if (entry === undefined) {
+      record(name, range, 'ERR_PRIVATE_PEER_MISSING: ' + name)
+      continue
+    }
+    const resolved = await realpath(entry)
+    if (!isInsideDirectory(root, resolved)) {
+      record(name, range, 'ERR_PRIVATE_PEER_OUTSIDE_GENERATION: ' + name)
+      continue
+    }
+    let directory = dirname(resolved)
+    let found = false
+    while (isInsideDirectory(root, directory)) {
+      let candidate
+      try { candidate = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+      if (candidate?.name === name) {
+        if (typeof candidate.version !== 'string' || !semver.satisfies(candidate.version, range)) {
+          record(name, range, 'ERR_PRIVATE_PEER_VERSION: ' + name + ' does not satisfy ' + range)
+        }
+        found = true
+        break
+      }
+      if (directory === root) break
+      directory = dirname(directory)
+    }
+    if (!found) record(name, range, 'ERR_PRIVATE_PEER_MISSING: ' + name)
+  }
+  return { missing, problems }
 }
 
 function installationClosureDir(dshHome) {
@@ -109,12 +170,13 @@ async function stageBuildApprovals(
   try {
     yaml = await readFile(source, 'utf8')
   } catch (error) {
-    if (error?.code === 'ENOENT') return []
-    throw error
+    if (error?.code !== 'ENOENT') throw error
   }
   const approvals = generationBuildApprovals(yaml)
   const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, approvals)
   const stagedApprovals = pinned === undefined ? approvals : [...approvals, pinned]
+  // Isolate hoisting from ancestor workspaces even without Profile approvals.
+  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n', 'utf8')
   if (stagedApprovals.length === 0) return []
   const lines = [
     'packages:',
@@ -128,27 +190,46 @@ async function stageBuildApprovals(
   return stagedApprovals
 }
 
+/**
+ * pnpm argv for one generation install. A scrubbed `options.environment` that
+ * omits the console-hide path still inherits it from this process; an explicit
+ * value in the options wins.
+ * @param {object} options
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string[]}
+ */
+export function installPnpmArguments(options, env = process.env, platform = process.platform) {
+  return [
+    ...hideConsoleImportArguments({
+      ...env,
+      ...(options.environment ?? {})
+    }, platform),
+    options.pnpmEntryPath,
+    ...(options.installPhase === 'peers' ? ['install', '--no-frozen-lockfile'] : ['add', options.pluginSpec]),
+    ...(options.registry ? [`--registry=${options.registry}`] : []),
+    ...(typeof options.autoInstallPeers === 'boolean'
+      ? [`--config.auto-install-peers=${options.autoInstallPeers}`] : []),
+    ...(options.strictDepBuilds === true ? ['--config.strict-dep-builds=true'] : []),
+    ...(Number.isSafeInteger(options.minimumReleaseAge) && options.minimumReleaseAge >= 0
+      ? [`--config.minimum-release-age=${options.minimumReleaseAge}`] : [])
+  ]
+}
+
 async function defaultRunInstall(options, stagingDir) {
   const spawnProcess = options.spawnProcess ?? spawn
   return new Promise((resolve) => {
     const child = spawnProcess(
       options.nodeExecutablePath,
-      [options.pnpmEntryPath, 'add', options.pluginSpec,
-        ...(options.registry ? [`--registry=${options.registry}`] : []),
-        ...(typeof options.autoInstallPeers === 'boolean'
-          ? [`--config.auto-install-peers=${options.autoInstallPeers}`] : []),
-        ...(options.strictDepBuilds === true ? ['--config.strict-dep-builds=true'] : []),
-        ...(Number.isSafeInteger(options.minimumReleaseAge) && options.minimumReleaseAge >= 0
-          ? [`--config.minimum-release-age=${options.minimumReleaseAge}`] : [])
-      ],
+      installPnpmArguments(options),
       {
         cwd: stagingDir,
         env: {
           ...(options.environment ?? process.env),
-          ...(process.platform === 'win32' && process.versions.electron &&
-            options.nodeExecutablePath === process.execPath
-            ? { ELECTRON_RUN_AS_NODE: '1' }
-            : {}),
+          // Under Electron the runtime is always an Electron binary: Harness's
+          // own execPath, or the macOS Helper / Windows executable the main
+          // process passes, whose environment carries no Node mode of its own.
+          ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
           CI: 'true',
           NO_COLOR: '1',
           npm_config_side_effects_cache: 'false'
@@ -185,11 +266,11 @@ async function defaultRunInstall(options, stagingDir) {
 
 /**
  * Delete every host-singleton package from every nested node_modules in a
- * generation. Returns what was removed.
+ * generation, except the plugin the generation exists for. Returns what was removed.
  */
-async function hoistHostSingletons(generationDir) {
+async function hoistHostSingletons(generationDir, pluginName) {
   const removed = []
-  await walkGenerationPackages(generationDir, {
+  await walkGenerationPackages(generationDir, pluginName, {
     async onPackage() {},
     async onSingleton(name, path, info) {
       // Never follow a package link while removing it. A hostile or malformed
@@ -302,10 +383,11 @@ export async function installGeneration(options) {
           PNPM_CONFIG_PM_ON_FAIL: 'ignore'
         }
       : options.environment
-    const runInstall = options.runInstall ?? ((dir) => defaultRunInstall({
+    const runInstall = options.runInstall ?? ((dir, phase) => defaultRunInstall({
       ...options,
       environment: installEnvironment,
-      pluginSpec: installSpec
+      pluginSpec: installSpec,
+      installPhase: phase
     }, dir))
     const started = Date.now()
     const { code, output } = await runInstall(stagingDir)
@@ -341,10 +423,31 @@ export async function installGeneration(options) {
       await cleanupStaging()
       return { ok: false, detail: `ERR_RESOLVED_VERSION_MISMATCH: expected ${options.expectedVersion}, installed ${version}` }
     }
-    const hoisted = await hoistHostSingletons(stagingDir)
+    const requiredPeers = requiredPrivatePeers(manifest)
+    const { missing: providers } = await inspectPrivatePeerProviders(stagingDir, installedManifestPath, requiredPeers)
+    if (Object.keys(providers).length > 0) {
+      // Preserve the original spec and lock; adding the original moving tag again
+      // could select a different plugin while filling its private peer closure.
+      stagingManifest.dependencies = { ...stagingManifest.dependencies, ...providers }
+      await writeFile(join(stagingDir, 'package.json'), JSON.stringify(stagingManifest, undefined, 2) + '\n')
+      trace('installing required private peer providers into staging')
+      const peers = await runInstall(stagingDir, 'peers')
+      if (peers.code !== 0) throw new Error(diagnosticLine(peers.output) ?? 'private peer install exited ' + peers.code)
+      const selected = JSON.parse(await readFile(installedManifestPath, 'utf8'))
+      if (selected.name !== manifest.name || selected.version !== manifest.version) {
+        throw new Error('ERR_RESOLVED_PACKAGE_MISMATCH: plugin identity or version changed during peer installation')
+      }
+    }
+
+    const hoisted = await hoistHostSingletons(stagingDir, pluginName)
     if (hoisted.length > 0) {
       trace(`hoisted ${hoisted.length} host singletons: ${hoisted.slice(0, 6).join(', ')}…`)
     }
+
+    // pnpm can rehoist an initially compatible peer while supplying another one.
+    // Validate every required private peer against the final, pruned tree.
+    const validation = await inspectPrivatePeerProviders(stagingDir, installedManifestPath, requiredPeers)
+    if (validation.problems.length > 0) throw new Error(validation.problems.join('; '))
 
     const lockfileText = await readFile(join(stagingDir, 'pnpm-lock.yaml'), 'utf8').catch(() => randomUUID())
     // Approval can change built files without changing the lockfile. Never
@@ -391,8 +494,13 @@ async function pathInfo(path, missingAllowed = false) {
 /**
  * Walk package boundaries in every nested node_modules without following a
  * symlink or allowing a real directory to escape the immutable generation.
+ *
+ * `pluginName` at the generation's top level is the plugin itself, not a host
+ * singleton, even when its name matches a pattern (an `@deepseek-ai/*` plugin):
+ * removing it would leave the generation without the package it was built for.
+ * Copies of that name nested deeper are still singletons.
  */
-async function walkGenerationPackages(generationDir, visitor) {
+async function walkGenerationPackages(generationDir, pluginName, visitor) {
   const rootInfo = await pathInfo(generationDir)
   if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
     await visitor.onUnsafePath(`generation root is not a real directory: ${generationDir}`)
@@ -415,9 +523,9 @@ async function walkGenerationPackages(generationDir, visitor) {
     return readdir(directory, { withFileTypes: true })
   }
 
-  const walkPackage = async (name, packagePath) => {
+  const walkPackage = async (name, packagePath, topLevel) => {
     const info = await pathInfo(packagePath)
-    if (isHostSingleton(name)) {
+    if (isHostSingleton(name) && !(topLevel && name === pluginName)) {
       await visitor.onSingleton(name, packagePath, info)
       return
     }
@@ -431,10 +539,10 @@ async function walkGenerationPackages(generationDir, visitor) {
       return
     }
     await visitor.onPackage(name, packagePath, root)
-    await walkModules(join(packagePath, 'node_modules'), true)
+    await walkModules(join(packagePath, 'node_modules'), true, false)
   }
 
-  const walkScope = async (scopeName, scopePath) => {
+  const walkScope = async (scopeName, scopePath, topLevel) => {
     const info = await pathInfo(scopePath)
     if (scopeName === '@deepseek-ai' && (info.isSymbolicLink() || !info.isDirectory())) {
       await visitor.onSingleton('@deepseek-ai/*', scopePath, info)
@@ -444,28 +552,28 @@ async function walkGenerationPackages(generationDir, visitor) {
     if (entries === undefined) return
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue
-      await walkPackage(`${scopeName}/${entry.name}`, join(scopePath, entry.name))
+      await walkPackage(`${scopeName}/${entry.name}`, join(scopePath, entry.name), topLevel)
     }
   }
 
-  async function walkModules(modules, missingAllowed) {
+  async function walkModules(modules, missingAllowed, topLevel) {
     const entries = await safeDirectoryEntries(modules, missingAllowed, 'node_modules')
     if (entries === undefined) return
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === '.bin') continue
       const path = join(modules, entry.name)
-      if (entry.name.startsWith('@')) await walkScope(entry.name, path)
-      else await walkPackage(entry.name, path)
+      if (entry.name.startsWith('@')) await walkScope(entry.name, path, topLevel)
+      else await walkPackage(entry.name, path, topLevel)
     }
   }
 
-  await walkModules(join(generationDir, 'node_modules'), false)
+  await walkModules(join(generationDir, 'node_modules'), false, true)
 }
 
-async function installedPackageManifestPaths(generationDir) {
+async function installedPackageManifestPaths(generationDir, pluginName) {
   const manifests = []
   const problems = []
-  await walkGenerationPackages(generationDir, {
+  await walkGenerationPackages(generationDir, pluginName, {
     async onPackage(name, packagePath, root) {
       const manifestPath = join(packagePath, 'package.json')
       const info = await pathInfo(manifestPath, true)
@@ -535,18 +643,64 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
   } catch {
     // Packages with exports may hide their manifest; keep the bounded lookup.
   }
-  const files = selectedManifest ? [selectedManifest]
-    : (requireFromPackage.resolve.paths(dependency) ?? []).map(modules => join(modules, dependency, 'package.json'))
-  for (const file of files) {
-    const packageDirectory = file.slice(0, -'package.json'.length)
+  const files = []
+  if (selectedManifest) {
+    files.push(selectedManifest)
+  }
+  const candidatePaths = (requireFromPackage.resolve.paths(dependency) ?? [])
+    .map((modules) => join(modules, dependency, 'package.json'))
+  for (const candidate of candidatePaths) {
+    if (!files.includes(candidate)) {
+      files.push(candidate)
+    }
+  }
+  const packageRoots = await Promise.all(candidatePaths.map(async (file) => {
+    const directory = dirname(file)
+    return await realpath(directory).catch(() => directory)
+  }))
+  for (const selectedFile of files) {
+    // Resolve the manifest and lookup roots into the same physical namespace.
+    // Windows short paths/junction aliases must not stop ancestor discovery.
+    const file = await realpath(selectedFile).catch(() => selectedFile)
+    // A wildcard may select a helper manifest inside the package. Recover only
+    // within that package; a broken nearer copy still owns Node's lookup.
+    const packageBoundary = packageRoots.find((root) => isInsideDirectory(root, file)) ?? dirname(file)
+    let packageDirectory = file.slice(0, -'package.json'.length)
     let manifest
     try {
       manifest = JSON.parse(await readFile(file, 'utf8'))
     } catch (error) {
-      if (error?.code === 'ENOENT') continue
+      if (error?.code === 'ENOENT' && !existsSync(packageBoundary)) continue
       return undefined
     }
-    if (manifest.name !== dependency) return undefined
+    // Packages with wildcard exports (e.g. "@modelcontextprotocol/sdk" with "./*": "./dist/cjs/*")
+    // redirect "${dependency}/package.json" to a nested helper manifest (e.g. dist/cjs/package.json
+    // containing only {"type": "commonjs"}) without a package name.
+    // If name does not match, inspect ancestor directories below the dependency root.
+    if (manifest.name !== dependency) {
+      let currentDir = dirname(dirname(file))
+      let foundAncestor = false
+      while (isInsideDirectory(packageBoundary, currentDir) && basename(currentDir) !== 'node_modules') {
+        const ancestorManifestPath = join(currentDir, 'package.json')
+        if (existsSync(ancestorManifestPath)) {
+          try {
+            const ancestorManifest = JSON.parse(await readFile(ancestorManifestPath, 'utf8'))
+            if (ancestorManifest.name === dependency) {
+              manifest = ancestorManifest
+              packageDirectory = currentDir.endsWith('/') || currentDir.endsWith('\\') ? currentDir : `${currentDir}/`
+              foundAncestor = true
+              break
+            }
+          } catch {
+            return undefined
+          }
+        }
+        const parent = dirname(currentDir)
+        if (parent === currentDir) break
+        currentDir = parent
+      }
+      if (!foundAncestor) return undefined
+    }
     const exported = manifest.exports
     const rootExport = exported && typeof exported === 'object' &&
       Object.hasOwn(exported, '.') ? exported['.'] : exported
@@ -576,7 +730,11 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       Object.keys(manifest.exports).some((key) => key.startsWith('./'))
     if (declarationOnly) {
       const declaration = join(packageDirectory, manifest.types ?? manifest.typings)
-      return existsSync(declaration) ? declaration : undefined
+      const candidates = [declaration, `${declaration}.d.ts`, `${declaration}.d.mts`, `${declaration}.d.cts`]
+      for (const candidate of candidates) {
+        if (existsSync(candidate)) return candidate
+      }
+      return undefined
     }
     // Some SDKs publish a root export without shipping its target, while their
     // supported API is exposed through concrete client/server subpaths. Package
@@ -593,7 +751,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
     }
     // Subpath exports are resolved when imported. A bare require is explicitly
     // unsupported by these packages; it cannot determine whether they exist.
-    return subpathOnly ? file : undefined
+    return subpathOnly ? join(packageDirectory, 'package.json') : undefined
   }
   return undefined
 }
@@ -646,7 +804,7 @@ export async function verifyGenerationPeers(dshHome, generation, options = {}) {
   if (!existsSync(manifestPath)) return { ok: false, problems: ['plugin package root missing'] }
 
   const problems = []
-  const scanned = await installedPackageManifestPaths(generation.directory)
+  const scanned = await installedPackageManifestPaths(generation.directory, generation.pluginName)
   problems.push(...scanned.problems)
   const manifests = scanned.manifests
   if (!manifests.includes(manifestPath)) {
@@ -685,8 +843,14 @@ export async function verifyGenerationPeers(dshHome, generation, options = {}) {
       let resolved
       try {
         resolved = requireFromPackage.resolve(dependency)
-      } catch {
+      } catch (error) {
         resolved = await resolveNonRootPackage(requireFromPackage, dependency)
+        // Match runtime fallback: only missing Harness packages may use the
+        // current installation. Never mask local exports errors or private copies.
+        if (resolved === undefined && dependency.startsWith('@deepseek-ai/') &&
+            ['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(error?.code)) {
+          resolved = await hostEntry(dependency)
+        }
       }
       const requiredDependency =
         Object.hasOwn(dependencies, dependency) && !Object.hasOwn(optionalDependencies, dependency)

@@ -55,7 +55,11 @@ function Install-At([string]$directory) {
 
 function Assert-InstalledPeSignatures([string]$directory) {
   $count = 0
+  $officeRuntimeDir = Join-Path $directory 'resources\office-runtime'
   foreach ($file in Get-ChildItem -LiteralPath $directory -File -Recurse -Force) {
+    if ($file.FullName.StartsWith($officeRuntimeDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+      continue
+    }
     $stream = [System.IO.File]::OpenRead($file.FullName)
     try {
       if ($stream.Length -lt 2 -or $stream.ReadByte() -ne 0x4d -or $stream.ReadByte() -ne 0x5a) { continue }
@@ -74,6 +78,39 @@ function Get-HarnessLogPaths {
     Where-Object { $_ } |
     Select-Object -Unique |
     ForEach-Object { Join-Path $_ 'dsh-desktop\logs\harness.log' }
+}
+
+function Invoke-ElectronNode([string]$executable, [string[]]$nodeArguments) {
+  $start = [System.Diagnostics.ProcessStartInfo]::new($executable)
+  $start.WorkingDirectory = Split-Path $executable
+  $start.UseShellExecute = $false
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
+  $start.Environment['ELECTRON_RUN_AS_NODE'] = '1'
+  foreach ($argument in $nodeArguments) { [void]$start.ArgumentList.Add($argument) }
+  $child = [System.Diagnostics.Process]::Start($start)
+  $stdout = $child.StandardOutput.ReadToEnd()
+  $stderr = $child.StandardError.ReadToEnd()
+  $child.WaitForExit()
+  if ($stdout) { Write-Host $stdout }
+  if ($stderr) { [Console]::Error.WriteLine($stderr) }
+  return $child.ExitCode
+}
+
+function Assert-OfficeRuntime([string]$executable) {
+  $resources = Join-Path (Split-Path $executable) 'resources'
+  $exitCode = Invoke-ElectronNode $executable @(
+    (Join-Path $PSScriptRoot 'verify-packaged-harness.cjs'),
+    '--verify-runtime',
+    (Join-Path $resources 'app.asar'),
+    $resources,
+    $executable
+  )
+  if ($exitCode -ne 0) {
+    throw "Installed Harness and native runtime validation failed with exit code $exitCode."
+  }
+  & node (Join-Path $PSScriptRoot 'verify-office-runtime.cjs') $resources $executable
+  if ($LASTEXITCODE -ne 0) { throw 'Installed Office runtime validation failed.' }
 }
 
 function Assert-Starts([string]$executable) {
@@ -131,6 +168,7 @@ $secondDirectory = Join-Path $root 'install-two'
 
 $firstExecutable = Install-At $firstDirectory
 Assert-InstalledPeSignatures $firstDirectory
+Assert-OfficeRuntime $firstExecutable
 Assert-Starts $firstExecutable
 
 $profileMarker = Join-Path $script:activeAppDataRoot 'dsh-desktop\harness\signed-smoke-marker'
@@ -166,5 +204,6 @@ $secondExecutable = Install-At $secondDirectory
 if (-not (Test-Path $firstExecutable)) { throw 'Custom-directory install removed the previous installation.' }
 Assert-Signature $firstExecutable $true
 Assert-InstalledPeSignatures $secondDirectory
+Assert-OfficeRuntime $secondExecutable
 Assert-Starts $secondExecutable
 Write-Host 'Final signed installer passed first install, same-path upgrade, custom directory, signature and startup checks.'

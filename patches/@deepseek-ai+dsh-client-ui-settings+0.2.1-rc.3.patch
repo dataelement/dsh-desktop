@@ -1,0 +1,22 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
+index 3253a36..e6c4d0c 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
+@@ -39,6 +39,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             scope: 'root';
+             owner: SettingsHeaderOwnerProps;
+         };
++        /**
++         * Ordered optional links/actions below the scrollable section list.
++         * Root scope, empty owner props; rendered once in the nav footer.
++         * Contributors fit the sidebar width and own copy/focus/behavior.
++         * Without contributors the footer stays empty; sections are unchanged.
++         */
++        'settings.sidebar.footer': {
++            kind: 'list';
++            scope: 'root';
++            owner: SettingsHeaderOwnerProps;
++        };
+         /**
+          * Optional actions rendered in the content-column header before Close.
+          * Registrants own visibility, behavior, copy, and failure presentation;

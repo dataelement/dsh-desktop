@@ -1,6 +1,3 @@
-import { constants, accessSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { spawnSync } from 'node:child_process'
 import { electronExecutable, harnessLoaderAnchor, probeElectronNodeLoader } from './electron-node-loader.mjs'
 
 const [expectedPlatform, expectedArch] = process.argv.slice(2)
@@ -18,47 +15,11 @@ if (process.platform !== expectedPlatform || process.arch !== expectedArch) {
   process.exit(1)
 }
 
-const executable = expectedPlatform === 'win32' ? 'node.exe' : 'node'
-const runtimeExecutable = resolve('node_modules', 'node', 'bin', executable)
-
-try {
-  accessSync(runtimeExecutable, constants.X_OK)
-} catch {
-  console.error(`Bundled Node.js runtime was not found or is not executable: ${runtimeExecutable}`)
-  console.error('Reinstall dependencies with lifecycle scripts enabled, or run `npm rebuild node`.')
-  process.exit(1)
-}
-
-const probe = spawnSync(
-  runtimeExecutable,
-  ['-p', 'JSON.stringify({ platform: process.platform, arch: process.arch, version: process.versions.node })'],
-  { encoding: 'utf8' }
-)
-
-if (probe.status !== 0) {
-  console.error(`Bundled Node.js runtime could not start: ${runtimeExecutable}`)
-  if (probe.stderr) console.error(probe.stderr.trim())
-  process.exit(1)
-}
-
-let runtime
-try {
-  runtime = JSON.parse(probe.stdout.trim())
-} catch {
-  console.error(`Bundled Node.js runtime returned an invalid probe result: ${probe.stdout.trim()}`)
-  process.exit(1)
-}
-
-if (runtime.platform !== expectedPlatform || runtime.arch !== expectedArch) {
-  console.error(
-    `Bundled Node.js runtime must target ${expectedPlatform}/${expectedArch}; received ${runtime.platform}/${runtime.arch}.`
-  )
-  process.exit(1)
-}
-
-// Windows runs Harness through Electron Node mode and macOS through a utility
-// process; both reach Node internals through the Harness native loader, which
-// accepts only the Electron builds it was compiled for.
+// The Desktop ships no standalone Node: Windows runs Harness through Electron
+// Node mode and macOS through a utility process, and package commands use the
+// Electron executable (the macOS Helper) as Node. Both reach Node internals
+// through the Harness native loader, which accepts only the Electron builds it
+// was compiled for.
 const loader = probeElectronNodeLoader({
   executable: electronExecutable(process.cwd()),
   anchor: harnessLoaderAnchor(process.cwd())
@@ -70,6 +31,6 @@ if (!loader.ok) {
 }
 
 console.log(
-  `Packaging target verified: ${process.platform}/${process.arch}; bundled Node.js ${runtime.version}; ` +
+  `Packaging target verified: ${process.platform}/${process.arch}; ` +
   `Electron ${loader.runtime.electron} (Node ${loader.runtime.node}) loads the Harness native loader`
 )

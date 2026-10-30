@@ -30,10 +30,13 @@ describe('PPT source build contract', () => {
   it('runs one preparation pipeline before dev, build, test, and package consumers', async () => {
     const manifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'))
     expect(manifest.scripts['ppt:build']).toBe('node scripts/prepare-ppt-runtime.mjs')
-    expect(manifest.scripts.dev).toMatch(/^npm run ppt:build && /u)
-    expect(manifest.scripts.build).toMatch(/^npm run ppt:build && /u)
-    expect(manifest.scripts.pretest).toBe('npm run ppt:build')
-    expect(manifest.scripts['pretest:watch']).toBe('npm run ppt:build')
+    for (const name of ['dev', 'build', 'pretest', 'pretest:watch']) {
+      const steps = manifest.scripts[name].split(' && ')
+      expect(steps).toContain('npm run ppt:build')
+      if (name === 'dev' || name === 'build') {
+        expect(steps.indexOf('npm run ppt:build')).toBeLessThan(steps.length - 1)
+      }
+    }
     for (const name of Object.keys(manifest.scripts).filter(name => name.startsWith('package:'))) {
       expect(manifest.scripts[name]).toContain('npm run build')
     }
@@ -42,7 +45,7 @@ describe('PPT source build contract', () => {
   it('packages the current staged directories instead of node_modules links', async () => {
     const manifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'))
     const files = manifest.build.files
-    expect(manifest.build.afterPack).toBe('scripts/verify-packaged-ppt-runtime.cjs')
+    expect(manifest.build.afterPack).toBe('scripts/after-pack.cjs')
     expect(files).toContain('!node_modules/dsh-ppt{,/**}')
     expect(files).toContain('!node_modules/dsh-ppt-composer{,/**}')
     expect(files).toContainEqual(expect.objectContaining({

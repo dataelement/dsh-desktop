@@ -22,6 +22,8 @@ Every metadata/design record contains English and Chinese title/body fonts and p
 
 `npm run ppt:build` starts from an empty `.build/ppt-runtime/` directory, regenerates the ten Zara packs, restores the six maintained baseline packs from `scripts/ppt/base-templates/`, applies reviewed English translations, and expands all sixteen packs to twelve layouts each. It validates and renders the 192 English previews, hydrates the runtime clients/catalog, assembles both package directories, then atomically projects those directories into `node_modules` for local execution. It never writes generated templates, previews, archives or hash manifests back into tracked source paths. Every pack retains explicit English/Chinese font pairs. The two original experiments live in `scripts/ppt/rich-layouts.mjs`; the other composition plans and editable geometry live in `scripts/ppt/composition-library.mjs`.
 
+The step is skipped when nothing it reads has changed: `scripts/ppt-build-cache.mjs` fingerprints `packages/ppt-runtime/`, `scripts/ppt/`, the pipeline scripts and `package-lock.json`, and records the result in `.build/ppt-runtime/build-inputs.json`. When only `node_modules` was reinstalled, the staged packages are projected again without regenerating them. Set `DSH_PPT_FORCE_BUILD=1` to force a full rebuild.
+
 `npm ci` bootstraps from the tracked local package seeds, so a clean checkout does not need a pre-existing archive. The `dev`, `build` and `test` lifecycles all invoke the same preparation step; every package script delegates to `build`. Electron Builder excludes the bootstrap links and copies the current staged packages explicitly. Tests verify the generated distributions, language coverage, fonts, activation and state migration. The 23 withdrawn designs and 345 excluded images remain absent; `excluded-assets.json` is a hash-only regression list.
 
 ## Compatibility
@@ -35,6 +37,8 @@ Desktop's startup bundle reconciliation removes `dsh-ppt` and `dsh-ppt-composer`
 The legacy on-disk `kimi-ppt` directory is deliberately retained to preserve sessions, revisions and output files. `/kimi-ppt` remains an alias for in-flight older clients; legacy Skill-root config/env values and old automatic snapshots are handled explicitly. The three retained template IDs migrate to DSH IDs without losing selection; removed IDs fall back visibly. User-authored messages and historical generated decks are preserved.
 
 PPT remains preinstalled. Its automatic instructions are scoped to sessions where the user enabled the PPT button.
+
+Ordinary conversations use the upstream `office-pptx` skill for general authoring and edits. While PPT mode is active, the skill registry resolves the current session's invocation policy on every catalog and body read, keeping `office-pptx` unavailable to automatic model calls while leaving Word/Excel and explicit user invocation available. The template route retains its PPTD tools and selected template; validation/export failures do not trigger a switch to python-pptx. Disabling PPT mode restores the general skill, including after cached reads. The host catalog carries the durable session ID before Agent activation, and the policy listener is removed with this plugin.
 
 ### Personal PPT templates
 

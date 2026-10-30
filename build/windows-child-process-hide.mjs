@@ -1,3 +1,5 @@
+import { promisify } from 'node:util'
+
 /** Add the Windows no-console flag without overriding an explicit choice. */
 export function applyWindowsHide(options) {
   if (options && typeof options === 'object' && options.windowsHide !== undefined) {
@@ -54,7 +56,10 @@ export function enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExpor
 
   childProcess.execFile = function patchedExecFile(file, args, options, callback) {
     if (typeof args === 'function') {
-      return originalExecFile.call(this, file, applyWindowsHide(undefined), undefined, args)
+      return originalExecFile.call(this, file, applyWindowsHide(undefined), args)
+    }
+    if (args && typeof args === 'object' && !Array.isArray(args)) {
+      return originalExecFile.call(this, file, applyWindowsHide(args), typeof options === 'function' ? options : callback)
     }
     if (typeof options === 'function') {
       return originalExecFile.call(this, file, args, applyWindowsHide(undefined), options)
@@ -75,6 +80,22 @@ export function enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExpor
     }
     return originalFork.call(this, modulePath, applyWindowsHide(args))
   }
+
+  // Delegate to Node's own promisify hooks so Promise.child, Buffer output and
+  // error stdout/stderr stay native. Those hooks close over the original
+  // functions, so windowsHide must be applied before calling them.
+  const nativeExec = originalExec[promisify.custom]
+  const nativeExecFile = originalExecFile[promisify.custom]
+  Object.defineProperty(childProcess.exec, promisify.custom, {
+    ...Object.getOwnPropertyDescriptor(originalExec, promisify.custom),
+    value: (command, options) => nativeExec(command, applyWindowsHide(options))
+  })
+  Object.defineProperty(childProcess.execFile, promisify.custom, {
+    ...Object.getOwnPropertyDescriptor(originalExecFile, promisify.custom),
+    value: (file, args, options) => args && typeof args === 'object' && !Array.isArray(args)
+      ? nativeExecFile(file, applyWindowsHide(args))
+      : nativeExecFile(file, args, applyWindowsHide(options))
+  })
 
   syncBuiltinESMExports()
 }

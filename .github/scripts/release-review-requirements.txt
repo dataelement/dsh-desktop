@@ -1,0 +1,4 @@
+# CI-only transport; not included in Desktop or Profile dependencies.
+lark-oapi==1.4.24
+# The pinned SDK uses the pre-14 WebSocket client/exception interfaces.
+websockets==13.1

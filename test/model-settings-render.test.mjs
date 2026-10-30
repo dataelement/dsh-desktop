@@ -29,7 +29,7 @@ it.each(['DeepSeekModelsEditor', 'ModelListEditor'])('%s expands options and edi
   vm.runInNewContext(source, { window: { __ModuleLoader__: { load({ factory }) {
     editor = factory(id => ({ react, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'fragment' }, '@deepseek-ai/dsh-client-ui-primitives': primitives, '@deepseek-ai/dsh-client-store': {} })[id]).editor
   } } } })
-  let models = [{ id: 'model', inputModalities: ['text', 'image'], input: ['text', 'image'], contextWindow: 128000, maxTokens: 8000 }]
+  let models = [{ id: 'model', inputModalities: ['text', 'image'], input: ['text', 'image'], imagePixelBudget: 'low', imageMaxBytes: 12345, contextWindow: 128000, maxTokens: 8000 }]
   const props = { probe: { settingsNs: 'llm-pi-ai' }, operations: {}, onBusyChange() {}, models, modelQuery: '', t: key => key, onChange: value => { models = value }, onReset() {}, defaultContextWindow: 256000, defaultMaxTokens: 32000 }
   const render = () => { cursor = 0; return editor({ ...props, models }) }
   const flatten = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(flatten) : [node, ...flatten(node.props?.children)]
@@ -48,6 +48,18 @@ it.each(['DeepSeekModelsEditor', 'ModelListEditor'])('%s expands options and edi
   tree = render()
   find(tree, contextLabel).props.onBlur?.()
   expect(find(render(), contextLabel).props.value).toBe('256K')
+  find(render(), 'modelImageInput 1').props.onChange({ target: { checked: false } })
+  const inputField = editorName === 'DeepSeekModelsEditor' ? 'inputModalities' : 'input'
+  expect(models[0][inputField]).toEqual(['text'])
+  if (editorName === 'DeepSeekModelsEditor') {
+    expect(models[0]).not.toHaveProperty('imagePixelBudget')
+    expect(models[0]).not.toHaveProperty('imageMaxBytes')
+  } else {
+    expect(models[0].imageMaxBytes).toBe(12345)
+  }
+  expect(models[0].contextWindow).toBe(256000)
+  find(render(), 'modelImageInput 1').props.onChange({ target: { checked: true } })
+  expect(models[0][inputField]).toEqual(['text', 'image'])
 })
 
 it.each(['loading', 'missing-key', 'ready', 'error'])('onboarding handles %s without an undefined readiness state', async status => {

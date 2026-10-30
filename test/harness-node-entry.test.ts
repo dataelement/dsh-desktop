@@ -5,6 +5,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { applyWindowsHide } from '../build/windows-child-process-hide.mjs'
+import {
+  PACKAGED_PNPM_ENTRY_ENV,
+  PACKAGED_PNPM_RUNNER_ENV,
+  buildPackagedPnpmInvocation
+} from '../build/packaged-pnpm-invocation.mjs'
 import { projectRoot } from './patch-path'
 
 describe('linked Profile plugin host dependency fallback', () => {
@@ -58,7 +63,7 @@ describe('linked Profile plugin host dependency fallback', () => {
   // Reproduces the shape seen in production crash reports: a host package in
   // the shared Profile tree is older than the subpath its importer needs, so
   // resolution fails with ERR_PACKAGE_PATH_NOT_EXPORTED rather than not-found.
-  it('retries a stale host peer whose subpath the installation does export', async () => {
+  it('preserves a local exports boundary instead of mixing it with a host subpath', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-host-module-subpath-'))
     try {
       const host = join(root, 'host')
@@ -103,10 +108,9 @@ describe('linked Profile plugin host dependency fallback', () => {
         join(host, 'entry.mjs')
       ], { encoding: 'utf8' })
 
-      expect(result.status, result.stderr).toBe(0)
-      // Only the missing subpath comes from the host; the bare specifier keeps
-      // resolving to the copy the plugin's own tree provides.
-      expect(result.stdout).toContain('fixture:{"control":"host-control","source":"stale"}')
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('ERR_PACKAGE_PATH_NOT_EXPORTED')
+      expect(result.stdout).not.toContain('host-control')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -218,6 +222,120 @@ describe('windowsHide ESM built-in synchronization', () => {
     })
 
     expect(JSON.parse(output)).toEqual({ cwd: 'C:/fixture', windowsHide: true })
+  })
+})
+
+describe('windowsHide promisified child processes', () => {
+  it.each(['exec', 'execFile'])('preserves %s promises and callbacks through the real wrapper', (method) => {
+    const helperUrl = pathToFileURL(join(projectRoot, 'build', 'windows-child-process-hide.mjs')).href
+    const script = `
+      import assert from 'node:assert/strict'
+      import childProcess, { ChildProcess } from 'node:child_process'
+      import { syncBuiltinESMExports } from 'node:module'
+      import { promisify } from 'node:util'
+      import { enforceWindowsChildProcessHide } from ${JSON.stringify(helperUrl)}
+
+      const observed = []
+      const originalSpawn = ChildProcess.prototype.spawn
+      ChildProcess.prototype.spawn = function(options) {
+        observed.push(options.windowsHide)
+        return originalSpawn.call(this, options)
+      }
+      const method = ${JSON.stringify(method)}
+      const nativeHook = Object.getOwnPropertyDescriptor(childProcess[method], promisify.custom)
+      enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExports)
+      const named = await import('node:child_process')
+      assert.equal(named[method], childProcess[method])
+      const hook = Object.getOwnPropertyDescriptor(named[method], promisify.custom)
+      assert.equal(typeof hook.value, 'function')
+      for (const key of ['enumerable', 'writable', 'configurable']) assert.equal(hook[key], nativeHook[key])
+      const run = promisify(named[method])
+      const argsFor = (code) => method === 'execFile'
+        ? [process.execPath, ['-e', code]]
+        : [JSON.stringify(process.execPath) + ' -e ' + JSON.stringify(code)]
+      const code = "process.stdout.write('out');process.stderr.write('err')"
+
+      const success = run(...argsFor(code))
+      assert.ok(success.child instanceof ChildProcess)
+      assert.deepEqual(await success, { stdout: 'out', stderr: 'err' })
+      assert.equal(observed.pop(), true)
+
+      const buffers = run(...argsFor(code), { encoding: 'buffer', windowsHide: false })
+      assert.ok(buffers.child instanceof ChildProcess)
+      assert.deepEqual(await buffers, { stdout: Buffer.from('out'), stderr: Buffer.from('err') })
+      assert.equal(observed.pop(), false)
+
+      const failure = run(...argsFor(code + ';process.exit(7)'), { encoding: 'buffer' })
+      assert.ok(failure.child instanceof ChildProcess)
+      await assert.rejects(failure, (error) => {
+        assert.equal(error.code, 7)
+        assert.deepEqual(error.stdout, Buffer.from('out'))
+        assert.deepEqual(error.stderr, Buffer.from('err'))
+        return true
+      })
+      assert.equal(observed.pop(), true)
+      await assert.rejects(run(...argsFor(code + ';process.exit(3)')), (error) => {
+        assert.equal(error.code, 3)
+        assert.equal(error.stdout, 'out')
+        assert.equal(error.stderr, 'err')
+        return true
+      })
+      assert.equal(observed.pop(), true)
+      assert.throws(() => run(42), { code: 'ERR_INVALID_ARG_TYPE' })
+
+      await new Promise((resolve, reject) => {
+        const child = named[method](...argsFor(code), (error, stdout, stderr) => {
+          if (error) return reject(error)
+          try {
+            assert.deepEqual({ stdout, stderr }, { stdout: 'out', stderr: 'err' })
+            assert.ok(child instanceof ChildProcess)
+            assert.equal(observed.pop(), true)
+            resolve()
+          } catch (error) { reject(error) }
+        })
+      })
+
+      if (method === 'execFile') {
+        const noArgs = run(process.execPath, { windowsHide: false })
+        noArgs.child.stdin.end()
+        assert.deepEqual(await noArgs, { stdout: '', stderr: '' })
+        assert.equal(observed.pop(), false)
+        const defaultHide = run(process.execPath)
+        defaultHide.child.stdin.end()
+        assert.deepEqual(await defaultHide, { stdout: '', stderr: '' })
+        assert.equal(observed.pop(), true)
+        const binary = run(process.execPath, undefined, { encoding: 'buffer', windowsHide: false })
+        binary.child.stdin.end("process.stdout.write('binary')")
+        assert.deepEqual(await binary, { stdout: Buffer.from('binary'), stderr: Buffer.alloc(0) })
+        assert.equal(observed.pop(), false)
+        assert.throws(() => run(process.execPath, 'invalid args'), { code: 'ERR_INVALID_ARG_TYPE' })
+        await assert.rejects(run('dsh-missing-executable-for-test'), (error) => {
+          assert.equal(error.code, 'ENOENT')
+          assert.equal(error.stdout, '')
+          assert.equal(error.stderr, '')
+          return true
+        })
+        assert.equal(observed.pop(), true)
+
+        for (const optionArgs of [[], [{ windowsHide: false }]]) {
+          await new Promise((resolve, reject) => {
+            const child = named.execFile(process.execPath, ...optionArgs, (error, stdout, stderr) => {
+              if (error) return reject(error)
+              try {
+                assert.deepEqual({ stdout, stderr }, { stdout: 'stdin', stderr: '' })
+                assert.equal(observed.pop(), optionArgs.length === 0)
+                resolve()
+              } catch (error) { reject(error) }
+            })
+            child.stdin.end("process.stdout.write('stdin')")
+          })
+        }
+      }
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+      encoding: 'utf8', windowsHide: true, timeout: 20_000
+    })
+    expect(result.status, result.stderr).toBe(0)
   })
 })
 
@@ -441,6 +559,107 @@ describe('windowsHide patching for fork', () => {
       '/path/to/worker.js',
       { cwd: 'C:\\test', windowsHide: true }
     )
+  })
+})
+
+describe('packaged pnpm invocation', () => {
+  it('points plugin manager at the Electron executable and the lock-recovery runner', () => {
+    const invocation = buildPackagedPnpmInvocation({
+      [PACKAGED_PNPM_ENTRY_ENV]: 'C:\\app\\pnpm.cjs',
+      [PACKAGED_PNPM_RUNNER_ENV]: 'C:\\app\\pnpm-runner.mjs'
+    }, 'C:\\app\\DSH Desktop.exe', () => true)
+
+    expect(invocation).toEqual({
+      command: 'C:\\app\\DSH Desktop.exe',
+      args: ['C:\\app\\pnpm-runner.mjs', 'C:\\app\\pnpm.cjs'],
+      env: { ELECTRON_RUN_AS_NODE: '1' }
+    })
+  })
+
+  it('omits a runner that is not on disk and still avoids PATH pnpm', () => {
+    const invocation = buildPackagedPnpmInvocation({
+      [PACKAGED_PNPM_ENTRY_ENV]: 'C:\\app\\pnpm.cjs',
+      [PACKAGED_PNPM_RUNNER_ENV]: 'C:\\missing\\pnpm-runner.mjs'
+    }, 'C:\\app\\DSH Desktop.exe', (path) => path === 'C:\\app\\pnpm.cjs')
+
+    expect(invocation).toEqual({
+      command: 'C:\\app\\DSH Desktop.exe',
+      args: ['C:\\app\\pnpm.cjs'],
+      env: { ELECTRON_RUN_AS_NODE: '1' }
+    })
+  })
+
+  it('leaves plugin manager on PATH pnpm when the desktop did not inject an entry', () => {
+    expect(buildPackagedPnpmInvocation({}, 'C:\\app\\DSH Desktop.exe', () => true)).toBeUndefined()
+    expect(buildPackagedPnpmInvocation({
+      [PACKAGED_PNPM_ENTRY_ENV]: 'C:\\missing\\pnpm.cjs'
+    }, 'C:\\app\\DSH Desktop.exe', () => false)).toBeUndefined()
+  })
+
+  it('passes the packaged invocation into runCli and otherwise calls it with no arguments', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-packaged-pnpm-'))
+    try {
+      const entry = join(root, 'entry.mjs')
+      const pnpmEntry = join(root, 'pnpm.cjs')
+      const runner = join(root, 'pnpm-runner.mjs')
+      await writeFile(entry, `
+        export async function runCli(options) {
+          process.stdout.write('fixture:' + JSON.stringify(options ?? null) + '\\n')
+        }
+      `)
+      await writeFile(pnpmEntry, '')
+      await writeFile(runner, '')
+
+      const withPnpm = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        entry
+      ], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          [PACKAGED_PNPM_ENTRY_ENV]: pnpmEntry,
+          [PACKAGED_PNPM_RUNNER_ENV]: runner
+        }
+      })
+      expect(withPnpm.status, withPnpm.stderr).toBe(0)
+      const passed = JSON.parse(withPnpm.stdout.split('fixture:')[1] ?? 'null') as {
+        packageManager?: { command: string; args: string[]; env: Record<string, string> }
+      }
+      expect(passed.packageManager).toEqual({
+        command: process.execPath,
+        args: [runner, pnpmEntry],
+        env: { ELECTRON_RUN_AS_NODE: '1' }
+      })
+      expect(withPnpm.stdout).toContain('invoking DSH runCli() with packaged pnpm (via lock-recovery runner)')
+
+      const missingRunner = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        entry
+      ], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          [PACKAGED_PNPM_ENTRY_ENV]: pnpmEntry,
+          [PACKAGED_PNPM_RUNNER_ENV]: join(root, 'absent-runner.mjs')
+        }
+      })
+      expect(missingRunner.status, missingRunner.stderr).toBe(0)
+      expect(missingRunner.stderr).toContain('packaged pnpm runner is missing')
+      const withoutRunner = JSON.parse(missingRunner.stdout.split('fixture:')[1] ?? 'null') as {
+        packageManager?: { args: string[] }
+      }
+      expect(withoutRunner.packageManager?.args).toEqual([pnpmEntry])
+
+      const withoutInjection = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        entry
+      ], { encoding: 'utf8' })
+      expect(withoutInjection.status, withoutInjection.stderr).toBe(0)
+      expect(withoutInjection.stdout).toContain('fixture:null')
+      expect(withoutInjection.stdout).toContain('invoking DSH runCli()\n')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

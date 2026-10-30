@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import { DRAWINGML_PRESET_SHAPES } from "./drawingml-shapes.js";
+import { hasNativeShape, nativeShapeIssue } from "./imported-shape-export.js";
+import { restoreImportedSlides, deduplicatePptxMedia } from "./pptx-package.js";
+import { importedTextLines, exportImportedText } from "./imported-text-layout.js";
 import { textEscapeIssues } from "./text-escapes.js";
 import { preparePreviewProject } from "./raster-preview-assets.js";
 import { resolveFontFace, resolveRunFonts } from "./font-family.js";
@@ -140,7 +144,7 @@ function renderShape$1(project, element, definitions) {
 	const shape = string$1(element.shapeName) ?? "rect";
 	if (shape === "custom") {
 		const viewBox = tuple$1(element.viewBox, 2) ?? [width, height];
-		return `<svg x="${x}" y="${y}" width="${width}" height="${height}" viewBox="0 0 ${viewBox[0] ?? width} ${viewBox[1] ?? height}" overflow="visible"><path d="${escapeXml(string$1(element.path) ?? "")}" fill-rule="evenodd" ${common}/></svg>`;
+		return `<g${transform(element,x,y,width,height)}><svg x="${x}" y="${y}" width="${width}" height="${height}" viewBox="0 0 ${viewBox[0] ?? width} ${viewBox[1] ?? height}" overflow="visible"><path d="${escapeXml(string$1(element.path) ?? "")}" fill-rule="evenodd" fill="${fillPaint(project,element.fill,definitions)}" ${strokePaint(project,element.border)}/></svg></g>`;
 	}
 	if (shape === "ellipse" || shape === "donut") return `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" ${common}/>`;
 	if (shape === "triangle") return `<path d="M ${x + width / 2} ${y} L ${x + width} ${y + height} L ${x} ${y + height} Z" ${common}/>`;
@@ -181,6 +185,18 @@ function wrappedLines(text, width, fontSize, wrap) {
 }
 
 function renderText$1(project, element, definitions) {
+    if (hasSourceLayout(element) && Array.isArray(element.content?.paragraphs)) {
+      const [x,y,w,h] = frame$1(element), content = element.content;
+      const lines = importedTextLines(content,[x,y,w,h]);
+      const texts = lines.map(line => `<text x="${line.x}" y="${line.baseline}" xml:space="preserve">${line.runs.map(run=>{
+        const o={...content,...run.options};
+        return `<tspan font-family="${escapeXml(fontFace(o.fontFamily,'Arial',run.text))}" font-size="${o.fontSize ?? 18}" font-weight="${o.bold?700:400}" font-style="${o.italic?'italic':'normal'}" fill="${color(project,o.color)}" letter-spacing="${o.letterSpacing ?? 0}" baseline-shift="${o.baseline ?? 0}">${escapeXml(run.text)}</tspan>`;
+      }).join('')}</text>`).join('');
+      const clip = definitions.next('imported-text');
+      if(content.overflow!=='visible') definitions.definitions.push(`<clipPath id="${clip}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`);
+      return `<g${content.overflow==='visible'?'':` clip-path="url(#${clip})"`} opacity="${element.opacity ?? 1}"${transform(element,x,y,w,h)}>${texts}</g>`;
+    }
+
 	const [x, y, width, height] = frame$1(element);
 	const content = record$2(element.content) ?? {};
 	const style = {
@@ -654,7 +670,7 @@ const UNSUPPORTED_CHART_TYPES = new Set([
 	"sunburst",
 	"sankey"
 ]);
-const NATIVE_SHAPE_NAMES = new Set(Object.values(new PptxGenJS().ShapeType));
+const NATIVE_SHAPE_NAMES = new Set([...Object.values(new PptxGenJS().ShapeType),...DRAWINGML_PRESET_SHAPES]);
 const MANIFEST_FIELDS$1 = new Set([
 	"version",
 	"title",
@@ -711,6 +727,7 @@ const ELEMENT_FIELDS$1 = {
 		"opacity",
 		"flip",
 		"shapeName",
+		"nativeShape",
 		"adjustments",
 		"viewBox",
 		"path",
@@ -806,7 +823,7 @@ function compatibilitySummary(project) {
 			recordLevel("normalized");
 			continue;
 		}
-		if (type === "shape" && element.shapeName === "custom") {
+		if (type === "shape" && element.shapeName === "custom" && !hasNativeShape(element)) {
 			recordLevel("vector-fallback");
 			continue;
 		}
@@ -1339,6 +1356,8 @@ function checkElement(project, page, pageNumber, element, ids) {
 		if (typeof content?.text === "string" && /<(?:u|s|sup|sub|a|ol)(?:\s|>)/iu.test(content.text)) issues.push(compatibilityIssue(page, context, "normalized", "高级富文本标签"));
 	}
 	if (type === "shape") {
+        const nativeIssue=nativeShapeIssue(element);
+        if(nativeIssue)issues.push({code:"native-shape",severity:"error",file:page.file,...context,message:nativeIssue});
 		const name = string(element.shapeName);
 		if (name === void 0) issues.push({
 			code: "shape-name",
@@ -1347,7 +1366,7 @@ function checkElement(project, page, pageNumber, element, ids) {
 			...context,
 			message: "形状元素需要 shapeName。"
 		});
-		else if (name === "custom") if (tuple(element.viewBox, 2) === void 0 || typeof element.path !== "string") issues.push({
+		else if (name === "custom" && !hasNativeShape(element)) if (tuple(element.viewBox, 2) === void 0 || typeof element.path !== "string") issues.push({
 			code: "custom-shape",
 			severity: "error",
 			file: page.file,
@@ -1355,7 +1374,7 @@ function checkElement(project, page, pageNumber, element, ids) {
 			message: "自定义形状需要 viewBox 和 SVG path。"
 		});
 		else issues.push(compatibilityIssue(page, context, "vector-fallback", "自定义 SVG 形状"));
-		else if (!NATIVE_SHAPE_NAMES.has(name)) issues.push({
+		else if (name !== "custom" && !NATIVE_SHAPE_NAMES.has(name)) issues.push({
 			code: "shape-name",
 			severity: "error",
 			file: page.file,
@@ -1734,6 +1753,7 @@ function inlineStyle(project, raw) {
 			if (face !== void 0) options.fontFace = face;
 		}
 		if (name?.trim() === "background-color") options.highlight = colorOptions(project, value).color;
+		if (name?.trim() === "letter-spacing") options.letterSpacing = Number.parseFloat(value);
 		if (name?.trim() === "font-weight" && (value === "bold" || Number(value) >= 600)) options.bold = true;
 		if (name?.trim() === "font-style" && value === "italic") options.italic = true;
 	}
@@ -1848,6 +1868,7 @@ function verticalAlign(value, fallback) {
 	return value === "middle" || value === "bottom" ? value : fallback;
 }
 function renderText(project, slide, element) {
+    if (hasSourceLayout(element) && Array.isArray(element.content?.paragraphs)) { exportImportedText(slide, element, fontFace); return; }
 	const content = record$1(element.content) ?? {};
 	const style = textStyle(project, content);
 	const align = Array.isArray(style.align) ? style.align : [];
@@ -1895,7 +1916,7 @@ function solidFill(project, value, opacity = 1) {
 }
 function shapeType(pptx, value) {
 	const name = typeof value === "string" ? value : "rect";
-	const shape = pptx.ShapeType[name];
+	const shape = pptx.ShapeType[name] ?? (DRAWINGML_PRESET_SHAPES.has(name) ? name : undefined);
 	if (shape === void 0) throw new Error(`Unsupported PPTD preset shape: ${name}`);
 	return shape;
 }
@@ -1903,6 +1924,7 @@ function xmlEscape(value) {
 	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
 }
 function svgPaint(project, fillValue, opacity) {
+    if (fillValue === undefined) return {paint:"none",definition:""};
 	const fill = record$1(fillValue);
 	if (fill?.type === "gradient" && Array.isArray(fill.stops) && fill.stops.length >= 2) {
 		const id = "pptd-gradient";
@@ -1921,8 +1943,10 @@ function svgPaint(project, fillValue, opacity) {
 			definition: `<linearGradient id="${id}" x1="0" y1="0.5" x2="1" y2="0.5" gradientTransform="rotate(${angle} 0.5 0.5)">${stops}</linearGradient>`
 		};
 	}
+	const color = colorOptions(project, fill?.type === "solid" ? fill.color : "#000000", opacity);
 	return {
-		paint: `#${colorOptions(project, fill?.type === "solid" ? fill.color : "#000000", opacity).color}`,
+		paint: `#${color.color}`,
+        opacity: 1 - (color.transparency ?? 0) / 100,
 		definition: ""
 	};
 }
@@ -1945,7 +1969,7 @@ function renderCustomShape(project, slide, element) {
 		"<filter id=\"pptd-shadow\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">",
 		`<feDropShadow dx="${Math.cos(shadowAngle * Math.PI / 180) * shadowOffset}" dy="${-Math.sin(shadowAngle * Math.PI / 180) * shadowOffset}" stdDeviation="${shadowBlur / 2}" flood-color="#${shadow?.color ?? "000000"}" flood-opacity="${shadow?.opacity ?? 1}"/>`,
 		"</filter>"
-	].join("")].join("")}</defs><path d="${xmlEscape(pathData)}" fill="${fill.paint}" fill-rule="evenodd"${line === void 0 ? " stroke=\"none\"" : ` stroke="#${line.color}" stroke-width="${line.width}"${line.dash === void 0 ? "" : ` stroke-dasharray="${line.dash === "dot" ? "1 2" : "4 3"}"`}`}${shadow === void 0 ? "" : " filter=\"url(#pptd-shadow)\""}/></svg>`;
+	].join("")].join("")}</defs><path d="${xmlEscape(pathData)}" fill="${fill.paint}" fill-opacity="${fill.opacity ?? 1}" fill-rule="evenodd"${line === void 0 ? " stroke=\"none\"" : ` stroke="#${line.color}" stroke-width="${line.width}"${line.dash === void 0 ? "" : ` stroke-dasharray="${line.dash === "dot" ? "1 2" : "4 3"}"`}`}${shadow === void 0 ? "" : " filter=\"url(#pptd-shadow)\""}/></svg>`;
 	slide.addImage({
 		...frame(element),
 		data: svgData(svg),
@@ -1955,7 +1979,7 @@ function renderCustomShape(project, slide, element) {
 	});
 }
 function renderShape(project, pptx, slide, element) {
-	if (element.shapeName === "custom") {
+	if (element.shapeName === "custom" && !hasNativeShape(element)) {
 		renderCustomShape(project, slide, element);
 		return;
 	}
@@ -1964,7 +1988,7 @@ function renderShape(project, pptx, slide, element) {
 	const line = border(project, element.border);
 	const objectName = string(element.elementId);
 	const shapeShadow = shadowOptions(project, element.shadow);
-	slide.addShape(shapeType(pptx, element.shapeName), {
+	slide.addShape(shapeType(pptx, element.shapeName === "custom" ? "rect" : element.shapeName), {
 		...frame(element),
 		...objectName === void 0 ? {} : { objectName },
 		rotate: number(element.rotation) ?? 0,
@@ -2520,24 +2544,25 @@ function normalizeSingleLevelChartCategories(xml) {
 		return `<c:strRef>${formula}<c:strCache>${pointCount}${levels[0][1]}</c:strCache></c:strRef>`;
 	});
 }
-function normalizePptxPackage(bytes) {
+async function normalizePptxPackage(bytes, pages) {
 	const entries = unzipSync(bytes);
+	await deduplicatePptxMedia(entries);
+	await restoreImportedSlides(entries,pages);
 	const contentTypesEntry = entries["[Content_Types].xml"];
 	if (contentTypesEntry === void 0) throw new Error("Rendered PPTX is missing [Content_Types].xml");
 	const contentTypes = strFromU8(contentTypesEntry);
 	const normalized = contentTypes.replace(/<Override\b[^>]*\bPartName="([^"]+)"[^>]*\/>/gu, (override, partName) => entries[partName.replace(/^\/+/, "")] === void 0 ? "" : override);
-	let changed = normalized !== contentTypes;
-	if (changed) entries["[Content_Types].xml"] = strToU8(normalized);
+	if (normalized !== contentTypes) entries["[Content_Types].xml"] = strToU8(normalized);
 	for (const [name, entry] of Object.entries(entries)) {
 		if (!/^ppt\/charts\/chart\d+\.xml$/u.test(name)) continue;
 		const chart = strFromU8(entry);
 		const normalizedChart = normalizeSingleLevelChartCategories(chart);
 		if (normalizedChart === chart) continue;
 		entries[name] = strToU8(normalizedChart);
-		changed = true;
 	}
-	if (!changed) return bytes;
-	return zipSync(entries, { level: 6 });
+	// Compressed media already contains its own codec; the package is compressed once.
+	const packed = Object.fromEntries(Object.entries(entries).map(([name, entry]) => [name, /\.(png|jpe?g|gif|webp)$/iu.test(name) ? [entry, { level: 0 }] : entry]));
+	return zipSync(packed, { level: 6 });
 }
 /** Render one checked PPTD AST to editable native PowerPoint objects. */
 async function renderPptdProject(project) {
@@ -2575,10 +2600,10 @@ async function renderPptdProject(project) {
 	}
 	const output = await pptx.write({
 		outputType: "nodebuffer",
-		compression: true
+		compression: false
 	});
 	return {
-		bytes: normalizePptxPackage(new Uint8Array(output)),
+		bytes: await normalizePptxPackage(new Uint8Array(output),project.pages),
 		nativeObjectCount: check.nativeObjectCount,
 		check
 	};
@@ -2749,6 +2774,7 @@ const ELEMENT_FIELDS = {
 		"opacity",
 		"flip",
 		"shapeName",
+		"nativeShape",
 		"adjustments",
 		"viewBox",
 		"path",
@@ -3357,7 +3383,8 @@ async function commandConvert(args, io) {
 	const converted = await convertPptxToPptd(await readFile(input), path.basename(input));
 	const normalizedCount = converted.diagnostics.filter((item) => item.level === "normalized").length;
 	const unsupportedCount = converted.diagnostics.filter((item) => item.level === "unsupported").length;
-	if (args.strict && converted.diagnostics.length > 0) throw new Error(`strict conversion requires lossless coverage; received ${normalizedCount} normalized and ${unsupportedCount} unsupported diagnostic(s)`);
+    const placeholderCount = converted.diagnostics.filter(item => item.level === 'placeholder').length;
+	if (args.strict && converted.diagnostics.length > 0) throw new Error(`strict conversion requires lossless coverage; received ${normalizedCount} normalized, ${placeholderCount} placeholder and ${unsupportedCount} unsupported diagnostic(s)`);
 	const output = path.resolve(args.output ?? defaultConvertOutput(input));
 	await publishPptdDirectory(output, args.force, (stage) => writePptdProjectSource(stage, converted.source));
 	printValue(io, {
@@ -3370,6 +3397,7 @@ async function commandConvert(args, io) {
 		extractedAssetCount: converted.extractedAssetCount,
 		normalizedCount,
 		unsupportedCount,
+        placeholderCount,
 		diagnostics: converted.diagnostics
 	}, args.json);
 	return 0;

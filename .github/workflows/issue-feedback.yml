@@ -1,0 +1,66 @@
+name: Follow up issues awaiting feedback
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+# Serialize replies with the scheduled sweep. A reply queued during a close can
+# reopen the issue using the explicit closed-no-feedback marker.
+concurrency:
+  group: issue-feedback
+  cancel-in-progress: false
+
+jobs:
+  follow-up:
+    if: github.event_name != 'issue_comment'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          only-issue-labels: needs-feedback
+          exempt-issue-labels: keep-open
+          days-before-issue-stale: 14
+          days-before-issue-close: 7
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          stale-issue-label: feedback-reminded
+          close-issue-label: closed-no-feedback
+          close-issue-reason: not_planned
+          remove-issue-stale-when-updated: true
+          operations-per-run: 100
+          stale-issue-message: |
+            此 issue 正在等待用户反馈，已有至少 14 天没有新动态。请补充此前请求的复现结果或脱敏诊断信息。
+            如果再过 7 天仍没有反馈，我们将因信息不足关闭；这不代表已确认修复。有反馈后可继续排查。
+
+            Awaiting feedback: please provide the requested reproduction results or sanitized diagnostics.
+            With no further activity, this issue will close in 7 days due to missing feedback, not as a confirmed fix.
+          close-issue-message: |
+            提醒后仍未收到反馈，此 issue 因信息不足自动关闭，不代表已确认修复。
+            如问题仍存在，请回复当前版本、复现步骤及此前请求的信息；回复后将自动重开并转回待排查。
+
+            Closed due to missing feedback, not as a confirmed fix. Reply with the requested details to reopen for triage.
+
+  feedback-received:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.type == 'User'
+    runs-on: ubuntu-24.04
+    steps:
+      # issue_comment checks out the default branch, never code from an issue/PR.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { handleFeedbackReply } = require('./.github/scripts/issue-feedback.cjs')
+            await handleFeedbackReply({ github, context })

@@ -17,7 +17,7 @@ export interface RuntimeSnapshot {
   authToken?: string
   pluginFailures?: PluginStartupFailure[]
   /** Desktop-owned failure classification; Harness-reported causes stay in `message`/`pluginFailures`. */
-  failureReason?: 'startup-timeout'
+  failureReason?: 'startup-timeout' | 'memory-exhausted'
 }
 
 export type UpdatePhase =
@@ -37,6 +37,12 @@ export interface UpdateStatus {
   percent?: number
   message?: string
   manual: boolean
+  source?: 'startup' | 'runtime' | 'manual'
+  /** Changes only when the user explicitly requests another presentation. */
+  presentationId?: number
+  locale?: 'en' | 'zh'
+  /** Plain text only; render without interpreting HTML from update metadata. */
+  releaseNotes?: string
   /** Set while an explicitly chosen older version is being installed. */
   downgrade?: boolean
 }

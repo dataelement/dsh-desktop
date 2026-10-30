@@ -22,9 +22,22 @@
 - id: ui-settings-account
   disabled: true
 
+# Desktop keeps the existing web Profile; upstream only enables this for a
+# Profile named desktop. Enable the shipped browser in the Desktop overlay.
+- id: ui-sidebar-browser
+  disabled: false
+
 - insert:
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
+
+    - id: dsh-desktop-workbenches
+      name: dsh-desktop-workbenches
+      config:
+        root: !!js dshHomePath('desktop-workbenches')
+
+    - id: dsh-desktop-onboarding
+      name: dsh-desktop-onboarding
 
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
@@ -60,3 +73,11 @@
 - insert:
     - id: dsh-desktop-preset-transfer
       name: dsh-desktop-preset-transfer
+
+# Offline Office authoring is installation-owned and shared by agent presets.
+- insert:
+    - id: dsh-desktop-office
+      name: dsh-desktop-office
+      config:
+        resources: !!js process.env.DSH_DESKTOP_OFFICE_RESOURCES
+        cli: !!js process.env.DSH_DESKTOP_OFFICE_CLI

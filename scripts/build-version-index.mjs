@@ -49,26 +49,31 @@ function compare(a, b) {
  * index the desktop client reads from `dshdesktop.com/updates/versions.json`.
  * Non-semver names are dropped; the rest sort newest first.
  */
-export function buildVersionIndex(archiveDirNames) {
-  const versions = [...new Set(archiveDirNames)]
+export function buildVersionIndex(archiveDirNames, previous = { versions: [] }) {
+  if (!previous || !Array.isArray(previous.versions) || previous.versions.some(entry =>
+    !entry || typeof entry.version !== 'string' || !SEMVER.test(entry.version)
+  )) throw new Error('Invalid existing version index; refusing to replace history.')
+  const existing = new Map(previous.versions.map(entry => [entry.version, entry]))
+  const versions = [...new Set([...existing.keys(), ...archiveDirNames])]
     .filter((name) => SEMVER.test(name))
     .sort((a, b) => compare(b, a))
-    .map((version) => ({
+    .map((version) => existing.get(version) ?? ({
       version,
       tag: `v${version}`,
       archiveUrl: `https://dshdesktop.com/updates/archive/${version}/`
     }))
-  return { generatedAt: new Date().toISOString(), versions }
+  return { ...previous, generatedAt: new Date().toISOString(), versions }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [namesFile, outFile] = process.argv.slice(2)
+  const [namesFile, outFile, previousFile] = process.argv.slice(2)
   if (!namesFile || !outFile) {
-    console.error('Usage: node scripts/build-version-index.mjs <names-json-file> <out-file>')
+    console.error('Usage: node scripts/build-version-index.mjs <names-json-file> <out-file> [previous-index-file]')
     process.exit(1)
   }
   const names = JSON.parse(await readFile(namesFile, 'utf8'))
-  const index = buildVersionIndex(names)
+  const previous = previousFile ? JSON.parse(await readFile(previousFile, 'utf8')) : undefined
+  const index = buildVersionIndex(names, previous)
   await writeFile(outFile, `${JSON.stringify(index, null, 2)}\n`, 'utf8')
   console.log(`Wrote ${outFile} with ${index.versions.length} versions.`)
 }

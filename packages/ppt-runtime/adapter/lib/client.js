@@ -246,7 +246,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				this.update(sessionId, () => ({ ...staged, loading: true, error: "" }));
 				try {
 					const remote = await client.call("state");
-					const occupied = remote?.presentationMode === "ppt" || typeof remote?.selectedTemplateId === "string";
+					const occupied = remote?.presentationMode === "ppt" || remote?.documentMode === "word" || remote?.documentMode === "excel" || typeof remote?.selectedTemplateId === "string";
 					if (occupied) {
 						this.clearStaged();
 						this.update(sessionId, (current) => ({
@@ -527,26 +527,39 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			});
 		}
 		function deselectTemplate(client, mode, sessionId, activeMode) {
+            mode.bump(sessionId);
+            const revision = mode.revision(sessionId);
 			mode.setLoading(sessionId, true);
 			if (!client.bound) {
 				mode.deselect(sessionId, activeMode);
+                announcePptMode(sessionId);
 				return;
 			}
 			client.call("template/deselect").then(() => {
+                if (mode.revision(sessionId) !== revision) return;
 				return client.call("presentation/mode", { mode: activeMode });
 			}).then(() => {
+                if (mode.revision(sessionId) !== revision) return;
+                announcePptMode(sessionId);
 				mode.deselect(sessionId, activeMode);
 			}).catch((reason) => {
-				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+                if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 			});
 		}
 		function selectPresentationMode(client, mode, sessionId, activeMode) {
-			mode.setMode(sessionId, activeMode);
-			if (!client.bound) return;
-			client.call("presentation/mode", { mode: activeMode }).catch((reason) => {
-				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
-			});
-		}
+            if (!client.bound) { mode.setMode(sessionId, activeMode); announcePptMode(sessionId); return; }
+            mode.bump(sessionId);
+            const revision = mode.revision(sessionId);
+            mode.setLoading(sessionId, true);
+            client.call("presentation/mode", { mode: activeMode }).then(() => {
+                if (mode.revision(sessionId) !== revision) return;
+                announcePptMode(sessionId);
+                mode.setMode(sessionId, activeMode);
+                mode.setLoading(sessionId, false);
+            }).catch((reason) => {
+                if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+            });
+        }
 		/** Compact selected-template thumbnail inside the resident input card. */
 		function OfficePptInputAccessory({ client, mode, sessionId, t }) {
 			const state = useMode(mode, sessionId);
@@ -620,6 +633,177 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				})
 			});
 		}
+		const OPENING_TEMPLATE_STYLE_ID = "dsh-ppt-opening-template";
+		function ensureOpeningTemplateStyles() {
+			if (typeof document === "undefined" || document.getElementById(OPENING_TEMPLATE_STYLE_ID) !== null) return;
+			const tag = document.createElement("style");
+			tag.id = OPENING_TEMPLATE_STYLE_ID;
+			tag.dataset.pluginCss = OPENING_TEMPLATE_STYLE_ID;
+			tag.textContent = ".dsh-ppt-opening-row{display:flex;align-items:center;gap:6px;min-width:0;color:var(--dsw-alias-label-secondary)}.dsh-ppt-opening-row:not(:first-child){margin-top:8px;padding-top:8px;border-top:.5px solid var(--dsw-alias-border-l2)}.dsh-ppt-opening-file{flex:none;color:var(--dsw-static-amber-500)}.dsh-ppt-opening-file-fold{fill:var(--dsw-static-neutral-00);fill-opacity:.7}.dsh-ppt-opening-file-mark{fill:var(--dsw-static-neutral-00)}.dsh-ppt-opening-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:transparent;padding:0;color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 68%,var(--dsw-alias-label-primary));font:inherit;font-size:13px;line-height:20px;text-align:left;text-decoration:none;cursor:pointer}.dsh-ppt-opening-title:hover{color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,var(--dsw-alias-label-primary))}.dsh-ppt-opening-stage{position:relative;overflow:hidden;width:100%;aspect-ratio:16/9;border-radius:10px;background:var(--dsw-alias-bg-base)}.dsh-ppt-opening-stage>*{position:absolute;inset:0;width:100%;height:100%}.dsh-ppt-opening-dialog{box-sizing:border-box;width:min(760px,calc(100vw - 48px));max-height:calc(100dvh - 48px);margin:auto;padding:20px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-panel,16px);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit}.dsh-ppt-opening-dialog::backdrop{background:color-mix(in srgb,var(--dsw-alias-label-primary) 40%,transparent)}.dsh-ppt-opening-dialog[open]{display:flex;flex-direction:column;gap:16px}.dsh-ppt-opening-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}.dsh-ppt-opening-dialog h2{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;line-height:24px;font-weight:600}.dsh-ppt-opening-close{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font:inherit;font-size:18px}.dsh-ppt-opening-pages{display:flex;align-items:center;justify-content:center;gap:16px;color:var(--dsw-alias-label-secondary);font-size:13px}.dsh-ppt-opening-pages button{display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit}.dsh-ppt-opening-pages button:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}.dsh-ppt-opening-title:focus-visible,.dsh-ppt-opening-dialog :focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}@media (prefers-reduced-motion:reduce){.dsh-ppt-opening-stage *{animation:none!important}}";
+			document.head.appendChild(tag);
+		}
+		/** Orange document mark matching the PPT file icon: folded page and a white P. */
+		function OpeningPptFileIcon() {
+			return (0, react_jsx_runtime.jsxs)("svg", {
+				className: "dsh-ppt-opening-file",
+				width: 14,
+				height: 14,
+				viewBox: "0 0 28 28",
+				fill: "none",
+				"aria-hidden": true,
+				focusable: false,
+				children: [
+					(0, react_jsx_runtime.jsx)("path", { fill: "currentColor", d: "M8.48924 28H19.5108C21.6479 28 22.7165 28 23.5594 27.6509C24.6833 27.1853 25.5762 26.2924 26.0417 25.1685C26.3909 24.3256 26.3909 23.257 26.3909 21.1199V8.79443C26.3909 8.32877 26.3909 8.09593 26.3471 7.87507C26.2887 7.58058 26.173 7.30042 26.0067 7.05048C25.882 6.86303 25.7177 6.69799 25.3893 6.36792L20.0611 1.01354C19.7304 0.681235 19.5651 0.515081 19.3769 0.38885C19.126 0.220541 18.8443 0.103463 18.5481 0.0443412C18.3259 0 18.0915 0 17.6226 0H8.48924C6.35209 0 5.28351 0 4.4406 0.349145C3.31672 0.814671 2.4238 1.70759 1.95828 2.83147C1.60913 3.67438 1.60913 4.74296 1.60913 6.88011V21.1199C1.60913 23.257 1.60913 24.3256 1.95828 25.1685C2.4238 26.2924 3.31672 27.1853 4.4406 27.6509C5.28351 28 6.35209 28 8.48924 28Z" }),
+					(0, react_jsx_runtime.jsx)("path", { className: "dsh-ppt-opening-file-fold", d: "M26.3909 7.37445L19.0525 0V3.77445C19.0525 4.89271 19.0525 5.45184 19.2352 5.89289C19.4788 6.48096 19.946 6.94818 20.5341 7.19176C20.9751 7.37445 21.5342 7.37445 22.6525 7.37445H26.3909Z" }),
+					(0, react_jsx_runtime.jsx)("path", { className: "dsh-ppt-opening-file-mark", transform: "translate(14 16) scale(1.22) translate(-14 -16)", d: "M11.0132 20.5V13.5H14.2132C14.8532 13.5 15.4032 13.6033 15.8632 13.81C16.3299 14.0167 16.6899 14.3167 16.9432 14.71C17.1966 15.0967 17.3232 15.5567 17.3232 16.09C17.3232 16.6167 17.1966 17.0733 16.9432 17.46C16.6899 17.8467 16.3299 18.1467 15.8632 18.36C15.4032 18.5667 14.8532 18.67 14.2132 18.67H12.1132L12.9932 17.81V20.5H11.0132ZM12.9932 18.02L12.1132 17.11H14.0932C14.5066 17.11 14.8132 17.02 15.0132 16.84C15.2199 16.66 15.3232 16.41 15.3232 16.09C15.3232 15.7633 15.2199 15.51 15.0132 15.33C14.8132 15.15 14.5066 15.06 14.0932 15.06H12.1132L12.9932 14.15V18.02Z" })
+				]
+			});
+		}
+		/** Selected template pinned under the opening user message after PPT starts. */
+		function OfficePptOpeningTemplateCard({ client, mode, sessionId, leading, t }) {
+			ensureOpeningTemplateStyles();
+			const state = useMode(mode, sessionId);
+			const bindingRef = (0, react.useRef)({ client, sessionId });
+			bindingRef.current = { client, sessionId };
+			const catalogRevision = mode.revision(sessionId);
+			const [open, setOpen] = (0, react.useState)(false);
+			const [page, setPage] = (0, react.useState)(0);
+			const buttonRef = (0, react.useRef)(null);
+			const dialogRef = (0, react.useRef)(null);
+			const openedRef = (0, react.useRef)(false);
+			(0, react.useEffect)(() => {
+				if (leading !== true || !client?.bound || state.templates.length > 0 || state.error !== "") return;
+				const request = { client, sessionId };
+				const seenRevision = catalogRevision;
+				mode.setLoading(sessionId, true);
+				let active = true;
+				loadTemplateState(client, t("templates.loadTimeout")).then((next) => {
+					if (!active) return;
+					const current = bindingRef.current;
+					mode.applyLoadedTemplates(current.sessionId, current.client, seenRevision, next, request);
+				}).catch((reason) => {
+					if (!active) return;
+					const current = bindingRef.current;
+					if (current.client !== request.client || modeKey(current.sessionId) !== modeKey(request.sessionId)) return;
+					if (mode.revision(request.sessionId) !== seenRevision) return;
+					mode.setError(request.sessionId, reason instanceof Error ? reason.message : String(reason));
+				});
+				return () => {
+					active = false;
+				};
+			}, [
+				catalogRevision,
+				client,
+				leading,
+				mode,
+				sessionId,
+				state.error,
+				state.templates.length,
+				t
+			]);
+			const selected = state.activeMode === "ppt" ? state.templates.find((template) => template.id === state.selectedId) : void 0;
+			const pageCount = selected === void 0 ? 0 : templatePreviewPages(selected);
+			(0, react.useEffect)(() => {
+				const node = dialogRef.current;
+				if (!open || node === null) return;
+				if (!node.open) node.showModal();
+				return () => {
+					if (node.open) node.close();
+				};
+			}, [open]);
+			(0, react.useEffect)(() => {
+				if (open) {
+					openedRef.current = true;
+					return;
+				}
+				if (openedRef.current) buttonRef.current?.focus();
+			}, [open]);
+			if (leading !== true || selected === void 0) return null;
+			const closePreview = () => {
+				setOpen(false);
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsh-ppt-opening-row",
+				"data-ppt-opening-template": selected.id,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpeningPptFileIcon, {}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					ref: buttonRef,
+					type: "button",
+					className: "dsh-ppt-opening-title",
+					"aria-haspopup": "dialog",
+					"aria-label": t("opening.preview", { name: selected.name }),
+					onClick: () => {
+						setPage(0);
+						setOpen(true);
+					},
+					children: selected.name
+				})]
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("dialog", {
+				ref: dialogRef,
+				className: "dsh-ppt-opening-dialog",
+				"aria-modal": true,
+				"aria-labelledby": "dsh-ppt-opening-title",
+				onCancel: (event) => {
+					event.preventDefault();
+					closePreview();
+				},
+				onKeyDown: (event) => {
+					if (event.key !== "Tab") return;
+					const fields = [...event.currentTarget.querySelectorAll("button:not(:disabled)")];
+					const first = fields[0];
+					const last = fields.at(-1);
+					if (event.shiftKey && (document.activeElement === first || !event.currentTarget.contains(document.activeElement))) {
+						event.preventDefault();
+						last?.focus();
+					} else if (!event.shiftKey && (document.activeElement === last || !event.currentTarget.contains(document.activeElement))) {
+						event.preventDefault();
+						first?.focus();
+					}
+				},
+				onClick: (event) => {
+					if (event.target !== event.currentTarget) return;
+					const rect = event.currentTarget.getBoundingClientRect();
+					if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closePreview();
+				},
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+					id: "dsh-ppt-opening-title",
+					children: selected.name
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: "dsh-ppt-opening-close",
+					"aria-label": t("opening.close"),
+					onClick: closePreview,
+					children: "×"
+				})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "dsh-ppt-opening-stage",
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplatePreview, {
+						template: selected,
+						page
+					}, page)
+				}), pageCount > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsh-ppt-opening-pages",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						"aria-label": t("opening.previous"),
+						disabled: page === 0,
+						onClick: () => {
+							setPage((current) => Math.max(0, current - 1));
+						},
+						children: "‹"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						role: "status",
+						children: t("opening.page", { page: page + 1, total: pageCount })
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						"aria-label": t("opening.next"),
+						disabled: page >= pageCount - 1,
+						onClick: () => {
+							setPage((current) => Math.min(pageCount - 1, current + 1));
+						},
+						children: "›"
+					})]
+				})]
+			})] });
+		}
 		/** Selected-template reference shown only while the standard Session is blank. */
 		function OfficePptStandardInputAccessory(props) {
 			if (props.session == null || !props.session.blank) return null;
@@ -685,16 +869,21 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			const select = (template, activeMode = state.activeMode ?? "ppt") => {
 				if (!client.bound) {
 					mode.select(sessionId, template, activeMode);
+                    announcePptMode(sessionId);
 					return;
 				}
+                mode.bump(sessionId);
+                const revision = mode.revision(sessionId);
 				mode.setLoading(sessionId, true);
 				client.call("template/select", {
 					templateId: template.id,
 					mode: activeMode
 				}).then(() => {
+                    if (mode.revision(sessionId) !== revision) return;
+                    announcePptMode(sessionId);
 					mode.select(sessionId, template, activeMode);
 				}).catch((reason) => {
-					mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+					if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 				});
 			};
 			const choose = (template) => {
@@ -721,7 +910,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				select(selected, "ppt");
 			};
 			const modeTemplates = state.templates.filter((template) => templateSupportsMode(template, "ppt"));
-			const templateCategories = ["all", "personal", ...new Set(modeTemplates.filter(item => item.origin !== "personal").map(templateCategory))];
+			const templateCategories = ["all", ...new Set(modeTemplates.filter(item => item.origin !== "personal").map(templateCategory)), "personal"];
 			const visibleTemplates = modeTemplates.filter((template) => category === "all" ? template.origin !== "personal" : templateCategory(template) === category);
 			(0, react.useEffect)(() => {
 				if (!templateCategories.includes(category)) setCategory("all");
@@ -762,6 +951,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				"aria-expanded": state.activeMode === "ppt",
 				"aria-pressed": state.activeMode === "ppt",
 				"data-desktop-ppt": "",
+                "aria-busy": state.loading,
+                disabled: state.loading,
 				onClick: togglePpt,
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DesktopPptIcon, {}), t("mode.label")]
 			});
@@ -780,6 +971,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 						"aria-expanded": state.activeMode === "ppt",
 						"aria-pressed": state.activeMode === "ppt",
 						"data-desktop-ppt": "",
+                        "aria-busy": state.loading,
+                        disabled: state.loading,
 						onClick: togglePpt,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DesktopPptIcon, {}), t("mode.label")]
 					})
@@ -809,11 +1002,11 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 						className: OfficePptHero_module_css_default.templateViewport,
 						"data-office-ppt-template-viewport": "",
 						"data-native-wheel-owner": "",
-						children: [category === "personal" && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						children: [(category === "all" || category === "personal") && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true, builtInCards: category === "all" ? visibleTemplates.map(template => react.createElement(TemplatePreviewCard, { key: template.id, template, selected: template.id === state.selectedId, choose, client, t })) : [] }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateError,
 							role: "alert",
 							children: state.error
-						}), category === "personal" ? null : state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						}), (category === "all" || category === "personal") ? null : state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.panelState,
 							children: t("status.loading")
 						}) : state.error !== "" && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -832,7 +1025,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 							children: t("templates.empty")
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateGrid,
-							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplateCard, {
+							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplatePreviewCard, {
+                                client, t,
 								template,
 								selected: template.id === state.selectedId,
 								choose
@@ -856,10 +1050,17 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
             const state = useMode(props.mode, props.sessionId);
             (0, react.useEffect)(() => {
                 if (!props.client?.bound) return;
-                props.mode.adopt(props.sessionId, props.client);
+                let active = true;
+                props.mode.adopt(props.sessionId, props.client).then(result => {
+                    if (active && ['applied', 'partial'].includes(result) && props.mode.snapshot(props.sessionId).activeMode === 'ppt') announcePptMode(props.sessionId);
+                }).catch(reason => {
+                    if (active) props.mode.setError(props.sessionId, reason instanceof Error ? reason.message : String(reason));
+                });
+                return () => { active = false; };
             }, [props.client, props.mode, props.sessionId]);
             return (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [
                 (0, react_jsx_runtime.jsx)(OfficePptChooser, { ...props, placement: "trigger" }),
+                state.error && state.activeMode === null ? (0, react_jsx_runtime.jsx)("span", { role: "alert", children: state.error }) : null,
                 state.notice && state.activeMode !== null ? (0, react_jsx_runtime.jsx)("span", {
                     role: "status", "data-ppt-template-migration": "",
                     style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)", maxWidth: 300 },
@@ -878,30 +1079,44 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"mode.region": "演示文稿模式",
 			"composer.selectedTemplate": "已选模板",
 			"composer.removeTemplate": "取消选择模板",
+			"opening.preview": "预览模板 {name}",
+			"opening.close": "关闭预览",
+			"opening.previous": "上一页",
+			"opening.next": "下一页",
+			"opening.page": "第 {page} 页，共 {total} 页",
 			"templates.title": "选择模板",
             "templates.migrated": "原模板已下架，已切换为工程蓝图。已有文件不受影响。",
 			"templates.categories": "模板分类",
 			"templates.empty": "该分类下还没有模板",
 			"templates.loadTimeout": "模板加载超时，请重试",
 			"templates.retry": "重新加载模板",
-			"templates.category.all": "内置模板",
-"templates.category.personal": "我的模板",
+			"templates.category.all": "全部",
+"templates.category.personal": "自定义",
 "personal.deletedSelection": "已选个人模板已被删除，请重新选择。",
 "personal.upload": "上传 PPT 模板",
 "personal.create": "新建自定义模板",
 "personal.selected": "已选中",
 "personal.local": "保存在当前 Desktop · PPTX",
 "personal.fileType": "请选择 PPTX 文件",
-"personal.fileTooLarge": "个人模板 PPTX 不能超过 64 MB",
 "personal.readFailed": "文件读取失败，请重新选择",
 "personal.duplicate": "这份文件已在我的模板中，可直接选择使用",
+"personal.useSame": "做同款",
+"personal.view": "预览",
+"personal.zoomIn": "放大",
+"personal.zoomOut": "缩小",
+"personal.fit": "适应窗口",
+"personal.previewFailed": "预览加载失败，请重试",
 "personal.processing": "正在处理模板…",
+"personal.completedPages": "已完成",
+"personal.placeholderNotice": "部分对象已使用占位图，可在 PPT 中替换。",
+"personal.layouts": "版式",
 "personal.chooseFile": "重新选择 PPT",
 "personal.preview": "模板预览",
 "personal.name": "模板名称",
 "personal.previous": "上一页",
 "personal.next": "下一页",
 "personal.save": "保存模板",
+"personal.saved": "模板已保存",
 "personal.cancel": "取消",
 "personal.edit": "编辑模板",
 "personal.editTitle": "编辑自定义模板",
@@ -971,30 +1186,44 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"mode.region": "Presentation modes",
 			"composer.selectedTemplate": "Selected template",
 			"composer.removeTemplate": "Remove selected template",
+			"opening.preview": "Preview template {name}",
+			"opening.close": "Close preview",
+			"opening.previous": "Previous page",
+			"opening.next": "Next page",
+			"opening.page": "Page {page} of {total}",
 			"templates.title": "Select template",
             "templates.migrated": "The previous template was retired. Engineering Blueprint is selected; existing files are unchanged.",
 			"templates.categories": "Template categories",
 			"templates.empty": "No templates in this category",
 			"templates.loadTimeout": "Template loading timed out. Try again.",
 			"templates.retry": "Reload templates",
-			"templates.category.all": "Built-in templates",
-"templates.category.personal": "My templates",
+			"templates.category.all": "All",
+"templates.category.personal": "Custom",
 "personal.deletedSelection": "The selected personal template was deleted. Choose another template.",
 "personal.upload": "Upload PPT template",
 "personal.create": "Create custom template",
 "personal.selected": "Selected",
 "personal.local": "Saved in this Desktop profile · PPTX",
 "personal.fileType": "Choose a PPTX file",
-"personal.fileTooLarge": "Personal PPTX templates cannot exceed 64 MB",
 "personal.readFailed": "Could not read the file. Choose it again.",
 "personal.duplicate": "This file is already in My templates. Select it to reuse it.",
+"personal.useSame": "Use this template",
+"personal.view": "Preview",
+"personal.zoomIn": "Zoom in",
+"personal.zoomOut": "Zoom out",
+"personal.fit": "Fit to window",
+"personal.previewFailed": "Could not load preview. Please retry.",
 "personal.processing": "Processing template…",
+"personal.completedPages": "Completed",
+"personal.placeholderNotice": "Some objects use placeholders. You can replace them in the PPT.",
+"personal.layouts": "Layouts",
 "personal.chooseFile": "Choose another PPT",
 "personal.preview": "Template preview",
 "personal.name": "Template name",
 "personal.previous": "Previous page",
 "personal.next": "Next page",
 "personal.save": "Save template",
+"personal.saved": "Template saved",
 "personal.cancel": "Cancel",
 "personal.edit": "Edit template",
 "personal.editTitle": "Edit custom template",
@@ -1066,6 +1295,9 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 		* @param sessionId - Active conversation session.
 		* @returns Session-bound Office PPT client.
 		*/
+        function announcePptMode(sessionId) {
+            window.dispatchEvent(new CustomEvent('dsh-office-mode-change', { detail: { sessionId, origin: 'ppt' } }));
+        }
 		function createOfficePptClient(rpc, sessionId) {
 			const bound = typeof sessionId === "string" && sessionId.trim().length > 0;
 			return { bound, async call(endpoint, payload = {}, signal) {
@@ -1097,6 +1329,16 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), "dsh-ppt: dictionaries");
 			const connection = ctx.get("connection");
 			const mode = new OfficePptHeroStore();
+            ctx.effect(() => {
+                const listener = event => {
+                    const detail = event.detail;
+                    if (detail?.origin !== 'office') return;
+                    mode.bump(detail.sessionId);
+                    mode.update(detail.sessionId, current => ({ ...current, activeMode: null, selectedId: null, engaged: false, loading: false, error: '' }));
+                };
+                window.addEventListener('dsh-office-mode-change', listener);
+                return () => window.removeEventListener('dsh-office-mode-change', listener);
+            }, 'PPT / Office mode synchronization');
 			return (sessionId) => ({
 				client: createOfficePptClient(connection.rpc, sessionId),
 				mode
@@ -1122,6 +1364,13 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				locale: NS,
 				inject: injectHero
 			}, OfficePptStandardInputAccessory));
+			ctx.slots.inject("conversation.chat.userMessageFooter", () => ctx.slots.register({
+				name: "conversation.chat.userMessageFooter",
+				id: "dsh-ppt",
+				order: 20,
+				locale: NS,
+				inject: injectHero
+			}, OfficePptOpeningTemplateCard));
 			ctx.slots.inject("conversation.hero.dock", () => ctx.slots.register({
 				name: "conversation.hero.dock",
 				id: "dsh-ppt",

@@ -119,3 +119,54 @@ export async function migrateLegacyAgentPresets(dshHome: string, note: (line: st
   await writeTextAtomically(profilePatch, next)
   note(`[desktop] converted ${pending.length} legacy agent presets for the web Profile; originals and backup retained`)
 }
+
+/**
+ * Disable the migrated row of one preset whose id a plugin already registers at
+ * runtime. The registry rejects a duplicate id, so startup aborts while both the
+ * row and the registration exist (#814). The row is kept — `existingIds` then
+ * still sees it as migrated and never rewrites it — but a disabled row takes no
+ * part in mounting or the startup audit, so the plugin's own registration is the
+ * single live preset on the next launch.
+ */
+
+export async function disableMigratedLegacyPreset(
+  dshHome: string,
+  presetId: string,
+  note: (line: string) => void
+): Promise<boolean> {
+  if (!PRESET_ID.test(presetId)) return false
+  const profilePatch = join(dshHome, 'profiles', 'web', 'cordis.patch.yml')
+  const previous = await readFile(profilePatch, 'utf8').catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+    throw error
+  })
+  const lines = previous.split('\n')
+  // Block boundaries by line, not index-of-string: the preset id can appear in
+  // rows outside the migrated block, and only the migrated rows are ours to edit.
+  let blockStart = -1
+  let blockEnd = -1
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] as string
+    if (line.includes(START)) blockStart = index
+    else if (line.includes(END)) blockEnd = index
+  }
+  if (blockStart === -1 || blockEnd === -1 || blockEnd < blockStart) return false
+
+  const wanted = `preset-${presetId}`
+  for (let index = blockStart; index <= blockEnd; index++) {
+    const match = /^(\s*)- id: (\S+)\s*$/.exec(lines[index] as string)
+    if (!match || match[2] !== wanted) continue
+    const fieldIndent = `${match[1]}  `
+    // The entry's own fields run until the next row at the entry indent.
+    for (let scan = index + 1; scan <= blockEnd; scan++) {
+      const later = lines[scan] as string
+      if (later && !later.startsWith(fieldIndent) && later.trimStart().startsWith('- ')) break
+      if (later.startsWith(`${fieldIndent}disabled:`)) return false
+    }
+    lines.splice(index + 1, 0, `${fieldIndent}disabled: true`)
+    await writeTextAtomically(profilePatch, lines.join('\n'))
+    note(`[desktop] disabled the migrated legacy preset row for "${presetId}"; a plugin registers it at runtime (#814)`)
+    return true
+  }
+  return false
+}

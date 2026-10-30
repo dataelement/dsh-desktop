@@ -1,0 +1,44 @@
+diff --git a/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/index.js b/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/index.js
+index 6cd610d..c4d9006 100644
+--- a/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/index.js
+@@ -346,12 +346,15 @@ const OPEN_IN_APP_CATALOG = [
+ * @returns after the launch is counted successful; rejects on early failure.
+ */
+ const launchDetachedApp = (command, args, options) => new Promise((resolve, reject) => {
++	const parentEnv = scrubbedParentEnv();
++	// External Electron apps need GUI mode; explicit CLI adapters may restore Node mode.
++	for (const name of Object.keys(parentEnv)) if (name.toUpperCase() === "ELECTRON_RUN_AS_NODE") Reflect.deleteProperty(parentEnv, name);
+ 	const child = spawn(command, [...args], {
+ 		detached: true,
+ 		stdio: "ignore",
+ 		windowsHide: options.windowsHide,
+ 		env: {
+-			...scrubbedParentEnv(),
++			...parentEnv,
+ 			...options.env
+ 		}
+ 	});
+diff --git a/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/types/resolver.js b/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/types/resolver.js
+index 9737dfb..5aeadf9 100644
+--- a/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/types/resolver.js
++++ b/node_modules/@deepseek-ai/dsh-host-open-in-app/lib/types/resolver.js
+@@ -35,11 +35,17 @@ import { OPEN_IN_APP_CATALOG, PATH_TOKEN, } from "./catalog.js";
+  * @returns after the launch is counted successful; rejects on early failure.
+  */
+ export const launchDetachedApp = (command, args, options) => new Promise((resolve, reject) => {
++    const parentEnv = scrubbedParentEnv();
++    // External Electron apps need GUI mode; explicit CLI adapters may restore Node mode.
++    for (const name of Object.keys(parentEnv)) {
++        if (name.toUpperCase() === 'ELECTRON_RUN_AS_NODE')
++            Reflect.deleteProperty(parentEnv, name);
++    }
+     const child = spawn(command, [...args], {
+         detached: true,
+         stdio: 'ignore',
+         windowsHide: options.windowsHide,
+-        env: { ...scrubbedParentEnv(), ...options.env },
++        env: { ...parentEnv, ...options.env },
+     });
+     let settled = false;
+     const settle = (outcome) => {

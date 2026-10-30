@@ -77,6 +77,12 @@ describe('sign-windows-unpacked', () => {
     mkdirSync(darwinDir, { recursive: true })
     writeFileSync(join(darwinDir, 'pty.node'), Buffer.from([0xcf, 0xfa, 0xed, 0xfe])) // Mach-O magic
 
+    // 4. Bundled office-runtime Python binaries must be skipped
+    const pythonDllDir = join(tempDir, 'resources', 'office-runtime', 'primary-runtime', 'dependencies', 'python', 'DLLs')
+    mkdirSync(pythonDllDir, { recursive: true })
+    writeFileSync(join(pythonDllDir, 'sqlite3.dll'), minimalPe())
+    writeFileSync(join(pythonDllDir, '_socket.pyd'), minimalPe())
+
     writeFileSync(join(koffiDir, 'index.js'), 'ignore me')
 
     const binaries = await findSignableBinaries(tempDir)
@@ -87,6 +93,8 @@ describe('sign-windows-unpacked', () => {
     expect(binaries).toContain(join(koffiDir, 'koffi.node'))
     expect(binaries).toContain(helper)
     expect(binaries).not.toContain(join(darwinDir, 'pty.node'))
+    expect(binaries).not.toContain(join(pythonDllDir, 'sqlite3.dll'))
+    expect(binaries).not.toContain(join(pythonDllDir, '_socket.pyd'))
     expect(binaries).toHaveLength(5)
   })
 

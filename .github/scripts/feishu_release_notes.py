@@ -54,6 +54,12 @@ Content rules
 - Exclude admin tooling, internal analytics, refactoring, dependency upgrades,
   CI, and other internal work unless the evidence clearly shows a user-facing
   improvement.
+- Harness adaptation or upgrades are a user-facing exception to the dependency
+  upgrade exclusion: when supported by evidence, highlight Harness in an early,
+  distinct theme rather than hiding it under generic internal maintenance.
+  Include the Harness version only when confirmed, with the same version in both
+  languages. If only an upgrade is confirmed, state that fact alone; do not invent
+  compatibility, stability benefits, or verification. Omit this theme without evidence.
 - Combine related changes into 2 to 5 product themes. Do not retell commits one
   by one and do not use second-level numbering such as 1.1 or 1.2.
 - Give each theme one short, natural paragraph explaining the change and its
@@ -465,13 +471,16 @@ def send_feishu_notification(
     release_tag: str,
     release_notes: str,
     prerelease: bool = False,
+    test_build: bool = False,
 ) -> None:
     card_title = (
-        f"🧪 DSH Desktop {release_tag}（预发布）已发布"
+        f"🧪 DSH Desktop {release_tag} 测试打包完成"
+        if test_build
+        else f"🧪 DSH Desktop {release_tag}（预发布）已发布"
         if prerelease
         else f"✅ DSH Desktop {release_tag} 发布成功"
     )
-    card_template = "orange" if prerelease else "green"
+    card_template = "orange" if prerelease or test_build else "green"
     payload = {
         "msg_type": "interactive",
         "card": {

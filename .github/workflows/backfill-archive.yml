@@ -22,6 +22,9 @@ concurrency:
 
 jobs:
   backfill:
+    concurrency:
+      group: desktop-modelscope-release-history
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +54,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/ms-env"
           "$RUNNER_TEMP/ms-env/bin/pip" install -q modelscope
           "$RUNNER_TEMP/ms-env/bin/python3" <<'PY'
-          import json, os, pathlib, subprocess, tempfile, urllib.request
+          import os, pathlib, sys
           from modelscope.hub.api import HubApi
 
           api = HubApi()
@@ -70,32 +73,8 @@ jobs:
           )
           print(f"✅ Archived {src} -> {repo_id}/releases/archive/{version}")
 
-          known = {version}
-          try:
-              with urllib.request.urlopen(
-                  "https://dshdesktop.com/updates/versions.json", timeout=15
-              ) as response:
-                  for entry in json.load(response).get("versions", []):
-                      name = entry.get("version")
-                      if isinstance(name, str) and name:
-                          known.add(name)
-          except Exception as error:
-              print(f"⚠️ Could not read existing version index: {error}")
-
-          with tempfile.TemporaryDirectory() as work:
-              names_file = pathlib.Path(work) / "names.json"
-              index_file = pathlib.Path(work) / "versions.json"
-              names_file.write_text(json.dumps(sorted(known)))
-              subprocess.run(
-                  ["node", "scripts/build-version-index.mjs", str(names_file), str(index_file)],
-                  check=True,
-              )
-              api.upload_file(
-                  path_or_fileobj=str(index_file),
-                  path_in_repo="releases/versions.json",
-                  repo_id=repo_id,
-                  commit_message=f"Version index after backfilling {tag}",
-                  token=token,
-              )
-          print("✅ Rebuilt releases/versions.json")
+          sys.path.insert(0, ".github/scripts")
+          from append_version_index import append_version_index
+          append_version_index(api, repo_id, token, version)
+          print("✅ Appended release to releases/versions.json")
           PY

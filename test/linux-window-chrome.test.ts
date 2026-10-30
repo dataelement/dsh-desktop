@@ -68,22 +68,20 @@ it('leaves the browser-on-Linux profile unbound instead of borrowing another pro
     .toEqual({ code: 'KeyB', modifiers: ['primary'] })
 })
 
-it('scopes the Windows caption-strip geometry away from Linux', async () => {
-  const conversation = await readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.1.7-rc.2.patch', 'utf8')
+it('keeps the bundle patch host-neutral for Linux', async () => {
+  const conversation = await readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.2.1-rc.3.patch', 'utf8')
 
-  // Windows leaves data-platform unset, so the caption strip is the absence of
-  // both announcing platforms. Linux draws its own caption inside the header
-  // bands, so the Windows strip's padding must not reach it either, and Linux
-  // geometry is selected by the announcement instead.
-  const windowsStrip = 'html:not([data-platform=darwin]):not([data-platform=linux])'
-  expect(conversation.split(windowsStrip).length - 1).toBe(2)
-  expect(conversation).toContain('html[data-platform=linux] .wSkVaW_headerUtilities')
+  // 0.2.1 carries no Windows caption strip and selects its own geometry from
+  // the macOS announcement; Linux draws its caption from the preload, so the
+  // bundle patch must not learn about the platform at all.
+  expect(conversation).toContain('html:not([data-platform=darwin])')
+  expect(conversation).not.toContain('data-platform=linux')
 })
 
 it('leaves the other desktop hosts untouched', async () => {
   const [sidebar, conversation] = await Promise.all([
-    readFile('patches/@deepseek-ai+dsh-client-ui-sidebar+0.1.7-rc.2.patch', 'utf8'),
-    readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.1.7-rc.2.patch', 'utf8')
+    readFile('patches/@deepseek-ai+dsh-client-ui-sidebar+0.2.1-rc.3.patch', 'utf8'),
+    readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.2.1-rc.3.patch', 'utf8')
   ])
   // macOS selects its geometry by announcement; the Windows rules must still
   // match a host that announces nothing.

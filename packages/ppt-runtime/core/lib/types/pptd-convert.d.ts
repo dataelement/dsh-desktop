@@ -2,9 +2,11 @@
 import type { PptdProjectSource } from './pptd.ts';
 /** One explicit fidelity boundary encountered while converting PPTX to PPTD. */
 export interface PptxToPptdDiagnostic {
-    readonly level: 'normalized' | 'unsupported';
-    readonly slide: number;
+    readonly level: 'normalized' | 'placeholder' | 'unsupported';
+    readonly slide?: number;
     readonly nodeId?: string;
+    readonly elementId?: string;
+    readonly bounds?: readonly [number, number, number, number];
     readonly feature: string;
     readonly message: string;
 }
@@ -18,4 +20,4 @@ export interface PptxToPptdResult {
     readonly diagnostics: readonly PptxToPptdDiagnostic[];
 }
 /** Convert one bounded PPTX package into an editable, self-contained PPTD v2 project. */
-export declare function convertPptxToPptd(bytes: Uint8Array, fileName: string): Promise<PptxToPptdResult>;
+export declare function convertPptxToPptd(bytes: Uint8Array, fileName: string, options?: {signal?: AbortSignal}): Promise<PptxToPptdResult>;

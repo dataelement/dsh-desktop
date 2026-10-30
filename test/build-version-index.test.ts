@@ -15,6 +15,23 @@ afterEach(async () => {
 })
 
 describe('buildVersionIndex', () => {
+  it('appends idempotently while retaining historical entries and metadata', () => {
+    const previous = { source: 'archive', versions: [
+      { version: '1.0.0', tag: 'V1.0.0', archiveUrl: 'https://example.com/old/', description: 'Keep this' }
+    ] }
+    const index = buildVersionIndex(['1.1.0', '1.0.0'], previous)
+    expect(index.source).toBe('archive')
+    expect(index.versions.map((entry: { version: string }) => entry.version)).toEqual(['1.1.0', '1.0.0'])
+    expect(index.versions[1]).toEqual(previous.versions[0])
+    expect(buildVersionIndex(['1.1.0'], index).versions).toEqual(index.versions)
+  })
+
+  it('rejects a malformed historical catalog instead of resetting it', () => {
+    for (const previous of [null, {}, { versions: 'invalid' }, { versions: [null] }, { versions: [{ version: 'invalid' }] }]) {
+      expect(() => buildVersionIndex(['1.1.0'], previous)).toThrow('refusing to replace history')
+    }
+  })
+
   it('drops non-semver names and sorts descending', () => {
     const index = buildVersionIndex(['1.2.0', 'latest', '1.10.0', 'nightly', '1.2.10'])
     expect(index.versions.map((v: { version: string }) => v.version)).toEqual([

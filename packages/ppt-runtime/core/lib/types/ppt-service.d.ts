@@ -26,6 +26,9 @@ export declare class PptService {
     templatePages(sessionId: SessionId, templateId: string, slideNumbers?: readonly number[]): Promise<readonly OfficeTemplatePageReference[]>;
     selectTemplate(sessionId: SessionId, templateId: string, actor: PptActor): Promise<OfficeTemplate>;
     selectPresentationMode(sessionId: SessionId, active: boolean, actor: PptActor): Promise<boolean>;
+    selectDocumentMode(sessionId: SessionId, mode: 'word' | 'excel' | null, actor: PptActor): Promise<boolean>;
+    selectDocumentTemplate(sessionId: SessionId, template: { id: string; mode: 'word' | 'excel'; revision: string }, actor: PptActor): Promise<boolean>;
+    deselectDocumentTemplate(sessionId: SessionId, actor: PptActor): Promise<boolean>;
     deselectTemplate(sessionId: SessionId, actor: PptActor): Promise<boolean>;
     createPptdDeck(sessionId: SessionId, project: PptdProject, requestedFileName: string, workspaceRoot: string, actor: PptActor, signal: AbortSignal): Promise<OfficeDeck>;
     private mutate;

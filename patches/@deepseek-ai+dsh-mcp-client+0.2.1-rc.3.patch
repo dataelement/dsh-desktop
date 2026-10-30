@@ -1,0 +1,187 @@
+diff --git a/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js b/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+index a0c19c8..12bac14 100644
+--- a/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+@@ -125,8 +125,10 @@ function publicToolName(serverName, rawName) {
+ *   disposers — the exact set of live registrations owned by this server.
+ */
+ async function syncTools(client, ctx, opts, previous) {
++	opts.startupSignal?.throwIfAborted();
+ 	const definitions = /* @__PURE__ */ new Map();
+-	const response = client.getServerCapabilities()?.tools === void 0 ? { tools: [] } : await client.listTools(void 0, { cacheMode: "refresh" });
++	const response = client.getServerCapabilities()?.tools === void 0 ? { tools: [] } : await withStartupSignal(client.listTools(void 0, { cacheMode: "refresh", signal: opts.startupSignal }), opts.startupSignal);
++	opts.startupSignal?.throwIfAborted();
+ 	for (const tool of response.tools) {
+ 		const publicName = publicToolName(opts.serverName, tool.name);
+ 		if (definitions.has(publicName)) throw new Error(`mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`);
+@@ -440,6 +442,24 @@ const RECONNECT_DEFAULTS = Object.freeze({
+ /** Default UTF-8 byte limit for attributed server instructions. */
+ const DEFAULT_MAX_INSTRUCTION_BYTES = 32768;
+ const GENERATION_CLOSE_TIMEOUT_MS = 5e3;
++// Desktop #599: remove when upstream bounds connect + initial discovery as one operation.
++// Keep startupTimeoutMs + the 5s close allowance below the outer loader deadline.
++const DEFAULT_STARTUP_TIMEOUT_MS = 2e4;
++/** Bound the complete operation, not each SDK page; late results cannot publish tools. */
++async function withStartupSignal(operation, signal) {
++	if (!signal) return await operation;
++	let onAbort;
++	const aborted = new Promise((_, reject) => {
++		onAbort = () => reject(signal.reason);
++		if (signal.aborted) onAbort();
++		else signal.addEventListener("abort", onAbort, { once: true });
++	});
++	try {
++		return await Promise.race([operation, aborted]);
++	} finally {
++		signal.removeEventListener("abort", onAbort);
++	}
++}
+ /**
+ * The one explicit resolve step from raw reconnect config to the policy the
+ * supervisor runs. Programmatic construction may bypass Schemastery
+@@ -547,10 +567,12 @@ function startConnection(ctx, config, policy) {
+ 			const timeout = setTimeout(() => {
+ 				resolve(false);
+ 			}, GENERATION_CLOSE_TIMEOUT_MS);
+-			timeout.unref();
+-			closed.then(() => {
++			closed.then((result) => {
++				clearTimeout(timeout);
++				resolve(result !== false);
++			}, () => {
+ 				clearTimeout(timeout);
+-				resolve(true);
++				resolve(false);
+ 			});
+ 		});
+ 	}
+@@ -611,6 +633,13 @@ function startConnection(ctx, config, policy) {
+ 		let attemptSettled = false;
+ 		let closeObserved = false;
+ 		let transport;
++		let closing;
++		const startupSyncs = [];
++		function enqueueStartupSync() {
++			const run = enqueueSync(generation, { ...(startup ? startupOpts : opts), startupSignal: startupAbort.signal });
++			startupSyncs.push(run);
++			return run;
++		}
+ 		const hasClosed = () => closeObserved;
+ 		client = generation;
+ 		closeClient = closeGeneration;
+@@ -620,7 +649,11 @@ function startConnection(ctx, config, policy) {
+ 			if (attemptSettled) generationDown(generation);
+ 		};
+ 		/** Unattached probes close through their transport; attached clients must also report transport closure. */
+-		async function closeGeneration() {
++		function closeGeneration() {
++			startupAbort.abort(new Error(`${label}: startup cancelled during transport closure`));
++			return closing ??= waitForClose(closeTransport());
++		}
++		async function closeTransport() {
+ 			const attached = generation.transport !== void 0;
+ 			try {
+ 				await (attached ? generation.close() : transport?.close());
+@@ -633,15 +666,21 @@ function startConnection(ctx, config, policy) {
+ 			if (!isCurrent(generation)) return;
+ 			ctx.logger.info(`${label}: tool list changed, re-syncing`);
+ 			try {
+-				await enqueueSync(generation);
++				await (attemptSettled ? enqueueSync(generation) : enqueueStartupSync());
+ 			} catch (error) {
+ 				if (!disposed) ctx.logger.error(`${label}: tool re-sync failed: ${String(error)}`);
+ 			}
+ 		}
+ 		let instructions;
++		const startupAbort = new AbortController();
++		const startupTimeoutMs = config.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
++		let method = "initialize";
++		const deadline = setTimeout(() => {
++			startupAbort.abort(new Error(`${label}: ${method} startup deadline exceeded after ${startupTimeoutMs}ms (connect + initial tools/list)`));
++		}, startupTimeoutMs);
+ 		try {
+ 			transport = createTransport(config);
+-			await generation.connect(transport);
++			await withStartupSignal(generation.connect(transport, { signal: startupAbort.signal }), startupAbort.signal);
+ 			if (hasClosed()) {
+ 				attemptSettled = true;
+ 				generationDown(generation);
+@@ -654,14 +693,30 @@ function startConnection(ctx, config, policy) {
+ 			const serverText = generation.getInstructions()?.trimEnd() ?? "";
+ 			instructions = serverText ? `### MCP server: ${config.serverName}\n\n${serverText}` : "";
+ 			if (Buffer.byteLength(instructions) > maxInstructionBytes) throw new Error(`${label}: server instructions exceed maxInstructionBytes (${maxInstructionBytes})`);
+-			await enqueueSync(generation, startup ? startupOpts : opts);
++			method = "tools/list";
++			await enqueueStartupSync();
++			// A refresh can enqueue another refresh while the initial list is pending.
++			// Await original promises, not syncChain, which intentionally contains errors.
++			let observed;
++			do {
++				observed = startupSyncs.length;
++				await withStartupSignal(Promise.all(startupSyncs), startupAbort.signal);
++				startupAbort.signal.throwIfAborted();
++			} while (observed !== startupSyncs.length);
+ 		} catch (error) {
+ 			if (firstAttemptError === void 0) firstAttemptError = error;
+ 			if (isCurrent(generation)) ctx.logger.warn(`${label}: connection attempt failed: ${String(error)}`);
+ 			const quiesced = await closeGeneration();
++			if (startup) {
++				await syncChain;
++				for (const dispose of disposers.values()) dispose();
++				disposers = new Map();
++			}
+ 			attemptSettled = true;
+ 			settleFailedGeneration(generation, quiesced);
+ 			return;
++		} finally {
++			clearTimeout(deadline);
+ 		}
+ 		attemptSettled = true;
+ 		if (hasClosed()) {
+@@ -785,6 +840,7 @@ const Config = z.union([z.object({
+ 	env: z.dict(String).default({}),
+ 	cwd: z.string().default(""),
+ 	toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
++	startupTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STARTUP_TIMEOUT_MS),
+ 	failOnStartupError: z.boolean().default(false),
+ 	maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+ 	reconnect: Reconnect
+@@ -794,6 +850,7 @@ const Config = z.union([z.object({
+ 	url: z.string().required(),
+ 	headers: z.dict(String).default({}),
+ 	toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
++	startupTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STARTUP_TIMEOUT_MS),
+ 	failOnStartupError: z.boolean().default(false),
+ 	maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+ 	reconnect: Reconnect
+@@ -807,6 +864,8 @@ const Config = z.union([z.object({
+ * @returns startup readiness after connection and initial tool discovery settle.
+ */
+ async function apply(ctx, config) {
++	const startupTimeoutMs = config.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
++	if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 1 || startupTimeoutMs > MAX_TIMER_DELAY_MS) throw new Error(`mcp-client(${config.serverName}): startupTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`);
+ 	const reconnect = resolveReconnectPolicy(config.reconnect, `mcp-client(${config.serverName}): reconnect`);
+ 	ctx.effect(() => {
+ 		const owner = scopeOf(ctx) ?? ctx.root;
+diff --git a/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts
+index bd49f63..ebbb559 100644
+--- a/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts
+@@ -42,6 +42,8 @@ export interface StdioConfig {
+     cwd: string;
+     /** Timeout per tool call or resource request in milliseconds. */
+     toolCallTimeoutMs: number;
++    /** Total connect + all initial tools/list pages per attempt (default 20000ms; finite 1..2147483647). Allow another 5000ms for cleanup and keep the sum below the outer loader timeout. */
++    startupTimeoutMs?: number;
+     /** Fail plugin activation when the initial connection or tool synchronization fails. */
+     failOnStartupError: boolean;
+     /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
+@@ -65,6 +67,8 @@ export interface StreamableHttpConfig {
+     headers: Record<string, string>;
+     /** Timeout per tool call or resource request in milliseconds. */
+     toolCallTimeoutMs: number;
++    /** Total connect + all initial tools/list pages per attempt (default 20000ms; finite 1..2147483647). Allow another 5000ms for cleanup and keep the sum below the outer loader timeout. */
++    startupTimeoutMs?: number;
+     /** Fail plugin activation when the initial connection or tool synchronization fails. */
+     failOnStartupError: boolean;
+     /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */

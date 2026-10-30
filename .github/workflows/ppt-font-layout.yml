@@ -1,0 +1,44 @@
+name: PPT font layout
+
+on:
+  pull_request:
+    branches: [V0.12.0]
+    paths:
+      - '.github/workflows/ppt-font-layout.yml'
+      - 'packages/ppt-runtime/**'
+      - 'test/ppt-windows-font-layout.test.mjs'
+      - 'test/ppt-chinese-font-export.test.mjs'
+      - 'test/pptx-layout-fidelity.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-preview:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify imported font families and native preview geometry
+        run: npx --no-install vitest run test/ppt-windows-font-layout.test.mjs test/ppt-chinese-font-export.test.mjs test/pptx-layout-fidelity.test.mjs
+        env:
+          DSH_PPT_FONT_EVIDENCE: ${{ runner.temp }}/ppt-font-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ppt-font-layout-${{ matrix.os }}
+          path: ${{ runner.temp }}/ppt-font-evidence
+          if-no-files-found: ignore
+          retention-days: 7

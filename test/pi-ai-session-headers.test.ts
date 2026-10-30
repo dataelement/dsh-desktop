@@ -31,7 +31,7 @@ function fixture(headers: Record<string, string> = {}) {
     resolveApiKey: async () => 'test-key',
     auth: {} as PiAiAdapterOptions['auth']
   })
-  async function send(sessionId?: string | number, model = 'deepseek-v4-flash', prepared = false) {
+  async function send(sessionId?: string | number, model = 'deepseek-v4.1-flash', prepared = false) {
     const options = {
       provider: 'opencode-go', model,
       ...(sessionId === undefined ? {} : { sessionId }),
@@ -46,7 +46,7 @@ function fixture(headers: Record<string, string> = {}) {
 
 describe('pi-ai session headers', () => {
   it.each([
-    ['deepseek-v4-flash', '/chat/completions'],
+    ['deepseek-v4.1-flash', '/chat/completions'],
     ['minimax-m3', '/messages'],
     ['gpt-5.6-luna', '/responses']
   ])('sends the Harness session through %s', async (model, endpoint) => {
@@ -61,7 +61,7 @@ describe('pi-ai session headers', () => {
   it('retains identity across repeated and prepared calls without mixing concurrent sessions', async () => {
     const { send, requests } = fixture()
     await send('parent')
-    await send('parent', 'deepseek-v4-flash', true)
+    await send('parent', 'deepseek-v4.1-flash', true)
     await Promise.all([send('child'), send('other')])
     expect(requests.map(request => request.headers.get(sessionHeader)).sort())
       .toEqual(['child', 'other', 'parent', 'parent'])

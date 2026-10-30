@@ -21,8 +21,8 @@ build/icon-1024.png
 __pycache__/
 *.pyc
 
-# Native recovery UI smoke-test output
-/artifacts/recovery-ui/
+# Local test artifacts, diagnostics and smoke-test output
+/artifacts/
 
 # Local-only design docs
 docs/plugin-management.zh.md
@@ -34,3 +34,9 @@ docs/mobile-connection-latency.zh.md
 /.build/
 /packages/ppt-runtime/templates/
 /packages/ppt-bundles/
+
+# Local Finder visual-test disk images
+/dist-dmg-preview/
+
+# Local design iterations; production artwork lives in build/dmg/.
+/docs/dmg-install-preview/

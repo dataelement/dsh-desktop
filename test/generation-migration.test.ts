@@ -347,3 +347,57 @@ describe('one-time profile migration to generations', () => {
     expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'staging-fail'))).toBe(true)
   })
 })
+
+describe('plain runtime dependencies stay in the shared tree', () => {
+  const homes: string[] = []
+  const silent = (): void => undefined
+  afterEach(async () => {
+    await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
+    homes.length = 0
+    installCalls.length = 0
+    failingInstallOutput = undefined
+  })
+
+  async function profileWithPlainDependency(): Promise<string> {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-migrate-plain-'))
+    homes.push(home)
+    const dir = join(home, 'profiles', 'web')
+    await mkdir(join(dir, 'node_modules', 'node-pty'), { recursive: true })
+    await mkdir(join(dir, 'node_modules', 'real-plugin'), { recursive: true })
+    await writeFile(
+      join(dir, 'node_modules', 'node-pty', 'package.json'),
+      JSON.stringify({ name: 'node-pty', version: '1.2.0-beta.15' })
+    )
+    await writeFile(
+      join(dir, 'node_modules', 'real-plugin', 'package.json'),
+      JSON.stringify({ name: 'real-plugin', version: '1.0.0', dsh: { bundle: { patch: 'p.yml' } } })
+    )
+    await writeFile(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'dsh-profile-web',
+        private: true,
+        dependencies: { dshmarket: '^1.35.0', 'node-pty': '1.2.0-beta.15', 'real-plugin': '^1.0.0' },
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'real-plugin'] } }
+      })
+    )
+    await writeFile(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    await mkdir(join(home, 'profiles', 'node_modules'), { recursive: true })
+    return home
+  }
+
+  it('migrates only declared plugins and leaves a dsh-less dependency like node-pty in place', async () => {
+    const home = await profileWithPlainDependency()
+    const result = await migrateProfileToGenerations({
+      dshHome: home,
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      dshEntryPath: 'bin.js',
+      note: silent,
+      reinstallSharedTree: async () => ({ ok: true })
+    })
+    expect(result).not.toBeNull()
+    expect(installCalls).toContain('real-plugin')
+    expect(installCalls).not.toContain('node-pty')
+  })
+})

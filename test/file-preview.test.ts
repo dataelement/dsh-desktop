@@ -8,6 +8,27 @@ async function packageClient(name: string, file = 'lib/client.js'): Promise<stri
 }
 
 describe('uploaded file preview', () => {
+  it('propagates native opener failures and preserves preview line options', async () => {
+    const chat = await packageClient('dsh-client-ui-chat')
+    const start = chat.indexOf('async function openResolvedHostFile(')
+    const end = chat.indexOf('\n\t\t//#endregion', start)
+    const open = new Function('fileAddressFor', `${chat.slice(start, end)}; return openResolvedHostFile`)(
+      () => 'authorized-file-address'
+    ) as (ctx: unknown, sessionId: string, cwd: string, path: string, options?: { line: number }) => Promise<void>
+    const opened: unknown[] = []
+    const nativeError = { code: 'open-failed', message: 'native opener failed' }
+    const ctx = {
+      sidebarRightTabs: { candidates: () => [] as string[] },
+      sidebarRight: { openResource: (...args: unknown[]) => opened.push(args) },
+      remote: { session: { openWorkspacePath: async () => ({ ok: false, error: nativeError }) } }
+    }
+    await expect(open(ctx, 'session', '/workspace', '/workspace/file')).rejects.toEqual(nativeError)
+    expect(opened).toEqual([])
+    ctx.sidebarRightTabs.candidates = () => ['preview']
+    await open(ctx, 'session', '/workspace', '/workspace/file', { line: 17 })
+    expect(opened).toEqual([['authorized-file-address', { params: { line: 17 } }]])
+  })
+
   it('exposes a session-authorized host path instead of file bytes', async () => {
     const host = await packageClient('dsh-api-session-controller', 'lib/index.js')
     const client = await packageClient('dsh-api-session-controller')

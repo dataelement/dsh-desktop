@@ -1,6 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { isSeq, parse, parseDocument } from 'yaml'
+import {
+  forgetPlugin,
+  readMarketState,
+  removePatchRowOverrides,
+  setPluginDisabled
+} from 'dsh-desktop-market-installer/plugin-state'
 import { bundleEntryIds } from './patch-layer'
 import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recovery'
 
@@ -20,8 +26,6 @@ import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recover
  * disable applying with nothing to replace it, so carriers are refused and
  * the caller decides what to do instead.
  */
-
-const MARKET_STATE = join('.dsh-market', 'state.json')
 
 /** Row ids the market will write; anything else is refused like the market does. */
 const ROW_ID = /^[A-Za-z0-9_.-]+$/
@@ -110,24 +114,9 @@ export function disablePatchRows(
   return { text: next, changed: next !== text }
 }
 
-/** Remove exact row override blocks, restoring `[]` when only comments remain. */
-function removePatchRows(text: string, rowIds: readonly string[], disabled: boolean): { text: string; changed: boolean } {
-  let next = text
-  for (const rowId of rowIds) {
-    const block = rowBlockPattern(rowId, disabled)
-    while (block.test(next)) next = next.replace(block, '')
-  }
-  if (next === text) return { text, changed: false }
-  if (withoutComments(next) === '') {
-    const revived = next.replace(/^[ \t]*#[ \t]*\[[ \t]*\][ \t]*(?:\r?\n|$)/m, '[]\n')
-    next = revived !== next ? revived : next === '' || next.endsWith('\n') ? `${next}[]\n` : `${next}\n[]\n`
-  }
-  return { text: next, changed: true }
-}
-
 /** Drop `disabled: true` rows when a plugin is re-enabled. */
 export function enablePatchRows(text: string, rowIds: readonly string[]): { text: string; changed: boolean } {
-  return removePatchRows(text, rowIds, true)
+  return removePatchRowOverrides(text, rowIds, true)
 }
 
 /** Row ids the user patch layer switches off, scanned like dsh-market's readUserPatchState. */
@@ -204,25 +193,6 @@ async function writeAtomically(path: string, text: string): Promise<void> {
   await rename(temporary, path)
 }
 
-/**
- * The market's state.json, with only its disable list interpreted. Every
- * other field is the market's and is carried through untouched. An
- * unparseable file is an error, never an empty state to overwrite.
- */
-async function readMarketState(profileDirectory: string): Promise<{ state: Record<string, unknown>; disabled: string[] }> {
-  const text = await readTextIfPresent(join(profileDirectory, MARKET_STATE))
-  if (text === undefined) return { state: {}, disabled: [] }
-  const state = JSON.parse(text) as unknown
-  if (state === null || typeof state !== 'object' || Array.isArray(state)) {
-    throw new Error('market state is not a JSON object')
-  }
-  const record = state as Record<string, unknown>
-  // Legacy `disabledSkins` is what the market still reads when `disabled` is absent.
-  const list = record.disabled !== undefined ? record.disabled : record.disabledSkins
-  const disabled = Array.isArray(list) ? list.filter((name): name is string => typeof name === 'string') : []
-  return { state: record, disabled }
-}
-
 export async function readMarketDisabledPackages(dshHome: string): Promise<string[]> {
   return (await readMarketState(dirname(profilePackageJsonPath(dshHome)))).disabled
 }
@@ -250,15 +220,6 @@ export async function isProfilePluginDisabledByPatch(dshHome: string, pluginName
     return typeof id === 'string' && disabled === true ? [id] : []
   }))
   return inserted.every((id) => disabled.has(id))
-}
-
-async function setMarketDisabled(profileDirectory: string, pluginName: string, disabled: boolean): Promise<void> {
-  const { state, disabled: current } = await readMarketState(profileDirectory)
-  const next = disabled
-    ? current.includes(pluginName) ? current : [...current, pluginName]
-    : current.filter((name) => name !== pluginName)
-  if (next.length === current.length) return
-  await writeAtomically(join(profileDirectory, MARKET_STATE), JSON.stringify({ ...state, disabled: next }))
 }
 
 function message(error: unknown): string {
@@ -292,7 +253,7 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
   try {
     originalPatch = await readTextIfPresent(patchPath)
     if (originalPatch !== undefined && inserted.length > 0) {
-      const result = removePatchRows(originalPatch, inserted, false)
+      const result = removePatchRowOverrides(originalPatch, inserted, false)
       if (result.changed) {
         await writeAtomically(patchPath, result.text)
         clearedPatch = result.text
@@ -303,7 +264,7 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
   }
 
   try {
-    await setMarketDisabled(profileDirectory, pluginName, true)
+    await setPluginDisabled(profileDirectory, pluginName, true)
   } catch (error) {
     if (clearedPatch !== undefined && originalPatch !== undefined) {
       try {
@@ -331,7 +292,7 @@ export async function enableProfilePlugin(
       const result = enablePatchRows(layer, inserted)
       if (result.changed) await writeAtomically(patchPath, result.text)
     }
-    await setMarketDisabled(profileDirectory, pluginName, false)
+    await setPluginDisabled(profileDirectory, pluginName, false)
     return { ok: true }
   } catch (error) {
     return { ok: false, detail: message(error) }
@@ -344,7 +305,7 @@ export async function enableProfilePlugin(
  * Its patch rows are the removal's to prune.
  */
 export async function forgetMarketDisable(dshHome: string, pluginName: string): Promise<void> {
-  await setMarketDisabled(dirname(profilePackageJsonPath(dshHome)), pluginName, false)
+  await forgetPlugin(dirname(profilePackageJsonPath(dshHome)), pluginName)
 }
 
 /**

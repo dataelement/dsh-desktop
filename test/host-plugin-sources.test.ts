@@ -46,11 +46,11 @@ describe('Desktop host plugin sources', () => {
     expect(await readFile(patchPath, 'utf8')).toBe(source)
   })
 
-  it('loads host plugins from unpacked resources outside the installation cwd and preserves missing-package causes', async () => {
+  it('loads host plugins from the packaged app root outside the installation cwd and preserves missing-package causes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-installed-host-sources-'))
     directories.push(root)
     const resources = join(root, 'installation', 'resources')
-    const runtime = join(resources, 'app.asar.unpacked')
+    const runtime = join(resources, 'app.asar')
     const home = join(root, 'profile')
     const launchRoot = join(root, 'launch-root')
     const anchor = join(runtime, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')

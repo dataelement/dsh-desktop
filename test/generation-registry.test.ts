@@ -1,4 +1,7 @@
-import { access, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { writeFileSync } from 'node:fs'
+import { access, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -244,19 +247,124 @@ describe('the plugin generation registry', () => {
     expect(order).toEqual(['first-start', 'first-end', 'second-start'])
   })
 
-  it('breaks a stale lock left by a crashed process', async () => {
+  it('immediately recovers a fresh lock whose owner process is gone', async () => {
     const home = await freshHome()
     await ensureRegistryDirectories(home)
-    await writeFile(registryLayout(home).lockFile, '99999 crashed\n')
+    await writeFile(registryLayout(home).lockFile, '424242 crashed\n')
 
-    // A fresh operation should still acquire it once the lock is past its
-    // stale deadline.
     const result = await withRegistryLock(
       home,
       async () => 'acquired',
-      { staleAfterMs: 0, retryMs: 1, timeoutMs: 2000 }
+      { staleAfterMs: 60_000, retryMs: 1, timeoutMs: 100, processAlive: () => false }
     )
     expect(result).toBe('acquired')
+  })
+
+  it('detects an exited process owner with the platform process probe', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    const child = spawn(process.execPath, ['-e', 'process.exit(0)'])
+    await once(child, 'exit')
+    if (child.pid === undefined) throw new Error('Test child did not receive a process id.')
+    await writeFile(registryLayout(home).lockFile, `${child.pid} crashed\n`)
+
+    await expect(withRegistryLock(
+      home,
+      async () => 'acquired',
+      { staleAfterMs: 60_000, retryMs: 1, timeoutMs: 100 }
+    )).resolves.toBe('acquired')
+  })
+
+  it('keeps a fresh lock whose owner pid is alive', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    const lockFile = registryLayout(home).lockFile
+    const body = '424242 still-running\n'
+    await writeFile(lockFile, body)
+
+    await expect(withRegistryLock(
+      home,
+      async () => 'must-not-run',
+      { staleAfterMs: 60_000, retryMs: 1, timeoutMs: 5, processAlive: () => true }
+    )).rejects.toThrow('Another plugin operation is holding the registry lock.')
+    expect(await readFile(lockFile, 'utf8')).toBe(body)
+
+    const old = new Date(Date.now() - 120_000)
+    await utimes(lockFile, old, old)
+    await expect(withRegistryLock(
+      home,
+      async () => 'acquired-after-deadline',
+      { staleAfterMs: 60_000, retryMs: 1, timeoutMs: 100, processAlive: () => true }
+    )).resolves.toBe('acquired-after-deadline')
+  })
+
+  it('keeps an owner lock when process inspection is not permitted', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    const lockFile = registryLayout(home).lockFile
+    const body = '424242 permission-denied\n'
+    await writeFile(lockFile, body)
+
+    await expect(withRegistryLock(
+      home,
+      async () => 'must-not-run',
+      {
+        staleAfterMs: 60_000,
+        retryMs: 1,
+        timeoutMs: 5,
+        processAlive: () => { throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' }) }
+      }
+    )).rejects.toThrow('Another plugin operation is holding the registry lock.')
+    expect(await readFile(lockFile, 'utf8')).toBe(body)
+  })
+
+  it('uses the stale deadline for a malformed lock without process ownership', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    const lockFile = registryLayout(home).lockFile
+    await writeFile(lockFile, 'not a registry owner\n')
+
+    await expect(withRegistryLock(
+      home,
+      async () => 'must-not-run',
+      { staleAfterMs: 60_000, retryMs: 1, timeoutMs: 5, processAlive: () => false }
+    )).rejects.toThrow('Another plugin operation is holding the registry lock.')
+
+    const old = new Date(Date.now() - 120_000)
+    await utimes(lockFile, old, old)
+    await expect(withRegistryLock(
+      home,
+      async () => 'acquired',
+      { staleAfterMs: 60_000, retryMs: 1, timeoutMs: 100, processAlive: () => false }
+    )).resolves.toBe('acquired')
+  })
+
+  it('does not delete a successor lock that replaces a dead-owner snapshot', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    const lockFile = registryLayout(home).lockFile
+    await writeFile(lockFile, '424242 crashed\n')
+    const successor = `${process.pid} successor\n`
+    let replaced = false
+
+    await expect(withRegistryLock(
+      home,
+      async () => 'must-not-run',
+      {
+        staleAfterMs: 60_000,
+        retryMs: 1,
+        timeoutMs: 5,
+        processAlive: (pid) => {
+          if (pid === 424242 && !replaced) {
+            replaced = true
+            writeFileSync(lockFile, successor, 'utf8')
+            return false
+          }
+          return true
+        }
+      }
+    )).rejects.toThrow('Another plugin operation is holding the registry lock.')
+    expect(await readFile(lockFile, 'utf8')).toBe(successor)
   })
 
   it('disables a generation by dropping every id for that plugin from desired', async () => {

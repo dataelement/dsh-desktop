@@ -7,13 +7,10 @@ const HOST_PACKAGE_PREFIX = '@deepseek-ai/'
  * Resolution failures the installation anchor can legitimately answer.
  *
  * `ERR_MODULE_NOT_FOUND` is the plugin having no copy at all.
- * `ERR_PACKAGE_PATH_NOT_EXPORTED` is the copy it found being older than the
- * subpath its importer needs — observed in the field as
- * `@deepseek-ai/dsh-subprocess-local` importing `dsh-subprocess/control` from a
- * stale `profiles/node_modules` copy. Retrying it is safe: the retry only
- * succeeds when the host copy really exports that subpath.
+ * A package's explicit exports boundary must remain authoritative. Mixing a
+ * local root export with a host-only subpath can split a shared singleton.
  */
-const HOST_RETRYABLE = new Set(['ERR_MODULE_NOT_FOUND', 'ERR_PACKAGE_PATH_NOT_EXPORTED'])
+const HOST_RETRYABLE = new Set(['ERR_MODULE_NOT_FOUND'])
 
 /**
  * Let linked Profile plugins consume the Harness packages carried by Desktop.
