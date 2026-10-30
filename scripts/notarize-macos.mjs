@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { notarize } from '@electron/notarize'
+import { verifyMacOSMicrophonePermissions } from './verify-macos-permissions.mjs'
 
 const exec = promisify(execFile)
 
@@ -91,5 +92,6 @@ export default async function afterSign(context) {
   if (!appleApiKey && !appleApiKeyId && !appleApiIssuer) return
   if (!appleApiKey || !appleApiKeyId || !appleApiIssuer) throw new Error('All Apple API notarization credentials are required')
   const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+  await verifyMacOSMicrophonePermissions(appPath)
   await notarizeWithStapleRetry({ appPath, appleApiKey, appleApiKeyId, appleApiIssuer })
 }

@@ -495,6 +495,11 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "DSH Desktop uses your microphone to transcribe speech into message drafts."
+      },
       "gatekeeperAssess": false,
       "signIgnore": [
         "office-runtime/.*\\.(py|pyi|pyc|h|c|f90|f|txt|md|csv|pxd|pxi|json|webp|gif|png|xml|tcl|enc|tm)$",
