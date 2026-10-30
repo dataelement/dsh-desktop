@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { installPnpmArguments } from 'dsh-desktop-market-installer/generations/installer'
@@ -31,16 +31,19 @@ describe('windows console hide launch arguments', () => {
     )
   })
 
-  it('loads the bootstrap through a file URL before pnpm on Windows', () => {
+  it('loads the bootstrap through a file URL before the bundled metadata CLI on Windows', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-console-hide-'))
     const path = join(dir, 'windows-hide-console-import.mjs')
     writeFileSync(path, '')
     const env = { [HIDE_CONSOLE_BOOTSTRAP_ENV]: path }
     expect(hideConsoleImportArguments(env, 'win32')).toEqual(['--import', pathToFileURL(path).href])
-    expect(pnpmLaunchArguments(['pnpm.cjs', 'view', 'dshmarket@^1.65.1'], env, 'win32')).toEqual([
+    const require = createRequire(import.meta.url)
+    const pnpm = join(dirname(require.resolve('pnpm')), 'bin', 'pnpm.cjs')
+    const npm = join(dirname(require.resolve('npm/package.json')), 'bin', 'npm-cli.js')
+    expect(pnpmLaunchArguments([pnpm, 'view', 'dshmarket@^1.65.1'], env, 'win32')).toEqual([
       '--import',
       pathToFileURL(path).href,
-      'pnpm.cjs',
+      npm,
       'view',
       'dshmarket@^1.65.1'
     ])

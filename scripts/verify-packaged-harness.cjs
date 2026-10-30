@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
+const { createServer } = require('node:http')
 const { createRequire } = require('node:module')
 const { execFile, spawn } = require('node:child_process')
 const { promisify } = require('node:util')
@@ -135,8 +136,52 @@ async function verifyHarness(appRoot, resources, executable) {
   }
 }
 
+/** Exercise the installed query closure without a system npm, node, or registry. */
+async function verifyPackageQuery(appRoot, executable) {
+  const home = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh packaged query ')))
+  const server = createServer((request, response) => {
+    if (request.url !== '/dsh-packaged-query-probe') {
+      response.writeHead(404, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: 'not_found' }))
+      return
+    }
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ name: 'dsh-packaged-query-probe', 'dist-tags': { latest: '1.2.3' },
+      versions: { '1.2.3': { name: 'dsh-packaged-query-probe', version: '1.2.3' } } }))
+  })
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const registry = 'http://127.0.0.1:'
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('Package query registry did not bind')
+    const userconfig = path.join(home, 'user.npmrc')
+    const globalconfig = path.join(home, 'global.npmrc')
+    await fsp.writeFile(userconfig, '')
+    await fsp.writeFile(globalconfig, '')
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+      !/^(path|node_options|node_path|corepack_.*|npm_config_.*|pnpm_.*|.*_proxy)$/iu.test(key)))
+    Object.assign(env, { PATH: home, ELECTRON_RUN_AS_NODE: '1', HOME: home, USERPROFILE: home,
+      NPM_CONFIG_USERCONFIG: userconfig, NPM_CONFIG_GLOBALCONFIG: globalconfig,
+      NPM_CONFIG_CACHE: path.join(home, 'cache'), NPM_CONFIG_UPDATE_NOTIFIER: 'false' })
+    const runner = path.join(appRoot, 'node_modules', 'dsh-desktop-market-installer', 'pnpm-runner.mjs')
+    const pnpm = path.join(appRoot, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
+    const { stdout } = await promisify(execFile)(executable, [runner, pnpm, 'view',
+      'dsh-packaged-query-probe', 'version', '--json', '--registry=' + registry + address.port,
+      '--config.fetch-retries=0'], { cwd: home, env, windowsHide: true, timeout: 20_000 })
+    if (JSON.parse(stdout) !== '1.2.3') throw new Error('Packaged plugin query returned unexpected metadata')
+  } finally {
+    server.closeAllConnections()
+    await new Promise(resolve => server.close(resolve))
+    await fsp.rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+}
+
 async function verifyRuntime(appRoot, resources, executable) {
   const count = verifyDependencyClosure(appRoot)
+  await verifyPackageQuery(appRoot, executable)
   await verifyTerminal(appRoot)
   await verifyHarness(appRoot, resources, executable)
   console.log(`Packaged Harness, bootstrap, native modules, terminal and ${count} dependency manifests passed`)
@@ -162,7 +207,7 @@ async function verifyPackagedHarness(context) {
     throw error
   }
 }
-module.exports = { verifyDependencyClosure, verifyTerminal, verifyHarness, verifyPackagedHarness }
+module.exports = { verifyDependencyClosure, verifyPackageQuery, verifyTerminal, verifyHarness, verifyPackagedHarness }
 if (require.main === module && process.argv[2] === '--verify-runtime') {
   const [appRoot, resources, ...executableParts] = process.argv.slice(3)
   const executable = executableParts.length ? executableParts.join(' ') : process.execPath

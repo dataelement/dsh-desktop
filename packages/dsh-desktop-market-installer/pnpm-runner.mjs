@@ -27,7 +27,8 @@
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync, watch } from 'node:fs'
 import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { hideConsoleImportArguments } from './windows-hide-console.mjs'
 
@@ -310,17 +311,35 @@ export async function suspendGenerationProjectionForPnpm(profileDirectory) {
 }
 
 /**
- * Arguments for one pnpm process. On Windows the console-hide bootstrap is
- * loaded first, so `pnpm view`'s passthrough to `npm.cmd` inherits a hidden
- * console. The path is read from this process, not the child environment:
- * the shim restores it after Harness scrubs `DSH_*` names.
+ * Arguments for a packaged package-manager process. pnpm 10 forwards metadata
+ * queries to PATH npm, which a Desktop installation does not supply. Run the
+ * installation-owned npm CLI with the same Node executable instead, retaining
+ * npm's registry/auth/proxy configuration and JSON/error semantics. The pnpm
+ * entry is the installation anchor even when this runner is staged in a Profile.
+ * Other commands retain pnpm's mutation and recovery behavior.
+ * On Windows the shim restores the console-hide bootstrap after env scrubbing.
  * @param {readonly string[]} args - pnpm entry and its own arguments.
  * @param {NodeJS.ProcessEnv} [env]
  * @param {NodeJS.Platform} [platform]
  * @returns {string[]}
  */
 export function pnpmLaunchArguments(args, env = process.env, platform = process.platform) {
-  return [...hideConsoleImportArguments(env, platform), ...args]
+  const [pnpmEntry, command, ...queryArgs] = args
+  if (!['view', 'info', 'show', 'v'].includes(command)) {
+    return [...hideConsoleImportArguments(env, platform), ...args]
+  }
+  let npmEntry
+  try {
+    const manifest = createRequire(pnpmEntry).resolve('npm/package.json')
+    npmEntry = join(dirname(manifest), 'bin', 'npm-cli.js')
+    if (!existsSync(npmEntry)) throw new Error('npm CLI entry is missing')
+  } catch (cause) {
+    throw new Error('Desktop bundled npm query runtime is unavailable; repair or reinstall the application.', { cause })
+  }
+  // Harness passes pnpm's --config.fetch-retries=0 spelling. npm uses the
+  // unprefixed key; keep all other values and arguments as separate argv items.
+  const translated = queryArgs.map(argument => argument.replace(/^--config\./u, '--'))
+  return [...hideConsoleImportArguments(env, platform), npmEntry, command, ...translated]
 }
 
 /**
