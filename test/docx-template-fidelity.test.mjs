@@ -5,6 +5,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
+import * as nativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
@@ -16,7 +17,7 @@ const sha = data => createHash('sha256').update(data).digest('hex')
 async function fixture(templateId = 'government-notice') {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), 'docx-layout-'))); cleanups.push(() => rm(workspace, { recursive: true, force: true }))
   const ctx = new Context()
-  for (const plugin of [SystemPrompt, ToolRuntime, LocalSandboxProvider, LocalSubprocessRuntime]) { const fork = ctx.plugin(plugin, {}); await fork; cleanups.push(() => fork.dispose()) }
+  for (const plugin of [SystemPrompt, ToolRuntime, nativeExecutor, LocalSandboxProvider, LocalSubprocessRuntime]) { const fork = ctx.plugin(plugin, {}); await fork; cleanups.push(() => fork.dispose()) }
   const catalog = JSON.parse(await readFile(resolve('packages/dsh-desktop-office/sources/catalog.json'), 'utf8'))
   const sourceRoot = resolve('packages/dsh-desktop-office/sources', catalog.find(item => item.id === templateId).source)
   const source = await readFile(join(sourceRoot, 'example.docx'))
@@ -39,7 +40,7 @@ async function fixture(templateId = 'government-notice') {
   const normal = prepared.paragraphs.find(p => p.text.startsWith('为做好公园'))
   const other = prepared.paragraphs.find(p => p.text === '一、服务主题和时间')
   const plan = templateId === 'government-notice' ? { output_path: 'result.docx', replacements: [{ id: 'p0', text: '示例市公园管理局文件' }, { id: title.id, text: '关于公园节假日开放安排的通告' }, { id: normal.id, text: '现将公园节假日开放有关事项通告如下。' }], additions: [{ after: normal.id, source: normal.id, text: '具体开放时间以已确认的安排为准。' }], removals: [other.id] } : { output_path: 'result.docx', replacements: [{ id: prepared.paragraphs.find(p => p.text && p.can_remove).id, text: '当前材料的标题与内容' }] }
-  const call = async (name, args) => ctx.tools.execute({ name, arguments: args, callId: randomUUID(), ...exec })
+  const call = async (name, args) => (await ctx.tools.execute({ ...exec, calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }] })).results[0].result
   return { ctx, workflow, prepared, plan, call, delivered, workspace, modes, exec, setDirectory: value => { currentDirectory = value }, setMode: value => { mode = value }, clearSelection: () => { selection = {} } }
 }
 it('writes the real Word worker output in a changed session directory', async () => {
