@@ -97,7 +97,6 @@ function delay(milliseconds) {
 const PROJECTION_VERSION = 1
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/iu
 const GIT_PREPARE_KEY_PATTERN = /^(?<name>(?:@[A-Za-z0-9-~][A-Za-z0-9._~-]*\/)?[A-Za-z0-9-~][A-Za-z0-9._~-]*)@git\+ssh:\/\/git@github\.com\/(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)\.git#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
-const ALLOW_BUILDS_BLOCK_PATTERN = /allowBuilds:[ \t]*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)*)/gu
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -215,21 +214,14 @@ async function removeGenerationLockfileEntries(profileDirectory, pluginNames) {
   return true
 }
 
-function buildApprovalValues(workspaceYaml) {
+function buildApprovalValues(document, isMap, isScalar) {
   const values = new Map()
-  for (const block of workspaceYaml.matchAll(ALLOW_BUILDS_BLOCK_PATTERN)) {
-    for (const line of block[1].split(/\r?\n/u)) {
-      const match = /^[ \t]+(\S.*?)\s*:\s*(true|false)\s*$/u.exec(line)
-      if (match === null) continue
-      let key = match[1]
-      if (
-        key.length >= 2 &&
-        ((key.startsWith("'") && key.endsWith("'")) ||
-          (key.startsWith('"') && key.endsWith('"')))
-      ) {
-        key = key.slice(1, -1)
-      }
-      values.set(key, match[2] === 'true')
+  for (const pair of document.contents.items) {
+    if (!isScalar(pair.key) || pair.key.value !== 'allowBuilds' || !isMap(pair.value)) continue
+    for (const entry of pair.value.items) {
+      if (!isScalar(entry.key) || !isScalar(entry.value)) continue
+      if (typeof entry.value.value !== 'boolean') continue
+      values.set(String(entry.key.value), entry.value.value)
     }
   }
   return values
@@ -249,13 +241,26 @@ export function gitPrepareApprovalKey(output) {
  * the user's existing decision into the spelling bundled pnpm 10 consumes;
  * it never broadens an approval to another source.
  */
-export function mergeApprovedGitPrepareKey(workspaceYaml, output) {
+export function mergeApprovedGitPrepareKey(workspaceYaml, output, profileDirectory) {
   const exact = gitPrepareApprovalKey(output)
   if (exact === undefined) return { workspaceYaml, key: undefined }
   const parsed = GIT_PREPARE_KEY_PATTERN.exec(exact)
   if (parsed?.groups === undefined) return { workspaceYaml, key: undefined }
   const { name, owner, repo, sha } = parsed.groups
-  const values = buildApprovalValues(workspaceYaml)
+  const { isMap, isScalar, parseDocument } = loadYamlModule(profileDirectory)
+  let document
+  try {
+    document = parseDocument(workspaceYaml)
+  } catch {
+    return { workspaceYaml, key: undefined }
+  }
+  if (document.errors.every((error) => error.code === 'BAD_SCALAR_START')) {
+    document.errors.length = 0
+  }
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    return { workspaceYaml, key: undefined }
+  }
+  const values = buildApprovalValues(document, isMap, isScalar)
   if (values.get(exact) === false) return { workspaceYaml, key: undefined }
   if (values.get(exact) === true) return { workspaceYaml, key: exact }
   const stable = `${name}@git+https://github.com/${owner}/${repo}.git`
@@ -264,14 +269,16 @@ export function mergeApprovedGitPrepareKey(workspaceYaml, output) {
     return { workspaceYaml, key: undefined }
   }
 
-  const block = ALLOW_BUILDS_BLOCK_PATTERN.exec(workspaceYaml)
-  ALLOW_BUILDS_BLOCK_PATTERN.lastIndex = 0
-  if (block === null || block.index === undefined) return { workspaceYaml, key: undefined }
-  const eol = workspaceYaml.includes('\r\n') ? '\r\n' : '\n'
-  const insertion = `${block[0].endsWith('\n') ? '' : eol}  ${JSON.stringify(exact)}: true${eol}`
-  const end = block.index + block[0].length
+  const allowBuilds = document.contents.get('allowBuilds', true)
+  if (!isMap(allowBuilds)) return { workspaceYaml, key: undefined }
+  const keyNode = document.createNode(exact)
+  keyNode.type = 'QUOTE_DOUBLE'
+  allowBuilds.set(keyNode, document.createNode(true))
+  const serialized = String(document)
   return {
-    workspaceYaml: `${workspaceYaml.slice(0, end)}${insertion}${workspaceYaml.slice(end)}`,
+    workspaceYaml: workspaceYaml.includes('\r\n')
+      ? serialized.replace(/\r?\n/gu, '\r\n')
+      : serialized,
     key: exact
   }
 }
@@ -285,7 +292,7 @@ async function approveGitPrepareRetry(profileDirectory, output) {
     if (error?.code === 'ENOENT') return undefined
     throw error
   }
-  const merged = mergeApprovedGitPrepareKey(workspaceYaml, output)
+  const merged = mergeApprovedGitPrepareKey(workspaceYaml, output, profileDirectory)
   if (merged.key === undefined) return undefined
   if (merged.workspaceYaml !== workspaceYaml) {
     await writeTextAtomically(workspacePath, merged.workspaceYaml)

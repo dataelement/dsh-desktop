@@ -1,5 +1,6 @@
 import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { parse } from 'yaml'
 import { profilePackageJsonPath } from './plugin-recovery'
 
 /**
@@ -18,15 +19,26 @@ import { profilePackageJsonPath } from './plugin-recovery'
  * store there keeps the two accounts of the same fact from drifting apart.
  */
 
+function parseModulesMetadata(raw: string): Record<string, unknown> | undefined {
+  for (const candidate of [raw, `{\n${raw}\n}`]) {
+    try {
+      const parsed: unknown = parse(candidate)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      // Fall back to wrapping comma-terminated JSON-in-YAML fragments.
+    }
+  }
+  return undefined
+}
+
 /** The store `node_modules` was linked from, as pnpm recorded it. */
 export async function recordedStoreDir(profileDirectory: string): Promise<string | undefined> {
   try {
     const raw = await readFile(join(profileDirectory, 'node_modules', '.modules.yaml'), 'utf8')
-    // pnpm writes this file as JSON-in-YAML, so the value arrives quoted and
-    // comma-terminated; older layouts write it bare.
-    const quoted = /^\s*"?storeDir"?\s*:\s*"([^"]+)"/mu.exec(raw)
-    const bare = /^\s*"?storeDir"?\s*:\s*([^"\s][^,\n]*?)\s*,?\s*$/mu.exec(raw)
-    const value = (quoted?.[1] ?? bare?.[1])?.trim()
+    const metadata = parseModulesMetadata(raw)
+    const value = typeof metadata?.storeDir === 'string' ? metadata.storeDir.trim() : ''
     return value ? value : undefined
   } catch {
     return undefined
