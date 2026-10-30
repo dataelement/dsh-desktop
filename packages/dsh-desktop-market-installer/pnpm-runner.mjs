@@ -27,6 +27,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync, watch } from 'node:fs'
 import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hideConsoleImportArguments } from './windows-hide-console.mjs'
@@ -122,6 +123,31 @@ async function writeTextAtomically(path, value) {
   }
 }
 
+let cachedYamlModule
+
+function loadYamlModule(profileDirectory) {
+  if (cachedYamlModule !== undefined) return cachedYamlModule
+  const anchors = [
+    import.meta.url,
+    process.env.DSH_DESKTOP_PNPM_RUNNER,
+    process.env.DSH_DESKTOP_PNPM_ENTRY,
+    process.argv[2],
+    profileDirectory ? join(profileDirectory, 'package.json') : undefined,
+    join(process.cwd(), 'package.json')
+  ]
+  for (const anchor of anchors) {
+    if (typeof anchor !== 'string' || anchor.length === 0) continue
+    try {
+      const require = createRequire(anchor)
+      cachedYamlModule = require('yaml')
+      return cachedYamlModule
+    } catch {
+      // Try the next resolution anchor when running from a staged .desktop-bin copy.
+    }
+  }
+  throw new Error('Could not resolve the yaml package for pnpm lockfile projection isolation.')
+}
+
 /**
  * Remove generation-owned direct dependencies from pnpm's lockfile view.
  *
@@ -129,52 +155,49 @@ async function writeTextAtomically(path, value) {
  * package and snapshot sections are merely their transitive resolution, so
  * removing the importer mappings is both sufficient and lets pnpm prune the
  * stale legacy records as part of the operation it is already performing.
- * This intentionally handles the indentation-based YAML emitted by pnpm
- * without making the staged runner depend on an application-local module.
  */
-function removeProjectedLockfileImporters(text, pluginNames) {
+export function removeProjectedLockfileImporters(text, pluginNames, profileDirectory) {
   const names = new Set(pluginNames)
   if (names.size === 0) return text
-  const lines = text.split(/(?<=\n)/u)
-  let inImporters = false
-  let changed = false
-  const output = []
-
-  for (let index = 0; index < lines.length;) {
-    const line = lines[index]
-    const topLevel = /^[^\s#][^:]*:/u.test(line)
-    if (topLevel) inImporters = /^importers:\s*(?:#.*)?(?:\r?\n)?$/u.test(line)
-
-    if (!inImporters) {
-      output.push(line)
-      index += 1
-      continue
-    }
-
-    const match = /^(\s+)(?:'([^']+)'|"([^"]+)"|([^\s:#][^:]*)):\s*(?:#.*)?(?:\r?\n)?$/u.exec(line)
-    const name = match?.[2] ?? match?.[3] ?? match?.[4]
-    if (match === null || name === undefined || !names.has(name)) {
-      output.push(line)
-      index += 1
-      continue
-    }
-
-    const indent = match[1].length
-    index += 1
-    while (index < lines.length) {
-      const next = lines[index]
-      if (next.trim() === '' || next.trimStart().startsWith('#')) {
-        index += 1
-        continue
-      }
-      const nextIndent = /^\s*/u.exec(next)?.[0].length ?? 0
-      if (nextIndent <= indent) break
-      index += 1
-    }
-    changed = true
+  const { isMap, isScalar, parseDocument } = loadYamlModule(profileDirectory)
+  let document
+  try {
+    document = parseDocument(text)
+  } catch {
+    return text
+  }
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    return text
   }
 
-  return changed ? output.join('') : text
+  const importers = document.contents.get('importers', true)
+  if (!isMap(importers)) return text
+
+  let changed = false
+  for (const importerPair of importers.items) {
+    const importer = importerPair.value
+    if (!isMap(importer)) continue
+
+    for (let index = importer.items.length - 1; index >= 0; index -= 1) {
+      const entry = importer.items[index]
+      const key = isScalar(entry?.key) ? String(entry.key.value) : undefined
+      if (key !== undefined && names.has(key)) {
+        importer.items.splice(index, 1)
+        changed = true
+        continue
+      }
+      if (!isMap(entry?.value)) continue
+      for (const name of names) {
+        if (entry.value.delete(name)) {
+          changed = true
+        }
+      }
+    }
+  }
+
+  if (!changed) return text
+  const serialized = String(document)
+  return text.includes('\r\n') ? serialized.replace(/\r?\n/gu, '\r\n') : serialized
 }
 
 async function removeGenerationLockfileEntries(profileDirectory, pluginNames) {
@@ -186,7 +209,7 @@ async function removeGenerationLockfileEntries(profileDirectory, pluginNames) {
     if (error?.code === 'ENOENT') return false
     throw error
   }
-  const updated = removeProjectedLockfileImporters(text, pluginNames)
+  const updated = removeProjectedLockfileImporters(text, pluginNames, profileDirectory)
   if (updated === text) return false
   await writeTextAtomically(lockfilePath, updated)
   return true

@@ -11,6 +11,7 @@ import {
   gitPrepareApprovalKey,
   lockedRenameTarget,
   mergeApprovedGitPrepareKey,
+  removeProjectedLockfileImporters,
   runWithLockRecovery,
   sidelinePath,
   suspendGenerationProjectionForPnpm
@@ -200,6 +201,43 @@ describe('packaged pnpm runner', () => {
     } finally {
       await rm(profile, { recursive: true, force: true })
     }
+  })
+
+  it('prunes projected importer entries through the YAML AST while preserving CRLF and packages', () => {
+    const lockfile = [
+      "lockfileVersion: '9.0'",
+      '',
+      'importers:',
+      '  .:',
+      '    dependencies:',
+      "      '@scope/generation-plugin': { specifier: 1.0.0, version: 1.0.0 }",
+      '      shared-plugin:',
+      '        specifier: 2.0.0',
+      '        version: 2.0.0',
+      '    optionalDependencies:',
+      '      optional-generation-plugin:',
+      '        specifier: ^3.0.0',
+      '        version: 3.0.0',
+      '',
+      'packages:',
+      "  '@scope/generation-plugin@1.0.0':",
+      '    resolution: {integrity: sha512-example}',
+      ''
+    ].join('\r\n')
+
+    const updated = removeProjectedLockfileImporters(lockfile, [
+      '@scope/generation-plugin',
+      'optional-generation-plugin'
+    ])
+    expect(updated).toContain('\r\n')
+    expect(updated).not.toContain('specifier: 1.0.0')
+    expect(updated).not.toContain('optional-generation-plugin')
+    expect(updated).toContain('shared-plugin:')
+    expect(updated).toContain("'@scope/generation-plugin@1.0.0':")
+
+    expect(removeProjectedLockfileImporters(lockfile, ['absent-plugin'])).toBe(lockfile)
+    const malformed = 'importers:\n  .:\n    dependencies: [\n'
+    expect(removeProjectedLockfileImporters(malformed, ['generation-plugin'])).toBe(malformed)
   })
 
   it('restores generation-owned fields after pnpm fails', async () => {
