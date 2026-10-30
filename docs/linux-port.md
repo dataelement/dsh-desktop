@@ -263,9 +263,17 @@ modified.
   native keyboard bridge described below.
 - **macOS-only recovery** — LaunchAgent auditing and quarantine — stays inert:
   both entry points return early on non-macOS platforms.
-- **Directory picker, phone pairing, safe mode, plugin recovery, PPT mode, and
-  workbenches** are platform-agnostic and work unchanged. `cloudflared` already
-  has Linux x64/arm64 download entries for the optional public tunnel.
+- **Office authoring and PPT preview do not ship.** Harness 0.2.1 added an
+  Office/Python runtime whose `scripts/office-runtime/lock.json` covers only
+  `win-x64`, `mac-arm64` and `mac-x64`, and its preview step resolves a
+  LibreOfficeKit native package that ships for macOS, Windows and wasm only. The
+  Linux build therefore skips `office:prepare`, the Office payload gate, the PPT
+  preview gate and the Office client's mode chips, and boots without those tools.
+  `packages/dsh-desktop-office/index.js` and `client.js` explain their Linux
+  early returns; the tests that need the Office payload do not run on Linux.
+- **Directory picker, phone pairing, safe mode, plugin recovery, and workbenches**
+  are platform-agnostic and work unchanged. `cloudflared` already has Linux
+  x64/arm64 download entries for the optional public tunnel.
 
 ## The frontend on Linux
 
@@ -332,9 +340,9 @@ pixels, unchanged after 1.5s, 3 of 3 runs), and a 60px drag still moved the colu
 from `924px` to `764px`.
 
 That change lives in
-`patches/@deepseek-ai+dsh-client-ui-conversation+0.1.7-rc.2.patch` beside the Linux
-header geometry, because the defect is upstream rather than Linux-specific — the
-Windows build has it too — and `npm ci` replays it.
+`patches/@deepseek-ai+dsh-client-ui-conversation+0.2.1-rc.3.patch`, because the
+defect is upstream rather than Linux-specific — the Windows build has it too — and
+`npm ci` replays it.
 `test/conversation-width-handle-hover.test.ts` runs the pointermove handler that
 ships in the installed package, so the regression returns if the patch stops being
 applied.
@@ -386,11 +394,10 @@ false` for that platform only — and draws the controls itself:
 | Drag | the bands upstream marks `data-window-drag` (the conversation header, the sidebar's logo row and the plugin-manager headers); their interactive elements are switched back to `no-drag` |
 | Room | only the bands the controls can reach reserve `BAND_CLEARANCE` on their right, so a page's own header actions cannot end up under the controls. Two bands are excluded: the sidebar's logo row, which sits at the opposite edge and whose padding squeezed the brand lockup and pulled its collapse button across the column, and the right sidebar's own band, which leaves the caption row entirely (below) |
 
-The session actions that used to share the title row — open in file manager, the
-⋯ menu and the right-sidebar toggle — move down to the tab row, which is the one
-change this makes to upstream's own layout: the conversation patch adds Linux-only
-rules pinning `.wSkVaW_headerUtilities` and `.wSkVaW_headerCorner` beside the
-Conversation/Trajectory tabs.
+The session actions stay where Harness 0.2.1 draws them: its header is already a
+`data-window-drag` band, and the preload's `BAND_CLEARANCE` keeps the band's own
+actions left of the window controls. The conversation bundle carries no Linux
+rules; the port no longer patches its CSS.
 
 The right sidebar's own band is the second one that leaves the caption. Upstream
 draws its tabs and its split/fullscreen/collapse actions on the caption row — one
@@ -636,12 +643,12 @@ document.getElementById('dsh-desktop-linux-window-controls').getBoundingClientRe
 document.querySelector('[class*=wSkVaW_headerUtilities]').getBoundingClientRect()
 ```
 
-Measured that way in a session: the controls at y8–40 (the title row) and both
-`headerUtilities` and `headerCorner` at y50 (the tab row, beside 对话/轨迹); on the
-plugins page 刷新 and 添加插件 sit left of the controls rather than under them.
-Keep the window shown and settled before trusting these numbers — a hidden or
-just-resized Wayland window reports its content bounds out of step for a moment,
-which is easy to misread as a leftover titlebar.
+Measured on Harness 0.2.1 in a 1368×900 window: the controls occupy `1268,8` →
+`1368,40`, and on the plugins page the page band is `350,0` → `1310,108` with a
+`120px` right padding, so 添加插件 sits at `1053,56` → `1158,88`, left of the
+controls. Keep the window shown and settled before trusting these numbers — a
+hidden or just-resized Wayland window reports its content bounds out of step for a
+moment, which is easy to misread as a leftover titlebar.
 
 Packaged icons are read back out of the artifacts, because that is where both
 failures lived — a source image that was not an app icon, and a directory name
