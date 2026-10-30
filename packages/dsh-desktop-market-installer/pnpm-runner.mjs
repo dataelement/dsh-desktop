@@ -27,6 +27,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync, watch } from 'node:fs'
 import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hideConsoleImportArguments } from './windows-hide-console.mjs'
@@ -96,7 +97,6 @@ function delay(milliseconds) {
 const PROJECTION_VERSION = 1
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/iu
 const GIT_PREPARE_KEY_PATTERN = /^(?<name>(?:@[A-Za-z0-9-~][A-Za-z0-9._~-]*\/)?[A-Za-z0-9-~][A-Za-z0-9._~-]*)@git\+ssh:\/\/git@github\.com\/(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)\.git#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
-const ALLOW_BUILDS_BLOCK_PATTERN = /allowBuilds:[ \t]*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)*)/gu
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -122,21 +122,106 @@ async function writeTextAtomically(path, value) {
   }
 }
 
-function buildApprovalValues(workspaceYaml) {
-  const values = new Map()
-  for (const block of workspaceYaml.matchAll(ALLOW_BUILDS_BLOCK_PATTERN)) {
-    for (const line of block[1].split(/\r?\n/u)) {
-      const match = /^[ \t]+(\S.*?)\s*:\s*(true|false)\s*$/u.exec(line)
-      if (match === null) continue
-      let key = match[1]
-      if (
-        key.length >= 2 &&
-        ((key.startsWith("'") && key.endsWith("'")) ||
-          (key.startsWith('"') && key.endsWith('"')))
-      ) {
-        key = key.slice(1, -1)
+let cachedYamlModule
+
+function loadYamlModule(profileDirectory) {
+  if (cachedYamlModule !== undefined) return cachedYamlModule
+  const anchors = [
+    import.meta.url,
+    process.env.DSH_DESKTOP_PNPM_RUNNER,
+    process.env.DSH_DESKTOP_PNPM_ENTRY,
+    process.argv[2],
+    profileDirectory ? join(profileDirectory, 'package.json') : undefined,
+    join(process.cwd(), 'package.json')
+  ]
+  for (const anchor of anchors) {
+    if (typeof anchor !== 'string' || anchor.length === 0) continue
+    try {
+      const require = createRequire(anchor)
+      cachedYamlModule = require('yaml')
+      return cachedYamlModule
+    } catch {
+      // Try the next resolution anchor when running from a staged .desktop-bin copy.
+    }
+  }
+  throw new Error('Could not resolve the yaml package for pnpm lockfile projection isolation.')
+}
+
+/**
+ * Remove generation-owned direct dependencies from pnpm's lockfile view.
+ *
+ * pnpm derives the roots it owns from an importer's dependency mappings. The
+ * package and snapshot sections are merely their transitive resolution, so
+ * removing the importer mappings is both sufficient and lets pnpm prune the
+ * stale legacy records as part of the operation it is already performing.
+ */
+export function removeProjectedLockfileImporters(text, pluginNames, profileDirectory) {
+  const names = new Set(pluginNames)
+  if (names.size === 0) return text
+  const { isMap, isScalar, parseDocument } = loadYamlModule(profileDirectory)
+  let document
+  try {
+    document = parseDocument(text)
+  } catch {
+    return text
+  }
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    return text
+  }
+
+  const importers = document.contents.get('importers', true)
+  if (!isMap(importers)) return text
+
+  let changed = false
+  for (const importerPair of importers.items) {
+    const importer = importerPair.value
+    if (!isMap(importer)) continue
+
+    for (let index = importer.items.length - 1; index >= 0; index -= 1) {
+      const entry = importer.items[index]
+      const key = isScalar(entry?.key) ? String(entry.key.value) : undefined
+      if (key !== undefined && names.has(key)) {
+        importer.items.splice(index, 1)
+        changed = true
+        continue
       }
-      values.set(key, match[2] === 'true')
+      if (!isMap(entry?.value)) continue
+      for (const name of names) {
+        if (entry.value.delete(name)) {
+          changed = true
+        }
+      }
+    }
+  }
+
+  if (!changed) return text
+  const serialized = String(document)
+  return text.includes('\r\n') ? serialized.replace(/\r?\n/gu, '\r\n') : serialized
+}
+
+async function removeGenerationLockfileEntries(profileDirectory, pluginNames) {
+  const lockfilePath = join(profileDirectory, 'pnpm-lock.yaml')
+  let text
+  try {
+    text = await readFile(lockfilePath, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+  const updated = removeProjectedLockfileImporters(text, pluginNames, profileDirectory)
+  if (updated === text) return false
+  await writeTextAtomically(lockfilePath, updated)
+  return true
+}
+
+function buildApprovalValues(document, isMap, isScalar) {
+  const values = new Map()
+  for (const pair of document.contents.items) {
+    if (!isScalar(pair.key) || pair.key.value !== 'allowBuilds' || !isMap(pair.value)) continue
+    for (const entry of pair.value.items) {
+      if (!isScalar(entry.key) || !isScalar(entry.value)) continue
+      if (typeof entry.value.value !== 'boolean') continue
+      values.set(String(entry.key.value), entry.value.value)
     }
   }
   return values
@@ -156,13 +241,26 @@ export function gitPrepareApprovalKey(output) {
  * the user's existing decision into the spelling bundled pnpm 10 consumes;
  * it never broadens an approval to another source.
  */
-export function mergeApprovedGitPrepareKey(workspaceYaml, output) {
+export function mergeApprovedGitPrepareKey(workspaceYaml, output, profileDirectory) {
   const exact = gitPrepareApprovalKey(output)
   if (exact === undefined) return { workspaceYaml, key: undefined }
   const parsed = GIT_PREPARE_KEY_PATTERN.exec(exact)
   if (parsed?.groups === undefined) return { workspaceYaml, key: undefined }
   const { name, owner, repo, sha } = parsed.groups
-  const values = buildApprovalValues(workspaceYaml)
+  const { isMap, isScalar, parseDocument } = loadYamlModule(profileDirectory)
+  let document
+  try {
+    document = parseDocument(workspaceYaml)
+  } catch {
+    return { workspaceYaml, key: undefined }
+  }
+  if (document.errors.every((error) => error.code === 'BAD_SCALAR_START')) {
+    document.errors.length = 0
+  }
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    return { workspaceYaml, key: undefined }
+  }
+  const values = buildApprovalValues(document, isMap, isScalar)
   if (values.get(exact) === false) return { workspaceYaml, key: undefined }
   if (values.get(exact) === true) return { workspaceYaml, key: exact }
   const stable = `${name}@git+https://github.com/${owner}/${repo}.git`
@@ -171,14 +269,16 @@ export function mergeApprovedGitPrepareKey(workspaceYaml, output) {
     return { workspaceYaml, key: undefined }
   }
 
-  const block = ALLOW_BUILDS_BLOCK_PATTERN.exec(workspaceYaml)
-  ALLOW_BUILDS_BLOCK_PATTERN.lastIndex = 0
-  if (block === null || block.index === undefined) return { workspaceYaml, key: undefined }
-  const eol = workspaceYaml.includes('\r\n') ? '\r\n' : '\n'
-  const insertion = `${block[0].endsWith('\n') ? '' : eol}  ${JSON.stringify(exact)}: true${eol}`
-  const end = block.index + block[0].length
+  const allowBuilds = document.contents.get('allowBuilds', true)
+  if (!isMap(allowBuilds)) return { workspaceYaml, key: undefined }
+  const keyNode = document.createNode(exact)
+  keyNode.type = 'QUOTE_DOUBLE'
+  allowBuilds.set(keyNode, document.createNode(true))
+  const serialized = String(document)
   return {
-    workspaceYaml: `${workspaceYaml.slice(0, end)}${insertion}${workspaceYaml.slice(end)}`,
+    workspaceYaml: workspaceYaml.includes('\r\n')
+      ? serialized.replace(/\r?\n/gu, '\r\n')
+      : serialized,
     key: exact
   }
 }
@@ -192,7 +292,7 @@ async function approveGitPrepareRetry(profileDirectory, output) {
     if (error?.code === 'ENOENT') return undefined
     throw error
   }
-  const merged = mergeApprovedGitPrepareKey(workspaceYaml, output)
+  const merged = mergeApprovedGitPrepareKey(workspaceYaml, output, profileDirectory)
   if (merged.key === undefined) return undefined
   if (merged.workspaceYaml !== workspaceYaml) {
     await writeTextAtomically(workspacePath, merged.workspaceYaml)
@@ -273,6 +373,7 @@ export async function suspendGenerationProjectionForPnpm(profileDirectory) {
   if (Object.keys(pnpm).length > 0) manifest.pnpm = pnpm
   else delete manifest.pnpm
   await writeJsonAtomically(manifestPath, manifest)
+  await removeGenerationLockfileEntries(profileDirectory, projectedPlugins)
 
   let restored = false
   return {
