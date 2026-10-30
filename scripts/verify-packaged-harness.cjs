@@ -148,7 +148,9 @@ async function verifyPackagedHarness(context) {
   const resources = context.electronPlatformName === 'darwin' ? path.join(contents, 'Resources') : path.join(context.appOutDir, 'resources')
   const executable = context.electronPlatformName === 'darwin'
     ? path.join(contents, 'Frameworks', `${product} Helper.app`, 'Contents', 'MacOS', `${product} Helper`)
-    : path.join(context.appOutDir, `${product}.exe`)
+    : process.platform === 'win32'
+      ? path.join(context.appOutDir, `${product}.exe`)
+      : path.join(context.appOutDir, product)
   try {
     const { stdout, stderr } = await promisify(execFile)(executable, [__filename, '--verify-runtime', path.join(resources, 'app.asar'), resources, executable], {
       cwd: context.appOutDir, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
