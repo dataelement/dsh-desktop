@@ -13,9 +13,14 @@ const require = createRequire(import.meta.url)
 const project = resolve(import.meta.dirname, '../..')
 const lock = JSON.parse(await readFile(new URL('./lock.json', import.meta.url), 'utf8'))
 
-export function officeTarget(platform = process.platform, arch = process.arch) {
+export function officeTargetOrNull(platform = process.platform, arch = process.arch) {
   const target = `${platform === 'darwin' ? 'mac' : platform === 'win32' ? 'win' : platform}-${arch}`
-  if (!Object.hasOwn(lock.targets, target)) throw new Error(`Office runtime: unsupported native target ${platform}/${arch}`)
+  return Object.hasOwn(lock.targets, target) ? target : null
+}
+
+export function officeTarget(platform = process.platform, arch = process.arch) {
+  const target = officeTargetOrNull(platform, arch)
+  if (target === null) throw new Error(`Office runtime: unsupported native target ${platform}/${arch}`)
   return target
 }
 
@@ -158,4 +163,14 @@ export async function prepareOfficeRuntime({ target = officeTarget(), output = j
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await prepareOfficeRuntime()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const target = officeTargetOrNull()
+  if (target === null) {
+    // The lock only carries macOS and Windows payloads. Linux builds ship the
+    // same tree without the Office authoring runtime; docs/linux-port.md
+    // records the resulting gap.
+    console.log(`Office runtime: skipped on ${process.platform}/${process.arch}; no payload in lock.json`)
+  } else {
+    await prepareOfficeRuntime({ target })
+  }
+}

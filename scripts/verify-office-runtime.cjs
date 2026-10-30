@@ -35,6 +35,12 @@ async function verifyOfficeRuntime(resources, executable, smokeScript = path.joi
 }
 
 async function afterPack(context) {
+  // lock.json carries no Linux payload, so there is nothing to gate there; the
+  // Linux packaging gap is recorded in docs/linux-port.md.
+  if (process.platform === 'linux') {
+    console.log('Office runtime: not shipped on Linux; skipping the payload gate')
+    return
+  }
   const product = context.packager.appInfo.productFilename
   const contents = path.join(context.appOutDir, `${product}.app`, 'Contents')
   const resources = process.platform === 'darwin' ? path.join(contents, 'Resources') : path.join(context.appOutDir, 'resources')
