@@ -61,6 +61,8 @@ describe('Feishu release notes pipeline', () => {
       })
 
       expect(output).toContain("You are DSH Desktop's Release Bot.")
+      expect(output).toContain('Harness adaptation or upgrades are a user-facing exception')
+      expect(output).toContain('Omit this theme without evidence.')
       expect(output).toContain('## DSH Desktop v0.4.0 Release Note')
       expect(output).toContain('📢 大家可以直接在客户端中更新。')
       expect(output).toContain('📢 You can update directly from the DSH Desktop app.')

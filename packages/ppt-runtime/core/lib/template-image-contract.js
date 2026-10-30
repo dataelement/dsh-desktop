@@ -64,6 +64,7 @@ export function remapImageContract(contract, names, elements) {
 export function readPptxImageContracts(bytes) {
   let total = 0;
   const parts = unzipSync(bytes, { filter(entry) {
+    const name = entry.name.replaceAll('\\', '/');
     if (!/^ppt\/(?:slides\/_rels\/slide\d+\.xml\.rels|notesSlides\/notesSlide\d+\.xml)$/.test(entry.name)) return false;
     total += entry.originalSize;
     if (entry.originalSize > 256 * 1024 || total > 4 * 1024 * 1024) fail('备注数据超过大小限制');
@@ -77,7 +78,8 @@ export function readPptxImageContracts(bytes) {
     try { dom = new JSDOM(source, { contentType: 'application/xml' }); return visit(dom.window.document); }
     finally { dom?.window.close(); }
   };
-  for (const [name, data] of Object.entries(parts)) {
+  for (const [rawName, data] of Object.entries(parts)) {
+    const name = rawName.replaceAll('\\', '/');
     if (!name.endsWith('.rels')) continue;
     const rels = xml(data, doc => [...doc.getElementsByTagNameNS('*', 'Relationship')].filter(r => r.getAttribute('Type')?.endsWith('/notesSlide')).map(r => ({ target: r.getAttribute('Target'), mode: r.getAttribute('TargetMode') })));
     if (rels.length > 1) fail('每页需要唯一备注关系');

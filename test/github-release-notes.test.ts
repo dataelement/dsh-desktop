@@ -22,23 +22,35 @@ async function work(): Promise<string> {
 
 const run = (args: string[]) => execFile('python3', [script, ...args], { cwd: projectRoot, timeout: 20_000 })
 
-const VALID = `# DSH Desktop v9.9.9 — 测试主题
+const VALID = `[中文](#cn-9.9.9) | [English](#en-9.9.9)
 
-## 更新内容
+本版本汇总了自上个版本以来的主要改动。
 
-### 分组一
+<h3 id="cn-9.9.9">新增功能</h3>
 
 - 一条面向用户的改进。
 
-## 说明
+### 问题修复
 
-- 客户端内可直接更新。
+- 修复了若干稳定性问题。
+
+---
+
+This release summarizes key changes since the previous version.
+
+<h3 id="en-9.9.9">Features</h3>
+
+- A user-facing improvement.
+
+### Bug Fixes
+
+- Fixed multiple stability issues.
 `
 
 describe('github_release_notes build-prompt', () => {
   // Reading repository history and generating diffs can exceed the default
   // five seconds on native Intel CI. Keep the subprocess independently bounded.
-  it('emits the evidence blocks, the style reference, and the Chinese contract', { timeout: 30_000 }, async () => {
+  it('emits the evidence blocks, the style reference, and the bilingual contract', { timeout: 30_000 }, async () => {
     const dir = await work()
     const out = path.join(dir, 'prompt.txt')
     await run(['build-prompt', '--tag', 'v9.9.9', '--output', out])
@@ -46,31 +58,29 @@ describe('github_release_notes build-prompt', () => {
     for (const tag of ['<commit-details>', '<diff-statistics>', '<code-diff>', '<style-reference>']) {
       expect(prompt).toContain(tag)
     }
-    expect(prompt).toContain('# DSH Desktop v9.9.9 — ')
-    expect(prompt).toContain('## 更新内容')
-    expect(prompt).toContain('## 问题修复')
-    expect(prompt).toContain('## 升级说明')
-    expect(prompt).toContain('## 说明')
+    expect(prompt).toContain('[中文](#cn-9.9.9) | [English](#en-9.9.9)')
+    expect(prompt).toContain('新增功能')
+    expect(prompt).toContain('Features')
   })
 })
 
 describe('github_release_notes validate', () => {
-  it('accepts a well-formed Chinese note', async () => {
+  it('accepts a well-formed bilingual note', async () => {
     const dir = await work()
     const file = path.join(dir, 'n.md')
     await writeFile(file, VALID, 'utf8')
     await expect(run(['validate', '--tag', 'v9.9.9', '--input', file])).resolves.toBeDefined()
   })
 
-  it('rejects a wrong title prefix, a stray H2, a link, an empty file, and shell-only notes', async () => {
+  it('rejects missing navigation, missing divider, external links, empty files, and single-language notes', async () => {
     const dir = await work()
     const cases: Record<string, string> = {
-      'bad-title.md': VALID.replace('# DSH Desktop v9.9.9 — 测试主题', '# Something else'),
-      'stray-h2.md': `${VALID}\n## 内部重构\n\n- x\n`,
-      'link.md': VALID.replace('一条面向用户的改进。', '见 https://github.com/x/y/pull/1'),
+      'no-nav.md': VALID.replace('[中文](#cn-9.9.9) | [English](#en-9.9.9)', ''),
+      'no-divider.md': VALID.replace('---', ''),
+      'external-link.md': VALID.replace('一条面向用户的改进。', '见 https://github.com/x/y/pull/1'),
       'empty.md': '',
-      'title-only-shell.md': '# DSH Desktop v9.9.9 — 版本更新\n',
-      'no-h2.md': '# DSH Desktop v9.9.9 — 测试主题\n\n- 仅有正文无分类标题\n'
+      'cn-only.md': VALID.slice(0, VALID.indexOf('---')),
+      'en-only.md': `[中文](#cn-9.9.9) | [English](#en-9.9.9)\n---\n` + VALID.slice(VALID.indexOf('---') + 3)
     }
     for (const [name, body] of Object.entries(cases)) {
       const file = path.join(dir, name)
@@ -81,14 +91,14 @@ describe('github_release_notes validate', () => {
 })
 
 describe('github_release_notes generate-fallback', () => {
-  it('produces a note that passes validate and starts with the contract title', { timeout: 30_000 }, async () => {
+  it('produces a bilingual note that passes validate and starts with the navigation bar', { timeout: 30_000 }, async () => {
     const dir = await work()
     const file = path.join(dir, 'fb.md')
     await run(['generate-fallback', '--tag', 'v9.9.9', '--output', file])
     const body = await readFile(file, 'utf8')
-    expect(body.startsWith('# DSH Desktop v9.9.9 — ')).toBe(true)
-    // A fixes-only branch legitimately emits 问题修复 without 更新内容.
-    expect(body).toMatch(/^## (更新内容|问题修复)$/m)
+    expect(body.startsWith('[中文](#cn-9.9.9) | [English](#en-9.9.9)')).toBe(true)
+    expect(body).toContain('---')
+    expect(body).toContain('Features')
     await expect(run(['validate', '--tag', 'v9.9.9', '--input', file])).resolves.toBeDefined()
   })
 })

@@ -31,7 +31,8 @@ export interface GenerationInstallOptions {
   onTrace?: (line: string) => void
   onOutput?: (chunk: string) => void
   registerChild?: (child: ChildProcess) => void
-  runInstall?: (stagingDir: string) => Promise<{ code: number; output: string }>
+  /** A second phase fills providers from the staged manifest using the existing lock. */
+  runInstall?: (stagingDir: string, phase?: 'peers') => Promise<{ code: number; output: string }>
 }
 
 export interface GenerationInstallResult {
@@ -45,6 +46,21 @@ export function installGeneration(
   options: GenerationInstallOptions
 ): Promise<GenerationInstallResult>
 
+export function installPnpmArguments(
+  options: Pick<
+    GenerationInstallOptions,
+    | 'pnpmEntryPath'
+    | 'pluginSpec'
+    | 'registry'
+    | 'autoInstallPeers'
+    | 'strictDepBuilds'
+    | 'minimumReleaseAge'
+    | 'environment'
+  > & { installPhase?: 'peers' },
+  env?: NodeJS.ProcessEnv,
+  platform?: NodeJS.Platform
+): string[]
+
 export function generationBuildApprovals(workspaceYaml: string): string[]
 
 export function pinnedGitBuildApproval(
@@ -55,5 +71,6 @@ export function pinnedGitBuildApproval(
 
 export function verifyGenerationPeers(
   dshHome: string,
-  generation: Generation
+  generation: Generation,
+  options?: { dshEntryPath?: string }
 ): Promise<{ ok: boolean; problems: string[] }>

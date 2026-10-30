@@ -6,8 +6,7 @@ DSH Desktop exchanges custom Agent presets as `.dshpreset` files. A package is a
 manifest.json
 preset/
 ├── agent.cordis.yml
-├── preset.yml            # optional
-└── skills, plugins, and other preset-owned assets
+└── preset.yml            # display metadata
 ```
 
 `manifest.json` currently uses format version 1:
@@ -24,11 +23,11 @@ preset/
 }
 ```
 
-Only custom presets can be exported. Duplicate a built-in preset first if it should be shared. Model-provider settings, API keys, credentials, sessions, and workspace files are not added by DSH Desktop; only files inside the preset directory are packaged.
+The settings page exports custom presets. The 0.1.7 registry supplies the declared plugin list and display metadata; the export does not include referenced skills, plugins, or other files. Review such references before sharing a package. Model-provider settings, API keys, credentials, sessions, and workspace files are not added.
 
-Import is a two-step operation. DSH Desktop first validates and previews the archive, then writes it only after confirmation. Existing preset identifiers are never overwritten: the user must choose a new identifier. Installation writes to a temporary directory, validates the resulting preset through the Harness preset scanner, and atomically moves it into the user preset root.
+Import is a two-step operation. DSH Desktop first validates and previews the archive, then writes it only after confirmation. Existing preset identifiers are never overwritten: the user must choose a new identifier. Installation writes to a temporary directory, validates the YAML plugin list, and atomically moves it into the legacy preset root. Desktop converts it to a 0.1.7 Profile entry at the next launch, so the new preset requires a restart. The original directory and a backup of existing legacy presets are retained.
 
-The importer rejects absolute archive paths, parent traversal, backslash-based paths, missing compositions, unsupported manifests, oversized packages, and invalid preset compositions. Export rejects symbolic links and unsupported filesystem entries. Common OS metadata such as `.DS_Store`, `Thumbs.db`, and `desktop.ini` is omitted.
+The importer rejects absolute archive paths, parent traversal, backslash-based paths, missing compositions, unsupported manifests, oversized packages, and invalid preset compositions. It retains extra files from older archives in the legacy directory, but the 0.1.7 Profile migration publishes the YAML plugin list only. Relative references to those extra files need review in the new Profile. Common OS metadata such as `.DS_Store`, `Thumbs.db`, and `desktop.ini` is omitted.
 
 Custom presets are executable configuration. Their compositions may load plugins and expose tools that run commands or access files with the Agent's permissions. Import packages only from trusted sources and review warnings about possible credentials, absolute paths, and DSH version differences.
 

@@ -36,11 +36,15 @@
       .column { display: flex; flex: 1 1 auto; flex-direction: column; width: min(100%, var(--page-max)); min-height: 0; margin-inline: auto; }
       .summary, .notice, .safety, .actions, .list-heading, .empty { flex-shrink: 0; }
       h1:empty { display:none; }
-      .summary { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.65; }
-      .notice { display: none; margin: 0 0 18px; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
+      .summary { margin: 0 0 10px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+      .notice { display: none; flex-shrink: 0; max-height: min(28vh, 220px); overflow: auto; margin: 0 0 14px; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
       .notice.error { color: var(--danger); background: rgba(195,59,56,.08); }
       .notice.success { color: var(--success); background: rgba(38,122,74,.09); }
       .notice.visible { display: block; }
+      .notice-details { margin-top: 5px; }
+      .notice-details summary { width: max-content; cursor: pointer; font-weight: 650; }
+      .notice-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      .notice-full { margin: 9px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
       .list-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; margin-top:18px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
       /* Same gap and padding as a plugin row, so the header checkbox sits over
          the row checkboxes and the caption over the plugin names. */
@@ -134,7 +138,13 @@
       </header>
       <section class="content">
        <div class="column">
-        <p class="notice" id="notice" role="alert"></p>
+        <div class="notice" id="notice" role="alert">
+          <span id="notice-preview"></span>
+          <details class="notice-details" id="notice-details" hidden>
+            <summary id="notice-details-label"></summary>
+            <pre class="notice-full" id="notice-full"></pre>
+          </details>
+        </div>
         <h1 id="heading"></h1>
         <p class="summary" id="summary"></p>
         <button class="agent-link" id="repair-agent" type="button"></button>
@@ -208,7 +218,7 @@
       document.documentElement.dataset.theme = params.get('theme') || 'system'
       document.title = `${model.badge || 'Safe Mode'} · ${model.brand || 'DSH Desktop'}`
       const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value || '' }
-      setText('page-title', model.locale === 'zh' ? '管理插件' : 'Manage plugins')
+      setText('page-title', model.locale === 'zh' ? '维修模式 · 安全模式' : 'Repair · Safe Mode')
       setText('heading', model.heading)
       setText('summary', model.summary)
       setText('empty', model.emptyMessage)
@@ -265,7 +275,13 @@
       setText('recovery-open', model.recoveryOpenLabel)
       const notice = document.getElementById('notice')
       if (model.notice) {
-        notice.textContent = model.notice
+        setText('notice-preview', model.noticeSummary || model.notice)
+        if (model.noticeSummary) {
+          const details = document.getElementById('notice-details')
+          details.hidden = false
+          setText('notice-details-label', model.locale === 'zh' ? '查看详细信息' : 'View details')
+          setText('notice-full', model.notice)
+        }
         notice.classList.add('visible', model.noticeTone === 'success' ? 'success' : 'error')
       }
       const list = document.getElementById('items')
@@ -281,37 +297,13 @@
         recoveryOpen.hidden = false
       }
       const syncUpgradeAll = () => {
-        const visible = Boolean(model.upgradeAllLabel) && model.upgradeReadyCount > 0 && model.recoveryLocked !== true
-        upgradeAll.hidden = !visible
-        if (visible) upgradeAll.textContent = model.upgradeAllLabel
+        // Safe Mode is a disable-and-verify fallback; upgrades belong to one-click repair.
+        upgradeAll.hidden = true
       }
       syncUpgradeAll()
       const pluginCheckboxes = []
       const issueCheckboxes = []
-      for (const group of Array.isArray(model.issueGroups) ? model.issueGroups : []) {
-        const item = document.createElement('li'); item.className = 'issue-group'
-        const label = document.createElement('label'); label.className = 'issue'
-        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(group.id); checkbox.dataset.issueIds = JSON.stringify(group.issueIds || [])
-        const main = document.createElement('span'); main.className = 'issue-main'
-        const title = document.createElement('span'); title.className = 'issue-title'
-        const name = document.createElement('span'); name.className = 'issue-name'; name.textContent = String(group.name)
-        const badge = document.createElement('span'); badge.className = 'issue-badge'; badge.textContent = String(group.severityLabel)
-        title.append(name, badge); main.appendChild(title)
-        const meta = document.createElement('div'); meta.className = 'issue-meta'; meta.textContent = [group.kindLabel, group.countLabel].filter(Boolean).join(' · '); main.appendChild(meta)
-        const action = document.createElement('div'); action.className = 'issue-action'; action.textContent = String(group.actionLabel || ''); main.appendChild(action)
-        if ((group.issueIds || []).length > 0) { label.appendChild(checkbox); issueCheckboxes.push(checkbox) }
-        label.appendChild(main); item.appendChild(label); list.appendChild(item)
-        const details = document.createElement('details'); details.className = 'issue-details'
-        const detailsSummary = document.createElement('summary'); detailsSummary.textContent = String(group.detailLabel || group.countLabel || '')
-        const findings = document.createElement('ul'); findings.className = 'findings'
-        for (const issue of Array.isArray(group.issues) ? group.issues : []) {
-          const finding = document.createElement('li'); finding.className = 'finding'
-          const findingName = document.createElement('div'); findingName.className = 'finding-name'; findingName.textContent = String(issue.packageName)
-          const findingDetail = document.createElement('div'); findingDetail.className = 'finding-detail'; findingDetail.textContent = [issue.kindLabel, issue.versionLabel, issue.detail].filter(Boolean).join(' · ')
-          finding.append(findingName, findingDetail); findings.appendChild(finding)
-        }
-        details.append(detailsSummary, findings); item.appendChild(details)
-      }
+      // Configuration repairs are selected by host policy; only plugin fallback controls appear here.
       let pluginItems = Array.isArray(model.pluginItems)
         ? model.pluginItems
         : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))
@@ -334,26 +326,7 @@
           else if (plugin.statusTone === 'success') status.classList.add('success')
           row.title.appendChild(status)
         }
-        if (row.upgradeBtn?.disabled) return
-        row.upgradeBtn?.remove()
-        row.upgradeBtn = undefined
-        if (plugin.upgradeButtonLabel) {
-          const upgradeBtn = document.createElement('button')
-          upgradeBtn.type = 'button'
-          upgradeBtn.className = 'plugin-upgrade-btn'
-          upgradeBtn.textContent = String(plugin.upgradeButtonLabel)
-          upgradeBtn.addEventListener('click', (e) => {
-            e.stopPropagation()
-            upgradeBtn.disabled = true
-            upgradeBtn.textContent = model.locale === 'zh' ? '正在升级…' : 'Upgrading…'
-            apply.disabled = true
-            if (upgradeAll) upgradeAll.disabled = true
-            restart.disabled = true
-            void window.dshSafeMode.action('upgrade', { plugins: [plugin.name] })
-          })
-          row.item.appendChild(upgradeBtn)
-          row.upgradeBtn = upgradeBtn
-        }
+
       }
       for (const plugin of pluginItems) {
         const item = document.createElement('li')
@@ -362,9 +335,10 @@
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin.name)
         const copy = document.createElement('span'); copy.className = 'plugin-copy'
         const title = document.createElement('span'); title.className = 'plugin-title'
-        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.name)
+        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.displayName || plugin.name)
         title.appendChild(name)
-        copy.append(title)
+        const action = document.createElement('span'); action.className = 'plugin-action'; action.textContent = String(plugin.actionLabel || '')
+        copy.append(title, action)
         // An already disabled plugin is not selectable for disabling again.
         if (plugin.disabled === true) label.append(copy)
         else label.append(checkbox, copy)
@@ -467,6 +441,8 @@
         : 'Not sure which plugin? Let the repair agent read the log →'
       repairAgent.addEventListener('click', () => {
         repairAgent.disabled = true
+        const agentBtn = document.getElementById('agent')
+        if (agentBtn) agentBtn.disabled = true
         void window.dshSafeMode.action('agent', { prompt: repairAgentPrompt })
       })
     </script>

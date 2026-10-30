@@ -1,7 +1,7 @@
 # 手机配对：按模式拆分（扫码即连 / 隧道 PIN）
 
-> 状态：已实现（2026-09-14）。  
-> 范围：把桌面「允许 / 拒绝」改成按连接模式授权；Cloudflare 保活；免费 Pinggy 过期体验做诚实。配对中转见文末附录，**不在本次实现**。  
+> 状态：已实现（2026-09-14）。
+> 范围：把桌面「允许 / 拒绝」改成按连接模式授权；Cloudflare 保活；免费 Pinggy 过期体验做诚实。配对中转见文末附录，**不在本次实现**。
 > 相关代码：[`src/main/mobile/lan-mobile-bridge.ts`](../src/main/mobile/lan-mobile-bridge.ts)、[`src/main/mobile/lan-mobile-pages.ts`](../src/main/mobile/lan-mobile-pages.ts)、[`src/main/index.ts`](../src/main/index.ts)。
 
 ## 1. 结论摘要
@@ -12,7 +12,7 @@ WiFi 与互联网隧道的风险不同，授权分开：
 - **互联网隧道**：公网 URL 可泄露，额外要求桌面生成并展示的 6 位 PIN。记住后重连只需在手机输入，不必回桌面点允许。
 - PIN 不写入二维码 URL，不进入 `snapshot()` / IPC。
 
-局域网重连**不能**凭 `/reconnect` 自动放行（同 Wi-Fi 知道端口即可闯入）。断开后请用户再次扫码。
+局域网重连**不能**凭匿名 `/reconnect` 自动放行（同 Wi-Fi 知道端口即可闯入）。同一部手机只能恢复本次桌面断开挂起的 `dsh_mobile`；自己构造的 cookie，或进程重启后的旧 cookie，都不行。清了站点数据或换了浏览器，仍要回到电脑前扫码。
 
 **Cloudflare** 是常态长连接路径（进程活着则域名不变）。**Pinggy** 是 Cloudflare 不可用者（如中国大陆）的一等备用，免费档约 60 分钟硬限制，本次只把过期体验做顺，**不承诺无感长连**。人不在电脑边、免费 Pinggy 换域名后的免扫恢复，只有独立中转或固定域名能解，见附录。
 
@@ -36,7 +36,7 @@ WiFi 与互联网隧道的风险不同，授权分开：
 因此「扫一次长期能用」只发生在 **地址没变 + 桌面进程还活着且 session 还在 + Cookie 还在**：
 
 - 同一手机、同一浏览器（或已加到主屏幕），桌面一直开着、没点断开 → **不用再扫**，和现在一样。
-- 桌面点了断开：WiFi 必须再扫（换新 token）；隧道若 **URL 没变**（书签 / 上次页面还在），只需输入同一个 PIN，不用扫。
+- 桌面点了断开：WiFi 下同一部手机、同一浏览器点「重新连接」即可恢复，不必人在电脑旁边；清了站点数据或换了浏览器仍要再扫。隧道若 **URL 没变**（书签 / 上次页面还在），只需输入同一个 PIN，不用扫。
 - 清了站点数据、换浏览器、换另一部手机 → 要重新找到地址：WiFi 再扫即连；隧道再扫然后输入原 PIN。
 - 换 Wi-Fi / 电脑 IP 变了 → 旧局域网地址失效，必须再扫。
 - **隧道有效期（已核对，与 Cookie 一年无关）**：
@@ -135,10 +135,10 @@ sequenceDiagram
 
 手机 App 每 1.5s 打 `/api/status`；**401**（服务端没有这条 session）→ 跳 `/disconnected` → 用户点「重新连接」→ `GET /reconnect`。401 的常见来源：桌面点了「断开」、或桌面进程重启（session 只在内存）。此时旧局域网 URL 往往还通，所以能走到这套页，而不是浏览器打不开。
 
-- **WiFi `GET /reconnect`**：提示「请再次扫描电脑上的二维码」，并 `onReconnectRequested()` 打开配对窗，**不发 Cookie**。同 Wi-Fi 知道端口就能打到 `/reconnect`，不能凭这个自动放行。
+- **WiFi `GET /reconnect`**：请求里的 `dsh_mobile` 只有命中「本次桌面断开」挂起的会话时，才恢复这一条并 302 `/`，不发新 Cookie，也不打开配对窗。未授权请求记下来的 cookie、进程重启后的旧 cookie 都不算。没有匹配时仍不放行，提示回电脑扫描新二维码，并 `onReconnectRequested()` 打开配对窗。同 Wi-Fi 知道端口就能打到 `/reconnect`，不能凭这个自动放行。多台手机各恢复自己的那一条。
 - **隧道 `GET /reconnect`**（旧隧道 URL 仍通）：直接 PIN 输入页，**不**自动弹窗。提供「在电脑上查看密码」再触发 `onReconnectRequested`。
 - **隧道主机已不可达**（Pinggy 到期换域名、Cloudflare 进程死了）：请求到不了 `/reconnect`，走断线页「远程地址已失效，请在电脑上扫描新二维码」，不要对死链接输 PIN。
-- `POST /pair/retry`：WiFi 引导重扫；隧道留在 PIN 页。
+- `POST /pair/retry`：WiFi 同样只恢复本次桌面断开挂起的那一条 cookie，对不上则引导重扫；隧道留在 PIN 页。
 
 **不会出现「再次扫码」的时机**：首次配对、会话还活着的日常使用、隧道 URL 没变只是要重新授权（走 PIN）。
 
@@ -183,7 +183,7 @@ pairingPinStore?: {
   - **未同意（默认）**：展示当前临时 PIN + 5 分钟倒计时，说明过期需重新扫码
   - `/desktop/tunnel/toggle` 的响应带上当前 `pairingPin` 与 `pinConsent`（仅 loopback）
 - `renderPairingWaitPage` 改为 `renderPairingPinPage`：仅隧道使用
-- 断开页：WiFi「再次扫码」；隧道仍可达「输入连接密码」；主机不可达「远程地址已失效，请在电脑上扫描新二维码」
+- 断开页：WiFi「重新连接」（同一部手机点下去即恢复；没有旧会话时说明需回电脑扫码）；隧道仍可达「输入连接密码」；主机不可达「远程地址已失效，请在电脑上扫描新二维码」
 - `renderMobilePage`：Pinggy 下显示剩余时间倒计时预警（不加换线按钮）
 - 桌面页：Cloudflare / Pinggy 进程退出时显示「远程连接已断开」。**仅当配对页仍开着**且是 Pinggy 时，本页调用 `/desktop/tunnel/toggle` 重开并刷新二维码。关窗后不重开、不弹窗。
 

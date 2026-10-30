@@ -13,14 +13,14 @@ function glyphWidth(character) {
 
 function measureRichText(runs, style, width, height) {
   // Wrapped lines reserve a small margin when choosing a break. A no-wrap line uses its full box.
-  const availableLineWidth = Math.max(0, width) * (style.wrap === false ? 1 : .95);
+  const availableLineWidth = Math.max(0, width) * (style.wrap === false || style.authored ? 1 : .95);
   const base = { ...style, fontSize: positive(style.fontSize, 18), lineHeight: positive(style.lineHeight, 1.15) };
   const characters = runs.flatMap(run => {
     const options = { ...base, ...run.options };
     options.fontSize = positive(options.fontSize, base.fontSize);
     return Array.from(run.text, character => ({ character, options }));
   });
-  const measure = chars => chars.reduce((sum, item, i) => sum + glyphWidth(item.character) * item.options.fontSize * (item.options.bold ? 1.04 : 1) + (i ? finite(item.options.letterSpacing) : 0), 0);
+  const measure = chars => chars.reduce((sum, item, i) => sum + glyphWidth(item.character) * item.options.fontSize * (item.options.bold && !style.authored ? 1.04 : 1) + (i ? finite(item.options.letterSpacing) : 0), 0);
   const lines = [];
   let current = [], offset = 0, emptyStyle = base, paragraphWidth = 0, widestLine = 0;
   const flush = (trim = false) => {

@@ -1,10 +1,10 @@
-import type { UpdateStatus } from '../shared/contracts'
+import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
 
 export type UpdateLocale = 'en' | 'zh'
 
-export function shouldShowUpdate(status: UpdateStatus): boolean {
+export function shouldShowUpdate(status: UpdateStatus, allowManualPresentation = true): boolean {
   if (['available', 'downloading', 'downloaded'].includes(status.phase)) return true
-  return status.manual && ['checking', 'up-to-date', 'error', 'unsupported'].includes(status.phase)
+  return allowManualPresentation && status.manual && ['checking', 'up-to-date', 'error', 'unsupported'].includes(status.phase)
 }
 
 export function isUpdateDismissed(
@@ -14,6 +14,15 @@ export function isUpdateDismissed(
 ): boolean {
   if (status.availableVersion) return status.availableVersion === dismissedVersion
   return status.phase === dismissedTransientPhase
+}
+
+/** A manual request may replay a cached update; progress keeps the same request ID. */
+export function isNewManualPresentation(status: UpdateStatus, previous?: UpdateStatus, delivery: 'event' | 'snapshot' = 'event'): boolean {
+  if (delivery === 'snapshot') return false
+  if (!status.manual) return false
+  if (!previous) return true
+  if (status.presentationId !== undefined) return status.presentationId !== previous.presentationId
+  return status.phase === 'checking' && previous.phase !== 'checking'
 }
 
 export interface UpdateHeadline {
@@ -49,7 +58,7 @@ export function updateHeadline(status: UpdateStatus, locale: UpdateLocale): Upda
       }
     case 'available':
       return {
-        title: zh ? '有可用更新' : 'Update available',
+        title: zh ? `检测到新版本 ${version}` : `New version ${version} available`,
         description: zh
           ? `${version} 已发布，同意后开始下载。`
           : `${version} is ready to download.`
@@ -125,4 +134,64 @@ export function updateMessage(status: UpdateStatus, locale: UpdateLocale): strin
     case 'idle':
       return ''
   }
+}
+
+/** Compare two dotted versions; prerelease sorts below its release. Mirrors
+ * `version-catalog.compareVersions` — a small duplication across the
+ * main/preload boundary, kept local so the preload bundle stays standalone.
+ * Keep the two implementations in lockstep, including the semver-style
+ * numeric prerelease comparison below ("rc.10" > "rc.9"). */
+export function comparePreloadVersions(a: string, b: string): number {
+  const parse = (value: string): [number[], string] => {
+    const [core = '', ...pre] = value.trim().split('-')
+    const nums = core.split('.').map((part) => Number.parseInt(part, 10) || 0)
+    while (nums.length < 3) nums.push(0)
+    return [nums, pre.join('-')]
+  }
+  const [an, ap] = parse(a)
+  const [bn, bp] = parse(b)
+  for (let i = 0; i < 3; i += 1) {
+    if ((an[i] ?? 0) !== (bn[i] ?? 0)) return (an[i] ?? 0) - (bn[i] ?? 0)
+  }
+  return comparePrerelease(ap, bp)
+}
+
+function comparePrerelease(left: string, right: string): number {
+  if (left === right) return 0
+  if (!left) return 1
+  if (!right) return -1
+  const l = left.split('.')
+  const r = right.split('.')
+  const length = Math.max(l.length, r.length)
+  for (let i = 0; i < length; i += 1) {
+    const x = l[i]
+    const y = r[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    if (x === y) continue
+    const xn = /^\d+$/.test(x)
+    const yn = /^\d+$/.test(y)
+    if (xn && yn) {
+      const nx = x.replace(/^0+/, '') || '0'
+      const ny = y.replace(/^0+/, '') || '0'
+      if (nx.length !== ny.length) return nx.length < ny.length ? -1 : 1
+      if (nx !== ny) return nx < ny ? -1 : 1
+      continue
+    }
+    if (xn) return -1
+    if (yn) return 1
+    if (x < y) return -1
+    if (x > y) return 1
+  }
+  return 0
+}
+
+/** The About picker only offers rollback, independent of the server catalogue shape. */
+export function rollbackReleases(releases: AvailableRelease[], currentVersion: string): AvailableRelease[] {
+  return releases.filter(release => comparePreloadVersions(release.version, currentVersion) < 0)
+    .sort((a, b) => comparePreloadVersions(b.version, a.version))
+}
+
+export function rollbackEmptyMessage(locale: UpdateLocale): string {
+  return locale === 'zh' ? '暂无可回退的历史版本' : 'No older versions available to roll back to'
 }

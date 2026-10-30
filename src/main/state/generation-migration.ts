@@ -9,6 +9,7 @@ import {
 import { projectGenerations } from 'dsh-desktop-market-installer/generations/projection'
 import { readDesired, writeDesired } from 'dsh-desktop-market-installer/generations/registry'
 import { resolveMarketRegistry } from 'dsh-desktop-market-installer/market-registry'
+import { packageCommandEnvironment } from '../runtime/profile-plugin-command'
 
 /**
  * One-time move of a profile that installed community plugins into the shared
@@ -79,6 +80,10 @@ interface MigrationDeps {
   dshHome: string
   nodeExecutablePath: string
   pnpmEntryPath: string
+  /** The packaged lock-recovery runner the `.desktop-bin` pnpm shim routes through. */
+  pnpmRunnerPath?: string
+  /** Windows console-hide bootstrap restored by the pnpm shim and passed to pnpm. */
+  hideConsoleBootstrapPath?: string
   dshEntryPath: string
   /** Rebuild the shared tree from the rewritten manifest (dshmarket only). */
   reinstallSharedTree: () => Promise<{ ok: boolean; detail?: string }>
@@ -107,10 +112,23 @@ async function profileManifest(dshHome: string): Promise<{
 
 async function communityPlugins(dshHome: string): Promise<string[]> {
   const manifest = await profileManifest(dshHome)
-  const names = new Set([
-    ...Object.keys(manifest.dependencies ?? {}),
-    ...(manifest.dsh?.profile?.bundles ?? [])
-  ])
+  const names = new Set(manifest.dsh?.profile?.bundles ?? [])
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    // Why per-package metadata: a plain runtime dependency (no dsh metadata, e.g. node-pty
+    // inherited from a CLI-managed profile) is not a profile plugin — migrating it would
+    // demand a bundle patch it can never have and freeze the whole migration (#708).
+    try {
+      const installed = JSON.parse(
+        await readFile(join(profileDir(dshHome), 'node_modules', name, 'package.json'), 'utf8')
+      )
+      if (installed && typeof installed === 'object' && 'dsh' in installed) {
+        names.add(name)
+      }
+    } catch {
+      // Missing or unreadable install metadata cannot prove plugin status; leave the
+      // package in the shared tree rather than freeze the migration on it.
+    }
+  }
   return [...names].filter((name) => !KEEP_IN_SHARED_TREE.has(name))
 }
 
@@ -511,7 +529,7 @@ async function rewriteManifest(dshHome: string): Promise<void> {
   for (const [name, spec] of Object.entries(snapshot.dependencies ?? {})) {
     if (KEEP_IN_SHARED_TREE.has(name)) keptDeps[name] = spec as string
   }
-  if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.45.1'
+  if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.66.47'
 
   // Bundles are left to projection, which runs next and knows the generations.
   // Here we only trim to the shared-tree packages and keep in-box bundles.
@@ -665,6 +683,13 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
   }
   try {
     const generationIds: string[] = []
+    const environment = await packageCommandEnvironment({
+      dshHome,
+      nodeExecutablePath: deps.nodeExecutablePath,
+      pnpmEntryPath: deps.pnpmEntryPath,
+      pnpmRunnerPath: deps.pnpmRunnerPath,
+      hideConsoleBootstrapPath: deps.hideConsoleBootstrapPath
+    })
     // Preflight every plugin while the working legacy profile is still intact.
     // Promoted generations are inert until desired.json moves, so a failure here
     // leaves startup on the exact tree that was already working.
@@ -677,6 +702,7 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
         sourceDirectory: plugin.sourceDirectory,
         nodeExecutablePath: deps.nodeExecutablePath,
         pnpmEntryPath: deps.pnpmEntryPath,
+        environment,
         // Registry-sourced plugins are re-fetched here; keep them on the
         // registry the market reads rather than on ~/.npmrc's (#337).
         registry: await resolveMarketRegistry({ profileDir: profileDir(dshHome) }),

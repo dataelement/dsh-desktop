@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "checks": [
+    {
+      "image": "pages/1.webp",
+      "region": [0.27, 0.06, 0.75, 0.105],
+      "darkMax": 90,
+      "minInkCoverage": 0.14,
+      "label": "完整会议标题的中文字形覆盖"
+    }
+  ]
+}

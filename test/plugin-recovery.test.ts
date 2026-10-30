@@ -10,7 +10,6 @@ import {
   profilePackageJsonPath,
   pruneMissingProfileBundles,
   pruneUnresolvableProfileBundles,
-  resetPluginProfile,
   resolveProfileRecoveryPlugins,
   uninstallPluginFromProfile
 } from '../src/main/state/plugin-recovery'
@@ -56,6 +55,7 @@ describe('plugin-recovery', () => {
         dependencies: {
           '@deepseek-ai/dsh-base': '0.1.0',
           dshmarket: '1.9.0',
+          'dsh-image-generation': '1.0.0',
           'plugin-a': '1.0.0',
           '@example/plugin-b': '2.0.0',
           'transitive-only': '3.0.0'
@@ -65,6 +65,7 @@ describe('plugin-recovery', () => {
             bundles: [
               '@deepseek-ai/dsh-base',
               'dshmarket',
+              'dsh-image-generation',
               'plugin-a',
               '@example/plugin-b'
             ]
@@ -74,6 +75,7 @@ describe('plugin-recovery', () => {
     )
 
     await expect(listInstalledProfilePlugins(testDir)).resolves.toEqual([
+      'dsh-image-generation',
       'plugin-a',
       '@example/plugin-b'
     ])
@@ -399,88 +401,6 @@ describe('plugin-recovery', () => {
     await expect(
       uninstallPluginFromProfile(testDir, 'partial-plugin', async () => true)
     ).resolves.toBe(false)
-  })
-
-  it('resets plugin profile by cleaning up specific failing plugin and related packages', async () => {
-    const pkgPath = profilePackageJsonPath(testDir)
-    const originalPkg = {
-      name: 'dsh-profile-web',
-      dependencies: {
-        '@linxin666/dsh-web-ui-all': '^0.2.2',
-        dshmarket: '1.9.0'
-      },
-      dsh: {
-        profile: {
-          bundles: [
-            '@deepseek-ai/dsh-base',
-            '@deepseek-ai/dsh-web-app',
-            'dshmarket',
-            '@linxin666/dsh-web-ui-all'
-          ]
-        }
-      }
-    }
-    await writeFile(pkgPath, JSON.stringify(originalPkg, null, 2))
-
-    const success = await resetPluginProfile(testDir, '@linxin666/dsh-client-ui-web-ui-settings')
-    expect(success).toBe(true)
-
-    const updatedPkg = JSON.parse(await readFile(pkgPath, 'utf8'))
-    expect(updatedPkg.dependencies).toEqual({
-      dshmarket: '1.9.0'
-    })
-    expect(updatedPkg.dsh.profile.bundles).toEqual([
-      '@deepseek-ai/dsh-base',
-      '@deepseek-ai/dsh-web-app',
-      'dshmarket'
-    ])
-  })
-
-  it('removes workspace packages and stale lockfile when resetting a plugin', async () => {
-    const pkgPath = profilePackageJsonPath(testDir)
-    const profileDir = join(testDir, 'profiles', 'web')
-    const workspacePkgDir = join(profileDir, 'packages', 'dsh-doudizhu')
-    const nodeModulesPkgDir = join(profileDir, 'node_modules', 'dsh-doudizhu')
-    const lockfilePath = join(profileDir, 'pnpm-lock.yaml')
-
-    await mkdir(workspacePkgDir, { recursive: true })
-    await mkdir(nodeModulesPkgDir, { recursive: true })
-    await writeFile(join(workspacePkgDir, 'package.json'), '{"name":"dsh-doudizhu"}')
-    await writeFile(join(nodeModulesPkgDir, 'package.json'), '{"name":"dsh-doudizhu"}')
-    await writeFile(lockfilePath, 'lockfileVersion: 9.0')
-    await writeFile(
-      pkgPath,
-      JSON.stringify({
-        dependencies: { 'dsh-doudizhu': 'workspace:^' },
-        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dsh-doudizhu'] } }
-      })
-    )
-
-    const success = await resetPluginProfile(testDir, 'dsh-doudizhu')
-    expect(success).toBe(true)
-    expect(existsSync(workspacePkgDir)).toBe(false)
-    expect(existsSync(nodeModulesPkgDir)).toBe(false)
-    expect(existsSync(lockfilePath)).toBe(false)
-  })
-
-  it('can remove one exact scoped plugin without touching an unselected sibling', async () => {
-    const pkgPath = profilePackageJsonPath(testDir)
-    await writeFile(
-      pkgPath,
-      JSON.stringify({
-        dependencies: {
-          '@example/plugin-a': '1.0.0',
-          '@example/plugin-b': '1.0.0'
-        },
-        dsh: { profile: { bundles: ['@example/plugin-a', '@example/plugin-b'] } }
-      })
-    )
-
-    const success = await resetPluginProfile(testDir, '@example/plugin-a', false)
-    expect(success).toBe(true)
-    const manifest = JSON.parse(await readFile(pkgPath, 'utf8'))
-    expect(manifest.dependencies).toEqual({ '@example/plugin-b': '1.0.0' })
-    expect(manifest.dsh.profile.bundles).toEqual(['@example/plugin-b'])
   })
 
   it('resolves root package when a scoped sub-module fails', async () => {

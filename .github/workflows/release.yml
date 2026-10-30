@@ -10,38 +10,52 @@ on:
       - V0.9.1
   workflow_dispatch:
     inputs:
-      target:
-        description: Platform to build
-        required: false
-        default: all
-        type: choice
-        options:
-          - all
-          - windows
-          - macos
       mode:
-        description: development=unsigned Dev; signed=sign only; prerelease=sign and publish
-        required: false
+        description: 操作（development 开发包 / signed 测试包 / prerelease 预发布 / publish 继续正式发布 / resign 重签）
+        required: true
         default: development
         type: choice
         options:
           - development
           - signed
           - prerelease
-      prerelease_tag:
-        description: Non-v semver tag for prerelease mode (e.g. 2.1.0-rc.1)
+          - publish
+          - resign
+      target:
+        description: 平台（继续正式发布选 all，重签选 windows）
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+      version:
+        description: 版本（开发包留空；测试包如 0.13.0-test.4；继续正式发布如 v0.13.0）
         required: false
         type: string
-      signed_version:
-        description: Non-v semver used only by signed mode (e.g. 0.9.2-test.1)
+      source_run_id:
+        description: 来源任务 ID（仅继续正式发布或重签需要）
         required: false
         type: string
+      checks:
+        description: 验证级别（standard 常规 / extended 增加 Windows 全量测试、恢复界面、启动与归档检查）
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - extended
 
 permissions:
   contents: write
 
+env:
+  RELEASE_NOTES_MODEL: gpt-6-luna
+
 concurrency:
-  group: desktop-release-${{ github.ref }}
+  # Platform-only retries have independent artifacts and never publish.
+  group: desktop-release-${{ github.ref }}-${{ inputs.target || 'all' }}
   cancel-in-progress: false
 
 jobs:
@@ -54,36 +68,46 @@ jobs:
         env:
           MODE: ${{ inputs.mode }}
           TARGET: ${{ inputs.target }}
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          SIGNED_VERSION: ${{ inputs.signed_version }}
+          VERSION: ${{ inputs.version }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          CHECKS: ${{ inputs.checks }}
         run: |
           set -euo pipefail
           semver_re='^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
+          if ! [[ "$TARGET" =~ ^(all|windows|macos)$ ]] || ! [[ "$CHECKS" =~ ^(standard|extended)$ ]]; then
+            echo "::error::Choose a valid platform and validation level"
+            exit 1
+          fi
           case "$MODE" in
-            prerelease)
-              if [ -z "${PRERELEASE_TAG:-}" ]; then
-                echo "::error::prerelease mode requires prerelease_tag"
+            publish)
+              if [ "$TARGET" != 'all' ] || ! [[ "$VERSION" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]] || ! [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::publish requires target=all, version=vX.Y.Z and a positive source_run_id"
                 exit 1
               fi
-              if [[ "$PRERELEASE_TAG" == v* ]] || ! [[ "$PRERELEASE_TAG" =~ $semver_re ]]; then
-                echo "::error::prerelease_tag must be a non-v semver (e.g. 2.1.0-rc.1)"
+              ;;
+            signed|prerelease|resign)
+              if ! [[ "$VERSION" =~ $semver_re ]]; then
+                echo "::error::$MODE requires a non-v semver version (e.g. 0.13.0-test.4)"
                 exit 1
               fi
-              if [ "$TARGET" != "all" ]; then
+              if [ "$MODE" = 'resign' ]; then
+                if [ "$TARGET" != 'windows' ] || ! [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+                  echo "::error::resign requires target=windows and a positive source_run_id"
+                  exit 1
+                fi
+              elif [ -n "$SOURCE_RUN_ID" ]; then
+                echo "::error::source_run_id is only used by publish or resign"
+                exit 1
+              fi
+              if [ "$MODE" = 'prerelease' ] && [ "$TARGET" != 'all' ]; then
                 echo "::notice::target=$TARGET with prerelease mode will sign only and skip GitHub/ModelScope publish"
               fi
               ;;
-            signed)
-              if [ -z "${SIGNED_VERSION:-}" ]; then
-                echo "::error::signed mode requires signed_version"
+            development)
+              if [ -n "$VERSION$SOURCE_RUN_ID" ]; then
+                echo "::error::development uses the checked-out version; leave version and source_run_id empty"
                 exit 1
               fi
-              if [[ "$SIGNED_VERSION" == v* ]] || ! [[ "$SIGNED_VERSION" =~ $semver_re ]]; then
-                echo "::error::signed_version must be a non-v semver (e.g. 0.9.2-test.1)"
-                exit 1
-              fi
-              ;;
-            development|'')
               ;;
             *)
               echo "::error::Unknown mode: $MODE"
@@ -93,14 +117,36 @@ jobs:
       - name: Skip validation for tag and pull_request
         if: github.event_name != 'workflow_dispatch'
         run: echo "No dispatch inputs to validate."
+      - name: Validate signed test upload and notification secrets
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed'
+        env:
+          MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
+          FEISHU_RELEASE_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}
+        run: |
+          test -n "$MODELSCOPE_TOKEN" || { echo "::error::Missing secret MODELSCOPE_TOKEN"; exit 1; }
+          test -n "$FEISHU_RELEASE_WEBHOOK" || { echo "::error::Missing secret FEISHU_RELEASE_WEBHOOK"; exit 1; }
 
-  macos-apple-silicon:
-    name: macOS Apple Silicon
+  macos:
+    name: macOS ${{ matrix.label }}
     needs: validate-dispatch
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
-    runs-on: macos-15
+      inputs.mode != 'publish' && (startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos')))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            label: Apple Silicon
+            runner: macos-15
+            app-directory: mac-arm64
+            artifact: macos-apple-silicon
+          - arch: x64
+            label: Intel
+            runner: macos-15-intel
+            app-directory: mac
+            artifact: macos-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,14 +159,60 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
       - name: Set app version from pre-release tag
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.prerelease_tag != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.prerelease_tag }}"
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.version != ''
+        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.version }}"
       - name: Set app version from signed version
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
-      - run: npm ci
-      - run: npm test
-      - run: npm run typecheck
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.version != ''
+        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.version }}"
+      - name: Configure native download caches before dependency installation
+        shell: bash
+        run: |
+          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
+          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
+      - name: Cache Electron downloads before dependency installation
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ELECTRON_CACHE }}
+          key: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install dependencies with timings
+        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
+      - name: Upload dependency installation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-timings-${{ github.job }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/npm-timings/*-timing.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Cache Office runtime downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/office-downloads
+          key: office-runtime-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
+          restore-keys: |
+            office-runtime-${{ runner.os }}-${{ matrix.arch }}-
+      - name: Cache generated Office and PPT assets
+        uses: actions/cache@v4
+        with:
+          enableCrossOsArchive: true
+          path: |
+            .build/office-template-cache
+            .build/ppt-runtime
+          key: desktop-generated-assets-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/dsh-desktop-office/**', 'scripts/*ppt*.mjs', 'scripts/ppt/**', 'packages/ppt-runtime/**', 'package-lock.json') }}
+          restore-keys: desktop-generated-assets-v1-
+      - run: npm run build
+      - name: Typecheck shared code on macOS
+        if: matrix.arch == 'arm64'
+        run: npm run typecheck
+      - name: Run shared tests on macOS
+        if: matrix.arch == 'arm64'
+        run: npx --no-install vitest run --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
+      - name: Verify PPT generation leaves tracked sources clean
+        run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Validate Apple release secrets
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         env:
@@ -157,25 +249,25 @@ jobs:
           CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
         run: node scripts/prepare-macos-signing-keychain.mjs
-      - name: Build signed Apple Silicon package
+      - name: Build signed ${{ matrix.label }} package
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
-        run: npm run package:mac:arm64
-      - name: Build isolated Apple Silicon development package
+        run: node scripts/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never
+      - name: Build isolated ${{ matrix.label }} development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run package:dev:mac:arm64
-      - name: Preserve Apple Silicon update metadata
+        run: node scripts/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never --config electron-builder.dev.cjs
+      - name: Preserve ${{ matrix.label }} update metadata
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        run: mv dist/latest-mac.yml dist/latest-mac-arm64.yml
-      - name: Sign, notarize, and staple Apple Silicon DMG
+        run: mv dist/latest-mac.yml dist/latest-mac-${{ matrix.arch }}.yml
+      - name: Sign, notarize, and staple ${{ matrix.label }} DMG
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
         run: |
-          dmg_path="dist/dsh-desktop-mac-arm64.dmg"
+          dmg_path="dist/dsh-desktop-mac-${{ matrix.arch }}.dmg"
           identity="$(security find-identity -v -p codesigning "$CSC_KEYCHAIN" | awk '/Developer ID Application/ { print $2; exit }')"
           test -n "$identity" || { echo "::error::Developer ID Application identity not found"; exit 1; }
           codesign --keychain "$CSC_KEYCHAIN" --sign "$identity" --timestamp --force "$dmg_path"
@@ -183,149 +275,13 @@ jobs:
             --key "$APPLE_API_KEY" \
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER" \
-            --wait \
-            --no-s3-acceleration
-          xcrun stapler staple "$dmg_path"
-      - name: Remove temporary signing keychain
-        if: always() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease')))
-        env:
-          SIGNING_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
-          SIGNING_CERTIFICATE: ${{ steps.signing_keychain.outputs.certificate }}
-          SIGNING_KEYCHAIN_LIST: ${{ steps.signing_keychain.outputs.keychain_list }}
-        run: |
-          if [ -n "$SIGNING_KEYCHAIN_LIST" ] && [ -f "$SIGNING_KEYCHAIN_LIST" ]; then
-            keychains=()
-            while IFS= read -r keychain; do
-              test -z "$keychain" || keychains+=("$keychain")
-            done < "$SIGNING_KEYCHAIN_LIST"
-            security list-keychains -d user -s "${keychains[@]}"
-            rm -f "$SIGNING_KEYCHAIN_LIST"
-          fi
-          test -z "$SIGNING_KEYCHAIN" || security delete-keychain "$SIGNING_KEYCHAIN" || rm -f "$SIGNING_KEYCHAIN"
-          test -z "$SIGNING_CERTIFICATE" || rm -f "$SIGNING_CERTIFICATE"
-          test -z "$APPLE_API_KEY" || rm -f "$APPLE_API_KEY"
-      - name: Verify signed and notarized Apple Silicon app
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        run: |
-          app_path="dist/mac-arm64/DSH Desktop.app"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          spctl --assess --type execute --verbose=4 "$app_path"
-          xcrun stapler validate "$app_path"
-          codesign --verify --verbose=2 dist/dsh-desktop-mac-arm64.dmg
-          spctl --assess --type open --context context:primary-signature --verbose=4 dist/dsh-desktop-mac-arm64.dmg
-          xcrun stapler validate dist/dsh-desktop-mac-arm64.dmg
-      - uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        with:
-          name: macos-apple-silicon
-          path: |
-            dist/dsh-desktop-mac-arm64.dmg
-            dist/dsh-desktop-mac-arm64.zip
-            dist/dsh-desktop-mac-arm64.zip.blockmap
-            dist/latest-mac-arm64.yml
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
-        with:
-          name: macos-apple-silicon-dev
-          path: |
-            dist-dev/dsh-desktop-dev-mac-arm64.dmg
-            dist-dev/dsh-desktop-dev-mac-arm64.zip
-            dist-dev/dsh-desktop-dev-mac-arm64.zip.blockmap
-          if-no-files-found: error
-
-  macos-intel:
-    name: macOS Intel
-    needs: validate-dispatch
-    if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
-    runs-on: macos-15-intel
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Set app version from release tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
-      - name: Set app version from pre-release tag
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.prerelease_tag != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.prerelease_tag }}"
-      - name: Set app version from signed version
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
-      - run: npm ci
-      - run: npm test
-      - run: npm run typecheck
-      - name: Validate Apple release secrets
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.DESKTOP_APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.DESKTOP_APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.DESKTOP_APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
-        run: |
-          required=(CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_CONTENT APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID)
-          for name in "${required[@]}"; do
-            test -n "${!name}" || { echo "::error::Missing required secret: $name"; exit 1; }
+            --wait
+          for attempt in 1 2 3 4 5 6; do
+            if xcrun stapler staple "$dmg_path"; then break; fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            echo "stapler staple failed, waiting for Apple ticket propagation in $((attempt * 15))s (attempt $attempt/6)..."
+            sleep $((attempt * 15))
           done
-      - name: Prepare Apple notarization key
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        env:
-          APPLE_API_KEY_CONTENT: ${{ secrets.DESKTOP_APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.DESKTOP_APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.DESKTOP_APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
-        run: |
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
-          chmod 600 "$key_path"
-          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
-          echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
-          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
-          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
-      - name: Prepare macOS signing keychain
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        id: signing_keychain
-        env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-        run: node scripts/prepare-macos-signing-keychain.mjs
-      - name: Build signed Intel package
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        env:
-          CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
-        run: npm run package:mac:x64
-      - name: Build isolated Intel development package
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run package:dev:mac:x64
-      - name: Preserve Intel update metadata
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        run: mv dist/latest-mac.yml dist/latest-mac-x64.yml
-      - name: Sign, notarize, and staple Intel DMG
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        env:
-          CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
-        run: |
-          dmg_path="dist/dsh-desktop-mac-x64.dmg"
-          identity="$(security find-identity -v -p codesigning "$CSC_KEYCHAIN" | awk '/Developer ID Application/ { print $2; exit }')"
-          test -n "$identity" || { echo "::error::Developer ID Application identity not found"; exit 1; }
-          codesign --keychain "$CSC_KEYCHAIN" --sign "$identity" --timestamp --force "$dmg_path"
-          xcrun notarytool submit "$dmg_path" \
-            --key "$APPLE_API_KEY" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER" \
-            --wait \
-            --no-s3-acceleration
-          xcrun stapler staple "$dmg_path"
       - name: Remove temporary signing keychain
         if: always() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease')))
         env:
@@ -344,46 +300,64 @@ jobs:
           test -z "$SIGNING_KEYCHAIN" || security delete-keychain "$SIGNING_KEYCHAIN" || rm -f "$SIGNING_KEYCHAIN"
           test -z "$SIGNING_CERTIFICATE" || rm -f "$SIGNING_CERTIFICATE"
           test -z "$APPLE_API_KEY" || rm -f "$APPLE_API_KEY"
-      - name: Verify signed and notarized Intel app
+      - name: Verify signed and notarized ${{ matrix.label }} app
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         run: |
-          app_path="dist/mac/DSH Desktop.app"
+          app_path="dist/${{ matrix.app-directory }}/DSH Desktop.app"
           codesign --verify --deep --strict --verbose=2 "$app_path"
           spctl --assess --type execute --verbose=4 "$app_path"
-          xcrun stapler validate "$app_path"
-          codesign --verify --verbose=2 dist/dsh-desktop-mac-x64.dmg
-          spctl --assess --type open --context context:primary-signature --verbose=4 dist/dsh-desktop-mac-x64.dmg
-          xcrun stapler validate dist/dsh-desktop-mac-x64.dmg
+          for attempt in 1 2 3 4 5 6; do
+            if xcrun stapler validate "$app_path"; then break; fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            echo "stapler validate failed on app_path, retrying in $((attempt * 10))s (attempt $attempt/6)..."
+            sleep $((attempt * 10))
+          done
+          codesign --verify --verbose=2 dist/dsh-desktop-mac-${{ matrix.arch }}.dmg
+          spctl --assess --type open --context context:primary-signature --verbose=4 dist/dsh-desktop-mac-${{ matrix.arch }}.dmg
+          for attempt in 1 2 3 4 5 6; do
+            if xcrun stapler validate dist/dsh-desktop-mac-${{ matrix.arch }}.dmg; then break; fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            echo "stapler validate failed on dmg, retrying in $((attempt * 10))s (attempt $attempt/6)..."
+            sleep $((attempt * 10))
+          done
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         with:
-          name: macos-intel
+          name: ${{ matrix.artifact }}
+          retention-days: 7
           path: |
-            dist/dsh-desktop-mac-x64.dmg
-            dist/dsh-desktop-mac-x64.zip
-            dist/dsh-desktop-mac-x64.zip.blockmap
-            dist/latest-mac-x64.yml
+            dist/dsh-desktop-mac-${{ matrix.arch }}.dmg
+            dist/dsh-desktop-mac-${{ matrix.arch }}.zip
+            dist/dsh-desktop-mac-${{ matrix.arch }}.zip.blockmap
+            dist/latest-mac-${{ matrix.arch }}.yml
+          compression-level: 0
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         with:
-          name: macos-intel-dev
+          name: ${{ matrix.artifact }}-dev
+          retention-days: 3
           path: |
-            dist-dev/dsh-desktop-dev-mac-x64.dmg
-            dist-dev/dsh-desktop-dev-mac-x64.zip
-            dist-dev/dsh-desktop-dev-mac-x64.zip.blockmap
+            dist-dev/dsh-desktop-dev-mac-${{ matrix.arch }}.dmg
+            dist-dev/dsh-desktop-dev-mac-${{ matrix.arch }}.zip
+            dist-dev/dsh-desktop-dev-mac-${{ matrix.arch }}.zip.blockmap
+          compression-level: 0
           if-no-files-found: error
 
   windows-x64:
     name: Windows x64
     needs: validate-dispatch
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
+      inputs.mode != 'publish' && (startsWith(github.ref, 'refs/tags/v') ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' &&
-        (inputs.target == 'all' || inputs.target == 'windows'))
+        inputs.mode != 'resign' &&
+        (inputs.target == 'all' || inputs.target == 'windows')))
     runs-on: windows-2022
     steps:
+      - name: Preserve shared asset fingerprints during checkout
+        shell: bash
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -395,33 +369,81 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
       - name: Set app version from pre-release tag
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.prerelease_tag != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.prerelease_tag }}"
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.version != ''
+        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.version }}"
       - name: Set app version from signed version
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
-      - run: npm ci
-      - run: npm test
-      - run: npm run typecheck
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.version != ''
+        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.version }}"
+      - name: Configure native download caches before dependency installation
+        shell: bash
+        run: |
+          # Electron 43 install.js reads the lowercase setting; builder uses uppercase.
+          echo "electron_config_cache=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+          echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
+      - name: Cache Office runtime downloads and packaging tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/office-downloads
+            ${{ env.ELECTRON_CACHE }}
+            ${{ env.ELECTRON_BUILDER_CACHE }}
+          key: windows-packaging-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/office-runtime/**', 'package-lock.json') }}
+          restore-keys: |
+            windows-packaging-v1-
+      - name: Install dependencies with timings
+        run: npm ci --prefer-offline --no-audit --no-fund --timing --logs-dir "${{ runner.temp }}/npm-timings"
+      - name: Upload dependency installation timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-timings-${{ github.job }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/npm-timings/*-timing.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Cache generated Office and PPT assets
+        uses: actions/cache@v4
+        with:
+          enableCrossOsArchive: true
+          path: |
+            .build/office-template-cache
+            .build/ppt-runtime
+          key: desktop-generated-assets-v1-${{ hashFiles('scripts/office-runtime/**', 'packages/dsh-desktop-office/**', 'scripts/*ppt*.mjs', 'scripts/ppt/**', 'packages/ppt-runtime/**', 'package-lock.json') }}
+          restore-keys: desktop-generated-assets-v1-
       - run: npm run build
+      - name: Typecheck shared code on Windows
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
+        run: npm run typecheck
+      - name: Run focused Windows regressions
+        if: inputs.checks != 'extended' && github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
+        run: npx --no-install vitest run --config vitest.windows.config.ts
+        timeout-minutes: 15
+      - name: Run complete Windows test suite
+        if: inputs.checks == 'extended' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
+        run: npx --no-install vitest run --reporter=verbose --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
+        timeout-minutes: 15
+      - name: Verify PPT generation leaves tracked sources clean
+        run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Check recovery UI on native Windows at three display scales
+        if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
         run: node scripts/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
         with:
           name: windows-recovery-ui
+          retention-days: 7
           path: |
             artifacts/recovery-ui/scale-*/*.png
             artifacts/recovery-ui/scale-*/results.json
           if-no-files-found: warn
       - name: Build Windows release package
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        run: npm run package:win
+        run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never
       - name: Build isolated Windows development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
-        run: npm run package:dev:win
+        run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs
       - name: Smoke test packaged Windows Harness
-        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
         shell: pwsh
         env:
           SMOKE_EXE: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist\win-unpacked\DSH Desktop.exe' || 'dist-dev\win-unpacked\DSH Desktop Dev.exe' }}
@@ -436,14 +458,40 @@ jobs:
           New-Item -ItemType Directory -Path $isolatedApp | Out-Null
           Copy-Item -Path (Join-Path $sourceExecutable.Directory.FullName '*') -Destination $isolatedApp -Recurse
           $executable = Join-Path $isolatedApp $sourceExecutable.Name
-          $packagedNode = Join-Path $isolatedApp 'resources\app\node_modules\node\bin\node.exe'
-          if (-not (Test-Path $packagedNode)) { throw 'Packaged Windows node.exe is missing.' }
+          $desktopStdout = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stdout.log'
+          $desktopStderr = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stderr.log'
+          $packagedNode = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\node\bin\node.exe'
+          if (Test-Path $packagedNode) { throw 'Standalone Windows node.exe must not be packaged.' }
           # Exercise the actual native binding too; the best-effort fallback
           # must not hide a missing or broken packaged koffi dependency.
-          & $packagedNode --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed');" (Join-Path $isolatedApp 'resources\app\package.json') (Join-Path $isolatedApp 'resources\app\node_modules')
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged koffi native binding failed.' }
+          # A Windows GUI-subsystem executable makes PowerShell's '&' return
+          # before the Node-mode child exits, leaving $LASTEXITCODE unset.
+          function Invoke-ElectronNode([string[]]$nodeArguments) {
+            $start = [System.Diagnostics.ProcessStartInfo]::new($executable)
+            $start.WorkingDirectory = $isolatedApp
+            $start.UseShellExecute = $false
+            $start.RedirectStandardOutput = $true
+            $start.RedirectStandardError = $true
+            $start.Environment['ELECTRON_RUN_AS_NODE'] = '1'
+            foreach ($argument in $nodeArguments) { [void]$start.ArgumentList.Add($argument) }
+            $child = [System.Diagnostics.Process]::Start($start)
+            $stdout = $child.StandardOutput.ReadToEnd()
+            $stderr = $child.StandardError.ReadToEnd()
+            $child.WaitForExit()
+            if ($stdout) { Write-Host $stdout }
+            if ($stderr) { Write-Host $stderr }
+            return $child.ExitCode
+          }
+          $koffiProbe = "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed'); process.exit(0);"
+          $koffiExitCode = Invoke-ElectronNode @('--input-type=module', '-e', $koffiProbe, (Join-Path $isolatedApp 'resources\app.asar\node_modules\koffi\package.json'), (Join-Path $isolatedApp 'resources\app.asar\node_modules'))
+          if ($koffiExitCode -ne 0) { throw "Packaged koffi native binding failed (exit code $koffiExitCode)." }
+          # Packages load through app.asar (native files are unpacked beside it).
+          $pnpmEntry = Join-Path $isolatedApp 'resources\app.asar\node_modules\pnpm\bin\pnpm.cjs'
+          $pnpmExitCode = Invoke-ElectronNode @($pnpmEntry, '--version')
+          if ($pnpmExitCode -ne 0) { throw "Packaged pnpm failed under Electron Node mode (exit code $pnpmExitCode)." }
           if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
-          $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru
+          $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru `
+            -RedirectStandardOutput $desktopStdout -RedirectStandardError $desktopStderr
           try {
             $deadline = (Get-Date).AddSeconds(75)
             $ready = $false
@@ -509,8 +557,11 @@ jobs:
 
             Start-Sleep -Seconds 20
             $stableLog = Get-Content -Raw $logPath
-            if ($stableLog -match '\[stderr\]') {
-              throw 'Harness reported stderr after workspace and session creation.'
+            $readyMarker = $stableLog.LastIndexOf('[desktop] Harness is ready')
+            if ($readyMarker -lt 0) { throw 'Harness readiness marker is missing.' }
+            $postReadyLog = $stableLog.Substring($readyMarker)
+            if ($postReadyLog -match '\[stderr\]') {
+              throw 'Harness reported stderr after becoming ready.'
             }
             if ($stableLog -match '\[node\] Harness process exited') {
               throw 'Harness process exited after workspace and session creation.'
@@ -520,17 +571,52 @@ jobs:
             }
             Write-Host 'Packaged Windows Harness smoke test passed.'
           } finally {
+            foreach ($path in @($desktopStdout, $desktopStderr)) {
+              if (Test-Path $path) {
+                Write-Host "--- $path ---"
+                Get-Content $path
+              }
+            }
+            Get-CimInstance Win32_Process -Filter "name='$($sourceExecutable.Name)'" |
+              Select-Object ProcessId, ParentProcessId, CommandLine | Format-List | Out-String | Write-Host
             if (Test-Path $logPath) {
               Write-Host '--- harness.log ---'
               Get-Content $logPath
             }
-            if (-not $desktop.HasExited) { Stop-Process -Id $desktop.Id -Force }
+            # The smoke owns only this isolated copy. Kill descendants too, then
+            # verify no executable from that copy remains before leaving the step.
+            if (-not $desktop.HasExited) {
+              try { $desktop.Kill($true) } catch {
+                if (-not $desktop.HasExited) { throw }
+              }
+              if (-not $desktop.WaitForExit(10000)) { throw 'Packaged smoke process did not exit.' }
+            }
+            $smokeRoot = [System.IO.Path]::GetFullPath($isolatedApp).TrimEnd('\') + '\'
+            $cleanupDeadline = (Get-Date).AddSeconds(10)
+            do {
+              $remaining = @(Get-CimInstance Win32_Process | Where-Object {
+                $_.ExecutablePath -and $_.ExecutablePath.StartsWith($smokeRoot, [System.StringComparison]::OrdinalIgnoreCase)
+              })
+              foreach ($entry in $remaining) {
+                $process = Get-Process -Id $entry.ProcessId -ErrorAction SilentlyContinue
+                if ($process -and -not $process.HasExited) {
+                  try { $process.Kill($true) } catch {
+                    if (-not $process.HasExited) { throw }
+                  }
+                }
+              }
+              if ($remaining.Count -eq 0) { break }
+              Start-Sleep -Milliseconds 200
+            } while ((Get-Date) -lt $cleanupDeadline)
+            if ($remaining.Count -gt 0) { throw 'Processes from the isolated packaged smoke did not exit.' }
           }
-      - name: Archive unpacked Windows release for inner binary signing
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
+      - name: Archive and verify unpacked Windows payload
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease' || inputs.checks == 'extended'))
         shell: pwsh
+        env:
+          ARCHIVE_DIST: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist' || 'dist-dev' }}
         run: |
-          tar -czf dist/win-unpacked.tar.gz -C dist win-unpacked
+          node scripts/archive-windows-release.mjs "$env:ARCHIVE_DIST"
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         with:
@@ -540,25 +626,32 @@ jobs:
             dist/win-unpacked.tar.gz
             dist/dsh-desktop-windows-x64-setup.exe.blockmap
             dist/latest.yml
+          compression-level: 0
           if-no-files-found: error
           retention-days: 1
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         with:
           name: windows-x64-dev
+          retention-days: 3
           path: |
             dist-dev/dsh-desktop-dev-windows-x64-setup.exe
             dist-dev/dsh-desktop-dev-windows-x64-setup.exe.blockmap
             dist-dev/latest.yml
+          compression-level: 0
           if-no-files-found: error
 
   sign-windows:
     name: Sign Windows package locally with UKey
-    needs: windows-x64
+    needs: [validate-dispatch, windows-x64]
+    permissions:
+      actions: read
+      contents: read
     if: >-
       always() &&
-      (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) &&
-      needs.windows-x64.result == 'success'
+      needs.validate-dispatch.result == 'success' && inputs.mode != 'publish' &&
+      ((startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && needs.windows-x64.result == 'success' ||
+       (github.event_name == 'workflow_dispatch' && inputs.mode == 'resign' && needs.windows-x64.result == 'skipped'))
     runs-on: [self-hosted, macOS, ARM64]
     env:
       CI: 'true'
@@ -566,10 +659,12 @@ jobs:
       JSIGN_SHA256: '602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c'
     steps:
       - uses: actions/checkout@v4
+      # Persistent runners retain npm downloads locally; restoring the remote
+      # cache duplicates disk usage and can stall release setup for minutes.
       - uses: actions/setup-node@v4
+        timeout-minutes: 5
         with:
           node-version: 22
-          cache: npm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -580,28 +675,50 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
       - name: Set app version from pre-release tag
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.prerelease_tag != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.prerelease_tag }}"
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.version != ''
+        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.version }}"
       - name: Set app version from signed version
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
-        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
+        if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'resign') && inputs.version != ''
+        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.version }}"
       - name: Prepare unsigned Windows package
         run: |
           work_dir="$RUNNER_TEMP/dsh-windows-${{ github.run_id }}"
           mkdir -p "$work_dir/release"
           echo "WINDOWS_SIGNING_WORK_DIR=$work_dir" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows-x64-unsigned
-          path: ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release
+      - name: Bypass runner proxy for artifact transfer
+        run: |
+          # The runner exports lowercase proxy variables separately on macOS.
+          # A step env map cannot specify both cases in GitHub workflow YAML.
+          printf 'http_proxy=\nhttps_proxy=\nall_proxy=\nno_proxy=*\n' >> "$GITHUB_ENV"
+      - name: Download verified Windows signing inputs in parallel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.mode == 'resign' && inputs.source_run_id || github.run_id }}
+          HTTP_PROXY: ''
+          HTTPS_PROXY: ''
+          ALL_PROXY: ''
+        run: |
+          node scripts/download-artifact-ranges.mjs "$GITHUB_REPOSITORY" "$SOURCE_RUN_ID" \
+            windows-x64-unsigned "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
+          unzip -q "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip" -d "$WINDOWS_SIGNING_WORK_DIR/release"
+          rm "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
+      - name: Check reused unsigned package version
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resign'
+        run: |
+          actual_version="$(node -e 'const fs = require("node:fs"); const yaml = require("js-yaml"); console.log(yaml.load(fs.readFileSync(process.argv[1], "utf8")).version)' "$WINDOWS_SIGNING_WORK_DIR/release/latest.yml")"
+          test "$actual_version" = "${{ inputs.version }}" || {
+            echo "::error::Unsigned artifact version $actual_version does not match signed_version"
+            exit 1
+          }
       - name: Download and verify Jsign
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           jsign_jar="$WINDOWS_SIGNING_WORK_DIR/jsign-${JSIGN_VERSION}.jar"
-          curl --fail-with-body --location --retry 3 --retry-all-errors \
-            --connect-timeout 15 --max-time 180 \
-            --output "$jsign_jar" \
-            "https://github.com/ebourg/jsign/releases/download/${JSIGN_VERSION}/jsign-${JSIGN_VERSION}.jar"
+          gh release download "$JSIGN_VERSION" --repo ebourg/jsign \
+            --pattern "jsign-${JSIGN_VERSION}.jar" --dir "$WINDOWS_SIGNING_WORK_DIR" --clobber
           test -s "$jsign_jar"
           printf '%s  %s\n' "$JSIGN_SHA256" "$jsign_jar" | shasum -a 256 --check
           java -jar "$jsign_jar" --version
@@ -610,6 +727,7 @@ jobs:
         env:
           WINDOWS_SIGNING_PIN: ${{ secrets.DESKTOP_WINDOWS_SIGNING_PIN }}
         run: |
+          set -euo pipefail
           test -r /usr/local/lib/libeTPkcs11.dylib
           test -n "$WINDOWS_SIGNING_PIN" || { echo "::error::Missing required secret: DESKTOP_WINDOWS_SIGNING_PIN"; exit 1; }
           pin_file="$(mktemp "$WINDOWS_SIGNING_WORK_DIR/jsign-pin.XXXXXX")"
@@ -618,67 +736,50 @@ jobs:
           printf '%s' "$WINDOWS_SIGNING_PIN" > "$pin_file"
           unset WINDOWS_SIGNING_PIN
 
-          # If unpacked tree archive was uploaded, sign inner binaries and repackage NSIS installer
-          if [ -f "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" ]; then
-            echo "Unpacking win-unpacked archive for inner binary signing..."
-            # Keep backup of original installer in case repackaging fails on self-hosted macOS runner
-            orig_installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
-            backup_installer="$RUNNER_TEMP/orig-windows-installer-$$.exe"
-            if [ -n "$orig_installer" ] && [ -f "$orig_installer" ]; then
-              cp "$orig_installer" "$backup_installer"
-            fi
-
-            repackaged=false
-            if tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"; then
-              if JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
-                   node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"; then
-                echo "Removing previous unsigned installer before repackaging..."
-                rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
-                echo "Repackaging NSIS installer from signed unpacked directory..."
-                if npx electron-builder --win --x64 --publish never \
-                     --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
-                     --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"; then
-                  repackaged=true
-                  echo "✅ Repackaged NSIS installer successfully with signed internal binaries."
-                else
-                  echo "⚠️ Repackaging with electron-builder failed. Falling back to original installer."
-                fi
-              fi
-            fi
-
-            # Fallback if repackaging failed or produced no installer
-            current_installers="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
-            if [ "$current_installers" != '1' ] && [ -f "$backup_installer" ]; then
-              echo "Restoring original Windows installer from backup..."
-              rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe
-              cp "$backup_installer" "$orig_installer"
-            fi
-            rm -f "$backup_installer"
-            rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
-          fi
+          # A missing archive or any failed signing/repackaging step blocks publication.
+          test -s "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
+          tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"
+          JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
+            node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
+          rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
+          JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
+            node scripts/electron-builder-windows.mjs --win --x64 --publish never \
+            --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
+            --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"
+          rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
 
           installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
           test "$installer_count" = '1'
           installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
-          java -jar "$JSIGN_JAR" \
-            --storetype ETOKEN \
-            --storepass "file:$pin_file" \
-            --alg SHA-256 \
-            --tsaurl http://timestamp.digicert.com \
-            --tsmode RFC3161 \
-            --tsretries 3 \
-            --tsretrywait 10 \
-            --name 'DSH Desktop' \
-            --url https://www.dshdesktop.com \
-            --verbose \
-            "$installer"
+          for attempt in 1 2 3 4 5 6; do
+            if java -jar "$JSIGN_JAR" \
+              --storetype ETOKEN \
+              --storepass "file:$pin_file" \
+              --alg SHA-256 \
+              --tsaurl http://timestamp.digicert.com \
+              --tsmode RFC3161 \
+              --tsretries 3 \
+              --tsretrywait 10 \
+              --name 'DSH Desktop' \
+              --url https://www.dshdesktop.com \
+              --verbose \
+              "$installer"; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "::error::Signing final installer failed after 6 attempts"
+              exit 1
+            fi
+            echo "Signing final installer failed, retrying in $((attempt * 10))s (attempt $attempt/6)..."
+            sleep $((attempt * 10))
+          done
           java -jar "$JSIGN_JAR" extract --format DER "$installer"
           test -s "$installer.sig"
           rm -f "$installer.sig"
       - name: Rebuild Windows update metadata
         env:
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
-          SIGNED_VERSION: ${{ inputs.signed_version }}
+          PRERELEASE_TAG: ${{ inputs.version }}
+          SIGNED_VERSION: ${{ inputs.version }}
           DISPATCH_MODE: ${{ inputs.mode }}
         run: |
           # Tag pushes use the git tag. Dispatch must not fall back to the
@@ -698,10 +799,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
+          retention-days: 7
           path: |
             ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe
             ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe.blockmap
             ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/latest.yml
+          compression-level: 0
           if-no-files-found: error
       - name: Remove local signing files
         if: always()
@@ -712,38 +815,121 @@ jobs:
             *) echo "Refusing to remove unexpected signing path: $WINDOWS_SIGNING_WORK_DIR"; exit 1 ;;
           esac
 
-  publish:
-    name: Publish GitHub Release
+  publish-signed-test:
+    name: Upload signed test installers and notify
+    needs: [macos, sign-windows]
     if: >-
-      always() &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      inputs.prerelease_tag == '' &&
-      needs.macos-apple-silicon.result == 'success' &&
-      needs.macos-intel.result == 'success' &&
-      needs.sign-windows.result == 'success'
-    needs:
-      - macos-apple-silicon
-      - macos-intel
-      - sign-windows
+      always() && github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' &&
+      (inputs.target == 'windows' || needs.macos.result == 'success') &&
+      (inputs.target == 'macos' || needs.sign-windows.result == 'success')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        if: inputs.target == 'all' || inputs.target == 'macos'
+        with:
+          pattern: macos-*
+          path: test-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        if: inputs.target == 'all' || inputs.target == 'windows'
+        with:
+          name: windows-x64
+          path: test-assets
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install release summary CLI
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
+        run: |
+          if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
+            npm install -g @github/copilot@latest || echo "::warning::Copilot installation failed; test notification will use a short fallback."
+          fi
+      - name: Upload test installers, verify downloads, and send Feishu notification
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
+          MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
+          MODELSCOPE_REPO_ID: alexyaojin/dsh-desktop
+          FEISHU_RELEASE_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}
+          SIGNED_VERSION: ${{ inputs.version }}
+          TEST_TARGET: ${{ inputs.target }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/test-upload-env"
+          "$RUNNER_TEMP/test-upload-env/bin/pip" install -q modelscope
+          "$RUNNER_TEMP/test-upload-env/bin/python3" .github/scripts/signed_test_build.py \
+            --directory test-assets --target "$TEST_TARGET" \
+            --version "$SIGNED_VERSION" --run-id "$GITHUB_RUN_ID"
+
+  publish:
+    name: Publish GitHub Release
+    concurrency:
+      group: desktop-modelscope-release-history
+      cancel-in-progress: false
+    if: >-
+      always() && needs.validate-dispatch.result == 'success' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.mode == 'publish') ||
+       (inputs.mode != 'publish' && startsWith(github.ref, 'refs/tags/v') &&
+        inputs.version == '' && needs.macos.result == 'success' &&
+        needs.sign-windows.result == 'success'))
+    needs:
+      - validate-dispatch
+      - macos
+      - sign-windows
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ inputs.mode == 'publish' && inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate original signed release source
+        if: inputs.mode == 'publish'
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: python3 .github/scripts/validate_publish_source.py
+      - name: Bind release identity
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$SOURCE_SHA"
+          echo "RELEASE_SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@v4
+        if: inputs.mode != 'publish'
         with:
           pattern: macos-*
           path: release-assets
           merge-multiple: true
       - uses: actions/download-artifact@v4
+        if: inputs.mode != 'publish'
         with:
           name: windows-x64
           path: release-assets
+      - name: Download verified signed artifacts from original run
+        if: inputs.mode == 'publish'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+          artifact-ids: ${{ steps.source.outputs.artifact_ids }}
+          path: release-assets
+          merge-multiple: true
       - name: Merge macOS update metadata
         run: |
           set -euo pipefail
@@ -757,10 +943,8 @@ jobs:
       - name: Verify release assets before publication
         run: |
           set -euo pipefail
-          node scripts/verify-release-assets.mjs release-assets "${GITHUB_REF_NAME#v}"
+          node scripts/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}"
       - name: Build GitHub release note prompt
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p .github/release-artifacts
@@ -771,29 +955,75 @@ jobs:
       - name: Generate GitHub release note
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           out=.github/release-artifacts/github-release-notes.md
           if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
-            echo "Generating GitHub release note via Copilot CLI..."
+            echo "Generating GitHub release note via Copilot CLI with $RELEASE_NOTES_MODEL..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/github-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > "$out" 2>/dev/null && \
-               python3 .github/scripts/github_release_notes.py validate --tag "$RELEASE_TAG" --input "$out"; then
-              echo "✅ AI GitHub release note generated and validated."
+            error_log="$(mktemp)"
+            if copilot -p "$prompt" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user > "$out" 2>"$error_log"; then
+              if python3 .github/scripts/github_release_notes.py validate --tag "$RELEASE_TAG" --input "$out"; then
+                echo "✅ AI GitHub release note generated and validated with $RELEASE_NOTES_MODEL."
+              else
+                echo "::warning::Copilot generated a GitHub release note that failed validation; using the deterministic fallback."
+                python3 .github/scripts/github_release_notes.py generate-fallback --tag "$RELEASE_TAG" --output "$out"
+              fi
             else
-              echo "⚠️ Falling back to the deterministic GitHub release note."
+              echo "::warning::Copilot failed to generate the GitHub release note with $RELEASE_NOTES_MODEL; using the deterministic fallback."
+              sed -n '1,20{s/^/copilot: /;p;}' "$error_log"
               python3 .github/scripts/github_release_notes.py generate-fallback --tag "$RELEASE_TAG" --output "$out"
             fi
+            rm -f "$error_log"
           else
             echo "MODELS_TOKEN not set; using the deterministic GitHub release note."
             python3 .github/scripts/github_release_notes.py generate-fallback --tag "$RELEASE_TAG" --output "$out"
           fi
+      - name: Generate concise bilingual popup notes
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$COPILOT_GITHUB_TOKEN" || { echo "::error::Missing MODELS_TOKEN; popup notes cannot be generated"; exit 1; }
+          python3 .github/scripts/update_popup_notes.py prompt --tag "$RELEASE_TAG" --file .github/release-artifacts/popup-prompt.txt
+          copilot -p "$(cat .github/release-artifacts/popup-prompt.txt)" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user --available-tools= --disable-builtin-mcps > .github/release-artifacts/popup-notes.json
+          python3 .github/scripts/update_popup_notes.py validate --file .github/release-artifacts/popup-notes.json
+      - name: Install Feishu card callback transport
+        run: |
+          python3 -m venv "$RUNNER_TEMP/release-review-env"
+          "$RUNNER_TEMP/release-review-env/bin/pip" install -r .github/scripts/release-review-requirements.txt
+          "$RUNNER_TEMP/release-review-env/bin/python" test/feishu-card-sdk.py
+      - name: Wait for Feishu release confirmation
+        timeout-minutes: 65
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_RELEASE_CHAT_ID: ${{ vars.FEISHU_RELEASE_CHAT_ID }}
+          FEISHU_RELEASE_REVIEWER_ID: ${{ vars.FEISHU_RELEASE_REVIEWER_ID }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
+        run: 'env GITHUB_SHA="$RELEASE_SOURCE_SHA" "$RUNNER_TEMP/release-review-env/bin/python" .github/scripts/confirm_popup_release.py'
+      - name: Inject approved popup notes into update feeds
+        run: env GITHUB_SHA="$RELEASE_SOURCE_SHA" node scripts/inject-popup-notes.mjs
+      - name: Preserve release review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .github/release-artifacts/
+          retention-days: 30
+      - name: Recheck immutable source after human approval
+        if: inputs.mode == 'publish'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate_publish_source.py > "$RUNNER_TEMP/rechecked-source.json"
+          python3 -c 'import json, os; assert json.load(open(os.environ["RUNNER_TEMP"] + "/rechecked-source.json"))["sha"] == os.environ["RELEASE_SOURCE_SHA"], "Release tag changed during approval"'
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           notes=.github/release-artifacts/github-release-notes.md
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -822,7 +1052,7 @@ jobs:
           api = HubApi()
           token = os.environ["MODELSCOPE_TOKEN"]
           repo_id = os.environ["MODELSCOPE_REPO_ID"]
-          tag = os.environ.get("GITHUB_REF_NAME", "unknown")
+          tag = os.environ["RELEASE_TAG"]
           src = pathlib.Path("release-assets")
 
           version = tag[1:] if tag.startswith("v") else tag
@@ -846,47 +1076,16 @@ jobs:
           )
           print(f"✅ Archived {src} -> {repo_id}/releases/archive/{version}")
 
-          # Rebuild the rollback index from the versions we know exist: whatever
-          # the current published index lists, plus the one just archived. This
-          # avoids a read-modify-write race and any dependency on directory
-          # listing.
-          import json, subprocess, tempfile, urllib.request
-
-          known = {version}
-          try:
-              with urllib.request.urlopen(
-                  "https://dshdesktop.com/updates/versions.json", timeout=15
-              ) as response:
-                  current = json.load(response)
-              for entry in current.get("versions", []):
-                  name = entry.get("version")
-                  if isinstance(name, str) and name:
-                      known.add(name)
-          except Exception as error:  # first release, or index temporarily missing
-              print(f"⚠️ Could not read existing version index: {error}")
-
-          with tempfile.TemporaryDirectory() as work:
-              names_file = pathlib.Path(work) / "names.json"
-              index_file = pathlib.Path(work) / "versions.json"
-              names_file.write_text(json.dumps(sorted(known)))
-              subprocess.run(
-                  ["node", "scripts/build-version-index.mjs", str(names_file), str(index_file)],
-                  check=True,
-              )
-              api.upload_file(
-                  path_or_fileobj=str(index_file),
-                  path_in_repo="releases/versions.json",
-                  repo_id=repo_id,
-                  commit_message=f"Version index after {tag}",
-                  token=token,
-              )
-          print("✅ Rebuilt releases/versions.json")
+          import sys
+          sys.path.insert(0, ".github/scripts")
+          from append_version_index import append_version_index
+          append_version_index(api, repo_id, token, version)
+          print("✅ Appended release to releases/versions.json")
           PY
 
       - name: Configure initial 5% rollout on crash service
         env:
           CRASH_ADMIN_TOKEN: ${{ secrets.CRASH_ADMIN_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -z "${CRASH_ADMIN_TOKEN:-}" ]; then
@@ -896,8 +1095,6 @@ jobs:
           node scripts/configure-rollout.mjs "${RELEASE_TAG#v}" 5
 
       - name: Build Feishu release note prompt
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p .github/release-artifacts
@@ -909,22 +1106,31 @@ jobs:
       - name: Generate bilingual Feishu release note
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
-            echo "Generating release notes via Copilot CLI..."
+            echo "Generating release notes via Copilot CLI with $RELEASE_NOTES_MODEL..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/feishu-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
-               python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --input .github/release-artifacts/feishu-release-notes.md; then
-              echo "✅ AI release notes generated and validated."
+            out=.github/release-artifacts/feishu-release-notes.md
+            error_log="$(mktemp)"
+            if copilot -p "$prompt" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user > "$out" 2>"$error_log"; then
+              if python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --input "$out"; then
+                echo "✅ AI release notes generated and validated with $RELEASE_NOTES_MODEL."
+              else
+                echo "::warning::Copilot generated release notes that failed validation; using the deterministic fallback."
+                python3 .github/scripts/feishu_release_notes.py generate-fallback \
+                  --tag "$RELEASE_TAG" \
+                  --output "$out"
+              fi
             else
-              echo "⚠️ AI generation fell back to deterministic release note generator."
+              echo "::warning::Copilot failed to generate release notes with $RELEASE_NOTES_MODEL; using the deterministic fallback."
+              sed -n '1,20{s/^/copilot: /;p;}' "$error_log"
               python3 .github/scripts/feishu_release_notes.py generate-fallback \
                 --tag "$RELEASE_TAG" \
-                --output .github/release-artifacts/feishu-release-notes.md
+                --output "$out"
             fi
+            rm -f "$error_log"
           else
             echo "Generating release notes from git evidence..."
             python3 .github/scripts/feishu_release_notes.py generate-fallback \
@@ -936,7 +1142,6 @@ jobs:
         if: success()
         env:
           FEISHU_RELEASE_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -z "${FEISHU_RELEASE_WEBHOOK:-}" ]; then
@@ -955,13 +1160,11 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       inputs.mode == 'prerelease' &&
       inputs.target == 'all' &&
-      inputs.prerelease_tag != '' &&
-      needs.macos-apple-silicon.result == 'success' &&
-      needs.macos-intel.result == 'success' &&
+      inputs.version != '' &&
+      needs.macos.result == 'success' &&
       needs.sign-windows.result == 'success'
     needs:
-      - macos-apple-silicon
-      - macos-intel
+      - macos
       - sign-windows
     runs-on: ubuntu-24.04
     steps:
@@ -993,11 +1196,11 @@ jobs:
             \( -name latest-mac-arm64.yml -o -name latest-mac-x64.yml \) \
             -delete
       - name: Verify release assets before publication
-        run: node scripts/verify-release-assets.mjs release-assets "${{ inputs.prerelease_tag }}"
+        run: node scripts/verify-release-assets.mjs release-assets "${{ inputs.version }}"
       - name: Create or update pre-release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.prerelease_tag }}
+          RELEASE_TAG: ${{ inputs.version }}
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
@@ -1013,7 +1216,7 @@ jobs:
         env:
           MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
           MODELSCOPE_REPO_ID: alexyaojin/dsh-desktop
-          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
+          PRERELEASE_TAG: ${{ inputs.version }}
         run: |
           set -euo pipefail
           test -n "$MODELSCOPE_TOKEN" || { echo "::error::Missing secret MODELSCOPE_TOKEN"; exit 1; }
@@ -1042,7 +1245,7 @@ jobs:
 
       - name: Build Feishu prerelease note prompt
         env:
-          RELEASE_TAG: ${{ inputs.prerelease_tag }}
+          RELEASE_TAG: ${{ inputs.version }}
         run: |
           set -euo pipefail
           mkdir -p .github/release-artifacts
@@ -1055,23 +1258,34 @@ jobs:
       - name: Generate bilingual Feishu prerelease note
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ inputs.prerelease_tag }}
+          RELEASE_TAG: ${{ inputs.version }}
         run: |
           set -euo pipefail
           if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
-            echo "Generating prerelease notes via Copilot CLI..."
+            echo "Generating prerelease notes via Copilot CLI with $RELEASE_NOTES_MODEL..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/feishu-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
-               python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --prerelease --input .github/release-artifacts/feishu-release-notes.md; then
-              echo "✅ AI prerelease notes generated and validated."
+            out=.github/release-artifacts/feishu-release-notes.md
+            error_log="$(mktemp)"
+            if copilot -p "$prompt" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user > "$out" 2>"$error_log"; then
+              if python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --prerelease --input "$out"; then
+                echo "✅ AI prerelease notes generated and validated with $RELEASE_NOTES_MODEL."
+              else
+                echo "::warning::Copilot generated prerelease notes that failed validation; using the deterministic fallback."
+                python3 .github/scripts/feishu_release_notes.py generate-fallback \
+                  --tag "$RELEASE_TAG" \
+                  --prerelease \
+                  --output "$out"
+              fi
             else
-              echo "⚠️ AI generation fell back to deterministic release note generator."
+              echo "::warning::Copilot failed to generate prerelease notes with $RELEASE_NOTES_MODEL; using the deterministic fallback."
+              sed -n '1,20{s/^/copilot: /;p;}' "$error_log"
               python3 .github/scripts/feishu_release_notes.py generate-fallback \
                 --tag "$RELEASE_TAG" \
                 --prerelease \
-                --output .github/release-artifacts/feishu-release-notes.md
+                --output "$out"
             fi
+            rm -f "$error_log"
           else
             echo "Generating prerelease notes from git evidence..."
             python3 .github/scripts/feishu_release_notes.py generate-fallback \
@@ -1084,7 +1298,7 @@ jobs:
         if: success()
         env:
           FEISHU_RELEASE_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}
-          RELEASE_TAG: ${{ inputs.prerelease_tag }}
+          RELEASE_TAG: ${{ inputs.version }}
         run: |
           set -euo pipefail
           if [ -z "${FEISHU_RELEASE_WEBHOOK:-}" ]; then

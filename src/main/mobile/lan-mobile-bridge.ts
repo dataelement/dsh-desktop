@@ -177,6 +177,8 @@ export class LanMobileBridge {
   private tunnelLaunch?: Promise<void>
   private readonly sessions = new Map<string, MobileSession>()
   private readonly suspendedSessions = new Map<string, MobileSession>()
+  /** Sessions moved here only by a desktop disconnect. Reconnect will not honor anything else. */
+  private readonly resumableSessions = new Map<string, MobileSession>()
   private readonly pendingQuestions = new Map<string, PendingMobileQuestion>()
   private ephemeralPin?: string
   private ephemeralPinExpiresAt?: number
@@ -256,6 +258,7 @@ export class LanMobileBridge {
     this.tunnelError = undefined
     this.sessions.clear()
     this.suspendedSessions.clear()
+    this.resumableSessions.clear()
     this.pendingQuestions.clear()
     this.ephemeralPin = undefined
     this.ephemeralPinExpiresAt = undefined
@@ -555,6 +558,7 @@ export class LanMobileBridge {
   private revokeMobileSessions(): void {
     this.sessions.clear()
     this.suspendedSessions.clear()
+    this.resumableSessions.clear()
     this.rotatePairingToken()
     this.clearPinFailures()
     this.syncConnected()
@@ -573,12 +577,14 @@ export class LanMobileBridge {
         const session = this.suspendedSessions.get(existing)!
         this.sessions.set(existing, session)
         this.suspendedSessions.delete(existing)
+        this.resumableSessions.delete(existing)
       }
     } else {
       for (const [savedToken, session] of this.suspendedSessions) {
         if (session.remoteAddress !== remoteAddress) continue
         this.sessions.set(savedToken, session)
         this.suspendedSessions.delete(savedToken)
+        this.resumableSessions.delete(savedToken)
       }
     }
     this.sessions.set(token, { token, remoteAddress })
@@ -892,7 +898,10 @@ export class LanMobileBridge {
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {
       if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
-      for (const [token, session] of this.sessions) this.suspendedSessions.set(token, session)
+      for (const [token, session] of this.sessions) {
+        this.suspendedSessions.set(token, session)
+        this.resumableSessions.set(token, session)
+      }
       this.sessions.clear()
       this.rotatePairingToken()
       this.syncConnected()
@@ -914,8 +923,13 @@ export class LanMobileBridge {
         }
         return this.html(response, renderMobileReconnectPage(this.locale(), 'tunnel', { expired: true }))
       }
+      // The phone that was just disconnected still holds its cookie. Restoring
+      // that one session does not admit a neighbor who only knows the port.
+      if (this.resumeSuspendedMobileSession(request) || this.mobileSessionActive(request)) {
+        return this.redirect(response, '/')
+      }
       this.options.onReconnectRequested?.()
-      return this.html(response, renderMobileReconnectPage(this.locale(), 'lan'))
+      return this.html(response, renderMobileReconnectPage(this.locale(), 'lan', { resumeUnavailable: true }))
     }
 
     if (request.method === 'POST' && url.pathname === '/pair/retry') {
@@ -925,6 +939,9 @@ export class LanMobileBridge {
       if (connectionMode === 'tunnel') {
         this.options.onReconnectRequested?.()
         return this.json(response, 200, { ok: true, pinRequired: true })
+      }
+      if (this.resumeSuspendedMobileSession(request) || this.mobileSessionActive(request)) {
+        return this.json(response, 200, { ok: true, reconnected: true })
       }
       this.options.onReconnectRequested?.()
       return this.json(response, 200, { ok: true, rescan: true })
@@ -1085,6 +1102,27 @@ export class LanMobileBridge {
     return this.cookieValue(request, 'dsh_mobile')
   }
 
+  /**
+   * Restores one session the desktop disconnect suspended. Cookies that
+   * `rememberMobileContext` recorded from an anonymous request are not eligible,
+   * so a neighbor cannot mint a cookie and reconnect.
+   */
+  private resumeSuspendedMobileSession(request: IncomingMessage): boolean {
+    const token = this.mobileToken(request)
+    if (!token) return false
+    const session = this.resumableSessions.get(token)
+    if (!session) return false
+    this.resumableSessions.delete(token)
+    this.suspendedSessions.delete(token)
+    this.sessions.set(token, session)
+    return true
+  }
+
+  private mobileSessionActive(request: IncomingMessage): boolean {
+    const token = this.mobileToken(request)
+    return Boolean(token && this.sessions.has(token))
+  }
+
   private rememberMobileContext(
     request: IncomingMessage,
     remoteAddress: string,
@@ -1099,6 +1137,7 @@ export class LanMobileBridge {
     if (sameDeviceIsActive) {
       this.sessions.set(token, { token, remoteAddress })
       this.suspendedSessions.delete(token)
+      this.resumableSessions.delete(token)
       return
     }
     if (!this.suspendedSessions.has(token) && this.suspendedSessions.size >= 16) {
@@ -1603,9 +1642,10 @@ export class LanMobileBridge {
     if (!isRecord(frame) || frame.type !== 'item') return
     const value = frame.value
     if (frame.streamId === WORKSPACE_STREAM_ID) {
-      // `baseline` carries the whole projection; later frames are deltas the
-      // mobile surface does not consume, so only the baseline is retained.
-      if (isRecord(value) && value.type === 'baseline') this.workspaceSnapshot = value.value
+      // The phone filters its session list by this snapshot. A session created
+      // after connect arrives as an increment, so keeping only the opening
+      // baseline hides it until the follow stream reconnects.
+      if (isRecord(value)) this.workspaceSnapshot = applyWorkspaceFollowFrame(this.workspaceSnapshot, value)
       return
     }
     if (frame.streamId !== EVENT_STREAM_ID || !isRecord(value)) return
@@ -1764,6 +1804,65 @@ export function isInternetTunnelHost(host: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+interface WorkspaceSnapshot extends Record<string, unknown> {
+  items: unknown[]
+}
+
+function isWorkspaceSnapshot(value: unknown): value is WorkspaceSnapshot {
+  return isRecord(value) && Array.isArray(value.items)
+}
+
+function workspaceIdOf(value: unknown): string | undefined {
+  if (!isRecord(value) || typeof value.workspaceId !== 'string' || value.workspaceId.length === 0) return undefined
+  return value.workspaceId
+}
+
+/**
+ * Fold one `workspace/follow` frame into the snapshot `workspace.list` serves.
+ *
+ * The Host has no unary workspace read. The opening frame is a full baseline;
+ * later frames are increments. Increments that arrive before a baseline are
+ * ignored, because there is no projection to apply them to.
+ */
+export function applyWorkspaceFollowFrame(snapshot: unknown, frame: Record<string, unknown>): unknown {
+  if (frame.type === 'baseline') return frame.value
+  const current = isWorkspaceSnapshot(snapshot) ? snapshot : undefined
+  if (current === undefined) return snapshot
+  if (frame.type === 'upsert') {
+    const workspaceId = workspaceIdOf(frame.workspace)
+    if (workspaceId === undefined || !isRecord(frame.workspace)) return snapshot
+    const items = current.items.slice()
+    const index = items.findIndex((item) => workspaceIdOf(item) === workspaceId)
+    if (index >= 0) items[index] = frame.workspace
+    else items.push(frame.workspace)
+    return { ...current, items }
+  }
+  if (frame.type === 'remove') {
+    const workspaceId = typeof frame.workspaceId === 'string' ? frame.workspaceId : undefined
+    if (workspaceId === undefined || workspaceId.length === 0) return snapshot
+    return {
+      ...current,
+      items: current.items.filter((item) => workspaceIdOf(item) !== workspaceId)
+    }
+  }
+  if (frame.type === 'order' && Array.isArray(frame.workspaceIds)) {
+    const rank = new Map<string, number>()
+    for (const [index, id] of frame.workspaceIds.entries()) {
+      if (typeof id === 'string' && id.length > 0) rank.set(id, index)
+    }
+    const items = current.items.slice().sort((left, right) => {
+      const leftRank = rank.get(workspaceIdOf(left) ?? '')
+      const rightRank = rank.get(workspaceIdOf(right) ?? '')
+      return (leftRank ?? Number.MAX_SAFE_INTEGER) - (rightRank ?? Number.MAX_SAFE_INTEGER)
+    })
+    return { ...current, items }
+  }
+  if (frame.type === 'archived' && Array.isArray(frame.archivedSessionIds)) {
+    return { ...current, archivedSessionIds: frame.archivedSessionIds.slice() }
+  }
+  return snapshot
 }
 
 function requiredStringField(value: unknown, field: string): string {

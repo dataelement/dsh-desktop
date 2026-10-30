@@ -53,6 +53,28 @@ export function tailLog(path: string): { lines: string[]; logStatus: 'ok' | 'mis
   } catch (error) { return { lines: [], logStatus: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unreadable' } }
   finally { if (fd !== undefined) closeSync(fd) }
 }
+export function isHealthySessionLog(lines: string[]): boolean {
+  if (lines.length === 0) return false
+  const tail = lines.slice(-30)
+  const hasError = tail.some(line =>
+    /render-process-gone:\s*reason=crashed/i.test(line) ||
+    /GPU process gone:\s*reason=crashed/i.test(line) ||
+    /Harness entry failed/i.test(line) ||
+    /DSH entry failed/i.test(line) ||
+    /uncaught exception/i.test(line) ||
+    /unhandled rejection/i.test(line) ||
+    /\bfatal\b/i.test(line) ||
+    /STATUS_ACCESS_VIOLATION/i.test(line) ||
+    /\(exit code [^0]\)/i.test(line)
+  )
+  if (hasError) return false
+  return lines.some(line =>
+    line.includes('Harness is ready') ||
+    line.includes('cleared 1 stale Harness authentication cookie') ||
+    line.includes('dsh web:')
+  )
+}
+
 export class DesktopService {
   readonly installationId: string
   readonly platform: DesktopPlatform
@@ -125,8 +147,11 @@ export class DesktopService {
     }
   }
 
-  async checkUpdate(): Promise<UpdateDecision> {
+  // A user-initiated check asks the policy service to bypass percentage rollout.
+  // Server-side version, platform, enabled-release, and archive validation remain mandatory.
+  async checkUpdate(manual = false): Promise<UpdateDecision> {
     const query = new URLSearchParams({ installationId: this.installationId, currentVersion: this.options.version, platform: this.platform })
+    if (manual) query.set('manual', 'true')
     const response = await this.options.request(`${SERVICE_URL}/v1/updates/check?${query}`, { signal: AbortSignal.timeout(5000), redirect: 'error' })
     if (!response.ok) throw new Error(`Update policy unavailable (${response.status})`)
     const policy = await response.json() as Record<string, unknown>

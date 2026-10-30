@@ -1,7 +1,14 @@
 import childProcess from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerHostModuleFallback } from './host-module-fallback.mjs'
+import { packagedArchiveRoot, registerOfficeEngineResolution } from './office-engine-resolution.mjs'
+import {
+  PACKAGED_PNPM_ENTRY_ENV,
+  PACKAGED_PNPM_RUNNER_ENV,
+  buildPackagedPnpmInvocation
+} from './packaged-pnpm-invocation.mjs'
 import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs'
 
 // On macOS Harness runs inside an Electron utility process (TCC responsibility
@@ -12,7 +19,8 @@ import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs
 // `--expose-internals` shifts argv and the CLI answers "--profile <name> is
 // required" instead of installing. Declaring it here, after this process has
 // already parsed the Chromium switches it was launched with, marks only the
-// children as Node processes. Bundled-Node hosts (Windows, Linux) skip it.
+// children as Node processes. Windows and Linux declare Node mode before
+// launching this entry.
 if (process.versions.electron !== undefined) {
   process.env.ELECTRON_RUN_AS_NODE = '1'
 }
@@ -84,7 +92,16 @@ if (!dshEntryPath) {
   process.stdout.write(`[harness-node] loading=${dshEntryPath}\n`)
   process.argv = [process.execPath, dshEntryPath, ...dshArguments]
   try {
+    const archive = packagedArchiveRoot(dshEntryPath)
+    const resources = archive ? dirname(archive) : import.meta.dirname
+    process.env.DSH_DESKTOP_OFFICE_RESOURCES = archive
+      ? join(resources, 'office-runtime')
+      : join(resources, '..', '.build', 'office-runtime')
+    process.env.DSH_DESKTOP_OFFICE_CLI = join(resources, 'office-cli.mjs')
     registerHostModuleFallback(dshEntryPath)
+    // Packages load through app.asar; the Office engine must resolve to its
+    // unpacked directory so the OS can spawn it.
+    registerOfficeEngineResolution(dshEntryPath)
     // Harness 0.1.5 gates its CLI behind `if (import.meta.main)` and exports
     // `runCli`. This file imports the entry rather than being it, so that guard
     // is false here and a plain import would load the module, run nothing, and
@@ -93,8 +110,26 @@ if (!dshEntryPath) {
     const entry = await import(pathToFileURL(dshEntryPath).href)
     process.stdout.write('[harness-node] DSH entry loaded\n')
     if (typeof entry.runCli === 'function') {
-      process.stdout.write('[harness-node] invoking DSH runCli()\n')
-      await entry.runCli()
+      // PATH `pnpm` is a `.cmd` shim on Windows. Plugin manager's registry
+      // read (`pnpm config get registry`) runs on every add-plugin click, and
+      // execa launches that shim through cmd.exe. Pass the packaged executable
+      // so the same read never creates a console. Missing injection keeps the
+      // previous PATH fallback rather than failing startup.
+      const packageManager = buildPackagedPnpmInvocation(process.env, process.execPath)
+      if (packageManager) {
+        const runner = packageManager.args.length > 1 ? 'via lock-recovery runner' : 'without lock-recovery runner'
+        process.stdout.write(`[harness-node] invoking DSH runCli() with packaged pnpm (${runner})\n`)
+        if (process.env[PACKAGED_PNPM_RUNNER_ENV] && packageManager.args.length === 1) {
+          process.stderr.write('[harness-node] packaged pnpm runner is missing; installs skip lock recovery\n')
+        }
+        await entry.runCli({ packageManager })
+      } else {
+        process.stdout.write('[harness-node] invoking DSH runCli()\n')
+        if (process.env[PACKAGED_PNPM_ENTRY_ENV]) {
+          process.stderr.write('[harness-node] packaged pnpm entry is missing; plugin manager will resolve pnpm from PATH\n')
+        }
+        await entry.runCli()
+      }
     }
   } catch (error) {
     reportPluginFailures(error)

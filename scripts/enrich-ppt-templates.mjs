@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import yaml from 'js-yaml';
 import {createCompositions, compositionPlans} from './ppt/composition-library.mjs';
-const root=path.resolve('packages/ppt-runtime/templates');
+const root=path.resolve(process.env.DSH_PPT_TEMPLATE_OUTPUT ?? '.build/ppt-runtime/templates');
 const json=async file=>JSON.parse(await fs.readFile(file,'utf8'));
 for(const category of await fs.readdir(root)) for(const slug of await fs.readdir(path.join(root,category))){
  if(!compositionPlans[slug])continue;

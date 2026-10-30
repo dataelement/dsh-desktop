@@ -4,7 +4,7 @@ DSH/Cordis 公共生图插件，提供 `image_generate` 工具、`generate-image
 
 ## 使用
 
-DSH Desktop 默认装载本插件。在生图工具卡片选择 Seedream 或 OpenAI，填写该平台的 API Key 并保存。生图模型支持预设选择或自定义输入，API 地址可在高级设置中修改。
+DSH Desktop 默认关闭内置生图插件。需要使用内置版本时，在「设置 → 插件」启用「内置生图工具」并重启 Harness；启用前须先停用同名市场版本。启用后，在生图工具卡片选择 Seedream 或 OpenAI，填写该平台的 API Key 并保存。生图模型支持预设选择或自定义输入，API 地址可在高级设置中修改。
 
 生图模型使用下拉选择。OpenAI 的「获取模型」用当前填写或已保存的 Key 发起一次 `GET /models`，筛选 Images API 支持的 GPT Image 模型；获取过程只更新候选列表，配置在点击保存时生效。查询来源保留在接口中，界面显示候选模型、空列表和查询错误。字节的管理接口使用独立签名凭据，因此 API Key 模式提供内置选项和自定义模型/接入点 ID。
 
@@ -54,7 +54,7 @@ API 地址同时接受基础地址和控制台提供的完整 `/images/generatio
 npm pack ./packages/dsh-image-generation --pack-destination /absolute/output/directory
 ```
 
-在具有匹配 Harness 服务的独立 DSH 安装中，可通过 `dsh plugin --profile web add /absolute/path/dsh-image-generation-0.1.0.tgz` 安装。要求 Harness `0.1.2-rc.1` 对应的 settings、credentials、connection、tools、skills、systemPrompt、sandboxPolicy、sandbox、subprocess 和 sessionController 服务。Desktop 已默认装载时直接配置即可。
+在具有匹配 Harness 服务的独立 DSH 安装中，可通过 `dsh plugin --profile web add /absolute/path/dsh-image-generation-0.1.0.tgz` 安装。要求 Harness `0.1.2-rc.1` 对应的 settings、credentials、connection、tools、skills、systemPrompt、sandboxPolicy、sandbox、subprocess 和 sessionController 服务。在 Desktop 使用内置版本时，需要先从插件设置启用。
 
 ## 凭据与执行边界
 
@@ -76,6 +76,6 @@ npm run typecheck
 npm test
 ```
 
-测试使用本机模拟服务和真实 Harness 凭据存储、工具执行管线，覆盖两个厂商、单请求保存、成功/失败、修订冲突、凭据隔离、PNG 落盘、取消、体积限制和目录越界。Host smoke 启动隔离实例，验证默认装载、Client 入口、鉴权、Origin 及保存结果。真实付费模型与 Office 文档视觉验收在 `STATUS.md` 单独记录。
+测试使用本机模拟服务和真实 Harness 凭据存储、工具执行管线，覆盖两个厂商、单请求保存、成功/失败、修订冲突、凭据隔离、PNG 落盘、取消、体积限制和目录越界。Host smoke 启动隔离实例，验证插件启用后的 Client 入口、鉴权、Origin 及保存结果。真实付费模型与 Office 文档视觉验收在 `STATUS.md` 单独记录。
 
 接口参考：[OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate)、[OpenAI 模型列表](https://developers.openai.com/api/reference/resources/models/methods/list)、[火山方舟生图 API](https://www.volcengine.com/docs/82379/1541523)、[火山方舟官方运行时 SDK](https://github.com/volcengine/volcengine-python-sdk/tree/master/volcenginesdkarkruntime/resources/images)、[火山管理接口及签名鉴权](https://github.com/volcengine/volcengine-python-sdk/blob/master/volcenginesdkark/api/ark_api.py)。

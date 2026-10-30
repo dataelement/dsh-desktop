@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -9,6 +10,9 @@ import {
   ensureProfilePnpmShim,
   removeProfilePluginWithDsh
 } from '../src/main/runtime/profile-plugin-command'
+import { electronNodeExecutable } from '../src/main/runtime/electron-node-executable'
+import { resolveTestNodeExecutable } from './node-executable'
+const TEST_NODE_EXECUTABLE = resolveTestNodeExecutable()
 
 const existingRunnerPath = join(
   __dirname,
@@ -67,7 +71,7 @@ describe('profile-plugin-command', () => {
       {
         dshHome: testDir,
         dshEntryPath,
-        nodeExecutablePath: process.execPath,
+        nodeExecutablePath: TEST_NODE_EXECUTABLE,
         pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
         environment: process.env
       },
@@ -82,6 +86,53 @@ describe('profile-plugin-command', () => {
       pnpmStatus: 0
     })
   })
+
+  it('runs package commands and both shims as Node through the Electron runtime', async () => {
+    // The Desktop ships no standalone Node: the main process passes the Electron
+    // executable (the macOS Helper) and its own environment, which has no Node
+    // mode. Without ELECTRON_RUN_AS_NODE the command and the shims would boot
+    // Electron apps instead of running dsh and pnpm.
+    const electron = createRequire(import.meta.url)('electron') as string
+    const profileDirectory = join(testDir, 'profiles', 'web')
+    const reportPath = join(testDir, 'report.json')
+    const dshEntryPath = join(testDir, 'fake-dsh.mjs')
+    await mkdir(profileDirectory, { recursive: true })
+    await writeFile(
+      dshEntryPath,
+      `
+        import { spawnSync } from 'node:child_process'
+        import { writeFileSync } from 'node:fs'
+        const shell = process.platform === 'win32'
+        const pnpm = spawnSync('pnpm', ['--version'], { encoding: 'utf8', shell })
+        const node = spawnSync('node', ['-p', 'process.versions.electron'], { encoding: 'utf8', shell })
+        writeFileSync(${JSON.stringify(reportPath)}, JSON.stringify({
+          electron: process.versions.electron,
+          pnpmVersion: pnpm.stdout?.trim(),
+          shimNodeElectron: node.stdout?.trim()
+        }))
+        process.exit(pnpm.status ?? 1)
+      `,
+      'utf8'
+    )
+    const { ELECTRON_RUN_AS_NODE: _runAsNode, ...environment } = process.env
+
+    const result = await removeProfilePluginWithDsh(
+      {
+        dshHome: testDir,
+        dshEntryPath,
+        nodeExecutablePath: electronNodeExecutable(electron),
+        pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
+        environment
+      },
+      '@example/plugin'
+    )
+
+    expect(result).toEqual({ ok: true })
+    const report = JSON.parse(await readFile(reportPath, 'utf8'))
+    expect(report.electron).toMatch(/^\d+\./u)
+    expect(report.pnpmVersion).toBe('10.34.5')
+    expect(report.shimNodeElectron).toBe(report.electron)
+  }, 60_000)
 
   it('observes a fast command exit before sampling a large profile tree', async () => {
     const profileDirectory = join(testDir, 'profiles', 'web')
@@ -98,7 +149,7 @@ describe('profile-plugin-command', () => {
       {
         dshHome: testDir,
         dshEntryPath,
-        nodeExecutablePath: process.execPath,
+        nodeExecutablePath: TEST_NODE_EXECUTABLE,
         pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
         environment: process.env
       },
@@ -158,6 +209,24 @@ describe('profile pnpm shim and failure reporting', () => {
     }
   })
 
+  it('quotes the console-hide bootstrap in the Windows pnpm shim', async () => {
+    const home = join(__dirname, '.temp-profile-plugin-command-console-hide')
+    const bootstrap = 'C:\\Program Files (x86)\\DSH Desktop\\resources\\windows-hide-console-import.mjs'
+    try {
+      await ensureProfilePnpmShim({
+        dshHome: home,
+        nodeExecutablePath: '/app/node',
+        pnpmEntryPath: '/app/pnpm.cjs',
+        hideConsoleBootstrapPath: bootstrap
+      })
+      if (process.platform !== 'win32') return
+      const shim = await readFile(join(home, '.desktop-bin', 'pnpm.cmd'), 'utf8')
+      expect(shim).toContain(`@set "DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP=${bootstrap}"`)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('reports the failure that names a cause, not dsh’s wrapper line', () => {
     // dsh always ends with "pnpm failed in profile directory …", which names
     // nothing — reporting that turns every failure into a dead end.
@@ -176,6 +245,22 @@ describe('profile pnpm shim and failure reporting', () => {
 })
 
 describe('buildProfilePluginCommandEnvironment', () => {
+  it('runs plugin repair through Electron Node mode on every platform', () => {
+    const windows = buildProfilePluginCommandEnvironment(
+      { Path: 'C:\\Windows\\System32' },
+      'C:\\shim',
+      'C:\\DSH Desktop\\DSH Desktop.exe',
+      'win32'
+    )
+    const mac = buildProfilePluginCommandEnvironment(
+      { PATH: '/usr/bin' },
+      '/shim',
+      '/Applications/DSH Desktop.app/Contents/Frameworks/DSH Desktop Helper.app/Contents/MacOS/DSH Desktop Helper',
+      'darwin'
+    )
+    expect(windows.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(mac.ELECTRON_RUN_AS_NODE).toBe('1')
+  })
   it('keeps the user PATH when the environment block stores it lowercase', () => {
     // Spreading `process.env` keeps only the casing the OS block stores, so
     // on a machine whose registry PATH value name is lowercase the previous

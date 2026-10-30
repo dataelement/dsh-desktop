@@ -1,11 +1,11 @@
 <h1 align="center">
-  <img src="docs/images/readme-logo-black-v020.png" width="64" alt="Logotipo do DSH Desktop" valign="middle" />
+  <img src="docs/images/readme-logo-black-rounded.svg" width="64" alt="Logotipo do DSH Desktop" valign="middle" />
   DSH Desktop
 </h1>
 
 <p align="center">
-  Um aplicativo desktop local-first e multiplataforma para o
-  <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>.
+  <strong>DSH Desktop by Dataelem</strong> é um aplicativo Agent para desktop desenvolvido pela equipe da Dataelem com base no framework DeepSeek Harness, disponível em edições de código aberto e empresarial.<br />
+  Site oficial：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · Repositório de código aberto：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 O DSH Desktop transforma a experiência local do DeepSeek Harness em um aplicativo desktop instalável. Ele inicia o Harness automaticamente, armazena Profile, plugins, espaços de trabalho, configurações de modelos e sessões fora do diretório do aplicativo e abre a interface completa quando o Runtime local está pronto.
 
 > [!IMPORTANT]
-> O DSH Desktop é uma versão inicial baseada no `@deepseek-ai/dsh@0.1.5-rc.2`, que evolui rapidamente. As versões para macOS são assinadas e notarizadas pela Apple. Os instaladores para Windows x64 também são assinados; os avisos de segurança do Windows podem diminuir gradualmente à medida que o editor acumula reputação de downloads e instalações.
+> O DSH Desktop é uma versão inicial baseada no `@deepseek-ai/dsh@0.2.1-rc.3`, que evolui rapidamente. As versões para macOS são assinadas e notarizadas pela Apple. Os instaladores para Windows x64 também são assinados; os avisos de segurança do Windows podem diminuir gradualmente à medida que o editor acumula reputação de downloads e instalações.
 
 ## Download
 
@@ -52,6 +52,7 @@ O DeepSeek Harness já fornece o Agent Runtime e a Web UI. O DSH Desktop acresce
 - Oferece suporte aos modelos oficiais da DeepSeek e a provedores de terceiros populares
 - Importa e exporta Agent Preset completos como [pacotes `.dshpreset`](docs/preset-packages.md) portáteis
 - Transforma materiais em apresentações PPTX editáveis por meio do modo PPT integrado
+- Inclui Python e bibliotecas de Office para criar e verificar DOCX, PPTX e XLSX offline no macOS e Windows
 - Preserva Profile, plugins, espaços de trabalho, sessões e configurações de modelos durante atualizações
 - Detecta falhas de inicialização e de plugins da interface, guarda diagnósticos e oferece recuperação guiada
 - Inclui um Modo de segurança não destrutivo que bloqueia temporariamente plugins de terceiros

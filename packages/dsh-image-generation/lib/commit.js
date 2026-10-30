@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { ImageError } from './provider.js'
 
-export function writerPlan(ctx, root, exec) {
+export async function writerPlan(ctx, root, exec) {
   const policy = ctx.sandboxPolicy.resolve({ session: exec.agent.session })
-  return ctx.sandbox.confine([process.execPath, fileURLToPath(new URL('./writer.js', import.meta.url))], {
+  return await ctx.sandbox.confine([process.execPath, fileURLToPath(new URL('./writer.js', import.meta.url))], {
     ...policy, mode: 'workspace-write', workspaceRoot: root,
   })
 }
@@ -21,7 +21,7 @@ export function writerEnvironment(runtime = process) {
 }
 
 export async function commitImage(ctx, root, data, exec) {
-  const plan = writerPlan(ctx, root, exec)
+  const plan = await writerPlan(ctx, root, exec)
   const signal = AbortSignal.any([AbortSignal.timeout(30_000), ...(exec.signal ? [exec.signal] : [])])
   const child = ctx.subprocess.spawn({
     argv: plan.argv, cwd: root, env: writerEnvironment(), signal, graceMs: 1000,

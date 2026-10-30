@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import { patchPath } from './patch-path'
 
 describe('desktop Electron directory picker', () => {
 
@@ -22,14 +21,16 @@ describe('desktop Electron directory picker', () => {
     expect(desktopPatch).not.toContain('dsh-client-ui-directory-picker-native')
   })
 
-  it('captures the client bridge as a reproducible dependency patch', async () => {
-    const dependencyPatch = await readFile(
-      patchPath('@deepseek-ai/dsh-client-ui-directory-picker-native'),
+  it('provides the stock picker bridge from preload', async () => {
+    const preload = await readFile('src/preload/index.ts', 'utf8')
+    const stockClient = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native/lib/client.js',
       'utf8'
     )
 
-    expect(dependencyPatch).toContain('window.dshDesktopDirectoryPicker')
-    expect(dependencyPatch).toContain('DSH Desktop directory picker bridge is unavailable')
+    expect(preload).toContain("contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__'")
+    expect(stockClient).toContain('globalThis.__DSH_DIRECTORY_PICKER__')
+    expect(stockClient).toContain('ctx.uiWorkspace.pickDirectory()')
   })
 
   it('leaves a missing picker service to Harness rather than patching around it', async () => {
@@ -52,5 +53,13 @@ describe('desktop Electron directory picker', () => {
 
     expect(controller).toContain('static inject = ["directoryPicker"]')
     expect(controller).toContain('"directoryPickerController"')
+  })
+
+  it('lets the workspace directory dialog create a folder on macOS', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const handlerStart = main.indexOf("ipcMain.handle('directory-picker:open'")
+    const handler = main.slice(handlerStart, main.indexOf('ipcMain.handle(', handlerStart + 1))
+
+    expect(handler).toContain("properties: ['openDirectory', 'createDirectory']")
   })
 })

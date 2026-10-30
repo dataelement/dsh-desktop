@@ -4,9 +4,9 @@ import { dirname, join } from 'node:path'
 import { isMap, isSeq, parseDocument } from 'yaml'
 import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recovery'
 
-// The normal Desktop patch loads the composer, which mounts the core itself.
-// Passed explicitly: standalone Harness profiles may still load either bundle.
-export const HOST_COMPOSED_PPT_BUNDLES = ['dsh-ppt', 'dsh-ppt-composer'] as const
+// Desktop owns these PPT layers. Image generation keeps its Profile bundle
+// declaration so a duplicate host/Profile installation enters Recovery.
+export const HOST_COMPOSED_BUNDLES = ['dsh-ppt', 'dsh-ppt-composer'] as const
 
 /**
  * What the profile says about itself, checked against what is on disk.
@@ -121,7 +121,8 @@ async function undeclaredBundles(
  */
 export async function inspectProfileConsistency(
   dshHome: string,
-  hostComposedBundles: readonly string[] = []
+  hostComposedBundles: readonly string[] = [],
+  pendingRemovals: readonly string[] = []
 ): Promise<string[]> {
   const manifestPath = profilePackageJsonPath(dshHome)
   const manifest = await readManifest(manifestPath)
@@ -142,6 +143,8 @@ export async function inspectProfileConsistency(
 
   for (const dependency of dependencies) {
     if (bundles.includes(dependency) || hostComposedBundles.includes(dependency)) continue
+    // A removal tombstone keeps its package out of composition on purpose.
+    if (pendingRemovals.includes(dependency)) continue
     const { installed, bundle } = await inspectPackage(nodeModulesPath, dependency)
     if (installed && bundle) {
       findings.push(`${dependency} is installed and declares a bundle, but is not composed`)
@@ -168,13 +171,17 @@ export async function inspectProfileConsistency(
 /**
  * Reconcile bundle declarations before launch. Host-composed bundles remain
  * installed dependencies, but must not also load through the Profile: the
- * Desktop PPT adapter already mounts its core, whose routes and skill provider
- * cannot be registered twice. Other installed bundles retain auto-healing.
+ * Desktop patch already mounts these plugins, whose services cannot be
+ * registered twice. Other installed bundles retain auto-healing, except
+ * plugins with a pending removal: re-listing those would undo the tombstone.
+ * Healing only restores composability; the package switch in
+ * `.dsh-market/state.json` still decides whether a plugin loads.
  * This does not edit user patch layers or remove packages or their data.
  */
 export async function healProfileBundles(
   dshHome: string,
-  hostComposedBundles: readonly string[] = []
+  hostComposedBundles: readonly string[] = [],
+  pendingRemovals: readonly string[] = []
 ): Promise<{ added: string[]; removed: string[] }> {
   const manifestPath = profilePackageJsonPath(dshHome)
   let manifestText: string
@@ -196,6 +203,7 @@ export async function healProfileBundles(
 
   for (const dependency of dependencies) {
     if (bundleSet.has(dependency) || hostComposedBundles.includes(dependency)) continue
+    if (pendingRemovals.includes(dependency)) continue
     const { installed, bundle } = await inspectPackage(nodeModulesPath, dependency)
     if (installed && bundle) {
       currentBundles.push(dependency)

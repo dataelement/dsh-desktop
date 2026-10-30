@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import vm from 'node:vm'
+import * as zod from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { TypertCodec } from '@deepseek-ai/dsh-typert-protocol'
 import { Context } from '@deepseek-ai/cordis'
@@ -16,7 +17,10 @@ async function browserRemotes() {
   let plugin!: { apply(ctx: unknown): Promise<() => Promise<void>> }
   vm.runInNewContext(source, {
     window: { __ModuleLoader__: { load(definition: { factory(require: unknown): typeof plugin }) {
-      plugin = definition.factory((id: string) => { throw new Error(`Unexpected dependency: ${id}`) })
+      plugin = definition.factory((id: string) => {
+        if (id === 'zod') return zod
+        throw new Error(`Unexpected dependency: ${id}`)
+      })
     } } }
   })
   return plugin
@@ -24,7 +28,7 @@ async function browserRemotes() {
 
 function accepts(codec: TypertCodec, value: unknown) {
   if (codec.mode !== 'strict') throw new Error('Expected strict Remote codec')
-  try { codec.schema.parse(value); return true } catch { return false }
+  try { codec.create().parse(value); return true } catch { return false }
 }
 
 describe('browser session deletion Remote', () => {
