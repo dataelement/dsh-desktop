@@ -327,6 +327,7 @@
       "**/spawn-helper",
       "**/@vscode/ripgrep-*/bin/rg",
       "node_modules/@deepseek-ai/libreoffice-kit-*/**/*",
+      "node_modules/pnpm/**/*",
       "node_modules/sherpa-onnx-*/**/*"
     ],
     "npmRebuild": false,
