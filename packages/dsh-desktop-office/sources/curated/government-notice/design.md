@@ -6,4 +6,4 @@
 
 版头和标题嵌入一套重命名后的 DSH Gov Song。该字体是 Adobe Source Han Serif 2.003R 简体中文可变字体的常用字静态子集，许可为 SIL OFL-1.1，随模板附带 `OFL.txt` 与 `font-source.json`。子集不是 Adobe 官方字体，Adobe 不背书。正文仿宋、一级黑体和二级楷体只声明系统字体：Windows 使用 FangSong、Microsoft YaHei、KaiTi，macOS 回退到 STFangsong、PingFang SC、Kaiti SC。子集之外的生僻字会回退到系统字体，跨平台换行和分页可能有细微差别。
 
-宿主绑定 `government-notice` 的当前修订后，用 `office_template_write` 替换发文机关、发文字号、标题、正文、署名和日期。版头段落不可删除，新增段落沿用对应正文样式。`present` 交付前核对嵌入字体、分隔线、页脚和页面设置仍与模板一致。
+宿主绑定 `government-notice` 的当前修订后，用 `office_template_write` 替换发文机关、发文字号、标题、正文、署名和日期。版头段落不可删除。版记中的抄送表可以删除单个抄送单位，也可以整表删除：仍有其他单位时只删除指定单位；删除“抄送”标签或最后一个单位时去掉该行，所有行都删除时去掉整张表。新增段落沿用对应正文样式。`present` 交付前核对嵌入字体、分隔线、页脚和页面设置仍与模板一致。
