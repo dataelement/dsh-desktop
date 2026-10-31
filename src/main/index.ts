@@ -1,4 +1,5 @@
 import { isMemoryExit } from './resource-diagnostics'
+import { bundledPnpmEntryFrom } from './bundled-pnpm'
 import { ProcessRecovery } from './process-recovery'
 import { ApplicationRollbackFlow } from './application-rollback-flow'
 import { developmentEnvironment } from './development-environment'
@@ -680,9 +681,9 @@ function bundledPnpmRunnerPath(): string {
 }
 
 function bundledPnpmEntryPath(): string {
-  const root = join(bundledRuntimeRoot(), 'node_modules', 'pnpm', 'bin')
-  const candidates = [join(root, 'pnpm.cjs'), join(root, 'pnpm.mjs')]
-  return candidates.find((candidate) => existsSync(candidate)) ?? join(root, 'pnpm.cjs')
+  // pnpm runs in node-mode children that cannot read app.asar members, so it
+  // is unpacked at build time and the entry must be the physical copy.
+  return bundledPnpmEntryFrom(bundledRuntimeRoot(), existsSync)
 }
 
 function harnessNodeEntryPath(): string {
