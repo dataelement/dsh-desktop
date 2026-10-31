@@ -5,6 +5,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
+import * as nativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
@@ -16,7 +17,7 @@ const sha = data => createHash('sha256').update(data).digest('hex')
 async function fixture(templateId = 'government-notice') {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), 'docx-layout-'))); cleanups.push(() => rm(workspace, { recursive: true, force: true }))
   const ctx = new Context()
-  for (const plugin of [SystemPrompt, ToolRuntime, LocalSandboxProvider, LocalSubprocessRuntime]) { const fork = ctx.plugin(plugin, {}); await fork; cleanups.push(() => fork.dispose()) }
+  for (const plugin of [SystemPrompt, ToolRuntime, nativeExecutor, LocalSandboxProvider, LocalSubprocessRuntime]) { const fork = ctx.plugin(plugin, {}); await fork; cleanups.push(() => fork.dispose()) }
   const catalog = JSON.parse(await readFile(resolve('packages/dsh-desktop-office/sources/catalog.json'), 'utf8'))
   const sourceRoot = resolve('packages/dsh-desktop-office/sources', catalog.find(item => item.id === templateId).source)
   const source = await readFile(join(sourceRoot, 'example.docx'))
@@ -35,11 +36,11 @@ async function fixture(templateId = 'government-notice') {
   const exec = { agent, signal: new AbortController().signal }
   await writeFile(join(workspace, 'working.docx'), source)
   const prepared = await workflow.run('prepare', { path: 'working.docx' }, exec)
-  const title = prepared.paragraphs.find(p => p.text.includes('关于开展2025'))
-  const normal = prepared.paragraphs.find(p => p.text.startsWith('为做好2025'))
-  const other = prepared.paragraphs.find(p => p.text === '一、活动主题和时间')
-  const plan = templateId === 'government-notice' ? { output_path: 'result.docx', replacements: [{ id: 'p1', text: '示例市公园管理局文件' }, { id: title.id, text: '关于公园节假日开放安排的通告' }, { id: normal.id, text: '现将公园节假日开放有关事项通告如下。' }], additions: [{ after: normal.id, source: normal.id, text: '具体开放时间以已确认的安排为准。' }], removals: [other.id] } : { output_path: 'result.docx', replacements: [{ id: prepared.paragraphs.find(p => p.text && p.can_remove).id, text: '当前材料的标题与内容' }] }
-  const call = async (name, args) => ctx.tools.execute({ name, arguments: args, callId: randomUUID(), ...exec })
+  const title = prepared.paragraphs.find(p => p.text.includes('关于开展公园'))
+  const normal = prepared.paragraphs.find(p => p.text.startsWith('为做好公园'))
+  const other = prepared.paragraphs.find(p => p.text === '一、服务主题和时间')
+  const plan = templateId === 'government-notice' ? { output_path: 'result.docx', replacements: [{ id: 'p0', text: '示例市公园管理局文件' }, { id: title.id, text: '关于公园节假日开放安排的通告' }, { id: normal.id, text: '现将公园节假日开放有关事项通告如下。' }], additions: [{ after: normal.id, source: normal.id, text: '具体开放时间以已确认的安排为准。' }], removals: [other.id] } : { output_path: 'result.docx', replacements: [{ id: prepared.paragraphs.find(p => p.text && p.can_remove).id, text: '当前材料的标题与内容' }] }
+  const call = async (name, args) => (await ctx.tools.execute({ ...exec, calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }] })).results[0].result
   return { ctx, workflow, prepared, plan, call, delivered, workspace, modes, exec, setDirectory: value => { currentDirectory = value }, setMode: value => { mode = value }, clearSelection: () => { selection = {} } }
 }
 it('writes the real Word worker output in a changed session directory', async () => {
@@ -69,7 +70,7 @@ it('keeps the Word worker off the Windows confinement command line', () => {
 it('returns Chinese layout JSON when the Windows code page is charmap', async () => {
   const { spawn } = await import('node:child_process')
   const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
-  const sourceRoot = resolve('packages/dsh-desktop-office/sources/legacy/government-notice')
+  const sourceRoot = resolve('packages/dsh-desktop-office/sources/curated/government-notice')
   const source = await readFile(join(sourceRoot, 'example.docx'))
   const profile = JSON.parse(await readFile(join(sourceRoot, 'generation.json'), 'utf8'))
   const workspace = await realpath(await mkdtemp(join(tmpdir(), 'docx-encoding-'))); cleanups.push(() => rm(workspace, { recursive: true, force: true }))
@@ -87,12 +88,12 @@ it('returns Chinese layout JSON when the Windows code page is charmap', async ()
     child.on('close', code => code === 0 ? resolvePromise(Buffer.concat(out).toString('utf8')) : reject(new Error(Buffer.concat(err).toString('utf8') || `exit ${code}`)))
     child.stdin.end(input)
   })
-  expect(JSON.parse(stdout).paragraphs.find(p => p.id === 'p1').text).toBe('中国中车股份有限公司文件')
+  expect(JSON.parse(stdout).paragraphs.find(p => p.id === 'p0').text).toBe('示例市公共服务中心文件')
 })
 it('edits the native template, retains layout and admits it through the real tools pipeline', async () => {
   const f = await fixture()
-  expect(f.prepared.paragraphs.find(p => p.id === 'p1').text).toBe('中国中车股份有限公司文件')
-  expect(f.prepared.paragraphs.find(p => p.id === 'p1').can_remove).toBe(false)
+  expect(f.prepared.paragraphs.find(p => p.id === 'p0').text).toBe('示例市公共服务中心文件')
+  expect(f.prepared.paragraphs.find(p => p.id === 'p0').can_remove).toBe(false)
   const created = await f.call('office_template_write', f.plan)
   expect(created.isError).toBe(false)
   expect((await f.workflow.run('validate', { path: 'result.docx' }, f.exec)).checks).toContain('template-font-assignments')
@@ -119,13 +120,110 @@ it('checks current bytes again after a previously valid output is changed', asyn
 })
 it('protects the editable issuer header, the red divider and existing output files', async () => {
   const f = await fixture()
-  const invalid = await f.call('office_template_write', { ...f.plan, removals: ['p1'] })
+  const invalid = await f.call('office_template_write', { ...f.plan, removals: ['p0'] })
   expect(invalid.isError).toBe(true)
   await expect(access(join(f.workspace, 'result.docx'))).rejects.toThrow()
   expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
   const saved = await readFile(join(f.workspace, 'result.docx'))
   expect((await f.call('office_template_write', f.plan)).isError).toBe(true)
   expect((await readFile(join(f.workspace, 'result.docx'))).equals(saved)).toBe(true)
+})
+async function tableText(file) {
+  const { execFile } = await import('node:child_process'); const { promisify } = await import('node:util')
+  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
+  const { stdout } = await promisify(execFile)(python, ['-I', '-B', '-c', `
+import json, sys, zipfile
+from lxml import etree as E
+ns={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    root=E.fromstring(archive.read('word/document.xml'))
+    raw=archive.read('word/document.xml')
+print(json.dumps({'tables': len(root.findall('.//w:tbl', ns)), 'rows': len(root.findall('.//w:tr', ns)), 'text': ''.join((node.text or '') for node in root.findall('.//w:t', ns)), 'internalMarks': b'dsh.desktop/template' in raw or b'data-dsh-' in raw, 'namespacePrefixes': sorted(prefix for prefix in root.nsmap if prefix)}))
+`, file])
+  return JSON.parse(stdout)
+}
+it('rejects an ambiguous removable-table template', async () => {
+  const { execFile } = await import('node:child_process'); const { promisify } = await import('node:util')
+  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
+  const { stdout } = await promisify(execFile)(python, ['-I', '-B', '-c', `
+import copy, importlib.util, json, sys
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('layout', sys.argv[1]); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+source=Path(sys.argv[2]); profile=json.loads((source/'generation.json').read_text(encoding='utf-8'))
+parts=module.package((source/'example.docx').read_bytes()); root=module.document(parts)
+table=root.find('.//w:tbl', module.NS); table.addnext(copy.deepcopy(table)); parts['word/document.xml']=module.serialized(root)
+try:
+    module.inventory(parts, profile)
+except ValueError as error:
+    print(str(error))
+else:
+    raise SystemExit('ambiguous removable tables were accepted')
+`, resolve('packages/dsh-desktop-office/lib/docx-layout.py'), resolve('packages/dsh-desktop-office/sources/curated/government-notice')])
+  expect(stdout.trim()).toBe('The removable table profile requires one uniquely marked template table')
+})
+it('removes one government notice copy entry and keeps the remaining entry', async () => {
+  const f = await fixture()
+  const office = f.prepared.paragraphs.find(p => p.text === '示例市公园管理处')
+  expect(office.can_remove).toBe(true)
+  const additions = [...f.plan.additions, { after: office.id, source: office.id, text: '示例市文化馆' }]
+  expect((await f.call('office_template_write', { ...f.plan, additions, removals: [...f.plan.removals, office.id] })).isError).toBe(false)
+  const result = await tableText(join(f.workspace, 'result.docx'))
+  expect(result.tables).toBe(1)
+  expect(result.text).toContain('抄送')
+  expect(result.text).toContain('示例市文化馆')
+  expect(result.text).not.toContain('示例市公园管理处')
+  expect(result.internalMarks).toBe(false)
+  expect((await f.call('present', { files: [{ path: 'result.docx' }] })).isError).toBe(false)
+})
+it.each([
+  ['the label', ['抄送']],
+  ['the last entry', ['示例市公园管理处']],
+  ['every copy paragraph', ['抄送', '示例市公园管理处']]
+])('removes the government notice copy table after removing %s', async (_name, texts) => {
+  const f = await fixture()
+  const ids = texts.map(value => f.prepared.paragraphs.find(p => p.text === value).id)
+  expect((await f.call('office_template_write', { ...f.plan, removals: [...f.plan.removals, ...ids] })).isError).toBe(false)
+  expect((await tableText(join(f.workspace, 'result.docx'))).tables).toBe(0)
+  expect((await f.call('present', { files: [{ path: 'result.docx' }] })).isError).toBe(false)
+})
+it('refuses to remove one meeting action row', async () => {
+  const f = await fixture('meeting-minutes')
+  const action = f.prepared.paragraphs.find(p => p.text === '1. 整理预热方案')
+  expect(action.can_remove).toBe(false)
+  const invalid = await f.call('office_template_write', { ...f.plan, removals: [action.id] })
+  expect(invalid.isError).toBe(true)
+  expect(JSON.stringify(invalid)).toContain('Keep the template layout paragraphs and table structure')
+  await expect(access(join(f.workspace, 'result.docx'))).rejects.toThrow()
+})
+it('preserves namespace declarations when editing a shared Word template', async () => {
+  const f = await fixture('meeting-minutes')
+  const before = await tableText(join(f.workspace, 'working.docx'))
+  expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
+  const after = await tableText(join(f.workspace, 'result.docx'))
+  expect(after.namespacePrefixes).toEqual(before.namespacePrefixes)
+  expect(after.internalMarks).toBe(false)
+})
+it('rejects delivery after the meeting action table is removed outside the editor', async () => {
+  const f = await fixture('meeting-minutes')
+  expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
+  const resultPath = join(f.workspace, 'result.docx')
+  const { execFile } = await import('node:child_process'); const { promisify } = await import('node:util')
+  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
+  await promisify(execFile)(python, ['-I', '-B', '-c', `
+import sys, zipfile
+from lxml import etree as E
+path=sys.argv[1]; ns={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+with zipfile.ZipFile(path) as archive: parts={name:archive.read(name) for name in archive.namelist()}
+root=E.fromstring(parts['word/document.xml'])
+for table in list(root.findall('.//w:tbl', ns)): table.getparent().remove(table)
+parts['word/document.xml']=E.tostring(root)
+with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as archive:
+    for name,data in parts.items(): archive.writestr(name,data)
+`, resultPath])
+  const rejected = await f.call('present', { files: [{ path: 'result.docx' }] })
+  expect(rejected.isError).toBe(true)
+  expect(JSON.stringify(rejected)).toContain('Preserve the template table layout')
+  expect(f.delivered).not.toHaveBeenCalled()
 })
 it('confines paths, applies the current write policy, and keeps generic delivery after deselection', async () => {
   const f = await fixture()
@@ -184,7 +282,7 @@ with zipfile.ZipFile(p,'w',zipfile.ZIP_DEFLATED) as z:
 
 it('retains mixed heading/body typography with explicit native run references', async () => {
   const f = await fixture()
-  const heading = f.prepared.paragraphs.find(p => p.text.startsWith('（一）')), body = f.prepared.paragraphs.find(p => p.text.startsWith('为做好2025'))
+  const heading = f.prepared.paragraphs.find(p => p.text.startsWith('（一）')), body = f.prepared.paragraphs.find(p => p.text.startsWith('为做好公园'))
   const text = '（一）预约安排。当前材料中的开放安排。'
   f.plan.additions = [{ after: heading.id, source: heading.id, text, runs: [{ source: heading.runs.find(r => r.text).id, text: '（一）预约安排。' }, { source: body.runs.find(r => r.text).id, text: '当前材料中的开放安排。' }] }]
   expect((await f.call('office_template_write', f.plan)).isError).toBe(false)
