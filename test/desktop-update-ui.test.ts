@@ -219,6 +219,38 @@ describe('desktop update presentation at the IPC boundary', () => {
     expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('Checking for updates')
   })
 
+  it('follows the desktop theme and recopies theme tokens when it changes', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    const about = required(document.getElementById('dsh-desktop-about-root'))
+    const stylesheet = required(ui.shadow.querySelector('style')).textContent ?? ''
+    const darkRules = stylesheet.slice(stylesheet.indexOf(':host([data-dsh-theme="dark"])'))
+    expect(ui.host.dataset.dshTheme).toBe('light')
+    expect(about.dataset.dshTheme).toBe('light')
+    expect(ui.host.style.getPropertyValue('color-scheme')).toBe('light')
+    expect(stylesheet).not.toContain('prefers-color-scheme')
+    expect(darkRules).toContain('rgba(255, 255, 255, .12)')
+    expect(darkRules).toContain('#34363b')
+    expect(darkRules).not.toContain('#f0f2f5')
+
+    document.body.style.setProperty('--dsw-alias-bg-layer-1', '#112233')
+    document.body.setAttribute('data-ds-dark-theme', '')
+    await Promise.resolve()
+    expect(ui.host.dataset.dshTheme).toBe('dark')
+    expect(about.dataset.dshTheme).toBe('dark')
+    expect(ui.host.style.getPropertyValue('color-scheme')).toBe('dark')
+    expect(about.style.getPropertyValue('color-scheme')).toBe('dark')
+    expect(ui.host.style.getPropertyValue('--dsw-alias-bg-layer-1')).toBe('#112233')
+    expect(about.style.getPropertyValue('--dsw-alias-bg-layer-1')).toBe('#112233')
+
+    document.body.style.removeProperty('--dsw-alias-bg-layer-1')
+    document.body.removeAttribute('data-ds-dark-theme')
+    await Promise.resolve()
+    expect(ui.host.dataset.dshTheme).toBe('light')
+    expect(about.dataset.dshTheme).toBe('light')
+    expect(ui.host.style.getPropertyValue('--dsw-alias-bg-layer-1')).toBe('')
+    expect(about.style.getPropertyValue('--dsw-alias-bg-layer-1')).toBe('')
+  })
+
   it('focuses the About container initially and preserves visible keyboard controls', async () => {
     const ui = await mount(Promise.resolve(status('idle', { manual: false })))
     document.getElementById('origin')?.focus()
