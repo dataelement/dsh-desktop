@@ -865,7 +865,7 @@ describe('desktop workbench client navigation', () => {
       reflect: { provide: (name, value) => { if (name === 'desktopWorkbenches') service = value } },
       effect: (callback, label) => {
         // Exercise registration effects without mounting DOM styles or starting network I/O.
-        if (!['workbenches: styles', 'workbenches: lifecycle'].includes(label)) callback()
+        if (!['workbenches: styles', 'workbenches: global session entry', 'workbenches: lifecycle'].includes(label)) callback()
       },
       slots: { inject: (_name, callback) => callback(), register: vi.fn() },
       sessions: { list: { subscribe: vi.fn() } },

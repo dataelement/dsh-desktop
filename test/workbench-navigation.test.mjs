@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
+import { JSDOM } from 'jsdom'
 import { describe, expect, it, vi } from 'vitest'
 
 const Service = { tracker: Symbol('service-tracker') }
@@ -17,6 +18,7 @@ const UiWorkspaceService = vm.runInNewContext(`(() => {
   ${source.slice(recentStart, recentEnd)}
   return (${source.slice(classStart, classEnd).trim().replace(/;$/, '')})
 })()`, { _deepseek_ai_cordis: { Service: class {} }, AbortController, AbortSignal, console, setTimeout, clearTimeout })
+const document = new JSDOM('<html><head></head><body><button data-dsh-sidebar-new-session>New Session</button></body></html>').window.document
 let apply, Workbenches
 // Workbench routing only runs once the user has switched the feature on.
 const enabledStorage = { getItem: key => key === 'dsh-workbench-enabled' ? 'true' : null, setItem: () => {}, removeItem: () => {} }
@@ -31,7 +33,7 @@ vm.runInNewContext(workbenchSource, {
     apply = client.apply
     Workbenches = client.Workbenches
   } } },
-  setTimeout, clearTimeout, AbortController
+  document, setTimeout, clearTimeout, AbortController
 })
 
 function mainViewOf(sessionState) {
@@ -129,7 +131,7 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
     reflect: { provide: (_name, value) => { controller = value } },
     slots: { inject: vi.fn() },
     effect: (callback, label) => {
-      if (['workbenches: styles', 'workbenches: lifecycle'].includes(label)) return
+      if (label === 'workbenches: lifecycle') return
       const cleanup = callback()
       if (typeof cleanup === 'function') cleanups.push(cleanup)
     }
@@ -169,6 +171,33 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
 }
 
 describe('native Workspace navigation with workbench routing', () => {
+  it('hides global creation in every workbench, blocks global commands, and restores after exit or disposal', async () => {
+    const { service, sessionState, workspaceState } = fixture()
+    const { controller, dispose } = attachWorkbenchRouting(service, sessionState, workspaceState)
+    const button = document.querySelector('[data-dsh-sidebar-new-session]')
+    for (const active of ['media-workbench', 'huaxue', 'any-local-workbench']) {
+      controller.state.active = active
+      controller.publish()
+      expect(document.defaultView.getComputedStyle(button).display).toBe('none')
+      service.startSession('project')
+      service.startSession()
+      service.startSession('project', { clearPreviousDraft: false })
+      service.startSession(undefined, { agentPreset: 'cordis', prompt: 'Create a plugin', whenDraftExists: 'append' })
+      expect(service.sessions.create).not.toHaveBeenCalled()
+    }
+    controller.state.active = null
+    controller.publish()
+    expect(document.defaultView.getComputedStyle(button).display).not.toBe('none')
+    service.startSession('project')
+    await vi.waitFor(() => expect(service.sessions.create).toHaveBeenCalledTimes(1))
+    controller.state.active = 'media-workbench'
+    controller.publish()
+    dispose()
+    expect(document.documentElement.hasAttribute('data-dsh-workbench-active')).toBe(false)
+    expect(document.defaultView.getComputedStyle(button).display).not.toBe('none')
+    expect(service.sessionStarter).toBe(null)
+  })
+
   it('filters workspace rows only while a scoped filter is registered', () => {
     const { service } = fixture()
     const listeners = new Set()
@@ -349,7 +378,7 @@ describe('native Workspace navigation with workbench routing', () => {
     dispose()
   })
 
-  it.each(['writer', 'research-notebook', 'media-workbench'])('binds New Session to the active %s workbench', async (workbenchId) => {
+  it.each(['writer', 'research-notebook', 'media-workbench'])('binds the workbench creation action to the active %s workbench', async (workbenchId) => {
     const { service: uiWorkspace, sessionState, workspaceState } = fixture()
     workspaceState.items.push({ workspaceId: 'target-project', path: '/target', createdAt: '2026-01-02T00:00:00Z', sessionIds: [] })
     sessionState.ids.push('old-recent')
@@ -370,11 +399,7 @@ describe('native Workspace navigation with workbench routing', () => {
       notes: {}
     }
     controller.ready = true
-    uiWorkspace.registerSessionStarter((workspaceId) => {
-      controller.run(controller.newSession(workspaceId))
-      return true
-    })
-    uiWorkspace.startSession('target-project')
+    await controller.newSession('target-project')
     await vi.waitFor(() => expect(uiWorkspace.sessions.retain).toHaveBeenCalledWith('new-session', { source: 'mainView' }))
     await controller.queue
 
@@ -416,7 +441,7 @@ describe('native Workspace navigation with workbench routing', () => {
     await vi.waitFor(() => expect(mainViewOf(sessionState)).toBe(id))
     expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project', sessionId: id, ...(options?.agentPreset ? { agentPreset: options.agentPreset } : {}) })
     expect(service.prepareDraft).not.toHaveBeenCalled()
-    expect(starter).toHaveBeenCalledTimes(options === undefined ? 1 : 0)
+    expect(starter).toHaveBeenCalledExactlyOnceWith('project')
   })
 
   it.each(['cordis', undefined])('combines Desktop visibility and reuse exclusions with preset matching for %s', async (listed) => {
@@ -442,9 +467,9 @@ describe('native Workspace navigation with workbench routing', () => {
     [{ whenDraftExists: 'keep', clearPreviousDraft: true }, false],
     [{ whenDraftExists: 'append' }, false],
     [{ prompt: 'Follow up', whenDraftExists: 'append' }, true]
-  ])('prepares draft options %j without passing explicit initialization to the Desktop starter', async (options, prepares) => {
+  ])('preserves draft options %j when the Desktop starter permits native creation', async (options, prepares) => {
     const { service } = fixture()
-    const starter = vi.fn(() => true)
+    const starter = vi.fn(() => false)
     service.registerSessionStarter(starter)
     const binding = { sessionId: 'blank' }
     service.sessions.binding = vi.fn(() => binding)
@@ -455,7 +480,7 @@ describe('native Workspace navigation with workbench routing', () => {
     service.startSession('project', options)
 
     await vi.waitFor(() => expect(service.openWorkspace).toHaveBeenCalledOnce())
-    expect(starter).not.toHaveBeenCalled()
+    expect(starter).toHaveBeenCalledExactlyOnceWith('project')
     if (prepares) expect(requestDraftInitialization).toHaveBeenCalledWith(binding, options)
     else expect(requestDraftInitialization).not.toHaveBeenCalled()
   })
