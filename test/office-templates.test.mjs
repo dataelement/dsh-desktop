@@ -78,10 +78,93 @@ it('independently verifies recalculated values, charts, original frozen panes an
   const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
   const { stdout } = await promisify(execFile)(python, ['-I', '-B', resolve('scripts/office-runtime/check-templates.py'), resources, resolve('packages/dsh-desktop-office/sources')])
   const result = JSON.parse(stdout)
-  expect(result.templates).toBe(7); expect(result.preview_pages).toBe(55)
+  expect(result.templates).toBe(7); expect(result.preview_pages).toBe(52)
   expect(result.numeric_checks).toBe(9)
   expect(result.preview_visual_checks).toBe(1)
   expect(result.excel_error_cells).toBe(0)
+})
+
+it('accepts only the renamed notice subset and rejects a commercial font name', async () => {
+  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
+  const directory = await temporary()
+  await promisify(execFile)(python, ['-I', '-B', '-c', `
+import importlib.util, json, shutil, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('check_templates', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+source = Path(sys.argv[2])
+approved = module.audit_docx(source / 'example.docx', source, 'government-notice')
+assert approved['family'] == 'DSH Gov Song' and 0 < approved['embedded_fonts'] <= 10 * 1024 * 1024
+mutated = Path(sys.argv[3])
+shutil.copytree(source, mutated)
+import zipfile
+package = mutated / 'example.docx'
+with zipfile.ZipFile(package) as archive:
+    parts = {name: archive.read(name) for name in archive.namelist()}
+parts['word/fontTable.xml'] = parts['word/fontTable.xml'].replace(b'DSH Gov Song', b'FangS-SC')
+with zipfile.ZipFile(package, 'w') as archive:
+    for name, data in parts.items():
+        archive.writestr(name, data)
+try:
+    module.audit_docx(package, mutated, 'government-notice')
+except AssertionError as error:
+    if 'FangS-SC' not in str(error):
+        raise SystemExit(f'unexpected rejection: {error}')
+    print(json.dumps({'rejected': True}))
+else:
+    raise SystemExit('commercial font name was accepted')
+`, resolve('scripts/office-runtime/check-templates.py'), resolve('packages/dsh-desktop-office/sources/curated/government-notice'), join(directory, 'mutated')])
+})
+
+it('pins the approved notice font independently of its editable manifest', async () => {
+  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
+  const directory = await temporary()
+  await promisify(execFile)(python, ['-I', '-B', '-c', `
+import hashlib, importlib.util, json, shutil, sys, zipfile
+from pathlib import Path
+from lxml import etree
+spec = importlib.util.spec_from_file_location('check_templates', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+source, root = Path(sys.argv[2]), Path(sys.argv[3])
+
+def reject(directory):
+    try:
+        module.audit_docx(directory / 'example.docx', directory, 'government-notice')
+    except AssertionError as error:
+        if 'manifest does not match the approved notice font' not in str(error):
+            raise SystemExit(f'unexpected rejection: {error}')
+    else:
+        raise SystemExit('unapproved font manifest was accepted')
+
+manifest_only = root / 'manifest-only'
+shutil.copytree(source, manifest_only)
+manifest = json.loads((manifest_only / 'font-source.json').read_text(encoding='utf-8'))
+manifest['subsetSha256'] = '0' * 64
+(manifest_only / 'font-source.json').write_text(json.dumps(manifest), encoding='utf-8')
+reject(manifest_only)
+
+synchronized = root / 'font-and-manifest'
+shutil.copytree(source, synchronized)
+package = synchronized / 'example.docx'
+with zipfile.ZipFile(package) as archive:
+    parts = {name: archive.read(name) for name in archive.namelist()}
+font_table = etree.fromstring(parts['word/fontTable.xml'])
+embed = font_table.xpath('//w:embedRegular', namespaces=module.W_NS)[0]
+font_key = embed.get('{%s}fontKey' % module.W_NS['w'])
+font_name = next(name for name in parts if name.startswith('word/fonts/'))
+payload = bytearray(module.deobfuscate_font(parts[font_name], font_key))
+payload[-1] ^= 1
+parts[font_name] = module.deobfuscate_font(bytes(payload), font_key)
+with zipfile.ZipFile(package, 'w') as archive:
+    for name, data in parts.items():
+        archive.writestr(name, data)
+manifest = json.loads((synchronized / 'font-source.json').read_text(encoding='utf-8'))
+manifest['subsetSha256'] = hashlib.sha256(payload).hexdigest()
+(synchronized / 'font-source.json').write_text(json.dumps(manifest), encoding='utf-8')
+reject(synchronized)
+`, resolve('scripts/office-runtime/check-templates.py'), resolve('packages/dsh-desktop-office/sources/curated/government-notice'), directory])
 })
 
 it('rejects partial Chinese glyph coverage even when every resource hash is current', async () => {
@@ -163,7 +246,7 @@ it('routes bounded, versioned choices through the authenticated Connection owner
   expect(route.path).toBe('/api/office-templates')
   const rpc = async (endpoint, payload, signal) => (await (await route.fetch(new Request('http://localhost/api/office-templates', { method: 'POST', headers: { 'content-type': 'application/json' }, signal, body: JSON.stringify({ type: 'client-request', rpcId: 'test-' + endpoint, method: 'office-templates', payload: { endpoint, ...payload } }) }))).json()).result
   const signal = new AbortController().signal
-  const item = library.entry('government-notice'), payload = { sessionId: 'session-route', templateId: item.id, revision: item.revision }
+  const item = library.entry('meeting-minutes'), payload = { sessionId: 'session-route', templateId: item.id, revision: item.revision }
   expect((await rpc('select', payload, signal)).ok).toBe(false)
   expect((await rpc('mode', { sessionId: payload.sessionId, mode: 'word' }, signal)).ok).toBe(true)
   expect((await rpc('select', { ...payload, revision: 'old' }, signal)).ok).toBe(false)
