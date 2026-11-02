@@ -21,7 +21,7 @@ Var dshRenameRetries
     System::Call 'kernel32::GetLastError() i .R2'
     ${If} $dshRenameRetries < 5
       IntOp $dshRenameRetries $dshRenameRetries + 1
-      Sleep 200
+      Sleep 400
       Goto ${DSH_RENAME_RETRY_LABEL}
     ${EndIf}
     SetErrors
