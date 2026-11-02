@@ -1,0 +1,9 @@
+# File preview after changing the Agent working directory
+
+The chat client bundles fileAddressFor from Harness 0.2.2-alpha.2. It previously shortened an absolute path under the renderer's session cwd into a relative resource address. The backend reads a session-scoped relative path from the current Agent working directory. After create_worktree / working_directory changes, these roots can differ: an absolute nested-worktree filename becomes a relative worktree suffix, which is then appended to that same worktree a second time.
+
+The chat compatibility patch now preserves absolute paths in session-scoped file addresses. Authenticated session ownership and file-read checks remain unchanged; genuinely relative links retain their existing current-directory semantics. This prevents stale renderer cwd from changing the identity of a known absolute file. It does not guess which repeated directory names to remove or create duplicate files at the erroneous path.
+
+Regression: test/preview-worktree-path.test.mjs executes the actual bundled address builder and preview address parser, resolves the result from a changed working directory, and stats a real temporary file. Additional cases cover relative paths, spaces/Unicode/hash characters, outside-workspace paths, Windows drives and UNC paths. The worktree regression fails before the patch and succeeds after it.
+
+Scope: @deepseek-ai/dsh-client-ui-chat 0.2.2-alpha.2 client file-address construction. No new privileges, IPC, or dependency versions. Remove this patch hunk when upstream preserves absolute resource identity or binds a relative resource address to an immutable workspace root, then rerun the cwd-change regression. A source test does not establish that the currently installed application has loaded this patch; rebuild/reinstall or the supported client reload flow is still required.

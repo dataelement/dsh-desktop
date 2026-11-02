@@ -1,8 +1,35 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index 0f920af..a5c2006 100644
+index 0f920af..ff48e67 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-@@ -93,6 +93,43 @@ window.__ModuleLoader__.load({
+@@ -66,22 +66,12 @@ window.__ModuleLoader__.load({
+ 			return `${cwd.replace(/[/\\]+$/, "")}${separator}${path.replace(/^(?:\.?[/\\])+/, "")}`;
+ 		}
+ 		/**
+-		* The address for a path as a caller holds it: a relative path, or an absolute
+-		* path inside the Session's workspace, becomes a `session`-scoped address; an
+-		* absolute path outside it, or one whose workspace root is unknown, keeps its
+-		* absolute path in that Session's address.
+-		* @param sessionId - the Session the path is read in.
+-		* @param cwd - that Session's workspace root, when known.
+-		* @param path - absolute or workspace-relative path, in either separator spelling.
+-		* @returns the `dsh-resource://file/…` address.
++		* Preserve Host file identity across Agent cwd changes. Renderer session metadata
++		* can still hold the old workspace root while Host reads use the new cwd.
++		* Relative paths stay relative; absolute paths must never lose their prefix.
+ 		*/
+ 		function fileAddressFor(sessionId, cwd, path) {
+-			const normalized = path.replace(/\\/g, "/");
+-			if (!isAbsoluteWorkspacePath(normalized)) return sessionFileAddress(sessionId, normalized);
+-			const root = cwd === void 0 ? "" : cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+-			if (root !== "" && normalized === root) return sessionFileAddress(sessionId, "");
+-			if (root !== "" && normalized.startsWith(`${root}/`)) return sessionFileAddress(sessionId, normalized.slice(root.length + 1));
+-			return sessionFileAddress(sessionId, normalized);
++			return sessionFileAddress(sessionId, path);
+ 		}
+ 		/**
+ 		* Address a decoded absolute file path through the authenticated file route.
+@@ -93,6 +83,43 @@ window.__ModuleLoader__.load({
  			if (!/^https?:/u.test(base) && !base.startsWith("dsh-app://app/") || !isAbsoluteWorkspacePath(path) || /^[/\\]{2}/u.test(path) || /[\u0000-\u001f\u007f]/u.test(path)) return void 0;
  			return new URL(`api/file?path=${encodeURIComponent(path)}`, base).href;
  		}
@@ -46,7 +73,7 @@ index 0f920af..a5c2006 100644
  		//#endregion
  		//#region lib/types/client/contract/snapshot.js
  		const EMPTY_LIST$1 = [];
-@@ -3406,6 +3443,12 @@ window.__ModuleLoader__.load({
+@@ -3406,6 +3433,12 @@ window.__ModuleLoader__.load({
  			const message = error instanceof Error ? error.message : String(error);
  			return message === "" ? fallback : message;
  		}
@@ -59,7 +86,7 @@ index 0f920af..a5c2006 100644
  		/**
  		* Durable input identities suppress matching echoes in the same render.
  		* The last input's Turn also distinguishes an empty opening control from
-@@ -3501,6 +3544,7 @@ window.__ModuleLoader__.load({
+@@ -3501,6 +3534,7 @@ window.__ModuleLoader__.load({
  					if (id !== fileOpenRequest.current) return;
  					setFileOpenError({
  						path,
@@ -67,7 +94,7 @@ index 0f920af..a5c2006 100644
  						message: openFailureMessage(error, t("fileOpen.unknown"))
  					});
  					setFileOpenBusy(false);
-@@ -3661,7 +3705,7 @@ window.__ModuleLoader__.load({
+@@ -3661,7 +3695,7 @@ window.__ModuleLoader__.load({
  						busy: fileOpenBusy,
  						onClose: closeFileOpenError,
  						onRetry: () => {
@@ -76,7 +103,7 @@ index 0f920af..a5c2006 100644
  						},
  						t
  					})
-@@ -4439,7 +4483,7 @@ window.__ModuleLoader__.load({
+@@ -4439,7 +4473,7 @@ window.__ModuleLoader__.load({
  		* Policy reads select this seat's own conclusion, so a mode change re-renders
  		* only seats whose visibility actually changes.
  		*/
@@ -85,7 +112,7 @@ index 0f920af..a5c2006 100644
  			const bottom = useChatNodeBottom(nodeKey);
  			const node = useChatNode(nodeKey);
  			const routedNode = node;
-@@ -4528,6 +4572,7 @@ window.__ModuleLoader__.load({
+@@ -4528,6 +4562,7 @@ window.__ModuleLoader__.load({
  			if (routedNode === void 0 || owner === null) return null;
  			const routedOwner = {
  				...owner,
@@ -93,7 +120,7 @@ index 0f920af..a5c2006 100644
  				node: routedNode
  			};
  			const flowKey = groupPart === void 0 || groupPart === "response" ? routedNode.key : JSON.stringify([routedNode.key, groupPart]);
-@@ -5025,6 +5070,7 @@ window.__ModuleLoader__.load({
+@@ -5025,6 +5060,7 @@ window.__ModuleLoader__.load({
  			"compactionTitle": "Sixlwa_compactionTitle",
  			"contextRow": "Sixlwa_contextRow",
  			"fileCard": "Sixlwa_fileCard",
@@ -101,7 +128,7 @@ index 0f920af..a5c2006 100644
  			"fileContent": "Sixlwa_fileContent",
  			"fileIcon": "Sixlwa_fileIcon",
  			"fileMeta": "Sixlwa_fileMeta",
-@@ -5991,6 +6037,7 @@ window.__ModuleLoader__.load({
+@@ -5991,6 +6027,7 @@ window.__ModuleLoader__.load({
  			if (code === "INTERRUPTED") return t("message.failure.interrupted");
  			if (code === "ACCOUNT_SIGN_IN_REQUIRED") return t("message.failure.accountSignInRequired");
  			if (code === "QUOTA" || code === "ACCOUNT_QUOTA") return t("message.failure.quota");
@@ -109,7 +136,7 @@ index 0f920af..a5c2006 100644
  			return code === "AUTH" ? t("message.failure.auth") : message;
  		}
  		function ModelRetryItem({ node, active, t }) {
-@@ -6107,7 +6154,7 @@ window.__ModuleLoader__.load({
+@@ -6107,7 +6144,7 @@ window.__ModuleLoader__.load({
  		/** Occupant used by rows that do not own the message-source seat. */
  		const NO_MESSAGE_SOURCE = () => null;
  		/** Right-aligned bubble shared by user and steering rows. */
@@ -118,7 +145,7 @@ index 0f920af..a5c2006 100644
  			const parts = (0, react.useMemo)(() => contentParts(content), [content]);
  			const prepared = (0, react.useMemo)(() => ({
  				text: parts.text,
-@@ -6140,6 +6187,7 @@ window.__ModuleLoader__.load({
+@@ -6140,6 +6177,7 @@ window.__ModuleLoader__.load({
  					}, { fallback: null }),
  					renderFactorySlot("conversation.chat.user.content", {
  						content: prepared,
@@ -126,7 +153,7 @@ index 0f920af..a5c2006 100644
  						loadImage,
  						facts,
  						interactive
-@@ -6178,8 +6226,9 @@ window.__ModuleLoader__.load({
+@@ -6178,8 +6216,9 @@ window.__ModuleLoader__.load({
  		* @param props - the pending submission, authorized image loader, and render seats.
  		* @returns the echoed user bubble.
  		*/
@@ -137,7 +164,7 @@ index 0f920af..a5c2006 100644
  				node: UNDECORATED_ROW,
  				renderSlotChain: NO_MESSAGE_SOURCE,
  				content: (0, react.useMemo)(() => submission.text === "" ? [] : [{
-@@ -6218,12 +6267,13 @@ window.__ModuleLoader__.load({
+@@ -6218,12 +6257,13 @@ window.__ModuleLoader__.load({
  		* declared by the `user` registration alone, so a steering row renders the same
  		* bubble without asking for it.
  		*/
@@ -152,7 +179,7 @@ index 0f920af..a5c2006 100644
  				interactive: true,
  				renderFactorySlot,
  				loadImage,
-@@ -6395,6 +6445,10 @@ window.__ModuleLoader__.load({
+@@ -6395,6 +6435,10 @@ window.__ModuleLoader__.load({
  		/** Render the flow without adding a DOM parent or changing keyed row positions. */
  		const ChatFlow = (0, react.memo)(function ChatFlow({ entries, pendingInputs, lastInputTurn, deferCollapse, useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useConnectionState, useStore, actions, renderSlot, renderFactorySlot, t, useGroupAction, useGroupHeaderAction, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions }) {
  			const nodeStore = useChat((snapshot) => snapshot.nodes);
@@ -163,7 +190,7 @@ index 0f920af..a5c2006 100644
  			const running = useSession((snapshot) => snapshot.running);
  			const disconnected = useConnectionState((state) => state === "disconnected" || state === "connecting");
  			const latestTurnAnchor = useChat((snapshot) => snapshot.navigation.items().at(-1)?.anchorKey);
-@@ -6432,6 +6486,8 @@ window.__ModuleLoader__.load({
+@@ -6432,6 +6476,8 @@ window.__ModuleLoader__.load({
  						...seatProps,
  						key: chatRenderKey(entry),
  						nodeKey: entry.key,
@@ -172,7 +199,7 @@ index 0f920af..a5c2006 100644
  						...entry.groupPart === void 0 ? {} : { groupPart: entry.groupPart }
  					});
  					case "group": return (0, react.createElement)(ChatGroupSeat, {
-@@ -6451,6 +6507,7 @@ window.__ModuleLoader__.load({
+@@ -6451,6 +6497,7 @@ window.__ModuleLoader__.load({
  			for (const [index, item] of pendingInputs.entries()) {
  				const row = isLocalSubmission(item) ? (0, react_jsx_runtime.jsx)(PendingSubmissionBubble, {
  					submission: item,
@@ -180,7 +207,7 @@ index 0f920af..a5c2006 100644
  					loadImage,
  					renderFactorySlot,
  					t
-@@ -6655,7 +6712,8 @@ window.__ModuleLoader__.load({
+@@ -6655,7 +6702,8 @@ window.__ModuleLoader__.load({
  			"message.failure.accountSignedOut": "任务已因退出 DeepSeek 登录而停止。",
  			"message.failure.interrupted": "DSH 进程在本轮完成前退出（例如被强制结束、崩溃或关闭超时），重新启动后本轮已中止。未完成的工具调用结果未知。",
  			"message.failure.accountSignInRequired": "请先登录 DeepSeek，并确认请求地址支持账号认证。",
@@ -190,7 +217,7 @@ index 0f920af..a5c2006 100644
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -6853,7 +6911,8 @@ window.__ModuleLoader__.load({
+@@ -6853,7 +6901,8 @@ window.__ModuleLoader__.load({
  			"message.failure.accountSignedOut": "Stopped because you signed out of DeepSeek.",
  			"message.failure.interrupted": "The DSH process exited before this turn finished (for example, it was killed, crashed, or timed out while shutting down), so the turn was closed when DSH restarted. Unfinished tool calls have unknown outcomes.",
  			"message.failure.accountSignInRequired": "Sign in to DeepSeek and ensure the request destination supports account authentication.",
@@ -200,7 +227,7 @@ index 0f920af..a5c2006 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -9257,11 +9316,12 @@ window.__ModuleLoader__.load({
+@@ -9257,11 +9306,12 @@ window.__ModuleLoader__.load({
  		* @param props - prepared content, facts, authorized image loader, and framework Factory/locale seats.
  		* @returns the content stack using the existing user-message layout.
  		*/
@@ -215,7 +242,7 @@ index 0f920af..a5c2006 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: MessageItem_module_css_default.userStack,
  				children: [
-@@ -9273,8 +9333,11 @@ window.__ModuleLoader__.load({
+@@ -9273,8 +9323,11 @@ window.__ModuleLoader__.load({
  							loadImage,
  							align: "end",
  							compact: compactImages
@@ -229,7 +256,7 @@ index 0f920af..a5c2006 100644
  							title: attachment.file.name,
  							children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
  								path: attachment.file.name,
-@@ -9303,8 +9366,9 @@ window.__ModuleLoader__.load({
+@@ -9303,8 +9356,9 @@ window.__ModuleLoader__.load({
  							label: t("message.extraBlock"),
  							payload: block,
  							truncatedLabel: truncated
@@ -240,7 +267,7 @@ index 0f920af..a5c2006 100644
  					referenceLabels.length > 0 && (0, react_jsx_runtime.jsx)("div", {
  						className: MessageItem_module_css_default.referenceSummary,
  						children: t("message.referenceSummary", { labels: referenceLabels.join(t("message.referenceSeparator")) })
-@@ -15160,6 +15224,7 @@ window.__ModuleLoader__.load({
+@@ -15160,6 +15214,7 @@ window.__ModuleLoader__.load({
  			"remote",
  			"remote.session",
  			"sidebarRight",
@@ -248,7 +275,7 @@ index 0f920af..a5c2006 100644
  			"fileDrag"
  		];
  		/**
-@@ -15257,6 +15322,14 @@ window.__ModuleLoader__.load({
+@@ -15257,6 +15312,14 @@ window.__ModuleLoader__.load({
  			});
  			const transcriptView = new TranscriptViewPolicy(chatSettings, "dshDesktop" in globalThis ? "standard" : DEFAULT_TRANSCRIPT_VIEW_MODE);
  			const presentation = derivePresentationPolicy(transcriptView.mode, transcriptView.collapseTiming, transcriptView.foldedReplies);
@@ -263,7 +290,7 @@ index 0f920af..a5c2006 100644
  			const performancePolicy = new PerformanceUsagePolicy(chatSettings);
  			ctx.effect(() => () => {
  				transcriptView.dispose();
-@@ -15268,6 +15341,7 @@ window.__ModuleLoader__.load({
+@@ -15268,6 +15331,7 @@ window.__ModuleLoader__.load({
  				name: "conversation.chat.user.content",
  				scope: "session",
  				locale: NS,
@@ -271,7 +298,7 @@ index 0f920af..a5c2006 100644
  				children: { "conversation.chat.user.images": {
  					kind: "single",
  					scope: "session"
-@@ -15322,7 +15396,7 @@ window.__ModuleLoader__.load({
+@@ -15322,7 +15386,7 @@ window.__ModuleLoader__.load({
  				name: "conversation.chat.flow",
  				locale: NS,
  				store: chatStore,
@@ -280,7 +307,7 @@ index 0f920af..a5c2006 100644
  					kind: "keyed",
  					scope: "session",
  					inject: CHAT_NODE_INJECT
-@@ -15373,11 +15447,20 @@ window.__ModuleLoader__.load({
+@@ -15373,11 +15437,20 @@ window.__ModuleLoader__.load({
  							dispatchInteraction: (gesture) => ctx.uiConversation.interactions.dispatch(sessionId, gesture),
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
@@ -342,7 +369,7 @@ index ece0cd8..14f86da 100644
  //# sourceMappingURL=UserContent.d.ts.map
 \ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
-index d278964..dc5c2a4 100644
+index d278964..335b57c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
 @@ -34,12 +34,18 @@ export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>;
