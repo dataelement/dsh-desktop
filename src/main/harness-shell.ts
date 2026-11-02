@@ -224,6 +224,9 @@ export class HarnessShell {
       const headers = new Headers(request.headers)
       for (const name of ['host', 'origin', 'cookie', 'sec-fetch-site']) headers.delete(name)
       headers.set('cookie', backend.cookie)
+      // Only translate an explicitly trusted shell Origin; an absent Origin must
+      // remain absent so backend CSRF checks cannot be bypassed.
+      if (origin === SHELL_ORIGIN) headers.set('origin', backend.origin)
       const init: RequestInit & { duplex?: 'half' } = {
         method: request.method, headers, redirect: 'manual', signal: operation.signal
       }
