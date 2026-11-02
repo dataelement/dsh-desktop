@@ -61,11 +61,19 @@ The main Harness window uses:
 - `nodeIntegration: false`
 - Electron renderer sandboxing
 - web security enabled
-- blocked webviews
+- lease-scoped sidebar webviews with isolated workspace sessions; other webview attachments remain blocked
 - navigation and new-window restrictions
 - a narrow permission allowlist
 
 Only local Harness, packaged file, and desktop recovery URLs are trusted inside the app. Ordinary HTTP and HTTPS links are opened externally. IPC handlers validate the sending window and main frame before performing privileged actions such as opening the native directory picker, restarting Harness, managing Safe Mode, or installing an update.
+
+### Native sidebar browser trial
+
+The sidebar uses the upstream ui-sidebar-browser Electron provider through the narrow `dshDesktop.protocolVersion = 1` and `browser` bridge. The interface contains only `acquire(workspace)`, `release(lease)` and lease-scoped popup subscriptions. Main validates the owning primary window, main frame, and active shell/runtime origin before issuing one-use reservations. The renderer attaches an inert `about:blank#lease` guest using exactly the approved partition. All guest preferences are overwritten in main: no Node, no application preload, context isolation, Chromium sandbox, web security, no nested webviews. Permissions, devices, downloads and requests to the reserved application-backend port (including subresources/WebSockets and DNS/hosts aliases) are denied in the separate guest session. Website X-Frame-Options/CSP headers are retained. Website popups can only become approved sidebar tabs, never arbitrary native application windows.
+
+Workspace guest partitions are ephemeral for the process lifetime, matching upstream behavior. Closing a tab destroys its guest; reloading, losing or destroying its owner releases the owner's reservations. The local trial uses a separate development Profile and does not replace the installed production app. This is host browser integration, with no custom frontend or generic renderer IPC. The upstream source is [Desktop browser guests at f3803c9](https://github.com/deepseek-ai/deepseek-harness/blob/f3803c96974ad4a94195fb97e5c637e9c2a3afe3/apps/desktop/src/browser-guests.ts).
+
+Run `node scripts/smoke-sidebar-browser.mjs` on a native desktop to exercise a real sandboxed WebView against a page with both X-Frame-Options DENY and frame-ancestors none, verify the absence of Node/application globals and verify guest destruction. This does not replace full sidebar UI acceptance: open Baidu and another website, test search/address entry, Back/Forward/reload, target-blank links, hide/show and tab close/reopen, then check the installed app and its Profile were not changed. Windows must be qualified on Windows before merging.
 
 ## Profiles and plugin recovery
 
@@ -89,7 +97,7 @@ For reused or deferred legacy trees, startup reads bundle manifests and YAML lay
 
 A baseline market that cannot be installed — an offline or restricted network reports this as a pnpm fetch, 404 or EPERM failure — only blocks startup when the market already in the profile is absent, unreadable or still owned by a generation. Otherwise the boot continues on the installed market and the pending marker retries the repair on the next launch.
 
-Safe Mode uses the installation anchor for both host plugin imports and client bundle discovery, without requiring `profiles/node_modules`. The paired `dsh-app-boot` / `dsh-client-modules` patches target Harness `0.1.7-rc.1`: `mountRootInclude` publishes the explicit host anchor on the loader using `Symbol.for("dsh.desktop.host-module-base-url")`, and client discovery consumes it for bare package names only. Configuration-relative paths and ordinary profiles keep their existing resolution. This loader handoff is needed because client discovery otherwise re-resolves from the Profile tree; remove both hunks when upstream propagates an equivalent resolution anchor. Regression coverage includes the actual recovery subprocess's authenticated HTML and executable bootstrap, plus path-resolution behavior tests.
+Safe Mode uses the installation anchor for both host plugin imports and client bundle discovery, without requiring `profiles/node_modules`. Harness `0.2.2-alpha.2` provides `RuntimeResolution` and `PluginPackages` for installation/Profile ownership, linked package roots and module interception; these services already existed in `0.2.1-rc.3`. Desktop preserves that resolver instead of reviving the historical loader-symbol handoff. Client discovery retains the targeted package-manifest fallback when internal resolution fails. Ordinary profiles still resolve plugin-owned dependencies normally, with the entrypoint fallback restricted to missing host `@deepseek-ai/*` dependencies. Regression coverage includes the recovery subprocess's authenticated HTML and executable bootstrap, plus actual linked-package resolution tests; those do not substitute for full browser activation or native Windows junction validation.
 
 Normal-profile Desktop patch insertions resolve from the actual bundled Harness entry, then use the same absolute source URLs for backend loading and client discovery. The patch file's directory is not a package anchor: installed patches live directly in `resources`, while runtime packages live in `resources/app.asar.unpacked/node_modules`. Missing host sources retain the package name, anchor and original resolution cause, and leave the previous generated patch intact.
 

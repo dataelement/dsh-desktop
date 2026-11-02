@@ -8,4 +8,5 @@ export interface JsignArgsOptions {
 }
 
 export function findSignableBinaries(unpackedDir: string): Promise<string[]>
+export function hasAuthenticodeCertificateTable(filePath: string): Promise<boolean>
 export function buildJsignArgs(options: JsignArgsOptions): string[]

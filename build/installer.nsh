@@ -4,6 +4,14 @@
     !include "nsDialogs.nsh"
     !include "${__FILEDIR__}\installer-directories.nsh"
 
+    ; Override electron-builder's default RequestExecutionLevel user so the
+    ; installer launches with highestAvailable via AIS/UAC instead of
+    ; inheriting a Low Mandatory Level token from a Low-IL parent directory
+    ; (which prevents NSIS exehead from writing to %TEMP% before .onInit).
+    !macro customHeader
+      RequestExecutionLevel highest
+    !macroend
+
     Var DshDirectoryPage
     Var DshDirectoryEdit
     Var DshDirectoryNormalizationActive
@@ -67,7 +75,13 @@
     !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DshEnsureInstDirExists
 
     Function DshEnsureInstDirExists
+      dsh_target_mkdir_retry:
+      ClearErrors
       CreateDirectory "$INSTDIR"
+      ${If} ${Errors}
+        !insertmacro dshRetryInstallError "Could not create the installation directory:$\r$\n$INSTDIR$\r$\n$\r$\nCheck write permissions or select another directory. Retry tries again; Cancel returns to directory selection." "无法创建目标安装目录：$\r$\n$INSTDIR$\r$\n$\r$\n请检查写入权限或选择其他目录。“重试”将再次创建；“取消”将返回目录选择。" dsh_target_mkdir_retry
+        Abort
+      ${EndIf}
     FunctionEnd
 
     ; Accept any directory path the user types, even if it does not exist yet.

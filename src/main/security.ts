@@ -2,7 +2,11 @@ import { shell, type BrowserWindow } from 'electron'
 import { isTrustedAppUrl } from './security-policy'
 import { installWindowPermissions } from './window-permissions'
 
-export function secureWindow(window: Pick<BrowserWindow, 'webContents'>, allowMicrophone = false): void {
+export function secureWindow(
+  window: Pick<BrowserWindow, 'webContents'>,
+  allowMicrophone = false,
+  controlledBrowser = false
+): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isTrustedAppUrl(url)) return { action: 'allow' }
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
@@ -15,6 +19,7 @@ export function secureWindow(window: Pick<BrowserWindow, 'webContents'>, allowMi
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
   })
 
-  window.webContents.on('will-attach-webview', (event) => event.preventDefault())
+  // Only the primary window has a separately installed, lease-scoped guest policy.
+  if (!controlledBrowser) window.webContents.on('will-attach-webview', (event) => event.preventDefault())
   installWindowPermissions(window.webContents.session, window.webContents, allowMicrophone)
 }

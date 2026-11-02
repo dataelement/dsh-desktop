@@ -1,0 +1,31 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
+index bc630f2f16..23e24c4870 100644
+--- a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
+@@ -288,6 +288,13 @@ let FileUploads = (() => {
+ 		resolve(agent, receiptId) {
+ 			return this.stagedFiles.get(agent.session)?.get(receiptId)?.attachment;
+ 		}
++		/** Find one file receipt in the exact Agent Session; image receipts grant no file authority. */
++		findStagedFile(agent, attachmentId) {
++			this.assertOrdinaryAgent(agent);
++			const staged = this.stagedFiles.get(agent.session);
++			if (staged === void 0) return;
++			for (const { attachment } of staged.values()) if (attachment.type === "file" && String(attachment.attachment.attachmentId) === String(attachmentId)) return attachment.attachment;
++		}
+ 		/**
+ 		* Bind receipts while one prompt enters an Agent inbox.
+ 		* Disposal restores every prior binding unless the caller commits successful delivery.
+diff --git a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/types/index.d.ts
+index d0ecd36b65..b7ca2619d7 100644
+--- a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/types/index.d.ts
+@@ -76,6 +76,8 @@ export declare class FileUploads extends TypertRemoteService {
+      * @returns the staged file or image, or `undefined` for an unknown or foreign receipt.
+      */
+     resolve(agent: Agent, receiptId: FileUploadReceiptId): StagedAttachment | undefined;
++    /** Find a staged file reference in the exact Agent Session, excluding image receipts. */
++    findStagedFile(agent: Agent, attachmentId: string): import("@deepseek-ai/dsh-attachment/types").FileAttachmentRef | undefined;
+     /**
+      * Bind receipts while one prompt enters an Agent inbox.
+      * Disposal restores every prior binding unless the caller commits successful delivery.

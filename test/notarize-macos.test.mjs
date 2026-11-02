@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import afterSign, { notarizeWithStapleRetry } from '../scripts/notarize-macos.mjs'
 import { verifyMacOSMicrophonePermissions } from '../scripts/verify-macos-permissions.mjs'
 
@@ -149,7 +150,7 @@ describe('macOS app notarization', () => {
         electronPlatformName: 'darwin', appOutDir: '/fixture',
         packager: { appInfo: { productFilename: 'DSH Desktop' } }
       })).rejects.toThrow('missing audio-input')
-      expect(verifyMacOSMicrophonePermissions).toHaveBeenCalledWith('/fixture/DSH Desktop.app')
+      expect(verifyMacOSMicrophonePermissions).toHaveBeenCalledWith(join('/fixture', 'DSH Desktop.app'))
     } finally { process.env = saved }
   })
 

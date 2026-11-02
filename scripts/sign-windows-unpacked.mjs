@@ -31,8 +31,11 @@ async function isWindowsPE(filePath) {
 
 /**
  * Discover every PE in the unpacked application, regardless of extension or
- * depth. Directory links are refused so a release cannot sign outside the
- * packaged tree or silently skip an unknown linked subtree.
+ * depth. Inside `office-runtime`, sign `.exe` binaries (such as `python.exe`,
+ * `pythonw.exe`, and `pip`/`venv` launcher stubs) so antivirus scanners never
+ * flag unsigned internal executables, while skipping Python `.dll`/`.pyd`
+ * library files. Directory links are refused so a release cannot sign outside
+ * the packaged tree or silently skip an unknown linked subtree.
  *
  * @param {string} unpackedDir
  * @returns {Promise<string[]>} list of absolute file paths to sign
@@ -41,21 +44,60 @@ export async function findSignableBinaries(unpackedDir) {
   const root = resolve(unpackedDir)
   if (!(await stat(root)).isDirectory()) throw new Error(`Not an unpacked directory: ${root}`)
   const results = []
-  async function scan(dir) {
+  async function scan(dir, inOfficeRuntime = false) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const filePath = join(dir, entry.name)
       if (entry.isSymbolicLink()) throw new Error(`Linked path in unpacked application: ${filePath}`)
       if (entry.isDirectory()) {
-        if (entry.name === 'office-runtime') continue
-        await scan(filePath)
-      } else if (entry.isFile() && await isWindowsPE(filePath)) {
-        results.push(filePath)
+        await scan(filePath, inOfficeRuntime || entry.name === 'office-runtime')
+      } else if (entry.isFile()) {
+        if (inOfficeRuntime && !entry.name.toLowerCase().endsWith('.exe')) continue
+        if (await isWindowsPE(filePath)) {
+          results.push(filePath)
+        }
       }
     }
   }
   await scan(root)
   if (results.length === 0) throw new Error(`No Windows PE binaries found in ${root}`)
   return results.sort()
+}
+
+/**
+ * Fast-path check for an Authenticode certificate table in the PE Optional
+ * Header (IMAGE_DIRECTORY_ENTRY_SECURITY, Data Directory index 4). Avoids
+ * spawning a JVM process via Jsign for binaries that have no embedded
+ * signature table at all.
+ */
+export async function hasAuthenticodeCertificateTable(filePath) {
+  const handle = await open(filePath, 'r')
+  try {
+    const mzHeader = Buffer.alloc(64)
+    const { bytesRead } = await handle.read(mzHeader, 0, mzHeader.length, 0)
+    if (bytesRead < 64 || mzHeader[0] !== 0x4d || mzHeader[1] !== 0x5a) return false
+    const peOffset = mzHeader.readUInt32LE(0x3c)
+    const peHeader = Buffer.alloc(176)
+    const peRead = await handle.read(peHeader, 0, peHeader.length, peOffset)
+    if (peRead.bytesRead < 26 || !peHeader.subarray(0, 4).equals(Buffer.from([0x50, 0x45, 0, 0]))) {
+      return false
+    }
+    const sizeOfOptionalHeader = peHeader.readUInt16LE(20)
+    const magic = peHeader.readUInt16LE(24)
+    const isPe32Plus = magic === 0x020b
+    if (magic !== 0x010b && !isPe32Plus) return false
+    const minOptionalHeaderSize = (isPe32Plus ? 112 : 96) + 5 * 8
+    if (sizeOfOptionalHeader < minOptionalHeaderSize) return false
+    const numRvaOffset = 24 + (isPe32Plus ? 108 : 92)
+    const securityDirOffset = 24 + (isPe32Plus ? 112 : 96) + 4 * 8
+    if (peRead.bytesRead < securityDirOffset + 8) return false
+    const numberOfRvaAndSizes = peHeader.readUInt32LE(numRvaOffset)
+    if (numberOfRvaAndSizes <= 4) return false
+    const certTableOffset = peHeader.readUInt32LE(securityDirOffset)
+    const certTableSize = peHeader.readUInt32LE(securityDirOffset + 4)
+    return certTableOffset > 0 && certTableSize > 0
+  } finally {
+    await handle.close()
+  }
 }
 
 /**
@@ -137,6 +179,7 @@ async function signBinary(targetFile, config) {
 /** Keep a vendor's existing Authenticode signature. The installed Windows
  * smoke verifies that each retained signature is valid. */
 async function hasExistingSignature(targetFile, jsignJar) {
+  if (!(await hasAuthenticodeCertificateTable(targetFile))) return false
   try {
     await execFileAsync('java', ['-jar', jsignJar, 'extract', '--format', 'DER', targetFile])
     const signature = `${targetFile}.sig`

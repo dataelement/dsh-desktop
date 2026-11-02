@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
+import {
+  resolveVitestConfig,
+  WINDOWS_COMPLETE_EXCLUDES,
+  WINDOWS_SERIAL_SUITES
+} from '../vitest.config'
 
 const workflow = parse(readFileSync('.github/workflows/release.yml', 'utf8'))
 const { jobs } = workflow
@@ -146,5 +151,23 @@ describe('release CI scheduling', () => {
     expect(jobs['sign-windows'].needs).toEqual(['validate-dispatch', 'windows-x64'])
     expect(jobs['sign-windows'].if).toContain('always()')
     expect(jobs['sign-windows'].if).toContain("inputs.mode == 'resign'")
+  })
+
+  it('splits the complete Windows test suite into parallel unit/contract and serial integration phases', () => {
+    const windowsFull = step('windows-x64', 'Run complete Windows test suite')
+    expect(windowsFull.run).toContain('vitest run --mode windows-parallel')
+    expect(windowsFull.run).toContain('vitest run --mode windows-serial')
+
+    const parallel = resolveVitestConfig('windows-parallel').test
+    const serial = resolveVitestConfig('windows-serial').test
+    expect(parallel.fileParallelism).toBe(true)
+    expect(serial.fileParallelism).toBe(false)
+    expect(serial.include).toEqual(WINDOWS_SERIAL_SUITES)
+    for (const pattern of [...WINDOWS_COMPLETE_EXCLUDES, ...WINDOWS_SERIAL_SUITES]) {
+      expect(parallel.exclude).toContain(pattern)
+    }
+    for (const pattern of WINDOWS_COMPLETE_EXCLUDES) {
+      expect(serial.exclude).toContain(pattern)
+    }
   })
 })

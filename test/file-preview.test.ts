@@ -8,6 +8,58 @@ async function packageClient(name: string, file = 'lib/client.js'): Promise<stri
 }
 
 describe('uploaded file preview', () => {
+  it('finds only file receipts in the exact Session with the 0.2.2 attachment union', async () => {
+    const source = await packageClient('dsh-client-file-upload', 'lib/index.js')
+    const method = source.match(/findStagedFile\(agent, attachmentId\) \{[\s\S]*?\n\t\t\}/)?.[0]
+    expect(method).toBeDefined()
+    const find = new Function(`return ({ ${method} }).findStagedFile`)() as (this: unknown, agent: { session: object }, id: string) => unknown
+    const session = {}
+    const file = { attachmentId: 'same-id', name: 'report.pdf' }
+    const stagedFiles = new WeakMap([[session, new Map([
+      ['image', { attachment: { type: 'image', attachment: { attachmentId: 'same-id', mimeType: 'image/png' } } }],
+      ['file', { attachment: { type: 'file', attachment: file } }]
+    ])]])
+    const host = { stagedFiles, assertOrdinaryAgent() {} }
+    expect(find.call(host, { session }, 'same-id')).toBe(file)
+    expect(find.call(host, { session: {} }, 'same-id')).toBeUndefined()
+    expect(find.call(host, { session }, 'missing')).toBeUndefined()
+    expect(() => find.call({ ...host, assertOrdinaryAgent() { throw new Error('subagent cannot upload') } }, { session }, 'same-id')).toThrow('subagent cannot upload')
+  })
+
+  it('opens relative links in the live working directory and keeps attachment-name precedence', async () => {
+    const source = await packageClient('dsh-client-ui-chat')
+    const helpersStart = source.indexOf('const FILE_ADDRESS_PREFIX =')
+    const helpersEnd = source.indexOf('\n\t\t//#endregion', helpersStart)
+    const callbackStart = source.indexOf('openFile: async (path, options) => {') + 'openFile: '.length
+    const callbackEnd = source.indexOf(',\n\t\t\t\t\t\t\topenExternalLink:', callbackStart)
+    expect(callbackEnd).toBeGreaterThan(callbackStart)
+    let workingDirectory = '/workspace/nested'
+    let attached = false
+    const opened: unknown[] = []
+    const revealed: unknown[] = []
+    const session = {
+      projections: { faceOf: () => ({ getSnapshot: () => workingDirectory }) },
+      readFileHostPath: async () => attached ? { ok: true, value: { path: '/uploads/report.txt' } } : { ok: false }
+    }
+    const ctx = {
+      sessions: { list: { getSnapshot: () => ({ byId: { session: { cwd: '/workspace' } } }) } },
+      sidebarRightTabs: { candidates: () => ['preview'] },
+      sidebarRight: { openResource: (...args: unknown[]) => opened.push(args) },
+      remote: { session: { openWorkspacePath: async (request: unknown) => { revealed.push(request); return { ok: true } } } }
+    }
+    const open = new Function('ctx', 'session', 'sessionId', `${source.slice(helpersStart, helpersEnd)}; return (${source.slice(callbackStart, callbackEnd)});`)(ctx, session, 'session') as (path: string, options?: { line?: number; revealInFileManager?: boolean }) => Promise<void>
+    await open('./report.txt', { line: 7 })
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session/nested/report.txt', { params: { line: 7 } }])
+    workingDirectory = '/workspace/changed'
+    await open('report.txt')
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session/changed/report.txt'])
+    attached = true
+    await open('report.txt', { line: 7 })
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session//uploads/report.txt'])
+    await open('./folder/', { revealInFileManager: true })
+    expect(revealed).toEqual([{ path: '/workspace/changed/folder/' }])
+  })
+
   it('propagates native opener failures and preserves preview line options', async () => {
     const chat = await packageClient('dsh-client-ui-chat')
     const start = chat.indexOf('async function openResolvedHostFile(')
@@ -68,7 +120,7 @@ describe('uploaded file preview', () => {
     expect(chat).toContain('ctx.remote.session.openWorkspacePath({ path: hostPath })')
     expect(chat).toContain('ctx.sidebarRight.openResource')
     expect(chat).toContain('"sidebarRightTabs"')
-    expect(chat).toContain('opener.open(sessionId, attachmentId)')
+    expect(chat).toContain('ctx.get("openUploadedAttachment").open(sessionId, attachmentId)')
     expect(chat).toContain('onOpenUploadedFile(attachment.file.attachmentId)')
     expect(chat).not.toContain('openFile(attachment.file.name)')
     expect(chat).not.toContain('openFile(attachment.name)')
