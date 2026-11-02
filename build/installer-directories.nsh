@@ -7,6 +7,27 @@ Var dshNewDirectory
 Var dshOldDirectory
 Var dshOldMoved
 Var dshNewMoved
+Var dshRenameRetries
+
+; Retry brief sharing/locking races before presenting the existing recovery dialog.
+; The caller resets the budget on each explicit user Retry.
+!macro dshRenameWithRetry SOURCE DESTINATION
+  StrCpy $dshRenameRetries 0
+  !define DSH_RENAME_RETRY_LABEL dsh_rename_retry_${__LINE__}
+  ${DSH_RENAME_RETRY_LABEL}:
+  ClearErrors
+  Rename "${SOURCE}" "${DESTINATION}"
+  ${If} ${Errors}
+    System::Call 'kernel32::GetLastError() i .R2'
+    ${If} $dshRenameRetries < 5
+      IntOp $dshRenameRetries $dshRenameRetries + 1
+      Sleep 400
+      Goto ${DSH_RENAME_RETRY_LABEL}
+    ${EndIf}
+    SetErrors
+  ${EndIf}
+  !undef DSH_RENAME_RETRY_LABEL
+!macroend
 
 !macro dshExtractPayload FILE
   !define DSH_EXTRACT_RETRY_LABEL dsh_extract_retry_${__LINE__}
@@ -96,10 +117,8 @@ Function dshPromoteDirectories
   ClearErrors
   ${If} ${FileExists} "$dshFinalDirectory\*.*"
     dsh_backup_retry:
-    ClearErrors
-    Rename $dshFinalDirectory $dshOldDirectory
+    !insertmacro dshRenameWithRetry $dshFinalDirectory $dshOldDirectory
     ${If} ${Errors}
-      System::Call 'kernel32::GetLastError() i .R2'
       !insertmacro dshRetryInstallError "Could not back up the installed version (Windows error: $R2).$\r$\n$\r$\nSource: $dshFinalDirectory$\r$\nBackup: $dshOldDirectory$\r$\n$\r$\nClose the application and programs using this directory, then choose Retry. Cancel stops installation." "无法备份旧版本目录（Windows 错误码：$R2）。$\r$\n$\r$\n源目录：$dshFinalDirectory$\r$\n备份目录：$dshOldDirectory$\r$\n$\r$\n请关闭应用及占用该目录的程序，然后点击“重试”；“取消”将中止安装。" dsh_backup_retry
       Call dshRollbackDirectories
       SetErrors
@@ -110,10 +129,8 @@ Function dshPromoteDirectories
     RMDir $dshFinalDirectory
   ${EndIf}
   dsh_promote_retry:
-  ClearErrors
-  Rename $dshNewDirectory $dshFinalDirectory
+  !insertmacro dshRenameWithRetry $dshNewDirectory $dshFinalDirectory
   ${If} ${Errors}
-    System::Call 'kernel32::GetLastError() i .R2'
     !insertmacro dshRetryInstallError "Could not move the new version into place (Windows error: $R2).$\r$\n$\r$\nSource: $dshNewDirectory$\r$\nDestination: $dshFinalDirectory$\r$\n$\r$\nClose programs using these directories and check write permissions, then choose Retry. Cancel stops installation; any previous version is restored if possible." "无法将新版本移到正式安装目录（Windows 错误码：$R2）。$\r$\n$\r$\n源目录：$dshNewDirectory$\r$\n正式目录：$dshFinalDirectory$\r$\n$\r$\n请关闭占用目录的程序并检查写入权限，然后点击“重试”；“取消”将中止安装，并尝试恢复旧版本。" dsh_promote_retry
     Call dshRollbackDirectories
     SetErrors

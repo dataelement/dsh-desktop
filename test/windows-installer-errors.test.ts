@@ -19,6 +19,15 @@ describe('Windows installation error dialogs', () => {
     expect(helper).toContain('DetailPrint $dshInstallError')
   })
 
+  it('bounds both automatic rename retries before the existing dialogs', async () => {
+    const source = await readFile(resolve('build/installer-directories.nsh'), 'utf8')
+    expect(source).toContain('${If} $dshRenameRetries < 5')
+    expect(source).toContain('Sleep 200')
+    expect(source).toContain('!insertmacro dshRenameWithRetry $dshFinalDirectory $dshOldDirectory')
+    expect(source).toContain('!insertmacro dshRenameWithRetry $dshNewDirectory $dshFinalDirectory')
+    expect(source).toContain('Call dshRollbackDirectories')
+  })
+
   it.skipIf(!compiler && process.env.DSH_TEST_NSIS !== '1')('compiles the real installer includes and preserves old files on silent failure', async () => {
     const tool: { path: string, env?: Record<string, string> } = compiler
       ? { path: compiler }
