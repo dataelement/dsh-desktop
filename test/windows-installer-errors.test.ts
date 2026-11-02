@@ -22,7 +22,7 @@ describe('Windows installation error dialogs', () => {
   it('bounds both automatic rename retries before the existing dialogs', async () => {
     const source = await readFile(resolve('build/installer-directories.nsh'), 'utf8')
     expect(source).toContain('${If} $dshRenameRetries < 5')
-    expect(source).toContain('Sleep 200')
+    expect(source).toContain('Sleep 400')
     expect(source).toContain('!insertmacro dshRenameWithRetry $dshFinalDirectory $dshOldDirectory')
     expect(source).toContain('!insertmacro dshRenameWithRetry $dshNewDirectory $dshFinalDirectory')
     expect(source).toContain('Call dshRollbackDirectories')

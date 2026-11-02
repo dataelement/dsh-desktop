@@ -1194,7 +1194,7 @@ function createWindow(): BrowserWindow {
     appendRendererPluginFailureLog(details.message)
   })
   installPluginRecoveryNavigation(window)
-  secureWindow(window)
+  secureWindow(window, true)
   installContextMenu(window, harnessLocale)
   installMainWindowRendererRecovery(window)
   window.on('closed', () => {
