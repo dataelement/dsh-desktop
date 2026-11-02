@@ -104,6 +104,8 @@ import {
   serializeGpuFallbackState
 } from './gpu-fallback'
 import { secureWindow } from './security'
+import { SidebarBrowserGuests } from './sidebar-browser'
+import { SIDEBAR_BROWSER_IPC } from '../shared/sidebar-browser'
 import { SafeModeFrame } from './safe-mode-frame'
 import { desktopResourceUrl, installDesktopProtocol, registerDesktopScheme, SAFE_MODE_PAGE } from './desktop-protocol'
 import { ensureLaunchRoot } from './state/launch-root'
@@ -1115,6 +1117,8 @@ function ensureTray(): void {
   tray.on('click', restoreMainWindow)
 }
 
+const sidebarBrowser = new SidebarBrowserGuests(() => runtime.snapshot().url)
+
 function createWindow(): BrowserWindow {
   const isWindows = process.platform === 'win32'
   windowStateManager ??= new WindowStateManager(app.getPath('userData'))
@@ -1147,6 +1151,7 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(import.meta.dirname, '../preload/index.cjs'),
+      webviewTag: true,
       sandbox: true,
       webSecurity: true
     }
@@ -1194,7 +1199,8 @@ function createWindow(): BrowserWindow {
     appendRendererPluginFailureLog(details.message)
   })
   installPluginRecoveryNavigation(window)
-  secureWindow(window, true)
+  sidebarBrowser.bind(window)
+  secureWindow(window, true, true)
   installContextMenu(window, harnessLocale)
   installMainWindowRendererRecovery(window)
   window.on('closed', () => {
@@ -3649,6 +3655,28 @@ async function bootstrap(): Promise<void> {
     locale: harnessLocale,
     crashEvidence: () => lastCrashEvidence,
     appVersion: () => app.getVersion()
+  })
+
+  const assertBrowserSender = (event: IpcMainInvokeEvent): void => {
+    assertTrustedMainWindowEvent(event)
+    const url = event.senderFrame?.url ?? ''
+    const backend = runtime.snapshot().url
+    let currentOrigin = false
+    try {
+      const frameUrl = new URL(url)
+      currentOrigin = backend !== undefined && frameUrl.origin === new URL(backend).origin
+        && frameUrl.username === '' && frameUrl.password === ''
+    }
+    catch { /* Invalid or absent frame URLs are not trusted. */ }
+    if (!isHarnessShellUrl(url) && !currentOrigin) throw new Error('Sidebar browser requires the active Harness page.')
+  }
+  ipcMain.handle(SIDEBAR_BROWSER_IPC.acquire, (event, workspace: unknown) => {
+    assertBrowserSender(event)
+    return sidebarBrowser.acquire(event.sender, workspace)
+  })
+  ipcMain.handle(SIDEBAR_BROWSER_IPC.release, async (event, lease: unknown) => {
+    assertBrowserSender(event)
+    await sidebarBrowser.release(event.sender, lease)
   })
 
   ipcMain.handle('directory-picker:open', async (event) => {

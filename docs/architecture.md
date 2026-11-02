@@ -61,11 +61,19 @@ The main Harness window uses:
 - `nodeIntegration: false`
 - Electron renderer sandboxing
 - web security enabled
-- blocked webviews
+- lease-scoped sidebar webviews with isolated workspace sessions; other webview attachments remain blocked
 - navigation and new-window restrictions
 - a narrow permission allowlist
 
 Only local Harness, packaged file, and desktop recovery URLs are trusted inside the app. Ordinary HTTP and HTTPS links are opened externally. IPC handlers validate the sending window and main frame before performing privileged actions such as opening the native directory picker, restarting Harness, managing Safe Mode, or installing an update.
+
+### Native sidebar browser trial
+
+The sidebar uses the upstream ui-sidebar-browser Electron provider through the narrow `dshDesktop.protocolVersion = 1` and `browser` bridge. The interface contains only `acquire(workspace)`, `release(lease)` and lease-scoped popup subscriptions. Main validates the owning primary window, main frame, and active shell/runtime origin before issuing one-use reservations. The renderer attaches an inert `about:blank#lease` guest using exactly the approved partition. All guest preferences are overwritten in main: no Node, no application preload, context isolation, Chromium sandbox, web security, no nested webviews. Permissions, devices, downloads and requests to the reserved application-backend port (including subresources/WebSockets and DNS/hosts aliases) are denied in the separate guest session. Website X-Frame-Options/CSP headers are retained. Website popups can only become approved sidebar tabs, never arbitrary native application windows.
+
+Workspace guest partitions are ephemeral for the process lifetime, matching upstream behavior. Closing a tab destroys its guest; reloading, losing or destroying its owner releases the owner's reservations. The local trial uses a separate development Profile and does not replace the installed production app. This is host browser integration, with no custom frontend or generic renderer IPC. The upstream source is [Desktop browser guests at f3803c9](https://github.com/deepseek-ai/deepseek-harness/blob/f3803c96974ad4a94195fb97e5c637e9c2a3afe3/apps/desktop/src/browser-guests.ts).
+
+Run `node scripts/smoke-sidebar-browser.mjs` on a native desktop to exercise a real sandboxed WebView against a page with both X-Frame-Options DENY and frame-ancestors none, verify the absence of Node/application globals and verify guest destruction. This does not replace full sidebar UI acceptance: open Baidu and another website, test search/address entry, Back/Forward/reload, target-blank links, hide/show and tab close/reopen, then check the installed app and its Profile were not changed. Windows must be qualified on Windows before merging.
 
 ## Profiles and plugin recovery
 
