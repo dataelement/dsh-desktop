@@ -1428,6 +1428,7 @@ window.__ModuleLoader__.load({
     }
 
     const css = `
+      html[data-dsh-workbench-active] [data-dsh-sidebar-new-session]{display:none!important}
       .dshWb{font-family:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);box-sizing:border-box}
       /* Only style controls owned by the Workbench UI. The native conversation
          is mounted inside .dshWbFrame and must keep its own composer styles. */
@@ -2592,6 +2593,12 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       }, 'workbenches: native plugin status')
       ctx.effect(() => service.watchRestartStatus(), 'workbenches: local installation restart notice')
       ctx.effect(maintainStyles, 'workbenches: styles')
+      ctx.effect(() => {
+        const update = () => document.documentElement.toggleAttribute('data-dsh-workbench-active', workbenchPreference.getSnapshot() && !!service.state.active)
+        const unsubscribe = service.subscribe(update)
+        update()
+        return () => { unsubscribe(); document.documentElement.removeAttribute('data-dsh-workbench-active') }
+      }, 'workbenches: global session entry')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.quickSwitcher', () => ctx.slots.register({ name: 'sidebar.quickSwitcher', inject: () => ({ service }) }, WorkbenchSidebarSwitcher))
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
@@ -2614,10 +2621,10 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         ? ctx.uiWorkspace.registerWorkspaceDeleteHandler((workspaceId) => service.hideWorkspace(workspaceId))
         : undefined, 'workbenches: scoped workspace removal')
       ctx.effect(() => typeof ctx.uiWorkspace.registerSessionStarter === 'function'
-        ? ctx.uiWorkspace.registerSessionStarter((workspaceId) => {
-          if (!workbenchPreference.getSnapshot() || !service.ready || !service.state.active || service.activationFor(service.catalog.get(service.state.active) || { id: service.state.active }) === 'off') return false
-          service.run(service.newSession(workspaceId))
-          return true
+        ? ctx.uiWorkspace.registerSessionStarter(() => {
+          // Global buttons, shortcuts and commands must not bypass the workbench's
+          // own creation flow. Providers create sessions through service.newSession.
+          return workbenchPreference.getSnapshot() && !!service.state.active
         })
         : undefined, 'workbenches: new session scope')
       ctx.effect(() => ctx.sessions.list.subscribe(() => service.selectionChanged()), 'workbenches: session navigation')
