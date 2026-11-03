@@ -11,8 +11,11 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   platform?: NodeJS.Platform
   processEvents?: EventEmitter
   onError?: (error: unknown) => void
+  dedupeWindowMs?: number
 } = {}) {
   const processEvents = options.processEvents ?? process
+  const dedupeWindowMs = options.dedupeWindowMs ?? 10 * 60_000 // 10 minutes deduplication window
+  const recentCaptures = new Map<string, number>()
   const safe = (operation: () => void) => { try { operation() } catch (error) { options.onError?.(error) } }
   const flush = () => { void service.flush().catch(error => options.onError?.(error)) }
   const randomId = () => {
@@ -27,6 +30,20 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   let pendingPluginFailureEventId: string | undefined
   let suppressPluginFailure = false
   const capture = (kind: FailureKind, message: string, eventId?: string) => {
+    if (dedupeWindowMs > 0) {
+      const dedupeKey = `${kind}:${message}`
+      const now = Date.now()
+      const last = recentCaptures.get(dedupeKey)
+      if (last !== undefined && now - last < dedupeWindowMs) {
+        return
+      }
+      recentCaptures.set(dedupeKey, now)
+      if (recentCaptures.size > 100) {
+        for (const [k, t] of recentCaptures) {
+          if (now - t >= dedupeWindowMs) recentCaptures.delete(k)
+        }
+      }
+    }
     let evidence = ''
     try { evidence = options.resourceEvidence?.() ?? '' }
     catch (error) { options.onError?.(error) }

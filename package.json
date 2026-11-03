@@ -556,7 +556,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "runAfterFinish": false
     },
     "beforePack": "scripts/prepare-dmg-background.cjs",
     "afterPack": "scripts/after-pack.cjs",

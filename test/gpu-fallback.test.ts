@@ -25,13 +25,14 @@ describe('gpu fallback switches', () => {
   })
 
   it('migrates legacy sandbox bypass to sandboxed software rendering', () => {
-    expect(gpuFallbackSwitches('sandbox-disabled')).toEqual(['disable-gpu', 'disable-gpu-compositing'])
+    expect(gpuFallbackSwitches('sandbox-disabled')).toEqual(['disable-gpu', 'disable-gpu-compositing', 'disable-gpu-sandbox'])
   })
 
   it('turns hardware acceleration off entirely at the last fallback level', () => {
     expect(gpuFallbackSwitches('gpu-disabled')).toEqual([
       'disable-gpu',
-      'disable-gpu-compositing'
+      'disable-gpu-compositing',
+      'disable-gpu-sandbox'
     ])
   })
 })

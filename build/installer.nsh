@@ -4,14 +4,6 @@
     !include "nsDialogs.nsh"
     !include "${__FILEDIR__}\installer-directories.nsh"
 
-    ; Override electron-builder's default RequestExecutionLevel user so the
-    ; installer launches with highestAvailable via AIS/UAC instead of
-    ; inheriting a Low Mandatory Level token from a Low-IL parent directory
-    ; (which prevents NSIS exehead from writing to %TEMP% before .onInit).
-    !macro customHeader
-      RequestExecutionLevel highest
-    !macroend
-
     Var DshDirectoryPage
     Var DshDirectoryEdit
     Var DshDirectoryNormalizationActive
@@ -95,6 +87,9 @@
 
     !macro customInstall
       !insertmacro dshFinishDirectories
+      ; Ensure Chromium AppContainer sandbox (GPU and Renderer processes) can read installed
+      ; files even when the installer was executed with elevated Administrator permissions.
+      nsExec::Exec 'icacls "$INSTDIR" /grant "*S-1-15-2-1:(OI)(CI)(RX)" /grant "*S-1-15-2-2:(OI)(CI)(RX)" /T /C /Q'
       ; CHECK_APP_RUNNING force-kills the previous process, so will-quit never
       ; clears the session marker. Same-version overwrite would otherwise look
       ; like an unclean-exit. Delete is a no-op when the file is absent.

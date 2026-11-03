@@ -43,6 +43,31 @@ describe('removeStaleWriterLocks', () => {
     expect(await readdir(join(dir, 'profiles', 'web'))).toEqual(['deep.lock'])
   })
 
+  it('removes lock files older than 10 seconds regardless of content', async () => {
+    const dir = await home()
+    const lockPath = join(dir, '.credentials.yaml.lock')
+    await writeFile(lockPath, 'corrupted or lingering lock')
+
+    // Simulate now being 15 seconds after file creation
+    const now = Date.now() + 15_000
+    const removed = await removeStaleWriterLocks(dir, () => true, now)
+
+    expect(removed).toEqual([lockPath])
+    expect(await readdir(dir)).not.toContain('.credentials.yaml.lock')
+  })
+
+  it('removes empty abandoned lock files older than 2 seconds', async () => {
+    const dir = await home()
+    const emptyLock = join(dir, '.credentials.yaml.lock')
+    await writeFile(emptyLock, '')
+
+    const now = Date.now() + 3_000
+    const removed = await removeStaleWriterLocks(dir, () => true, now)
+
+    expect(removed).toEqual([emptyLock])
+    expect(await readdir(dir)).not.toContain('.credentials.yaml.lock')
+  })
+
   it('tolerates a missing DSH_HOME', async () => {
     expect(await removeStaleWriterLocks(join(tmpdir(), 'dsh-locks-missing-home'))).toEqual([])
   })
