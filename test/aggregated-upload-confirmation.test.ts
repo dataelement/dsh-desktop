@@ -119,5 +119,38 @@ describe('diagnostics rapid error deduplication', () => {
 
     diagnostics.dispose()
   })
+
+  it('defaults to 10-minute deduplication window when dedupeWindowMs is omitted', () => {
+    vi.useFakeTimers()
+    try {
+      const app = new EventEmitter()
+      const capture = vi.fn()
+      const mockService = {
+        beginSession: vi.fn(),
+        capture,
+        flush: vi.fn().mockResolvedValue(undefined),
+        markCleanExit: vi.fn()
+      } as any
+
+      const diagnostics = attachDiagnostics(app, mockService)
+
+      app.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 1 })
+      expect(capture).toHaveBeenCalledTimes(1)
+
+      // 9 minutes later: still within 10-minute window, suppressed
+      vi.advanceTimersByTime(9 * 60 * 1000)
+      app.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 1 })
+      expect(capture).toHaveBeenCalledTimes(1)
+
+      // Advance past 10 minutes (total 10.5 minutes): allowed again
+      vi.advanceTimersByTime(1.5 * 60 * 1000)
+      app.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 1 })
+      expect(capture).toHaveBeenCalledTimes(2)
+
+      diagnostics.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 

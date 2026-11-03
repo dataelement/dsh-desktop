@@ -14,7 +14,7 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   dedupeWindowMs?: number
 } = {}) {
   const processEvents = options.processEvents ?? process
-  const dedupeWindowMs = options.dedupeWindowMs ?? 10_000
+  const dedupeWindowMs = options.dedupeWindowMs ?? 10 * 60_000 // 10 minutes deduplication window
   const recentCaptures = new Map<string, number>()
   const safe = (operation: () => void) => { try { operation() } catch (error) { options.onError?.(error) } }
   const flush = () => { void service.flush().catch(error => options.onError?.(error)) }
