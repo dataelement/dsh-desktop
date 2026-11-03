@@ -4,6 +4,14 @@
     !include "nsDialogs.nsh"
     !include "${__FILEDIR__}\installer-directories.nsh"
 
+    ; Override electron-builder's default RequestExecutionLevel user so the
+    ; installer launches with highestAvailable via AIS/UAC instead of
+    ; inheriting a Low Mandatory Level token from a Low-IL parent directory
+    ; (which prevents NSIS exehead from writing to %TEMP% before .onInit).
+    !macro customHeader
+      RequestExecutionLevel highest
+    !macroend
+
     Var DshDirectoryPage
     Var DshDirectoryEdit
     Var DshDirectoryNormalizationActive
