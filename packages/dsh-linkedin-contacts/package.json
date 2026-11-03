@@ -1,0 +1,23 @@
+{
+  "name": "dsh-linkedin-contacts",
+  "version": "0.1.0",
+  "description": "Finite LinkedIn contact-add pass: deduplicated queue, identity review and verified invitations.",
+  "private": true,
+  "type": "module",
+  "main": "./ledger.mjs",
+  "exports": {
+    ".": "./ledger.mjs",
+    "./chrome": "./chrome.mjs",
+    "./linkedin": "./linkedin.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-linkedin-contacts": "./cli.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node cli.mjs status"
+  }
+}
