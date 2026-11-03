@@ -95,6 +95,9 @@
 
     !macro customInstall
       !insertmacro dshFinishDirectories
+      ; Ensure Chromium AppContainer sandbox (GPU and Renderer processes) can read installed
+      ; files even when the installer was executed with elevated Administrator permissions.
+      nsExec::Exec 'icacls "$INSTDIR" /grant "*S-1-15-2-1:(OI)(CI)(RX)" /grant "*S-1-15-2-2:(OI)(CI)(RX)" /T /C /Q'
       ; CHECK_APP_RUNNING force-kills the previous process, so will-quit never
       ; clears the session marker. Same-version overwrite would otherwise look
       ; like an unclean-exit. Delete is a no-op when the file is absent.

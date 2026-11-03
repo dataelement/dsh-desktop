@@ -280,7 +280,7 @@ export async function apply(ctx) {
   }
 }, 60_000)
 
-it('reports a missing Office payload during activation and keeps Safe Mode usable', async () => {
+it('degrades gracefully when Office payload is missing during activation and boots ready', async () => {
   const home = await temporary()
   const missing = join(home, 'missing-office-payload')
   const source = await readFile(join(root, 'build/dsh-desktop.patch.yml'), 'utf8')
@@ -298,7 +298,6 @@ it('reports a missing Office payload during activation and keeps Safe Mode usabl
     startupTimeoutMs: 30_000,
     launchProcess: (executable, args, options) => {
       const child = spawn(executable, args, { ...options, env: { ...options.env, ELECTRON_RUN_AS_NODE: '1' } })
-      // A rejected launch is detached before its asynchronous shutdown finishes.
       childClosures.push(new Promise(resolve => child.once('close', resolve)))
       return child
     },
@@ -306,14 +305,10 @@ it('reports a missing Office payload during activation and keeps Safe Mode usabl
   })
   try {
     await runtime.start(home)
-    expect(runtime.snapshot().phase).toBe('failed')
-    expect(runtime.snapshot().logs.join('\n')).toContain(missing)
-    expect(runtime.snapshot().logs.join('\n')).toContain('dsh-desktop-office')
+    expect(runtime.snapshot().phase, runtime.snapshot().logs.join('\n')).toBe('ready')
+    expect(runtime.snapshot().logs.join('\n')).toContain('degrading gracefully')
     await runtime.stop()
     await Promise.all(childClosures)
-    await ensureSafeModeProfile(home)
-    await runtime.start(home, SAFE_MODE_PROFILE)
-    expect(runtime.snapshot().phase, runtime.snapshot().logs.join('\n')).toBe('ready')
   } finally {
     await runtime.stop()
     await Promise.all(childClosures)

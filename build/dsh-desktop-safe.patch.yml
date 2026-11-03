@@ -15,6 +15,9 @@
 - id: ui-settings-account
   disabled: true
 
+- id: agent-default-model
+  disabled: false
+
 - insert:
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
