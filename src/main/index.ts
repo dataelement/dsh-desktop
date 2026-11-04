@@ -1919,6 +1919,15 @@ function registerHarnessHandlers(): void {
     return { ok: runtime.snapshot().phase === 'ready' }
   })
 
+  ipcMain.removeHandler('market:install')
+  ipcMain.handle('market:install', async (event) => {
+    assertTrustedMainWindowEvent(event)
+    if (!isHarnessShellUrl(event.senderFrame?.url ?? '') || runtime.snapshot().phase !== 'ready') {
+      throw new Error('Harness is not ready to install the plugin market.')
+    }
+    return harnessShell.installMarket()
+  })
+
   ipcMain.removeHandler('market:uninstall')
   ipcMain.handle('market:uninstall', async (event) => {
     assertTrustedMainWindowEvent(event)

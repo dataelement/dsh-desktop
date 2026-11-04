@@ -100,6 +100,15 @@ export class HarnessShell {
     }
   }
 
+  async installMarket(): Promise<{ status: number; payload: unknown }> {
+    const response = await this.handle(new Request('dsh-desktop://harness/dsh-desktop/market-installer/install', {
+      method: 'POST',
+      headers: { origin: SHELL_ORIGIN, accept: 'application/json' }
+    }))
+    const payload: unknown = await response.json()
+    return { status: response.status, payload }
+  }
+
   private async readBootPayload(backend: { origin: string, cookie: string }, signal: AbortSignal): Promise<HarnessShellBoot> {
     const response = await this.fetcher(new URL('/api/desktop/boot', backend.origin), {
       headers: { cookie: backend.cookie }, redirect: 'manual', signal

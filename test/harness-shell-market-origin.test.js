@@ -63,6 +63,7 @@ describe('desktop shell and market installer origin contract', () => {
     const shellRequest = (path, method, originHeader = 'dsh-desktop://harness') => shell.handle(new Request(HARNESS_SHELL_URL + path.slice(1), { method, headers: { origin: originHeader } }))
     expect((await shellRequest(STATUS_PATH, 'GET')).status).toBe(200)
     expect((await shellRequest(INSTALL_PATH, 'POST')).status).toBe(200)
+    expect(await shell.installMarket()).toMatchObject({ status: 200, payload: { phase: 'installed' } })
     expect((await shell.handle(new Request(HARNESS_SHELL_URL + INSTALL_PATH.slice(1), { method: 'POST' }))).status).toBe(403)
     expect((await shellRequest(UNINSTALL_PATH, 'POST', 'https://attacker.example')).status).toBe(403)
     expect((await fetch(origin + INSTALL_PATH, { method: 'POST', headers: { cookie: 'session=owned', origin } })).status).toBe(200)

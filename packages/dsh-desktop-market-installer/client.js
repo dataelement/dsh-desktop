@@ -522,6 +522,8 @@ window.__ModuleLoader__.load({
       const [status, setStatus] = React.useState()
       const [error, setError] = React.useState()
       const [restarting, setRestarting] = React.useState(false)
+      const submitting = React.useRef(false)
+      const submissionRevision = React.useRef(0)
 
       React.useEffect(() => {
         let disposed = false
@@ -546,14 +548,19 @@ window.__ModuleLoader__.load({
         let disposed = false
         let timer
         const poll = async () => {
+          const revision = submissionRevision.current
           try {
             const next = await readStatus()
-            if (disposed) return
+            if (disposed || revision !== submissionRevision.current) return
+            if (submitting.current) {
+              timer = setTimeout(poll, 850)
+              return
+            }
             setStatus(next)
             setError(undefined)
             if (next.phase === 'installing') timer = setTimeout(poll, 850)
           } catch (failure) {
-            if (disposed) return
+            if (disposed || revision !== submissionRevision.current) return
             setError(failure instanceof Error ? failure.message : String(failure))
             timer = setTimeout(poll, 1_500)
           }
@@ -566,6 +573,9 @@ window.__ModuleLoader__.load({
       }, [status?.phase])
 
       const install = async () => {
+        if (submitting.current) return
+        submitting.current = true
+        submissionRevision.current++
         setError(undefined)
         setStatus((current) => ({
           ...current,
@@ -573,18 +583,33 @@ window.__ModuleLoader__.load({
           recommendedVersion: current?.recommendedVersion || 'latest'
         }))
         try {
-          const response = await fetch(INSTALL_PATH, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { accept: 'application/json' }
-          })
-          const payload = await response.json()
-          if (!response.ok && response.status !== 409) {
-            throw new Error(payload?.error || `HTTP ${response.status}`)
+          const bridge = globalThis.dshDesktop
+          let code
+          let payload
+          if (bridge && typeof bridge.installMarket === 'function') {
+            const result = await bridge.installMarket()
+            code = result.status
+            payload = result.payload
+          } else {
+            const response = await fetch(INSTALL_PATH, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { accept: 'application/json' }
+            })
+            code = response.status
+            payload = await response.json()
           }
+          if ((code < 200 || code >= 300) && code !== 409) {
+            throw new Error(payload?.error || `HTTP ${code}`)
+          }
+          setError(undefined)
           setStatus(payload)
         } catch (failure) {
+          submissionRevision.current++
+          setStatus((current) => ({ ...current, phase: 'absent' }))
           setError(failure instanceof Error ? failure.message : String(failure))
+        } finally {
+          submitting.current = false
         }
       }
 
