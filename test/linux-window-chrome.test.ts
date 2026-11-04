@@ -69,7 +69,7 @@ it('leaves the browser-on-Linux profile unbound instead of borrowing another pro
 })
 
 it('keeps the bundle patch host-neutral for Linux', async () => {
-  const conversation = await readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.2.1-rc.3.patch', 'utf8')
+  const conversation = await readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.2.2-alpha.2.patch', 'utf8')
 
   // 0.2.1 carries no Windows caption strip and selects its own geometry from
   // the macOS announcement; Linux draws its caption from the preload, so the
@@ -80,8 +80,8 @@ it('keeps the bundle patch host-neutral for Linux', async () => {
 
 it('leaves the other desktop hosts untouched', async () => {
   const [sidebar, conversation] = await Promise.all([
-    readFile('patches/@deepseek-ai+dsh-client-ui-sidebar+0.2.1-rc.3.patch', 'utf8'),
-    readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.2.1-rc.3.patch', 'utf8')
+    readFile('patches/@deepseek-ai+dsh-client-ui-sidebar+0.2.2-alpha.2.patch', 'utf8'),
+    readFile('patches/@deepseek-ai+dsh-client-ui-conversation+0.2.2-alpha.2.patch', 'utf8')
   ])
   // macOS selects its geometry by announcement; the Windows rules must still
   // match a host that announces nothing.
