@@ -3,12 +3,17 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const React = require('react')
     const { Service } = require('@deepseek-ai/cordis')
-    const { Switch, Toast } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { Switch, Toast, Modal } = require('@deepseek-ai/dsh-client-ui-primitives')
     const h = React.createElement
     const DOWNLOAD_NS = 'dsh-desktop-workbenches.download'
     const downloadCopy = {
       zh: { download_failed: '无法下载工作台安装包', download_interrupted: '工作台安装包下载中断', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
       en: { download_failed: 'Could not download the workbench package', download_interrupted: 'Workbench package download interrupted', invalid_download_url: 'The workbench download URL is invalid.', unsafe_download_url: 'The workbench download URL must use HTTPS without credentials or a custom port.' }
+    }
+    const CREATE_NS = 'dsh-desktop-workbenches.creation'
+    const createCopy = {
+      zh: { starter: '我想做一个【工作台名称或用途】，主要给【谁使用】，帮助解决【什么问题】。\n最希望实现的功能是：【描述核心功能或使用场景】。', instructions: '工作台开发指令', close: '关闭', create: '创建工作台', creating: '正在创建…', copy: '复制指令给其他 AI 助手', unsupported: '当前运行时不支持创建草稿，请更新 DSH 后重试。', draftChanged: '会话草稿已变化，未覆盖原有内容，请重新创建。', title: '创建会话，告诉 AI 你的想法', hint: '在 DSH 中创建新会话，补充你的工作台需求后点击发送，AI 会按指令中的网址阅读开发规范。也可以复制指令，交给 WorkBuddy、Codex 等其他 AI 助手制作工作台。' },
+      en: { starter: 'I want to build a 【workbench name or purpose】 for 【who will use it】 to help with 【the problem to solve】.\nThe main feature I need is: 【a core feature or use case】.', instructions: 'Workbench development instructions', close: 'Close', create: 'Create workbench', creating: 'Creating…', copy: 'Copy instructions for another AI assistant', unsupported: 'Update DSH to a runtime that supports conversation drafts, then retry.', draftChanged: 'The conversation draft changed. Its content was preserved; please create a new conversation.', title: 'Start a conversation and describe your idea', hint: 'Start a new conversation in DSH, add your requirements, and send when ready. The AI will read the development guide at the URL in the instructions. You can also copy the instructions for WorkBuddy, Codex, or another AI assistant to build your workbench.' }
     }
     const REGISTRATION_NS = 'dsh-desktop-workbenches.registration'
     const registrationCopy = {
@@ -1092,6 +1097,49 @@ window.__ModuleLoader__.load({
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
       }
+      createWorkbench(prompt) {
+        if (this.workbenchCreation) return this.workbenchCreation
+        const ticket = ++this.navigation
+        const controller = new AbortController()
+        let navigationSignal = this.ctx.layout.beginNavigation()
+        const abort = () => controller.abort()
+        navigationSignal.addEventListener('abort', abort, { once: true })
+        this.workbenchCreationController = controller
+        const t = this.ctx.locale.bind(CREATE_NS)
+        const workspaceId = this.defaultWorkspace(null)?.workspaceId
+        this.workbenchCreation = (async () => {
+          const { createWorkbenchConversation, createInstructionSource } = await import('/api/desktop-workbenches/create-workbench.mjs')
+          const triggers = this.ctx.get('inputTriggers')
+          if (triggers && !this.instructionSourceDispose) {
+            this.instructionSourceDispose = this.ctx.effect(() => triggers.registerSource(createInstructionSource(text => { this.instructionPreview = text; this.publish() })), 'workbenches: instruction reference')
+          }
+          return createWorkbenchConversation({
+            ctx: this.ctx, signal: controller.signal,
+            current: () => !this.disposed && ticket === this.navigation,
+            workspaceId, prompt, starter: t('starter'), label: t('instructions'), compact: !!triggers, errorText: t,
+            activate: async sessionId => {
+              await this.commit(state => { state.active = null })
+              if (controller.signal.aborted || this.disposed || ticket !== this.navigation) return
+              // Destination selection cancels the previous layout navigation.
+              navigationSignal.removeEventListener('abort', abort)
+              this.suppressSelection = true
+              try { this.setMarketOpen(false); this.showSession(sessionId); this.ctx.layout.selectPanel(null) }
+              finally { this.suppressSelection = false }
+              navigationSignal = this.ctx.layout.beginNavigation()
+              navigationSignal.addEventListener('abort', abort, { once: true })
+            }
+          })
+        })().catch(error => {
+          if (!controller.signal.aborted) throw error
+        }).finally(() => {
+          navigationSignal.removeEventListener('abort', abort)
+          this.workbenchCreation = null
+          this.workbenchCreationController = null
+          this.publish()
+        })
+        this.publish()
+        return this.workbenchCreation
+      }
       setMarketOpen(open) {
         if (!open && this.restoreMarketOnLoad && !this.ready) return
         storeMarketOpen(open)
@@ -1420,6 +1468,7 @@ window.__ModuleLoader__.load({
         }))
       }
       dispose() {
+        this.workbenchCreationController?.abort()
         for (const timer of this.noteTimers.values()) clearTimeout(timer)
         for (const id of this.draftNotes.keys()) this.run(this.saveNote(id))
         this.registrationFailures.clear()
@@ -1957,6 +2006,13 @@ window.__ModuleLoader__.load({
         }
       }, [open, dialogRef])
     }
+    function InstructionPreview({ service }) {
+      if (!service.instructionPreview) return null
+      const t = service.ctx.locale.bind(CREATE_NS)
+      return h(Modal, { open: true, title: t('instructions'), closeLabel: t('close'), backdropBlur: false,
+        onClose: () => { service.instructionPreview = null; service.publish() } },
+      h('pre', { style: { whiteSpace: 'pre-wrap', maxHeight: '55vh', overflowY: 'auto', margin: 0 } }, service.instructionPreview))
+    }
     function DetailModal({ entry, onClose }) {
       const dialogRef = React.useRef(null)
       useDialogFocus(!!entry, onClose, dialogRef)
@@ -2183,7 +2239,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       }
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': tr('工作台市场') },
         h('div', { className: 'dshWbDisabledHint' }, h('h1', null, tr('工作台功能已关闭')), h('p', { className: 'dshWbMuted' }, tr('可在 设置 → 通用 中重新开启。'))))
+      const createText = service.ctx.locale?.bind ? service.ctx.locale.bind(CREATE_NS) : key => createCopy[isEnglish() ? 'en' : 'zh'][key]
       const developmentPrompt = developmentWorkbenchAgentPrompt()
+      const completeDevelopmentPrompt = developmentPrompt + '\n\n' + createText('starter')
       const chosenCategory = marketCategories.find((item) => item.id === submitCategory)
       const submissionPrompt = submissionWorkbenchAgentPrompt({ category: chosenCategory, suggestion: categoryIdea })
       const disabled = !ready || pending > 0 || service.blocked
@@ -2228,7 +2286,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       }
       const copyPrompt = async (text) => {
         try { await copySubmissionPrompt(text); setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: tr('已复制'), tone: 'success' }) }
-        catch { setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: tr('复制失败，请展开指令手动复制。') }) }
+        catch { setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: tr('复制失败，请展开指令手动复制。'), developmentFallback: text === completeDevelopmentPrompt }) }
       }
       return h('section', { className: `dshWb dshWbMarket${detail != null || removing != null ? ' dshWbMarketModalOpen' : ''}`, 'aria-label': tr('工作台市场') },
         h('header', { className: 'dshWbMarketHeader', 'data-window-drag': true },
@@ -2261,12 +2319,12 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
           h('div', { className: 'dshWbSteps', 'aria-label': tr('工作台制作步骤') },
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '1'),
-              h('strong', null, tr('把开发指令发给你的 AI 助手')),
-              h('p', null, both('点击下方「复制开发指令」，发给你常用的 AI 助手（DSH、WorkBuddy、Codex 等），再告诉它你想做一个什么样的工作台。它会先和你确认需求，再按照', 'Click “Copy development instructions” below and send them to your usual AI assistant (DSH, WorkBuddy, Codex, etc.). Tell it what you want your workbench to do. It will confirm your requirements, then build and install it using the '), h('a', { href: developmentPageUrl(), target: '_blank', rel: 'noopener noreferrer' }, tr('工作台开发规范')), both('来开发并安装到本机。只想自己用的话，不需要上传代码。', '. You do not need to upload code for personal use.')),
+              h('strong', null, createText('title')),
+              h('p', null, createText('hint'), ' ', h('a', { href: developmentPageUrl(), target: '_blank', rel: 'noopener noreferrer' }, tr('工作台开发规范'))),
               h('div', { className: 'dshWbStepActions' },
-                h(Button, { primary: true, onClick: () => copyPrompt(developmentPrompt) }, tr('复制开发指令')),
-                h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'development' ? null : 'development') }, openPrompt === 'development' ? tr('收起指令') : tr('查看指令'))),
-              openPrompt === 'development' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: developmentPrompt, 'aria-label': tr('发给 AI 助手的开发指令'), onFocus: (event) => event.currentTarget.select() })),
+                h(Button, { primary: true, disabled: disabled || !!service.workbenchCreation, onClick: () => service.run(service.createWorkbench(developmentPrompt)) }, createText(service.workbenchCreation ? 'creating' : 'create')),
+                h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => copyPrompt(completeDevelopmentPrompt) }, createText('copy'))),
+              copyStatus?.developmentFallback && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: completeDevelopmentPrompt, 'aria-label': tr('发给 AI 助手的开发指令'), onFocus: (event) => event.currentTarget.select() })),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '2'),
               h('strong', null, tr('重启 Harness，试试你的工作台')),
@@ -2557,7 +2615,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const disabled = !ready || pending > 0 || service.blocked
       const visibleWorkspaces = workspaces.items.filter((item) => service.workspaceVisible(item.workspaceId, state.active))
       const chosen = visibleWorkspaces.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
-      return h('div', { className: 'dshWb dshWbFrame', ref: frameRef, 'data-dsh-workbench-active': entry ? '' : undefined }, runtimeEntry && h('div', { className: 'dshWbCaptionRow', 'aria-hidden': true }), h(Notice, { service }),
+      return h('div', { className: 'dshWb dshWbFrame', ref: frameRef, 'data-dsh-workbench-active': entry ? '' : undefined }, runtimeEntry && h('div', { className: 'dshWbCaptionRow', 'aria-hidden': true }), h(Notice, { service }), h(InstructionPreview, { service }),
         require('react-dom').createPortal(conversation, conversationContainer),
         ...loaded.filter((item) => item.customFrame === true).map((item) => h(HeaderHost, { entry: item, key: item.id, className: 'dshWbCustomFrame', hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, { service }, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? h('div', { style: { display: hasCurrentSession ? 'contents' : 'none' } }, conversationMount) : null })))),
         h('div', { className: 'dshWbBody', hidden: customFrame, style: { '--workbench-business-width': `${(entry?.layout?.businessWidth ?? 0.36) * 100}%` } },
@@ -2579,10 +2637,19 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
     }
     function apply(ctx) {
       hostLocale = ctx.locale
+      ctx.effect(() => ctx.locale.register(CREATE_NS, createCopy), 'workbenches: creation dictionaries')
       ctx.effect(() => ctx.locale.register(DOWNLOAD_NS, downloadCopy), 'workbenches: download dictionaries')
       ctx.effect(() => ctx.locale.register(REGISTRATION_NS, registrationCopy), 'workbenches: registration dictionaries')
       const service = new Workbenches(ctx)
       ctx.effect(() => ctx.reflect.provide('desktopWorkbenches', service), 'workbenches: service')
+      ctx.inject?.(['inputTriggers'], scoped => {
+        let disposed = false
+        import('/api/desktop-workbenches/create-workbench.mjs').then(({ createInstructionSource }) => {
+          if (disposed || service.instructionSourceDispose) return
+          service.instructionSourceDispose = scoped.effect(() => scoped.inputTriggers.registerSource(createInstructionSource(text => { service.instructionPreview = text; service.publish() })), 'workbenches: instruction reference')
+        }).catch(error => { if (!disposed) service.run(Promise.reject(error)) })
+        return () => { disposed = true; service.instructionSourceDispose = null }
+      })
       ctx.effect(() => ctx.modules?.entries?.state?.subscribe?.(() => service.publish()), 'workbenches: client module failures')
       ctx.effect(() => {
         const refresh = () => service.run(service.refreshNative())

@@ -122,7 +122,7 @@ function interactiveMarket(service, tab = 'market', clipboard) {
   return {
     render: () => { stateIndex = 0; return renderMarket({ service }) },
     find,
-    button: (tree, label) => find(tree, node => node.type?.name === 'Button' && node.props.children.flat().filter(child => typeof child === 'string').join('') === label)[0],
+    button: (tree, label) => find(tree, node => (node.type?.name === 'Button' || node.type === 'button') && node.props.children.flat().filter(child => typeof child === 'string').join('') === label)[0],
     modal: tree => find(tree, node => node.type?.name === 'ConfirmRemoveModal')[0]
   }
 }
@@ -971,6 +971,24 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('prepares the original development instruction through the primary action and keeps clipboard available', async () => {
+    const { service } = await fixture()
+    service.createWorkbench = vi.fn(async () => {})
+    const clipboard = { writeText: vi.fn(async () => {}) }
+    const market = interactiveMarket(service, 'submit', clipboard)
+    const tree = market.render()
+    const create = market.button(tree, '创建工作台')
+    const copy = market.button(tree, '复制指令给其他 AI 助手')
+    expect(create.props.primary).toBe(true)
+    create.props.onClick()
+    await service.queue
+    expect(service.createWorkbench).toHaveBeenCalledWith(developmentWorkbenchAgentPrompt())
+    await copy.props.onClick()
+    expect(clipboard.writeText.mock.calls[0][0]).toContain(developmentWorkbenchAgentPrompt())
+    expect(clipboard.writeText.mock.calls[0][0]).toContain('【工作台名称或用途】')
+    service.dispose()
+  })
+
   it('renders workbench creation as a separate action instead of a collection tab', () => {
     const source = Market.toString()
     expect(source).not.toContain("'aria-selected': tab === 'submit'")
@@ -981,10 +999,9 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain("'aria-selected': tab === 'favorites'")
     expect(source).toContain('我的收藏')
     expect(source).toContain('已安装')
-    expect(source).toContain('把开发指令发给你的 AI 助手')
-    expect(source).toContain('发给你常用的 AI 助手（DSH、WorkBuddy、Codex 等）')
+    expect(source).toContain("createText('title')")
+    expect(source).toContain("createText('hint')")
     expect(source).toContain('重启 Harness，试试你的工作台')
-    expect(source).toContain('来开发并安装到本机')
     expect(source).toContain('安装完成后，仅当提示需要重启时')
     expect(source).toContain('试试你平时会用到的功能，看看是否符合预期')
     expect(source).toContain('想上架？把提交指令发给 AI 助手')
@@ -992,7 +1009,8 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain('href: developmentPageUrl()')
     expect(source).toContain('href: acceptancePageUrl()')
     expect(source).not.toContain('离线查看')
-    expect(source).toContain('复制开发指令')
+    expect(source).toContain('service.createWorkbench(developmentPrompt)')
+    expect(source).toContain("createText('copy')")
     expect(source).toContain('复制提交指令')
     // Self-use must not read as a parallel alternative to submitting.
     expect(source).not.toContain('选择交付方式')
@@ -1146,7 +1164,7 @@ describe('desktop workbench client navigation', () => {
     expect(code).toContain('.dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}')
   })
 
-  it.each([['复制开发指令', '本地开发'], ['复制提交指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
+  it.each([['复制指令给其他 AI 助手', '本地开发'], ['复制提交指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
     const { service } = await fixture()
     const writeText = vi.fn(async () => {})
     const ui = interactiveMarket(service, 'submit', { writeText })
@@ -1165,7 +1183,7 @@ describe('desktop workbench client navigation', () => {
   it('shows failure feedback when copying a workbench instruction fails', async () => {
     const { service } = await fixture()
     const ui = interactiveMarket(service, 'submit', { writeText: vi.fn(async () => { throw new Error('denied') }) })
-    await ui.button(ui.render(), '复制开发指令').props.onClick()
+    await ui.button(ui.render(), '复制指令给其他 AI 助手').props.onClick()
     const toast = ui.find(ui.render(), node => node.type?.name === 'Toast')[0]
     expect(toast.props.text).toContain('复制失败')
     expect(toast.props.tone).toBeUndefined()
@@ -4096,7 +4114,7 @@ describe('workbench host localization', () => {
     ui.button(tree, 'Build my workbench').props.onClick()
     tree = ui.render()
     expect(ui.find(tree, node => node.type === 'h1')[0].props.children).toEqual(['Build your own workbench'])
-    expect(ui.button(tree, 'Copy development instructions')).toBeDefined()
+    expect(ui.button(tree, 'Create workbench')).toBeDefined()
     expect(ui.button(tree, 'Copy submission instructions')).toBeDefined()
     ui.button(tree, 'Back to Workbench Market').props.onClick()
     ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-mine-tab')[0].props.onClick()
