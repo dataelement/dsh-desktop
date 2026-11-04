@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { isSeq, parse, parseDocument } from 'yaml'
+import { isMap, isScalar, isSeq, parse, parseDocument } from 'yaml'
 import {
   forgetPlugin,
   readMarketState,
@@ -42,23 +42,8 @@ interface PluginPatchRows {
   foreignDisables: string[]
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function rowBlockPattern(rowId: string, disabled: boolean): RegExp {
-  return new RegExp(
-    `^- id: ['"]?${escapeRegExp(rowId)}['"]?\\r?\\n  disabled: ${disabled ? 'true' : 'false'}[ \\t]*(?:\\r?\\n|$)`,
-    'm'
-  )
-}
-
 function rowBlock(rowId: string, disabled: boolean): string {
   return `- id: ${rowId}\n  disabled: ${disabled ? 'true' : 'false'}\n`
-}
-
-function withoutComments(text: string): string {
-  return text.replace(/^[ \t]*#.*$/gm, '').trim()
 }
 
 /**
@@ -69,22 +54,29 @@ function withoutComments(text: string): string {
  */
 function appendPatchEntry(text: string, block: string): { text: string } | { error: string } {
   if (text.trim() === '') return { text: block }
-  const content = withoutComments(text)
   const terminated = (value: string): string => (value.endsWith('\n') ? value : `${value}\n`)
-  if (content === '') return { text: `${terminated(text)}${block}` }
-  if (content === '[]' || content === '[ ]') {
-    return { text: `${terminated(text.replace(/^[ \t]*\[[ \t]*\][ \t]*(?:#.*)?(?:\r?\n|$)/m, '# []\n'))}${block}` }
+  const document = parseDocument(text)
+  if (document.errors.length > 0) {
+    return { error: 'the patch layer is not a valid entry list; fix the YAML first' }
   }
-  const lastLine = text.split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#'))
-    .pop() ?? ''
-  if (/^[[{]/.test(lastLine)) {
+  if (document.contents === null) {
+    return { text: `${terminated(text)}${block}` }
+  }
+  if (!isSeq(document.contents)) {
+    return { error: 'the patch layer is not a valid entry list; fix the YAML first' }
+  }
+  if (document.contents.flow) {
+    const range = document.contents.range
+    if (document.contents.items.length === 0 && range !== undefined) {
+      const replaced = `${text.slice(0, range[0])}# []${text.slice(range[1])}`
+      return { text: `${terminated(replaced)}${block}` }
+    }
     return { error: 'the patch layer ends in a top-level flow structure; tidy it into an entry list first' }
   }
-  const document = parseDocument(text)
-  if (document.errors.length > 0 || !isSeq(document.contents)) {
-    return { error: 'the patch layer is not a valid entry list; fix the YAML first' }
+  for (const item of document.contents.items) {
+    if (isMap(item) && item.flow) {
+      return { error: 'the patch layer ends in a top-level flow structure; tidy it into an entry list first' }
+    }
   }
   return { text: `${terminated(text)}${block}` }
 }
@@ -101,11 +93,26 @@ export function disablePatchRows(
   let next = text
   for (const rowId of rowIds) {
     if (!ROW_ID.test(rowId)) return { error: `row id ${rowId} cannot be written to the patch layer` }
-    if (rowBlockPattern(rowId, true).test(next)) continue
-    const forced = rowBlockPattern(rowId, false)
-    if (forced.test(next)) {
-      next = next.replace(forced, rowBlock(rowId, true))
-      continue
+    const document = parseDocument(next)
+    if (document.errors.length === 0 && isSeq(document.contents) && !document.contents.flow) {
+      const existing = document.contents.items.find((item) => {
+        if (!isMap(item) || item.flow || item.items.length !== 2) return false
+        const id: unknown = item.get('id')
+        const disabled: unknown = item.get('disabled')
+        return id === rowId && typeof disabled === 'boolean'
+      })
+      if (isMap(existing)) {
+        const disabled: unknown = existing.get('disabled')
+        if (disabled === true) continue
+        const disabledPair = existing.items.find(
+          (pair) => isScalar(pair.key) && pair.key.value === 'disabled'
+        )
+        const valueRange = isScalar(disabledPair?.value) ? disabledPair.value.range : undefined
+        if (valueRange !== undefined) {
+          next = `${next.slice(0, valueRange[0])}true${next.slice(valueRange[1])}`
+          continue
+        }
+      }
     }
     const appended = appendPatchEntry(next, rowBlock(rowId, true))
     if ('error' in appended) return appended
@@ -121,11 +128,21 @@ export function enablePatchRows(text: string, rowIds: readonly string[]): { text
 
 /** Row ids the user patch layer switches off, scanned like dsh-market's readUserPatchState. */
 export function patchLayerDisabledRows(text: string): string[] {
+  let document
+  try {
+    document = parseDocument(text)
+  } catch {
+    return []
+  }
+  if (document.errors.length > 0 || !isSeq(document.contents)) return []
   const disabled: string[] = []
-  const lines = text.split(/\r?\n/)
-  for (const [index, line] of lines.entries()) {
-    const row = /^- id: ['"]?([A-Za-z0-9_.-]+)['"]?\s*$/.exec(line)
-    if (row && /^ {2}disabled: true\s*$/.test(lines[index + 1] ?? '')) disabled.push(row[1]!)
+  for (const item of document.contents.items) {
+    if (!isMap(item)) continue
+    const id: unknown = item.get('id')
+    const isDisabled: unknown = item.get('disabled')
+    if (typeof id === 'string' && ROW_ID.test(id) && isDisabled === true) {
+      disabled.push(id)
+    }
   }
   return disabled
 }

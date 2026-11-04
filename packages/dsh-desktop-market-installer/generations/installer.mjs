@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import semver from 'semver'
+import { isMap, isScalar, parseDocument } from 'yaml'
 import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
@@ -121,24 +122,39 @@ function safeBuildApprovalKey(key) {
  */
 export function generationBuildApprovals(workspaceYaml) {
   if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return []
-  const blockPattern = /allowBuilds:[ \t]*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)*)/gu
+  let document
+  try {
+    document = parseDocument(workspaceYaml)
+  } catch {
+    return []
+  }
+  if (document.errors.every((error) => error.code === 'BAD_SCALAR_START')) {
+    document.errors.length = 0
+  }
+  if (document.errors.length > 0 || !isMap(document.contents)) return []
   const approved = new Set()
-  for (const block of workspaceYaml.matchAll(blockPattern)) {
-    for (const line of block[1].split(/\r?\n/u)) {
-      const match = /^[ \t]+(\S.*?)\s*:\s*(true|false)\s*$/u.exec(line)
-      if (match === null || match[2] !== 'true') continue
-      let key = match[1]
-      if (
-        key.length >= 2 &&
-        ((key.startsWith("'") && key.endsWith("'")) ||
-          (key.startsWith('"') && key.endsWith('"')))
-      ) {
-        key = key.slice(1, -1)
-      }
+  for (const pair of document.contents.items) {
+    if (!isScalar(pair.key) || pair.key.value !== 'allowBuilds' || !isMap(pair.value)) continue
+    for (const entry of pair.value.items) {
+      if (!isScalar(entry.key) || !isScalar(entry.value) || entry.value.value !== true) continue
+      const key = String(entry.key.value)
       if (safeBuildApprovalKey(key)) approved.add(key)
     }
   }
   return [...approved]
+}
+
+function readWorkspaceAutoInstallPeers(workspaceYaml) {
+  if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return undefined
+  let document
+  try {
+    document = parseDocument(workspaceYaml)
+  } catch {
+    return undefined
+  }
+  if (document.errors.length > 0 || !isMap(document.contents)) return undefined
+  const value = document.contents.get('autoInstallPeers')
+  return typeof value === 'boolean' ? value : undefined
 }
 
 /**
@@ -314,8 +330,8 @@ export async function installGeneration(options) {
       if (error.code === 'ENOENT') return ''
       throw error
     })
-    const policy = /^autoInstallPeers:[ \t]*(true|false)[ \t]*(?:#.*)?\r?$/m.exec(workspace)
-    if (policy) options = { ...options, autoInstallPeers: policy[1] === 'true' }
+    const policy = readWorkspaceAutoInstallPeers(workspace)
+    if (policy !== undefined) options = { ...options, autoInstallPeers: policy }
   }
   const { dshHome, pluginSpec, onTrace } = options
   const trace = (line) => onTrace?.(`generation-install: ${line}`)
