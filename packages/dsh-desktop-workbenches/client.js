@@ -73,7 +73,10 @@ window.__ModuleLoader__.load({
       '市场安装记录无效。': 'The market installation record is invalid.', '当前安装方式不支持应用内卸载。请使用原安装方式移除，并重启 Harness。': 'This installation cannot be uninstalled in the app. Remove it using the original installation method, then restart Harness.', '插件状态切换失败。': 'Could not change plugin state.', '无法切换插件状态。': 'Could not change plugin state.', '无法定位此插件的安装来源。请使用原安装方式移除，并重启 Harness。': 'The plugin installation source cannot be located. Remove it using the original method, then restart Harness.', '无法确定此工作台的原生插件状态。': 'Could not determine this workbench plugin status.', '暂时无法读取插件状态，请重启后重试。': 'Could not read plugin status. Restart and retry.', '未找到可卸载的原生插件，请检查安装来源。': 'No uninstallable plugin was found. Check its installation source.', '本机工作台版本高于市场版本，已取消安装以避免降级。': 'The installed workbench is newer than the market version. Installation was cancelled to avoid a downgrade.', '此会话已属于另一个工作台，不能重新绑定。': 'This session already belongs to another workbench and cannot be relinked.', '此工作区已从当前工作台移除。请重新添加该文件夹。': 'This workspace was removed from the current workbench. Add its folder again.', '此工作台的原生插件当前不可卸载。': 'This workbench plugin cannot be uninstalled.', '此插件由宿主管理，不能在工作台市场内卸载。': 'This plugin is managed by the host and cannot be uninstalled from the Workbench Market.', '请先打开可用的工作台。': 'Open an available workbench first.', '请先打开工作台。': 'Open a workbench first.', '请先添加可用的工作台。': 'Add an available workbench first.', '这个工作台已不在工作台市场中。': 'This workbench is no longer in the market.'
     }
     const localeActive = () => hostLocale?.getSnapshot?.().active || 'zh'
-    const isEnglish = () => localeActive().toLowerCase().startsWith('en')
+    // The Desktop bundles ship zh/en copy only. Harness 0.2.2 added locales
+    // beyond those two (e.g. pt-BR); every non-Chinese locale must read the
+    // English copy instead of the Chinese source strings (#844).
+    const isEnglish = () => !localeActive().toLowerCase().startsWith('zh')
     const tr = (value) => isEnglish() ? enCopy[value] || value : value
     const both = (zh, en) => isEnglish() ? en : zh
     const FALLBACK_LOCALE_SNAPSHOT = { active: 'zh', revision: 0 }
