@@ -1,7 +1,7 @@
 {
   "name": "dsh-image-generation",
   "version": "0.1.0",
-  "description": "Shared OpenAI and ByteDance image generation for DSH conversations, presentations and documents.",
+  "description": "Shared OpenAI, ByteDance, xAI (Grok Imagine) and Agnes image generation for DSH conversations, presentations and documents.",
   "type": "module",
   "main": "./index.js",
   "exports": {
@@ -33,7 +33,10 @@
     "dsh-plugin",
     "image-generation",
     "seedream",
-    "openai"
+    "openai",
+    "grok",
+    "xai",
+    "agnes"
   ],
   "dsh": {
     "bundle": {
