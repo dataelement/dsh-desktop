@@ -138,7 +138,7 @@ describe('packaged Harness shell', () => {
     expect(payload.body).toBe('payload')
     expect(payload.headers.cookie).toBe('session=owned')
     expect(payload.headers.host).toBe(new URL(origin).host)
-    expect(payload.headers.origin).toBeUndefined()
+    expect(payload.headers.origin).toBe(origin)
     expect(payload.headers['sec-fetch-site']).toBeUndefined()
     expect(payload.headers['x-custom']).toBe('kept')
     for (const header of ['set-cookie', 'content-length', 'transfer-encoding', 'connection', 'keep-alive']) expect(response.headers.has(header)).toBe(false)
@@ -152,6 +152,22 @@ describe('packaged Harness shell', () => {
     expect((await unusual.json()).path).toBe('//example.com/api')
     shell.reset()
     expect((await shell.handle(request('api/echo'))).status).toBe(503)
+  })
+
+  it('translates only a trusted Origin and never upgrades absent or foreign origins', async () => {
+    const { origin, seen } = await backend()
+    await shell.connect(origin, 'secret')
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      const response = await shell.handle(request('api/market/install', { method, headers: { origin: 'dsh-desktop://harness' } }))
+      expect((await response.json()).headers.origin).toBe(origin)
+    }
+    const absent = await shell.handle(request('api/market/install', { method: 'POST' }))
+    expect((await absent.json()).headers.origin).toBeUndefined()
+    const before = seen.length
+    for (const foreign of ['null', 'https://evil.invalid', origin, 'dsh-desktop://desktop']) {
+      expect((await shell.handle(request('api/market/install', { method: 'POST', headers: { origin: foreign } }))).status).toBe(403)
+    }
+    expect(seen).toHaveLength(before)
   })
 
   it('reloads the current boot graph after multiple HMR revisions without authenticating again', async () => {

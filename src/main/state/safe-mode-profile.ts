@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isMap, isSeq, parseDocument } from 'yaml'
+import { isMap, isSeq, parseDocument, type YAMLMap } from 'yaml'
 import { validModelEndpoint } from './startup-config-recovery'
 
 export const SAFE_MODE_PROFILE = 'desktop-safe-mode'
@@ -11,7 +11,11 @@ export const SAFE_MODE_BUNDLES = [
 
 export const SAFE_MODE_PATCH = `# Managed by DSH Desktop Safe Mode.
 # Third-party bundles and the normal web profile's patch layer are intentionally omitted.
-[]
+- id: agent-default-model
+  disabled: false
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
 `
 
 const SAFE_MODE_WORKSPACE = `packages:
@@ -42,10 +46,15 @@ export function extractSafeModePatch(sourcePatchText: string): string {
   if (!isSeq(contents)) return SAFE_MODE_PATCH
 
   const kept = []
+  let hasAgentDefaultModel = false
   for (const item of contents.items) {
     if (!isMap(item)) continue
     const id = item.get('id')
     if (typeof id === 'string' && SAFE_MODE_MODEL_ENTRY_IDS.has(id)) {
+      if (id === 'agent-default-model') {
+        hasAgentDefaultModel = true
+        ;(item as YAMLMap<unknown, unknown>).set('disabled', false)
+      }
       // Safe Mode must never inherit a broken baseURL that crashes the DeepSeek core adapter
       if (id === 'llm-deepseek') {
         const config = item.get('config')
@@ -57,6 +66,17 @@ export function extractSafeModePatch(sourcePatchText: string): string {
         }
       }
       kept.push(item)
+    }
+  }
+
+  if (!hasAgentDefaultModel) {
+    const fallbackModelDoc = parseDocument(`- id: agent-default-model
+  disabled: false
+  config:
+    provider: deepseek-official
+    model: deepseek-flash`)
+    if (isSeq(fallbackModelDoc.contents) && fallbackModelDoc.contents.items[0]) {
+      kept.push(fallbackModelDoc.contents.items[0])
     }
   }
 

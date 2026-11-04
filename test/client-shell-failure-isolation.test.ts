@@ -82,9 +82,9 @@ async function loadShellRuntime(): Promise<ShellRuntime> {
     selected.add(name)
     for (const dependency of references(definition.node)) select(dependency)
   }
-  // Names belong to the locked 0.2.1-rc.3 artifact. Execute its actual boot, audit,
+  // Names belong to the locked 0.2.2-alpha.2 artifact. Execute its actual boot, audit,
   // mount and vendored Cordis dependency closure without starting the DOM shell.
-  for (const name of ['st', 'jZ', 'IZ', 'EZ']) select(name)
+  for (const name of ['at', 'VZ', 'BZ', 'KZ']) select(name)
   let changed = true
   while (changed) {
     changed = false
@@ -98,7 +98,7 @@ async function loadShellRuntime(): Promise<ShellRuntime> {
     }
   }
   const executable = units.filter((unit) => selected.has(unit.name)).map((unit) => unit.text).join(String.fromCharCode(10))
-  return vm.runInNewContext(`${executable};({ Context: st, boot: jZ, audit: IZ, mount: EZ })`, {
+  return vm.runInNewContext(`${executable};({ Context: at, boot: VZ, audit: BZ, mount: KZ })`, {
     console: { ...console, error: vi.fn() }, setTimeout, clearTimeout
   }) as ShellRuntime
 }

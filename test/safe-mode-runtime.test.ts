@@ -76,6 +76,16 @@ registerHooks({ resolve(specifier, context, next) {
     if (!url || !token) throw new Error('Recovery endpoint was not announced')
     const login = await fetch(`${url}/?token=${encodeURIComponent(token)}`, { redirect: 'manual' })
     const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ')
+    // Electron fetches this endpoint instead of the static index. Exercise the
+    // real permission-aware injection subscriber, not only browser HTML.
+    expect((await fetch(new URL('/api/desktop/boot', url))).status).toBe(401)
+    const desktopBoot = await fetch(new URL('/api/desktop/boot', url), { headers: { Cookie: cookie } })
+    expect(desktopBoot.status).toBe(200)
+    const payload = await desktopBoot.json()
+    expect(payload.injections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'global', name: '__DSH_BOOT__' }),
+      expect.objectContaining({ kind: 'global', name: '__DSH_REMOTE_ACCESS__', value: expect.objectContaining({ owner: true }) })
+    ]))
     const html = await (await fetch(url, { headers: { Cookie: cookie } })).text()
     const scriptUrls = [...html.matchAll(/<script[^>]+src="([^"]+)"/gu)].map((match) => match[1])
     const bootstrap = scriptUrls.find((src) => src?.includes('plugins/??@deepseek-ai/dsh-client-modules/client.js'))

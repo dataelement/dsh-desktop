@@ -70,11 +70,11 @@ describe('Settings sidebar footer seam', () => {
     }
     const tree = vm.runInNewContext(source.slice(start, end) + '\nSettingsPanel({ rows:[{id:"general",label:"General"}], renderSlot, activeId:"general", onSelect() {}, onClose() {} })', context)
     const panel = tree.props.children[1]
-    const nav = panel.props.children[0]
+    const nav = panel.props.children.find((node: { type: string }) => node.type === 'nav')
     expect(nav.type).toBe('nav')
-    expect(nav.props.children[1].props.className).toBe('navList')
-    expect(nav.props.children[2].props['data-dsh-settings-sidebar-footer']).toBe(true)
-    expect(nav.props.children[2].props.children).toEqual(contributions)
+    expect(nav.props.children[0].props.className).toBe('navList')
+    expect(nav.props.children[1].props['data-dsh-settings-sidebar-footer']).toBe(true)
+    expect(nav.props.children[1].props.children).toEqual(contributions)
     expect(renderSlot.mock.calls.filter(([name]) => name === 'settings.sidebar.footer')).toHaveLength(1)
     expect(renderSlot.mock.calls.find(([name]) => name === 'settings.section')).toEqual(['settings.section', { close: expect.any(Function) }, { only: 'general' }])
   })

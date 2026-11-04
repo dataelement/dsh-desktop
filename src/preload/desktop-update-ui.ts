@@ -1,3 +1,4 @@
+import { renderUpdateNotes } from './update-notes-view'
 import { popupReleaseNotes } from '../shared/update-release-notes'
 import { ipcRenderer } from 'electron'
 import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
@@ -41,6 +42,21 @@ let aboutShadow: ShadowRoot | null = null
 let aboutOpen = false
 let aboutInfo: AboutInfo | null = null
 let receivedStatusEvent = false
+let themeObserver: MutationObserver | undefined
+
+// The host is attached to documentElement, outside the node that owns Harness
+// tokens. Copy the resolved Desktop theme instead of following the OS scheme.
+const THEME_PROPERTIES = [
+  '--dsw-alias-label-primary',
+  '--dsw-alias-label-secondary',
+  '--dsw-alias-label-primary-inverted',
+  '--dsw-alias-bg-layer-1',
+  '--dsw-alias-bg-layer-2',
+  '--dsw-alias-border-l2',
+  '--dsw-alias-button-primary-fill',
+  '--dsw-alias-button-primary-hover',
+  '--dsw-alias-interactive-bg-hover'
+] as const
 
 function mount(): void {
   if (document.getElementById(ROOT_ID)) return
@@ -153,8 +169,11 @@ function render(): void {
   if (centered && status.phase === 'available') {
     const label = element('p', 'notes-label')
     label.textContent = locale === 'zh' ? '更新日志' : 'What’s new'
-    const notes = element('p', 'release-notes')
-    notes.textContent = releaseNotes || (locale === 'zh' ? '此版本暂无更新日志。' : 'No release notes for this version.')
+    const notes = element('div', 'release-notes')
+    notes.tabIndex = 0
+    notes.setAttribute('role', 'region')
+    notes.setAttribute('aria-label', label.textContent)
+    renderUpdateNotes(notes, releaseNotes || (locale === 'zh' ? '此版本暂无更新日志。' : 'No release notes for this version.'))
     body.append(label, notes)
   }
   if (!centered && status.phase === 'available') {
@@ -508,7 +527,7 @@ function button(label: string, className: string): HTMLButtonElement {
 }
 
 const styles = `
-  :host { color-scheme: light dark; }
+  :host { color-scheme: light; }
   * { box-sizing: border-box; }
   .card, .about-card { pointer-events:auto; width:100%; color:var(--dsw-alias-label-primary,#202124); background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l2,#e5e7eb); border-radius:16px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:calc(100vh - 48px); overflow:auto; overflow-wrap:anywhere; }
   .row { display:flex; gap:12px; align-items:center; }
@@ -522,7 +541,23 @@ const styles = `
   .title,.about-title { margin:16px 0 8px; font-size:18px; line-height:26px; font-weight:600; }
   .notification .title { margin:0; font-size:14px; line-height:20px; }
   .description,.about-line,.release-notes,.notes-label,.current-version { margin:8px 0; font-size:13px; line-height:20px; color:var(--dsw-alias-label-secondary,#666b73); }
-  .release-notes { white-space:pre-wrap; max-height:180px; overflow:auto; }
+  .release-notes { max-height:min(280px,35vh); overflow:auto; overflow-wrap:anywhere; padding-right:4px; overscroll-behavior:contain; }
+  .release-notes p { margin:0 0 8px; white-space:pre-wrap; }
+  .release-notes h3 { margin:16px 0 8px; font-size:13px; color:var(--dsw-alias-label-primary,inherit); }
+  .release-notes ul,.release-notes ol { margin:8px 0 12px; padding-left:22px; }
+  .release-notes li { margin:5px 0; padding-left:2px; }
+  .release-notes code { font-size:12px; padding:1px 4px; border-radius:4px; background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12)); }
+  .release-notes > :first-child { margin-top:0; }
+  .release-notes > :last-child { margin-bottom:0; }
+  .card,.release-notes,.version-picker-container { scrollbar-width:thin; scrollbar-color:var(--dsw-alias-border-l2,#b4b7be) transparent; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar { width:6px; height:6px; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-track { background:transparent; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-thumb { background:var(--dsw-alias-border-l2,#b4b7be); border-radius:999px; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-thumb:hover { background:var(--dsw-alias-label-secondary,#888d96); }
+  /* Hide only the visual scrollbar; preserve wheel, touch and keyboard scrolling. */
+  .release-notes { scrollbar-width:none; }
+  .release-notes::-webkit-scrollbar { display:none; width:0; height:0; }
+  .release-notes:focus-visible { outline:2px solid var(--dsw-alias-label-secondary,#888d96); outline-offset:3px; border-radius:4px; }
   .notes-label { margin-top:24px; }
   .current-version { text-align:center; font-size:12px; margin:14px 0 0; }
   button { appearance:none; border:0; font:inherit; cursor:pointer; border-radius:6px; min-height:32px; }
@@ -560,16 +595,16 @@ const styles = `
   .progressValue { height:100%; background:var(--dsw-alias-button-primary-fill,#000); }
   .spinner { position:absolute; inset:16px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .75s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  @media (prefers-color-scheme:dark) {
-    .card,.about-card,.version-picker-container { background:var(--dsw-alias-bg-layer-1,#1f2023); color:var(--dsw-alias-label-primary,#f3f4f6); border-color:var(--dsw-alias-border-l2,#41434a); }
-    .description,.about-line,.release-notes,.notes-label,.current-version,.secondary,.version-switch,.version-group-title,.version-status-text { color:var(--dsw-alias-label-secondary,#a9adb5); }
-    .tooltip { background:var(--dsw-alias-bg-layer-2,#34363b); color:var(--dsw-alias-label-primary,#f3f4f6); }
-    .primary { background:var(--dsw-alias-button-primary-fill,#f9fafb); color:var(--dsw-alias-label-primary-inverted,#191b1f); }
-    .primary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover,#e6e8eb); }
-    button:focus-visible { outline-color:var(--dsw-alias-label-primary,#f3f4f6); }
-    .details { color:var(--dsw-alias-label-primary,#f3f4f6); }
-    .progressValue { background:var(--dsw-alias-button-primary-fill,#f9fafb); }
-  }
+  :host([data-dsh-theme="dark"]) :is(.card,.about-card,.version-picker-container) { background:var(--dsw-alias-bg-layer-1,#1f2023); color:var(--dsw-alias-label-primary,#f3f4f6); border-color:var(--dsw-alias-border-l2,#41434a); }
+  :host([data-dsh-theme="dark"]) :is(.description,.about-line,.release-notes,.notes-label,.current-version,.secondary,.version-switch,.version-group-title,.version-status-text) { color:var(--dsw-alias-label-secondary,#a9adb5); }
+  :host([data-dsh-theme="dark"]) .tooltip { background:var(--dsw-alias-bg-layer-2,#34363b); color:var(--dsw-alias-label-primary,#f3f4f6); }
+  :host([data-dsh-theme="dark"]) .primary { background:var(--dsw-alias-button-primary-fill,#f9fafb); color:var(--dsw-alias-label-primary-inverted,#191b1f); }
+  :host([data-dsh-theme="dark"]) .primary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover,#e6e8eb); }
+  :host([data-dsh-theme="dark"]) button:focus-visible { outline-color:var(--dsw-alias-label-primary,#f3f4f6); }
+  :host([data-dsh-theme="dark"]) .details { color:var(--dsw-alias-label-primary,#f3f4f6); }
+  :host([data-dsh-theme="dark"]) :is(.secondary,.details,.version-switch,.version-tag-btn):hover { background:var(--dsw-alias-interactive-bg-hover,rgba(255, 255, 255, .12)); }
+  :host([data-dsh-theme="dark"]) .progress { background:var(--dsw-alias-bg-layer-2,#34363b); }
+  :host([data-dsh-theme="dark"]) .progressValue { background:var(--dsw-alias-button-primary-fill,#f9fafb); }
   @media (prefers-reduced-motion:reduce) { .spinner { animation:none; } }
 `
 const aboutStyles = styles
@@ -617,7 +652,68 @@ function onKeydown(event: KeyboardEvent): void {
 }
 window.addEventListener('pointerdown', onOutsidePointer)
 window.addEventListener('keydown', onKeydown)
+
+function themeHosts(): HTMLElement[] {
+  const nodes: HTMLElement[] = []
+  if (host) nodes.push(host)
+  if (aboutHost) nodes.push(aboutHost)
+  return nodes
+}
+
+function syncDesktopTheme(): void {
+  const body = document.body
+  const theme = body?.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light'
+  const view = document.defaultView
+  const computed = body && view ? view.getComputedStyle(body) : null
+  // Alias tokens on body point at --dsw-static-* on the same element. The host
+  // is not inside body, so copy the used color instead of the var() reference.
+  const probe = body ? document.createElement('span') : null
+  if (body && probe) {
+    probe.setAttribute('aria-hidden', 'true')
+    probe.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none'
+    body.appendChild(probe)
+  }
+  try {
+    for (const node of themeHosts()) {
+      node.dataset.dshTheme = theme
+      node.style.setProperty('color-scheme', theme)
+      for (const property of THEME_PROPERTIES) {
+        const specified = computed?.getPropertyValue(property).trim() ?? ''
+        if (!specified) {
+          node.style.removeProperty(property)
+          continue
+        }
+        if (probe && view) probe.style.setProperty('background-color', `var(${property})`)
+        const resolved = probe && view ? view.getComputedStyle(probe).backgroundColor.trim() : ''
+        node.style.setProperty(property, resolved && !resolved.startsWith('var(') ? resolved : specified)
+      }
+    }
+  } finally {
+    probe?.remove()
+  }
+}
+
+function watchDesktopTheme(): void {
+  themeObserver?.disconnect()
+  themeObserver = undefined
+  syncDesktopTheme()
+  const body = document.body
+  const Observer = document.defaultView?.MutationObserver
+  if (!body || !Observer) return
+  themeObserver = new Observer(() => syncDesktopTheme())
+  themeObserver.observe(body, {
+    attributes: true,
+    attributeFilter: ['data-ds-dark-theme', 'class', 'style']
+  })
+}
+
+function stopDesktopThemeWatch(): void {
+  themeObserver?.disconnect()
+  themeObserver = undefined
+}
+
 window.addEventListener('unload', () => {
+  stopDesktopThemeWatch()
   window.removeEventListener('pointerdown', onOutsidePointer)
   window.removeEventListener('keydown', onKeydown)
   ipcRenderer.removeListener('updates:status-changed', onUpdateStatus)
@@ -635,4 +731,5 @@ void ipcRenderer
 export function mountDesktopUpdateUi(): void {
   mount()
   mountAbout()
+  watchDesktopTheme()
 }

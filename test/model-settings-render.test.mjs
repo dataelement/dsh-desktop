@@ -20,22 +20,29 @@ it.each(['DeepSeekModelsEditor', 'ModelListEditor'])('%s expands options and edi
       if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial
       return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value }]
     },
-    useMemo: fn => fn(), useEffect() {}, useRef: value => ({ current: value })
+    useMemo: fn => fn(), useEffect() {}, useRef(value) {
+      const index = cursor++
+      if (!(index in states)) states[index] = { current: value }
+      return states[index]
+    }
   }
   const primitivesSource = await readFile(require.resolve('@deepseek-ai/dsh-client-ui-primitives'), 'utf8')
   const primitives = Object.fromEntries([...primitivesSource.matchAll(/const (Icon\w+) =/g)].map(match => [match[1], () => ({ type: 'svg', props: {} })]))
+  primitives.useRowDragPreview = () => ({ start() {}, clear: () => false })
+  primitives.AnimatedRows = props => ({ type: 'div', props })
+  primitives.Tooltip = props => props.children
   primitives.Button = props => ({ type: 'button', props })
   primitives.Modal = props => props.open ? ({ type: 'dialog', props }) : null
   vm.runInNewContext(source, { window: { __ModuleLoader__: { load({ factory }) {
     editor = factory(id => ({ react, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'fragment' }, '@deepseek-ai/dsh-client-ui-primitives': primitives, '@deepseek-ai/dsh-client-store': {} })[id]).editor
   } } } })
-  let models = [{ id: 'model', inputModalities: ['text', 'image'], input: ['text', 'image'], imagePixelBudget: 'low', imageMaxBytes: 12345, contextWindow: 128000, maxTokens: 8000 }]
+  let models = [{ id: 'model', inputModalities: ['text', 'image'], input: ['text', 'image'], imagePixelBudget: 'low', imageMaxBytes: 12345, contextWindow: 128000, maxTokens: 8000, reasoningEfforts: { high: 'default' }, reasoning: { efforts: [{ id: 'legacy' }] } }, { id: 'other', contextWindow: 64000, maxTokens: 4000, input: ['text'], inputModalities: ['text'] }]
   const props = { probe: { settingsNs: 'llm-pi-ai' }, operations: {}, onBusyChange() {}, models, modelQuery: '', t: key => key, onChange: value => { models = value }, onReset() {}, defaultContextWindow: 256000, defaultMaxTokens: 32000 }
   const render = () => { cursor = 0; return editor({ ...props, models }) }
   const flatten = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(flatten) : [node, ...flatten(node.props?.children)]
   const find = (tree, label) => flatten(tree).find(node => node.props?.['aria-label'] === label)
-  const contextLabel = editorName === 'DeepSeekModelsEditor' ? 'contextWindow 1' : 'modelContextWindow 1'
-  const tokensLabel = editorName === 'DeepSeekModelsEditor' ? 'maxTokens 1' : 'modelMaxTokens 1'
+  const contextLabel = 'contextWindow 1'
+  const tokensLabel = 'maxTokens 1'
   let tree = render()
   expect(find(tree, contextLabel)).toBeUndefined()
   find(tree, 'modelAdvanced 1').props.onClick()
@@ -60,6 +67,28 @@ it.each(['DeepSeekModelsEditor', 'ModelListEditor'])('%s expands options and edi
   expect(models[0].contextWindow).toBe(256000)
   find(render(), 'modelImageInput 1').props.onChange({ target: { checked: true } })
   expect(models[0][inputField]).toEqual(['text', 'image'])
+  // 0.2.2 keeps row identity, disclosure, and typed capacities when reordered.
+  find(render(), 'reorderModel 1').props.onKeyDown({ key: 'ArrowDown', preventDefault() {}, stopPropagation() {} })
+  expect(models.map(model => model.id)).toEqual(['other', 'model'])
+  tree = render()
+  expect(find(tree, 'contextWindow 1')).toBeUndefined()
+  expect(find(tree, 'contextWindow 2').props.value).toBe('256K')
+  props.modelQuery = 'model'
+  tree = render()
+  expect(find(tree, 'modelId 1')).toBeUndefined()
+  expect(find(tree, 'modelId 2').props.value).toBe('model')
+  find(tree, 'contextWindow 2').props.onChange({ target: { value: '512K' } })
+  expect(models[0].contextWindow).toBe(64000)
+  expect(models[1].contextWindow).toBe(512000)
+  expect(models[1][inputField]).toEqual(['text', 'image'])
+  if (editorName === 'ModelListEditor') {
+    find(render(), 'modelReasoningLevels 2').props.onChange({ target: { value: 'high, low' } })
+    expect(models[1].reasoningEfforts).toEqual({ high: 'default', low: 'low' })
+    expect(models[1]).not.toHaveProperty('reasoning')
+    expect(models[1].contextWindow).toBe(512000)
+    find(render(), 'modelReasoningLevels 2').props.onChange({ target: { value: '' } })
+    expect(models[1]).not.toHaveProperty('reasoningEfforts')
+  }
 })
 
 it.each(['loading', 'missing-key', 'ready', 'error'])('onboarding handles %s without an undefined readiness state', async status => {

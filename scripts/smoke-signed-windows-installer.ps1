@@ -57,7 +57,10 @@ function Assert-InstalledPeSignatures([string]$directory) {
   $count = 0
   $officeRuntimeDir = Join-Path $directory 'resources\office-runtime'
   foreach ($file in Get-ChildItem -LiteralPath $directory -File -Recurse -Force) {
-    if ($file.FullName.StartsWith($officeRuntimeDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if (
+      $file.FullName.StartsWith($officeRuntimeDir, [System.StringComparison]::OrdinalIgnoreCase) -and
+      -not $file.Name.EndsWith('.exe', [System.StringComparison]::OrdinalIgnoreCase)
+    ) {
       continue
     }
     $stream = [System.IO.File]::OpenRead($file.FullName)

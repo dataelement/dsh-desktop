@@ -24,6 +24,20 @@ async function fixture() {
 }
 
 describe('normal Profile boot preflight', () => {
+  it('preserves upstream platform skips while still rejecting malformed platform declarations', async () => {
+    const { profile, bundle } = await fixture()
+    const manifestPath = join(bundle, 'package.json')
+    const manifest = { name: 'test-startup-bundle', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml', platforms: [process.platform === 'win32' ? 'darwin' : 'win32'] } } }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    const loaded = loadProfileDirectory('test', profile, join(profile, 'missing-app', 'package.json'))
+    expect(loaded.layers).toEqual([])
+    expect(loaded.skippedBundles).toEqual([{ packageName: 'test-startup-bundle', reason: expect.stringContaining('Host platforms') }])
+    expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toEqual(manifest)
+    manifest.dsh.bundle.platforms = []
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    expect(() => loadProfileDirectory('test', profile, join(profile, 'missing-app', 'package.json'))).toThrow('failed to prepare profile bundle')
+  })
+
   it('allows stale version declarations without granting exemptions or changing manifests', async () => {
     const { profile, bundle, check } = await fixture()
     const manifestPath = join(bundle, 'package.json')

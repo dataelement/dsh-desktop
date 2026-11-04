@@ -80,6 +80,9 @@ def normalize(parts, profile):
     if header:
         paragraphs = root.findall('.//w:body/w:p', NS)
         paragraph = paragraphs[header['paragraph']]
+        # New templates already store an editable text issuer. Older packages used one drawing.
+        if len(paragraph.findall('.//w:drawing', NS)) == 0:
+            return parts
         if len(paragraph.findall('.//w:drawing', NS)) != 1:
             raise ValueError('The issuer-header source requires its recorded drawing')
         extent = paragraph.find('.//wp:extent', NS)
@@ -122,9 +125,77 @@ def protected(p, profile, index):
                 or (profile and profile.get('issuerHeader', {}).get('paragraph') == index))
 
 
+def removable_table_marker(profile):
+    marker = profile.get('removableTableText') if profile else None
+    return marker if isinstance(marker, str) and marker.strip() else None
+
+
+def enclosing_table(paragraph):
+    node = paragraph.getparent()
+    while node is not None and node.tag != Q('tbl'):
+        node = node.getparent()
+    return node
+
+
+def marked_tables(root, marker):
+    # Optional-table removal is intentionally limited to one uniquely marked table.
+    if not marker: return []
+    tables = root.findall('.//w:tbl', NS)
+    matches = [table for table in tables if any(text(paragraph).strip() == marker for paragraph in table.findall('.//w:p', NS))]
+    if len(tables) != 1 or len(matches) != 1:
+        raise ValueError('The removable table profile requires one uniquely marked template table')
+    return matches
+
+
+TABLE_MARK = 'data-dsh-removable'
+LABEL_MARK = 'data-dsh-label'
+PARAGRAPH_MARK = 'data-dsh-remove'
+
+
+def mark_removable_tables(root, profile):
+    # lxml may return a new proxy for the same XML node, so identity cannot be stored as id().
+    marker = removable_table_marker(profile)
+    for table in marked_tables(root, marker):
+        table.set(TABLE_MARK, '1')
+        for paragraph in table.findall('.//w:p', NS):
+            if text(paragraph).strip() == marker: paragraph.set(LABEL_MARK, '1')
+
+
+def clear_table_marks(root):
+    for table in root.findall('.//w:tbl', NS):
+        if TABLE_MARK in table.attrib: del table.attrib[TABLE_MARK]
+    for paragraph in root.findall('.//w:p', NS):
+        for mark in [LABEL_MARK, PARAGRAPH_MARK]:
+            if mark in paragraph.attrib: del paragraph.attrib[mark]
+
+
+def remove_marked_table_content(root):
+    # Removing an entry keeps the row while another entry remains. Removing its label or last entry removes the row, and the last row removes the table.
+    for table in list(root.findall('.//w:tbl', NS)):
+        if table.get(TABLE_MARK) != '1': continue
+        for row in list(table.findall('./w:tr', NS)):
+            paragraphs = row.findall('./w:tc/w:p', NS)
+            chosen = [paragraph for paragraph in paragraphs if paragraph.get(PARAGRAPH_MARK) == '1']
+            if not chosen: continue
+            entries = [paragraph for paragraph in paragraphs if paragraph.get(LABEL_MARK) != '1' and paragraph.get(PARAGRAPH_MARK) != '1']
+            if any(paragraph.get(LABEL_MARK) == '1' for paragraph in chosen) or not entries:
+                if row.getparent() is not None: row.getparent().remove(row)
+                continue
+            for paragraph in chosen:
+                cell = paragraph.getparent(); props = paragraph.find('w:pPr', NS)
+                cell.remove(paragraph)
+                if cell.find('./w:p', NS) is None:
+                    empty = ET.Element(Q('p'))
+                    if props is not None: empty.append(copy.deepcopy(props))
+                    cell.append(empty)
+        if table.find('./w:tr', NS) is None and table.getparent() is not None: table.getparent().remove(table)
+
+
 def inventory(parts, profile):
     result = []
-    for index, p in enumerate(document(parts).findall('.//w:body//w:p', NS)):
+    root = document(parts)
+    mark_removable_tables(root, profile)
+    for index, p in enumerate(root.findall('.//w:body//w:p', NS)):
         styles = []
         for position, run in enumerate(p.findall('w:r', NS)):
             size = run.find('w:rPr/w:sz', NS); bold = run.find('w:rPr/w:b', NS)
@@ -132,7 +203,9 @@ def inventory(parts, profile):
                            'fonts': ','.join(run.xpath('./w:rPr/w:rFonts/@w:ascii | ./w:rPr/w:rFonts/@w:eastAsia', namespaces=NS)) or 'inherited',
                            'size': size.get(Q('val')) if size is not None else 'inherited',
                            'bold': bold is not None and bold.get(Q('val'), '1') not in ['0', 'false']})
-        result.append({'id': f'p{index}', 'text': text(p), 'can_remove': p.getparent().tag == Q('body') and not protected(p, profile, index), 'runs': styles})
+        table = enclosing_table(p)
+        structural = p.getparent().tag == Q('body') or (table is not None and table.get(TABLE_MARK) == '1')
+        result.append({'id': f'p{index}', 'text': text(p), 'can_remove': structural and not protected(p, profile, index), 'runs': styles})
     return result
 
 
@@ -190,9 +263,16 @@ def validate(source, candidate, profile):
         if canonical(left) != canonical(right):
             raise ValueError('Preserve the template page geometry, section settings and header/footer references')
     checks.append('page-geometry')
-    for query, message in [('.//w:pBdr', 'Preserve the template paragraph borders and red divider'), ('.//wp:extent', 'Preserve the template drawing frames'), ('.//w:tblPr', 'Preserve the template table layout'), ('.//w:tblGrid', 'Preserve the template table columns')]:
+    for query, message in [('.//w:pBdr', 'Preserve the template paragraph borders and red divider'), ('.//wp:extent', 'Preserve the template drawing frames')]:
         reference = Counter(canonical(e) for e in expected.findall(query, NS)); proposed = Counter(canonical(e) for e in actual.findall(query, NS))
         if reference - proposed: raise ValueError(message)
+    optional = marked_tables(expected, removable_table_marker(profile))
+    removed_tables = max(0, len(expected.findall('.//w:tbl', NS)) - len(actual.findall('.//w:tbl', NS)))
+    for query, message in [('.//w:tblPr', 'Preserve the template table layout'), ('.//w:tblGrid', 'Preserve the template table columns')]:
+        reference = Counter(canonical(e) for e in expected.findall(query, NS)); proposed = Counter(canonical(e) for e in actual.findall(query, NS))
+        name = query.rsplit(':', 1)[-1]
+        optional_signatures = [canonical(table.find(f'w:{name}', NS)) for table in optional if table.find(f'w:{name}', NS) is not None]
+        if (reference - proposed) - Counter(optional_signatures[:removed_tables]): raise ValueError(message)
     checks.append('borders-and-drawing-frames')
     allowed = set(expected.xpath('.//w:rFonts/@w:ascii | .//w:rFonts/@w:hAnsi | .//w:rFonts/@w:eastAsia', namespaces=NS))
     proposed = set(actual.xpath('.//w:rFonts/@w:ascii | .//w:rFonts/@w:hAnsi | .//w:rFonts/@w:eastAsia', namespaces=NS))
@@ -221,7 +301,7 @@ def edit(parts, profile, args):
         header = root.findall('.//w:body/w:p', NS)[profile['issuerHeader']['paragraph']]
         header_id = f'p{paragraphs.index(header)}'
         if header_id not in [item.get('id') for item in replacements]: raise ValueError('Fill the issuer header with the current issuing organization')
-    seen = set()
+    seen = set(); mark_removable_tables(root, profile)
     for replacement in replacements:
         key = replacement['id']
         if key in seen or key not in lookup: raise ValueError('Use each recorded paragraph ID once')
@@ -236,12 +316,19 @@ def edit(parts, profile, args):
         if protected(origin, profile, paragraphs.index(origin)): raise ValueError('Use a text paragraph as the addition style')
         clone = copy.deepcopy(origin); set_text(clone, addition['text'], addition.get('runs'), prototypes)
         for marker in clone.xpath('.//w:bookmarkStart | .//w:bookmarkEnd', namespaces=NS): marker.getparent().remove(marker)
+        if LABEL_MARK in clone.attrib: del clone.attrib[LABEL_MARK]
         anchor = tails.get(after, lookup[after]); anchor.addnext(clone); tails[after] = clone
     for key in removals:
         if key not in lookup or key in seen: raise ValueError('Use distinct recorded paragraph IDs for removals')
         p = lookup[key]
+        table = enclosing_table(p)
+        if table is not None:
+            if table.get(TABLE_MARK) != '1': raise ValueError('Keep the template layout paragraphs and table structure')
+            p.set(PARAGRAPH_MARK, '1'); seen.add(key); continue
         if p.getparent().tag != Q('body') or protected(p, profile, paragraphs.index(p)): raise ValueError('Keep the template layout paragraphs and table structure')
         p.getparent().remove(p); seen.add(key)
+    remove_marked_table_content(root)
+    clear_table_marks(root)
     parts['word/document.xml'] = serialized(root)
     return parts
 

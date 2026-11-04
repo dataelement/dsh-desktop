@@ -1,3 +1,4 @@
+import { HarnessBootFailures } from './harness-boot-failures'
 import { isMemoryExit } from './resource-diagnostics'
 import { ProcessRecovery } from './process-recovery'
 import { ApplicationRollbackFlow } from './application-rollback-flow'
@@ -36,7 +37,7 @@ import {
   type MessageBoxOptions
 } from 'electron'
 import { HarnessShell } from './harness-shell'
-import { HARNESS_SHELL_URL, HARNESS_BOOT_CHANNEL, HARNESS_BOOT_FAILED_CHANNEL, isHarnessShellUrl, isHarnessBootPage } from '../shared/harness-boot'
+import { HARNESS_SHELL_URL, HARNESS_BOOT_DOCUMENT_CHANNEL, HARNESS_BOOT_CHANNEL, HARNESS_BOOT_FAILED_CHANNEL, isHarnessShellUrl, isHarnessBootPage } from '../shared/harness-boot'
 import {
   DEFAULT_HARNESS_PORT,
   extractDuplicateAgentPresetId,
@@ -103,6 +104,8 @@ import {
   serializeGpuFallbackState
 } from './gpu-fallback'
 import { secureWindow } from './security'
+import { SidebarBrowserGuests } from './sidebar-browser'
+import { SIDEBAR_BROWSER_IPC } from '../shared/sidebar-browser'
 import { SafeModeFrame } from './safe-mode-frame'
 import { desktopResourceUrl, installDesktopProtocol, registerDesktopScheme, SAFE_MODE_PAGE } from './desktop-protocol'
 import { ensureLaunchRoot } from './state/launch-root'
@@ -250,6 +253,7 @@ let mainWindow: BrowserWindow | undefined
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
+const harnessBootFailures = new HarnessBootFailures()
 let harnessShell: HarnessShell
 let harnessPagePreparation: Promise<boolean> | undefined
 let desktopStorageManager: DesktopStorageManager | undefined
@@ -1134,6 +1138,8 @@ function ensureTray(): void {
   }
 }
 
+const sidebarBrowser = new SidebarBrowserGuests(() => runtime.snapshot().url)
+
 function createWindow(): BrowserWindow {
   const isWindows = process.platform === 'win32'
   windowStateManager ??= new WindowStateManager(app.getPath('userData'))
@@ -1170,6 +1176,7 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(import.meta.dirname, '../preload/index.cjs'),
+      webviewTag: true,
       sandbox: true,
       webSecurity: true
     }
@@ -1230,7 +1237,8 @@ function createWindow(): BrowserWindow {
     appendRendererPluginFailureLog(details.message)
   })
   installPluginRecoveryNavigation(window)
-  secureWindow(window, true)
+  sidebarBrowser.bind(window)
+  secureWindow(window, true, true)
   installContextMenu(window, harnessLocale)
   installMainWindowRendererRecovery(window)
   window.on('closed', () => {
@@ -3660,6 +3668,11 @@ async function bootstrap(): Promise<void> {
     }
   )
   registerHarnessHandlers()
+  ipcMain.handle(HARNESS_BOOT_DOCUMENT_CHANNEL, (event, documentId: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (!isHarnessShellUrl(event.sender.getURL())) throw new Error('The Harness shell is not active.')
+    harnessBootFailures.bind(documentId, mainWindowNavigationVersion)
+  })
   ipcMain.handle(HARNESS_BOOT_CHANNEL, async event => {
     assertTrustedMainWindowEvent(event)
     if (!isHarnessShellUrl(event.sender.getURL())) throw new Error('The Harness shell is not active.')
@@ -3671,10 +3684,14 @@ async function bootstrap(): Promise<void> {
     }
     return payload
   })
-  ipcMain.handle(HARNESS_BOOT_FAILED_CHANNEL, (event, message: unknown) => {
+  ipcMain.handle(HARNESS_BOOT_FAILED_CHANNEL, (event, message: unknown, documentId: unknown) => {
     assertTrustedMainWindowEvent(event)
     if (!isHarnessShellUrl(event.sender.getURL()) || typeof message !== 'string' || message.length > 20_000) {
       throw new Error('Invalid Harness boot failure report.')
+    }
+    if (!harnessBootFailures.isCurrent(documentId, mainWindowNavigationVersion)) {
+      runtime.note('[desktop] ignored a superseded Harness document boot failure')
+      return { ok: true, ignored: true }
     }
     return handleFrontendPluginFailure(message)
   })
@@ -3719,6 +3736,28 @@ async function bootstrap(): Promise<void> {
     locale: harnessLocale,
     crashEvidence: () => lastCrashEvidence,
     appVersion: () => app.getVersion()
+  })
+
+  const assertBrowserSender = (event: IpcMainInvokeEvent): void => {
+    assertTrustedMainWindowEvent(event)
+    const url = event.senderFrame?.url ?? ''
+    const backend = runtime.snapshot().url
+    let currentOrigin = false
+    try {
+      const frameUrl = new URL(url)
+      currentOrigin = backend !== undefined && frameUrl.origin === new URL(backend).origin
+        && frameUrl.username === '' && frameUrl.password === ''
+    }
+    catch { /* Invalid or absent frame URLs are not trusted. */ }
+    if (!isHarnessShellUrl(url) && !currentOrigin) throw new Error('Sidebar browser requires the active Harness page.')
+  }
+  ipcMain.handle(SIDEBAR_BROWSER_IPC.acquire, (event, workspace: unknown) => {
+    assertBrowserSender(event)
+    return sidebarBrowser.acquire(event.sender, workspace)
+  })
+  ipcMain.handle(SIDEBAR_BROWSER_IPC.release, async (event, lease: unknown) => {
+    assertBrowserSender(event)
+    await sidebarBrowser.release(event.sender, lease)
   })
 
   ipcMain.handle('directory-picker:open', async (event) => {

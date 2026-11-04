@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import * as officeSkills from '@deepseek-ai/dsh-skill-office'
 import * as workspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
@@ -15,33 +14,30 @@ export const inject = ['skills']
 export async function apply(ctx, config) {
   if (!config || typeof config.resources !== 'string' || !isAbsolute(config.resources)
     || typeof config.cli !== 'string' || !isAbsolute(config.cli)) {
-    throw new Error('desktop-office: absolute resources and CLI paths are required')
-  }
-  // lock.json carries no Linux payload, so the Linux package ships the plugin
-  // without an Office runtime. Leaving the tools unregistered keeps the rest of
-  // the host booting; macOS and Windows still fail loudly on a missing payload.
-  if (!existsSync(join(config.resources, 'primary-runtime', 'runtime.json'))) {
-    if (process.platform !== 'linux') throw new Error('desktop-office: primary runtime payload is missing')
-    console.warn('desktop-office: Office runtime is not shipped on Linux; Office tools stay unavailable')
+    ctx.logger?.warn?.('desktop-office: disabled, absolute resources and CLI paths are required')
     return
   }
-  // Validate the immutable payload at activation; tool calls still use upstream
-  // validation and retry behavior. Safe Mode omits this optional composition.
-  await workspaceDependencies.resolvePrimaryRuntime(join(config.resources, 'primary-runtime'))
-  await ctx.plugin(workspaceDependencies, { source: join(config.resources, 'primary-runtime') })
-  await ctx.plugin(officeSkills, {
-    assetRoot: join(config.resources, 'office-skills'),
-    node: process.execPath,
-    cli: config.cli
-  })
-  registerBusinessSkills(ctx, join(config.resources, 'business-skills'))
-  const library = await createTemplateLibrary(join(config.resources, 'templates'))
-  ctx.inject(['officeModes', 'tools', 'skills', 'workingDirectory', 'sandboxPolicy', 'sandbox', 'subprocess'], scoped => {
-    registerOfficeContext(scoped, library, scoped.officeModes)
-    const docx = createDocxWorkflow(scoped, library, scoped.officeModes, config.resources)
-    scoped.tools.register(templateTool(scoped, library, scoped.officeModes, docx))
-    scoped.tools.register(docxWriteTool(docx))
-    registerDocxDelivery(scoped, library, scoped.officeModes, docx)
-    scoped.inject(['connection'], routes => registerOfficeRoutes(routes, library, scoped.officeModes))
-  })
+  // Validate the immutable payload at activation; if missing or corrupted,
+  // gracefully degrade by disabling office features instead of crashing Harness.
+  try {
+    await workspaceDependencies.resolvePrimaryRuntime(join(config.resources, 'primary-runtime'))
+    await ctx.plugin(workspaceDependencies, { source: join(config.resources, 'primary-runtime') })
+    await ctx.plugin(officeSkills, {
+      assetRoot: join(config.resources, 'office-skills'),
+      node: process.execPath,
+      cli: config.cli
+    })
+    registerBusinessSkills(ctx, join(config.resources, 'business-skills'))
+    const library = await createTemplateLibrary(join(config.resources, 'templates'))
+    ctx.inject(['officeModes', 'tools', 'skills', 'workingDirectory', 'sandboxPolicy', 'sandbox', 'subprocess'], scoped => {
+      registerOfficeContext(scoped, library, scoped.officeModes)
+      const docx = createDocxWorkflow(scoped, library, scoped.officeModes, config.resources)
+      scoped.tools.register(templateTool(scoped, library, scoped.officeModes, docx))
+      scoped.tools.register(docxWriteTool(docx))
+      registerDocxDelivery(scoped, library, scoped.officeModes, docx)
+      scoped.inject(['connection'], routes => registerOfficeRoutes(routes, library, scoped.officeModes))
+    })
+  } catch (error) {
+    ctx.logger?.warn?.(`desktop-office: office runtime initialization failed, degrading gracefully: ${error?.message || error}`)
+  }
 }
