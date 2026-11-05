@@ -3,6 +3,7 @@ import { totalmem, freemem, release } from 'node:os'
 import { resourceSnapshot, graphicsSnapshot } from '../resource-diagnostics'
 import { app, dialog, net } from 'electron'
 import { join } from 'node:path'
+import { formatApplicationText, resolveHarnessLocale, type HarnessLocale } from '../application-locale'
 import { DesktopService } from './service'
 import { attachDiagnostics } from './diagnostics'
 
@@ -14,6 +15,8 @@ export function createAggregatedUploadConfirmation(options: {
   showMessageBox: (options: Electron.MessageBoxOptions) => Promise<{ response: number }>
   getPendingCount?: () => number
   maxReportsPerLaunch?: number
+  /** Resolved per prompt: the consent dialog must follow the active UI language (#855). */
+  getLocale: () => HarnessLocale
 }) {
   let status: 'unprompted' | 'approved' | 'rejected' = 'unprompted'
   let promptPromise: Promise<boolean> | undefined
@@ -38,13 +41,23 @@ export function createAggregatedUploadConfirmation(options: {
           try {
             const report = JSON.parse(body) as { version: string; kind: string; lines: string[] }
             const pendingTotal = (options.getPendingCount?.() ?? 0) + 1
-            const countDetail = pendingTotal > 1 ? `（本次聚合 ${pendingTotal} 项故障报告）` : ''
+            const locale = options.getLocale()
             const { response } = await options.showMessageBox({
               type: 'question',
-              title: '发送故障报告',
-              message: '是否发送本次故障报告，帮助排查问题？',
-              detail: `版本：${report.version}\n故障类型：${report.kind}${countDetail}\n\n报告将发送到 https://dshdesktop.com/crash，包含安装 ID、版本、平台、故障时间、错误信息、故障时的系统内存/进程资源和显卡信息，以及 harness.log 最后最多 100 行（本次 ${report.lines.length} 行）。\n\n点击“发送一次”仅同意发送本次报告；选择“不发送”将丢弃本次待传报告，不影响继续使用。`,
-              buttons: ['不发送', '发送一次'],
+              title: formatApplicationText(locale, 'crashConsent.title', {}),
+              message: formatApplicationText(locale, 'crashConsent.message', {}),
+              detail: formatApplicationText(locale, 'crashConsent.detail', {
+                version: report.version,
+                kind: report.kind,
+                aggregation: pendingTotal > 1
+                  ? formatApplicationText(locale, 'crashConsent.aggregation', { count: pendingTotal })
+                  : '',
+                lines: report.lines.length
+              }),
+              buttons: [
+                formatApplicationText(locale, 'crashConsent.dontSend', {}),
+                formatApplicationText(locale, 'crashConsent.sendOnce', {})
+              ],
               defaultId: 0,
               cancelId: 0,
               noLink: true
@@ -86,12 +99,19 @@ export function createAggregatedUploadConfirmation(options: {
 }
 
 /** Call only after the single-instance lock, before bootstrap writes this session's log. */
-export function initializeDesktopService(options: { getExitContext?: () => GpuExitContext } = {}): void {
+export function initializeDesktopService(options: {
+  getExitContext?: () => GpuExitContext
+  /** Same per-prompt locale source the native recovery dialogs use (#855). */
+  getLocale?: () => HarnessLocale
+} = {}): void {
   if (!app.isPackaged || service) return
   try {
     const confirmation = createAggregatedUploadConfirmation({
       showMessageBox: opts => dialog.showMessageBox(opts),
-      getPendingCount: () => service?.pending().length ?? 0
+      getPendingCount: () => service?.pending().length ?? 0,
+      // Without an explicit source, follow the machine language rather than
+      // freezing the dialog to Chinese, which is the bug this wires up (#855).
+      getLocale: options.getLocale ?? (() => resolveHarnessLocale(undefined, app.getPreferredSystemLanguages()))
     })
     service = new DesktopService({
       stateDir: join(app.getPath('userData'), 'desktop-service'),

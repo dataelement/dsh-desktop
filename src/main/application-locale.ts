@@ -15,7 +15,14 @@ const en = {
 
   'windowRecovery.heading': 'Unable to display the window',
   'windowRecovery.description': 'Please restart DSH Desktop to try again.',
-  'common.restart': 'Restart'
+  'common.restart': 'Restart',
+
+  'crashConsent.title': 'Send crash report',
+  'crashConsent.message': 'Send this crash report to help diagnose the problem?',
+  'crashConsent.detail': 'Version: {version}\nFailure type: {kind}{aggregation}\n\nThe report goes to https://dshdesktop.com/crash and includes the installation ID, version, platform, failure time, error message, system memory/process resources and GPU information captured at failure time, plus up to the last 100 lines of harness.log ({lines} line(s) this time).\n\nChoosing "Send once" only consents to sending this report; "Don\'t send" discards the pending report without affecting normal use.',
+  'crashConsent.aggregation': ' ({count} crash reports aggregated this time)',
+  'crashConsent.dontSend': "Don't send",
+  'crashConsent.sendOnce': 'Send once'
 }
 
 export type ApplicationMessageKey = keyof typeof en
@@ -33,12 +40,29 @@ const messages: Record<HarnessLocale, Record<ApplicationMessageKey, string>> = {
 
     'windowRecovery.heading': '窗口暂时无法显示',
     'windowRecovery.description': '请重新启动 DSH Desktop 后重试。',
-    'common.restart': '重新启动'
+    'common.restart': '重新启动',
+
+    'crashConsent.title': '发送故障报告',
+    'crashConsent.message': '是否发送本次故障报告，帮助排查问题？',
+    'crashConsent.detail': '版本：{version}\n故障类型：{kind}{aggregation}\n\n报告将发送到 https://dshdesktop.com/crash，包含安装 ID、版本、平台、故障时间、错误信息、故障时的系统内存/进程资源和显卡信息，以及 harness.log 最后最多 100 行（本次 {lines} 行）。\n\n点击“发送一次”仅同意发送本次报告；选择“不发送”将丢弃本次待传报告，不影响继续使用。',
+    'crashConsent.aggregation': '（本次聚合 {count} 项故障报告）',
+    'crashConsent.dontSend': '不发送',
+    'crashConsent.sendOnce': '发送一次'
   }
 }
 
 export function applicationText(locale: HarnessLocale, key: ApplicationMessageKey): string {
   return messages[locale][key]
+}
+
+/** Interpolate `{token}` placeholders in a catalog entry (native dialog copy). */
+export function formatApplicationText(
+  locale: HarnessLocale,
+  key: ApplicationMessageKey,
+  tokens: Record<string, string | number>
+): string {
+  return applicationText(locale, key).replace(/\{(\w+)\}/g, (match, token: string) =>
+    Object.hasOwn(tokens, token) ? String(tokens[token]) : match)
 }
 
 /**
