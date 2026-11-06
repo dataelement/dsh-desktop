@@ -276,6 +276,16 @@ describe('workbench market install routes', () => {
     expect(installBundle).toHaveBeenCalledTimes(1)
   })
 
+  it('shows the plugin manager diagnostic instead of the operation code', async () => {
+    const diagnostic = 'pnpm add failed\nERR_PNPM_GIT_NOT_FOUND: git is not installed'
+    const result = outcome('failed', { error: { code: 'operation-error', diagnostic }, changed: false })
+    const { call } = await host(manager({ installBundle: vi.fn(async () => result) }))
+    expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toMatchObject({
+      status: 409,
+      body: { error: 'ERR_PNPM_GIT_NOT_FOUND: git is not installed', code: 'operation-error', result }
+    })
+  })
+
   it.each(['applied', 'restart-required', 'overridden', 'failed', 'cancelled'])('exposes actual %s outcome instead of package heuristics', async application => {
     const result = outcome(application, application === 'restart-required' ? { restartReason: 'package-moved' } : {})
     const { call } = await host(manager({ installBundle: vi.fn(async () => result) }))

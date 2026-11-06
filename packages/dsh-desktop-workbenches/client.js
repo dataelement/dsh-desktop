@@ -21,6 +21,14 @@ window.__ModuleLoader__.load({
     function confirmationRisk(error) {
       return error?.code === 'confirmation_required' && (error.updateRisk === 'local' || error.updateRisk === 'modified') ? error.updateRisk : null
     }
+    function operationDiagnostic(data) {
+      const diagnostic = data?.result?.error?.diagnostic
+      if (typeof diagnostic !== 'string') return ''
+      const lines = diagnostic.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+      const coded = lines.find(line => /\bERR_[A-Z][A-Z0-9_]*\b/.test(line))
+      const named = lines.filter(line => /EPERM|EBUSY|EEXIST|ENOENT|error/i.test(line))
+      return (coded || named.at(-1) || lines.at(-1) || '').slice(0, 400)
+    }
     function installErrorMessage(ctx, data, status) {
       if ((data?.code === 'invalid_download_url' || data?.code === 'unsafe_download_url') && ctx.locale?.bind && data.params === undefined) {
         return ctx.locale.bind(DOWNLOAD_NS)(data.code)
@@ -29,7 +37,11 @@ window.__ModuleLoader__.load({
       if ((data?.code === 'download_failed' || data?.code === 'download_interrupted') && ctx.locale?.bind && typeof diagnostic === 'string' && /^(?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR)(?:, (?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR))*$/.test(diagnostic)) {
         return `${ctx.locale.bind(DOWNLOAD_NS)(data.code)}: ${diagnostic}`
       }
-      return data?.error || `HTTP ${status}`
+      const reported = typeof data?.error === 'string' ? data.error.trim() : ''
+      const code = typeof data?.code === 'string' ? data.code : ''
+      if (reported !== '' && reported !== code) return reported
+      const cause = operationDiagnostic(data)
+      return cause || reported || `HTTP ${status}`
     }
     // The host locale is observable. Keep catalog IDs and search/filter state
     // independent of translated labels so switching languages is immediate.

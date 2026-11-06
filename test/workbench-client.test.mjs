@@ -2670,6 +2670,16 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot().restartNeeded).toBe(false)
   })
 
+  it('shows a hidden operation diagnostic when the response only names the error code', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    lifecycleMarket(service)
+    const result = { changed: false, application: 'failed', error: { code: 'operation-error', diagnostic: 'staging log\nERR_PNPM_GIT_NOT_FOUND: git is not installed' } }
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ ...changeEnvelope('failed'), result, error: 'operation-error', code: 'operation-error' }, { status: 409 }) })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('ERR_PNPM_GIT_NOT_FOUND: git is not installed')
+    expect(service.installFailures.get('o/helper')).toMatchObject({ kind: 'install', message: 'ERR_PNPM_GIT_NOT_FOUND: git is not installed' })
+  })
+
   it.each(['failed', 'cancelled'])('preserves the full HTTP 409 %s result without changing local state or navigation', async application => {
     const initial = { ...boundState(), active: 'writer', pinned: ['writer'] }
     const { service, ctx, saved } = await fixture(initial)
