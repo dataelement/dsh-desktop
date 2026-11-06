@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  <strong>DSH Desktop by Dataelem</strong> is a desktop Agent application built by the Dataelem team on the DeepSeek Harness framework, available in open-source and enterprise editions.<br />
+  <strong>DSH Desktop by Dataelem</strong> is a desktop Agent application built by the Dataelem team on the DeepSeek Harness framework, available in open-source and <a href="https://www.dshdesktop.com/zh/enterprise/">enterprise editions</a>.<br />
   Website: <a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
