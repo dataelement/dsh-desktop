@@ -5,7 +5,7 @@
 
 <p align="center">
   <strong>DSH Desktop by Dataelem</strong>（DSH 客户端）是 Dataelem 团队基于 DeepSeek Harness 框架打造的桌面 Agent 应用，提供开源版与企业版。<br />
-  官方网站：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · 开源仓库：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
+  官方网站：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
 <p align="center">
@@ -26,6 +26,12 @@ DSH Desktop 把本地 DeepSeek Harness 封装为可安装的桌面应用。它�
 
 > [!IMPORTANT]
 > DSH Desktop 当前处于早期预览阶段，基于仍在快速迭代的 `@deepseek-ai/dsh@0.2.2-alpha.2`。macOS 正式包已完成代码签名并通过 Apple 公证；Windows x64 安装包也已完成代码签名。随着下载量、安装量和发行者信誉逐步积累，Windows 安全提示会逐渐减少，但不会立即消失。
+
+## 企业版：BISHENG
+
+企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。
+
+[企业版官网](https://dshdesktop.com/zh/enterprise/) · [客户端仓库](https://github.com/dataelement/bisheng-desktop) · [服务端仓库](https://github.com/dataelement/bisheng)
 
 ## 下载安装
 

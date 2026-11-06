@@ -5,7 +5,7 @@
 
 <p align="center">
   <strong>DSH Desktop by Dataelem</strong> — настольное Agent-приложение, разработанное командой Dataelem на базе фреймворка DeepSeek Harness. Доступны версия с открытым исходным кодом и корпоративная версия.<br />
-  Официальный сайт：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · Репозиторий с открытым исходным кодом：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
+  Официальный сайт：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
 <p align="center">
@@ -26,6 +26,12 @@ DSH Desktop превращает локальный DeepSeek Harness в уста
 
 > [!IMPORTANT]
 > DSH Desktop — ранняя предварительная версия на основе быстро развивающегося `@deepseek-ai/dsh@0.2.2-alpha.2`. Выпуски для macOS подписаны и нотариально заверены Apple. Установщики Windows x64 также подписаны; предупреждения безопасности Windows могут уменьшаться постепенно по мере накопления репутации загрузок и установок.
+
+## Корпоративная версия: BISHENG
+
+Корпоративная версия состоит из настольного клиента BISHENG и сервера корпоративной платформы BISHENG. Клиент на базе DSH Desktop позволяет работать с локальными файлами и разрешенными моделями, знаниями, инструментами и навыками через корпоративную учетную запись. Сервер централизованно настраивает ресурсы и права, управляет кредитами и использованием.
+
+[Сайт корпоративной версии](https://dshdesktop.com/zh/enterprise/) · [Репозиторий клиента](https://github.com/dataelement/bisheng-desktop) · [Репозиторий сервера](https://github.com/dataelement/bisheng)
 
 ## Загрузка
 
