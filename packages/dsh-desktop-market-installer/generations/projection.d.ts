@@ -21,3 +21,21 @@ export function publishGenerationManifest(
 export function exposeMissingGenerationLinks(dshHome: string, profile?: string): Promise<string[]>
 
 export function publishInstalledGeneration(dshHome: string, pluginName: string, profile?: string, options?: { allowRealDirectory?: boolean; syncBundles?: boolean }): Promise<PublishedGenerationManifest>
+
+export function placeProfilePackageLink(
+  fs: {
+    symlink: (target: string, path: string, type: string) => Promise<void>
+    rename: (from: string, to: string) => Promise<void>
+    unlink: (path: string) => Promise<void>
+    readlink: (path: string) => Promise<string>
+  },
+  options: {
+    platform: NodeJS.Platform
+    link: string
+    target: string
+    previousIsDirectory: boolean
+    nextLink: string
+    oldLink: string
+  },
+  state: { previousTarget?: string, movedOld: boolean, installedNew: boolean }
+): Promise<void>

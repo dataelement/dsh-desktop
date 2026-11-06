@@ -246,6 +246,56 @@ export async function projectGenerations(dshHome, profile = 'web') {
 }
 
 /**
+ * Point `link` at `target`, recording each step `state` must undo.
+ *
+ * Other platforms stage a symlink and rename it into place. Windows reports
+ * `ENOENT` from `realpath` after that rename, so a junction is created at the
+ * final path instead. Renaming the junction is what makes both plugin and
+ * workbench installs fail once the generation itself is already on disk.
+ *
+ * @param {{ symlink: Function, rename: Function, unlink: Function, readlink: Function }} fs
+ * @param {{ platform: NodeJS.Platform, link: string, target: string, previousIsDirectory: boolean, nextLink: string, oldLink: string }} options
+ * @param {{ previousTarget?: string, movedOld: boolean, installedNew: boolean }} state
+ */
+export async function placeProfilePackageLink(fs, options, state) {
+  const { platform, link, target, previousIsDirectory, nextLink, oldLink } = options
+  if (platform === 'win32') {
+    try {
+      if (!previousIsDirectory) {
+        try {
+          state.previousTarget = await fs.readlink(link)
+        } catch (error) {
+          if (error?.code !== 'ENOENT') throw error
+        }
+        try {
+          await fs.unlink(link)
+        } catch (error) {
+          if (error?.code !== 'ENOENT') throw error
+        }
+        if (state.previousTarget !== undefined) state.movedOld = true
+      } else {
+        await fs.rename(link, oldLink)
+        state.movedOld = true
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    await fs.symlink(target, link, 'junction')
+    state.installedNew = true
+    return
+  }
+  await fs.symlink(target, nextLink, 'dir')
+  try {
+    await fs.rename(link, oldLink)
+    state.movedOld = true
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  await fs.rename(nextLink, link)
+  state.installedNew = true
+}
+
+/**
  * Publish one installed plugin through the existing profile path before the
  * market reads it. The caller holds the registry lock and restores desired
  * on failure. Live callers move only links; both generations stay intact.
@@ -260,10 +310,8 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
   const suffix = randomUUID()
   const nextLink = `${link}.dsh-next-${suffix}`
   const oldLink = `${link}.dsh-previous-${suffix}`
-  let previousTarget
   let previousIsDirectory = false
-  let movedOld = false
-  let installedNew = false
+  const placed = { previousTarget: undefined, movedOld: false, installedNew: false }
   await mkdir(dirname(link), { recursive: true })
   try {
     try {
@@ -281,22 +329,11 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
     }
-    await symlink(target, nextLink, process.platform === 'win32' ? 'junction' : 'dir')
-    try {
-      if (process.platform === 'win32' && !previousIsDirectory) {
-        // Remove only the junction, never rename a loaded directory or touch
-        // its target. Keep its target to recreate the pointer on failure.
-        previousTarget = await readlink(link)
-        await unlink(link)
-      } else {
-        await rename(link, oldLink)
-      }
-      movedOld = true
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-    }
-    await rename(nextLink, link)
-    installedNew = true
+    await placeProfilePackageLink(
+      { symlink, rename, unlink, readlink },
+      { platform: process.platform, link, target, previousIsDirectory, nextLink, oldLink },
+      placed
+    )
     // Validate through the public profile path, exactly where the market reads.
     if (await realpath(link) !== await realpath(target)) throw new Error(`Plugin link switch did not select ${pluginName}`)
     const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })
@@ -305,9 +342,9 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
     return { plugins: [pluginName], bundles }
   } catch (error) {
     try {
-      if (installedNew) await rm(link, { force: true })
-      if (movedOld) {
-        if (previousTarget !== undefined) await symlink(previousTarget, link, 'junction')
+      if (placed.installedNew) await rm(link, { force: true })
+      if (placed.movedOld) {
+        if (placed.previousTarget !== undefined) await symlink(placed.previousTarget, link, 'junction')
         else await rename(oldLink, link)
       }
     } catch (restoreError) {
