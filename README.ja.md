@@ -27,12 +27,6 @@ DSH Desktop は、ローカルの DeepSeek Harness をインストール可能�
 > [!IMPORTANT]
 > DSH Desktop は、急速に進化している `@deepseek-ai/dsh@0.2.2-alpha.2` を基盤とする早期プレビューです。macOS 版はコード署名と Apple 公証済みです。Windows x64 インストーラーもコード署名済みですが、発行元のダウンロード・インストール実績が蓄積されるまでは Windows のセキュリティ警告が表示される場合があります。
 
-## エンタープライズ版：BISHENG
-
-エンタープライズ版は、BISHENG デスクトップクライアントと BISHENG 企業プラットフォームのサーバーで構成されます。DSH Desktop を基盤とするクライアントでは、企業アカウントでローカルファイルと利用を許可されたモデル、ナレッジ、ツール、スキルを組み合わせて作業できます。サーバーはリソースと権限を一元設定し、クレジットと利用量を管理します。
-
-[エンタープライズ版サイト](https://dshdesktop.com/zh/enterprise/) · [クライアントのリポジトリ](https://github.com/dataelement/bisheng-desktop) · [サーバーのリポジトリ](https://github.com/dataelement/bisheng)
-
 ## ダウンロード
 
 安定版とプレビュー版を提供しています。日常利用におすすめの**安定版**は[公式サイト](https://www.dshdesktop.com/#download)からダウンロードできます。**プレビュー版**を試す場合は、[GitHub Releases](https://github.com/dataelement/dsh-desktop/releases) で **Pre-release** と表示されたバージョンを選んでください。
@@ -132,3 +126,9 @@ Harness にはターゲット固有のネイティブ依存関係が含まれる
 DSH Desktop は [MIT License](LICENSE) のもとで公開されています。
 
 DeepSeek Harness とその依存関係には、それぞれの上流ライセンスと商標ポリシーが適用されます。DSH Desktop は独立したコミュニティデスクトップアプリです。
+
+## エンタープライズ版：BISHENG
+
+エンタープライズ版は、BISHENG デスクトップクライアントと BISHENG 企業プラットフォームのサーバーで構成されます。DSH Desktop を基盤とするクライアントでは、企業アカウントでローカルファイルと利用を許可されたモデル、ナレッジ、ツール、スキルを組み合わせて作業できます。サーバーはリソースと権限を一元設定し、クレジットと利用量を管理します。
+
+[エンタープライズ版サイト](https://dshdesktop.com/zh/enterprise/) · [クライアントのリポジトリ](https://github.com/dataelement/bisheng-desktop) · [サーバーのリポジトリ](https://github.com/dataelement/bisheng)

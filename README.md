@@ -27,12 +27,6 @@ DSH Desktop packages the local DeepSeek Harness experience as an installed deskt
 > [!IMPORTANT]
 > DSH Desktop is an early preview built on the rapidly evolving `@deepseek-ai/dsh@0.2.2-alpha.2`. macOS releases are code-signed and notarized by Apple. Windows x64 installers are code-signed; Windows security warnings may still decrease gradually as the publisher builds download and installation reputation.
 
-## Enterprise edition: BISHENG
-
-The enterprise edition combines the BISHENG desktop client with the BISHENG enterprise platform server. Built on DSH Desktop, the client works with local files and enterprise-authorized models, knowledge, tools and skills through an enterprise account. The server centrally configures resources and permissions and manages credits and usage.
-
-[Enterprise website](https://dshdesktop.com/zh/enterprise/) · [Client repository](https://github.com/dataelement/bisheng-desktop) · [Server repository](https://github.com/dataelement/bisheng)
-
 ## Download
 
 We offer stable and preview releases: download the **stable release**, recommended for everyday use, from our [official website](https://www.dshdesktop.com/#download). To try a **preview release**, choose a version marked **Pre-release** on [GitHub Releases](https://github.com/dataelement/dsh-desktop/releases).
@@ -138,3 +132,9 @@ Before submitting a change, run `npm test`, `npm run typecheck`, and `npm run bu
 DSH Desktop is open source under the [MIT License](LICENSE).
 
 DeepSeek Harness and its dependencies remain subject to their respective upstream licenses and trademark policies. DSH Desktop is an independent community desktop application.
+
+## Enterprise edition: BISHENG
+
+The enterprise edition combines the BISHENG desktop client with the BISHENG enterprise platform server. Built on DSH Desktop, the client works with local files and enterprise-authorized models, knowledge, tools and skills through an enterprise account. The server centrally configures resources and permissions and manages credits and usage.
+
+[Enterprise website](https://dshdesktop.com/zh/enterprise/) · [Client repository](https://github.com/dataelement/bisheng-desktop) · [Server repository](https://github.com/dataelement/bisheng)

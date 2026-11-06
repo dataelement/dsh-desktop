@@ -27,12 +27,6 @@ DSH Desktop 把本地 DeepSeek Harness 封装为可安装的桌面应用。它�
 > [!IMPORTANT]
 > DSH Desktop 当前处于早期预览阶段，基于仍在快速迭代的 `@deepseek-ai/dsh@0.2.2-alpha.2`。macOS 正式包已完成代码签名并通过 Apple 公证；Windows x64 安装包也已完成代码签名。随着下载量、安装量和发行者信誉逐步积累，Windows 安全提示会逐渐减少，但不会立即消失。
 
-## 企业版：BISHENG
-
-企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。
-
-[企业版官网](https://dshdesktop.com/zh/enterprise/) · [客户端仓库](https://github.com/dataelement/bisheng-desktop) · [服务端仓库](https://github.com/dataelement/bisheng)
-
 ## 下载安装
 
 我们提供稳定版和预览版：**稳定版**可在[官网](https://dshdesktop.com/zh/)下载，推荐日常使用；**预览版**可在 [GitHub Releases](https://github.com/dataelement/dsh-desktop/releases) 中选择标记为 **Pre-release** 的版本。
@@ -138,3 +132,9 @@ Harness 包含目标平台原生依赖，因此每一种正式安装包都在对
 DSH Desktop 采用 [MIT License](LICENSE) 开源。
 
 DeepSeek Harness 及其依赖仍遵循各自的上游许可证与商标规则。DSH Desktop 是独立的社区桌面应用。
+
+## 企业版：BISHENG
+
+企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。
+
+[企业版官网](https://dshdesktop.com/zh/enterprise/) · [客户端仓库](https://github.com/dataelement/bisheng-desktop) · [服务端仓库](https://github.com/dataelement/bisheng)

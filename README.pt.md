@@ -27,12 +27,6 @@ O DSH Desktop transforma a experiência local do DeepSeek Harness em um aplicati
 > [!IMPORTANT]
 > O DSH Desktop é uma versão inicial baseada no `@deepseek-ai/dsh@0.2.2-alpha.2`, que evolui rapidamente. As versões para macOS são assinadas e notarizadas pela Apple. Os instaladores para Windows x64 também são assinados; os avisos de segurança do Windows podem diminuir gradualmente à medida que o editor acumula reputação de downloads e instalações.
 
-## Edição empresarial: BISHENG
-
-A edição empresarial combina o cliente de desktop BISHENG com o servidor da plataforma empresarial BISHENG. Baseado no DSH Desktop, o cliente permite trabalhar com arquivos locais e modelos, conhecimento, ferramentas e habilidades autorizados por meio de uma conta empresarial. O servidor configura recursos e permissões de forma centralizada e gerencia créditos e uso.
-
-[Site empresarial](https://dshdesktop.com/zh/enterprise/) · [Repositório do cliente](https://github.com/dataelement/bisheng-desktop) · [Repositório do servidor](https://github.com/dataelement/bisheng)
-
 ## Download
 
 Oferecemos versões estáveis e de prévia: a **versão estável**, recomendada para o uso diário, está disponível no [site oficial](https://www.dshdesktop.com/#download). Para experimentar uma **versão de prévia**, escolha uma versão marcada como **Pre-release** no [GitHub Releases](https://github.com/dataelement/dsh-desktop/releases).
@@ -132,3 +126,9 @@ Antes de enviar alterações, execute `npm test`, `npm run typecheck` e `npm run
 O DSH Desktop é distribuído sob a [Licença MIT](LICENSE).
 
 O DeepSeek Harness e suas dependências continuam sujeitos às respectivas licenças e políticas de marcas. O DSH Desktop é um aplicativo desktop comunitário independente.
+
+## Edição empresarial: BISHENG
+
+A edição empresarial combina o cliente de desktop BISHENG com o servidor da plataforma empresarial BISHENG. Baseado no DSH Desktop, o cliente permite trabalhar com arquivos locais e modelos, conhecimento, ferramentas e habilidades autorizados por meio de uma conta empresarial. O servidor configura recursos e permissões de forma centralizada e gerencia créditos e uso.
+
+[Site empresarial](https://dshdesktop.com/zh/enterprise/) · [Repositório do cliente](https://github.com/dataelement/bisheng-desktop) · [Repositório do servidor](https://github.com/dataelement/bisheng)
