@@ -4027,7 +4027,10 @@ if (isDaemonLaunch(process.env, process.platform)) {
       userDataPath: app.getPath('userData'),
       appVersion: app.getVersion(),
       developmentBuild
-    }, () => initializeDesktopService({ getExitContext: () => processRecovery.exitContext }))
+    }, () => initializeDesktopService({
+      getExitContext: () => processRecovery.exitContext,
+      getLocale: harnessLocale
+    }))
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
       if (shouldStartInSafeMode(argv)) {

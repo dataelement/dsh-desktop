@@ -10,7 +10,8 @@ describe('createAggregatedUploadConfirmation', () => {
     const confirmation = createAggregatedUploadConfirmation({
       showMessageBox,
       getPendingCount: () => pendingCount,
-      maxReportsPerLaunch: 5
+      maxReportsPerLaunch: 5,
+      getLocale: () => 'zh'
     })
 
     const body1 = JSON.stringify({ version: '0.13.1', kind: 'startup-failure', lines: ['err1'] })
@@ -35,7 +36,8 @@ describe('createAggregatedUploadConfirmation', () => {
     const showMessageBox = vi.fn().mockResolvedValue({ response: 0 })
     const confirmation = createAggregatedUploadConfirmation({
       showMessageBox,
-      getPendingCount: () => 2
+      getPendingCount: () => 2,
+      getLocale: () => 'zh'
     })
 
     const body1 = JSON.stringify({ version: '0.13.1', kind: 'startup-failure', lines: ['err1'] })
@@ -54,7 +56,8 @@ describe('createAggregatedUploadConfirmation', () => {
     const showMessageBox = vi.fn().mockResolvedValue({ response: 1 })
     const confirmation = createAggregatedUploadConfirmation({
       showMessageBox,
-      maxReportsPerLaunch: 2
+      maxReportsPerLaunch: 2,
+      getLocale: () => 'zh'
     })
 
     const body1 = JSON.stringify({ version: '0.13.1', kind: 'startup-failure', lines: ['err1'] })
@@ -83,13 +86,62 @@ describe('createAggregatedUploadConfirmation', () => {
     })
     const confirmation = createAggregatedUploadConfirmation({
       showMessageBox,
-      getPendingCount: () => 2
+      getPendingCount: () => 2,
+      getLocale: () => 'zh'
     })
 
     const body = JSON.stringify({ version: '0.13.1', kind: 'harness-crash', lines: ['err'] })
     await confirmation.confirmUpload(body)
 
     expect(capturedOptions.detail).toContain('本次聚合 3 项故障报告')
+  })
+
+  it('renders the consent dialog in English for non-Chinese locales (#855)', async () => {
+    let capturedOptions: Electron.MessageBoxOptions | undefined
+    const showMessageBox = vi.fn().mockImplementation(async opts => {
+      capturedOptions = opts
+      return { response: 1 }
+    })
+    const confirmation = createAggregatedUploadConfirmation({
+      showMessageBox,
+      getPendingCount: () => 2,
+      getLocale: () => 'en'
+    })
+
+    const body = JSON.stringify({ version: '0.13.1', kind: 'harness-crash', lines: ['err'] })
+    await confirmation.confirmUpload(body)
+
+    expect(capturedOptions, 'the consent dialog was shown').toBeDefined()
+    expect(capturedOptions?.title).toBe('Send crash report')
+    expect(capturedOptions?.message).toBe('Send this crash report to help diagnose the problem?')
+    expect(capturedOptions?.buttons).toEqual(["Don't send", 'Send once'])
+    // Every interpolated value is present and the aggregation clause follows
+    // the active locale; no CJK text may leak into the dialog — the ranges
+    // cover punctuation blocks and ideographs, not just Han characters.
+    expect(capturedOptions?.detail).toContain('Version: 0.13.1')
+    expect(capturedOptions?.detail).toContain('Failure type: harness-crash (3 crash reports aggregated this time)')
+    expect(capturedOptions?.detail).toContain('1 line(s) this time')
+    expect(capturedOptions?.detail).not.toMatch(/[\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef]/u)
+  })
+
+  it('resolves the locale per prompt so a mid-session language switch is honored (#855)', async () => {
+    const seen: string[] = []
+    let locale: 'en' | 'zh' = 'zh'
+    const confirmation = createAggregatedUploadConfirmation({
+      showMessageBox: async opts => {
+        seen.push(opts.title as string)
+        return { response: 0 }
+      },
+      getLocale: () => locale
+    })
+
+    const body = JSON.stringify({ version: '0.13.1', kind: 'startup-failure', lines: ['e'] })
+    await confirmation.confirmUpload(body)
+    // Rejected: no second prompt in this session, so switch sessions to observe again.
+    confirmation.resetForTesting()
+    locale = 'en'
+    await confirmation.confirmUpload(body)
+    expect(seen).toEqual(['发送故障报告', 'Send crash report'])
   })
 })
 
