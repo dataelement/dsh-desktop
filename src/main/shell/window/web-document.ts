@@ -98,7 +98,10 @@ export async function forwardWebRequest(request: Request, host: string, cookie: 
   headers.set('cookie', cookie)
   // The document origin is dsh-app://app. Host mutation checks compare Origin
   // with their own loopback host, the same rewrite the socket path already does.
-  if (origin === 'dsh-app://app') headers.set('origin', target.origin)
+  // Windows often omits Origin on a custom-scheme POST; this handler only
+  // receives the app document, so that request still carries the loopback host.
+  // The opaque origin "null" stays rejected above.
+  if (origin === null || origin === 'dsh-app://app') headers.set('origin', target.origin)
   const init: RequestInit & { duplex: 'half' } = {
     method: request.method,
     headers,

@@ -154,7 +154,7 @@ describe('packaged Harness shell', () => {
     expect((await shell.handle(request('api/echo'))).status).toBe(503)
   })
 
-  it('translates only a trusted Origin and never upgrades absent or foreign origins', async () => {
+  it('translates the shell document and a missing Origin, and rejects foreign origins', async () => {
     const { origin, seen } = await backend()
     await shell.connect(origin, 'secret')
     for (const method of ['POST', 'PUT', 'DELETE']) {
@@ -162,7 +162,7 @@ describe('packaged Harness shell', () => {
       expect((await response.json()).headers.origin).toBe(origin)
     }
     const absent = await shell.handle(request('api/market/install', { method: 'POST' }))
-    expect((await absent.json()).headers.origin).toBeUndefined()
+    expect((await absent.json()).headers.origin).toBe(origin)
     const before = seen.length
     for (const foreign of ['null', 'https://evil.invalid', origin, 'dsh-desktop://desktop']) {
       expect((await shell.handle(request('api/market/install', { method: 'POST', headers: { origin: foreign } }))).status).toBe(403)
