@@ -13,7 +13,8 @@ describe('DSH Desktop sidebar branding', () => {
     )
 
     expect(client).toContain('document.documentElement.dataset.platform === "darwin"')
-    expect(client).toContain('document.documentElement.hasAttribute("data-windows-titlebar") ? 0 : 56')
+    expect(client).toContain('document.documentElement.hasAttribute("data-windows-titlebar")')
+    expect(client).toContain('const collapsedWidth = drawer || darwin || windowsTitlebar ? 0 : 56')
     expect(client).toContain('sidebar === 0 ? collapsedWidth')
   })
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
@@ -7,7 +7,7 @@ import {
   isProjectedGenerationPlugin,
   prepareGenerationsForLaunch,
   uninstallGenerationPlugin
-} from '../src/main/state/generation-launch'
+} from '../src/main/profile/generation-launch'
 import {
   ensureRegistryDirectories,
   readDesired,
@@ -67,6 +67,33 @@ describe('the launch-process half of the generation model', () => {
     expect(await readFile(join(profileDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
       'nodeLinker: hoisted'
     )
+  })
+
+  it('initializes a missing desktop profile without creating the web profile or the shared modules directory', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-genlaunch-desktop-'))
+    homes.push(home)
+    await prepareGenerationsForLaunch(home, silent, 'desktop')
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'desktop', 'package.json'), 'utf8'))
+    expect(manifest.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    await expect(lstat(join(home, 'profiles', 'web'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(lstat(join(home, 'profiles', 'node_modules'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('keeps an existing desktop manifest when projecting', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-genlaunch-desktop-'))
+    homes.push(home)
+    const manifestPath = join(home, 'profiles', 'desktop', 'package.json')
+    await mkdir(join(home, 'profiles', 'desktop'), { recursive: true })
+    const manifest = JSON.stringify({
+      name: 'dsh-profile-desktop',
+      private: true,
+      dependencies: { 'demo-plugin': '1.0.0' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'demo-plugin'] } }
+    })
+    await writeFile(manifestPath, manifest)
+    await prepareGenerationsForLaunch(home, silent, 'desktop')
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).dependencies).toEqual({ 'demo-plugin': '1.0.0' })
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).dsh.profile.bundles).toContain('demo-plugin')
   })
 
   it('is a no-op on a profile that has never used a generation', async () => {

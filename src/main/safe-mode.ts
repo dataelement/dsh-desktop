@@ -117,6 +117,16 @@ export function shouldStartInSafeMode(argv: readonly string[]): boolean {
   return argv.includes('--safe-mode')
 }
 
+/** Arguments for a new process that starts in Safe Mode and keeps the current launch flags. */
+export function relaunchArguments(argv: readonly string[]): string[] {
+  return [...argv.slice(1).filter(arg => arg !== '--safe-mode'), '--safe-mode']
+}
+
+/** Arguments for leaving Safe Mode. The current launch flags stay; `--safe-mode` does not. */
+export function normalRelaunchArguments(argv: readonly string[]): string[] {
+  return argv.slice(1).filter(arg => arg !== '--safe-mode')
+}
+
 function summarizeLongNotice(notice: string | undefined, locale: SafeModeLocale): string | undefined {
   if (notice === undefined || notice.length <= 220) return undefined
   const sentencePattern = locale === 'zh' ? /^(.+?[。！？])/s : /^(.+?[.!?])(?=\s|$)/s

@@ -227,12 +227,17 @@ function message(error: unknown): string {
 }
 
 /**
- * Switch a plugin off in the normal web profile without deleting anything.
+ * Switch a plugin off in one profile without deleting anything.
+ * The profile defaults to `web`. The new shell passes `desktop`.
  * Its package, generation, configuration and data all stay; switching it
  * back on in the market (or Safe Mode) restores it.
  */
-export async function disableProfilePlugin(dshHome: string, pluginName: string): Promise<PluginDisableResult> {
-  const profileDirectory = dirname(profilePackageJsonPath(dshHome))
+export async function disableProfilePlugin(
+  dshHome: string,
+  pluginName: string,
+  profile = 'web'
+): Promise<PluginDisableResult> {
+  const profileDirectory = dirname(profilePackageJsonPath(dshHome, profile))
   const { inserted, foreignDisables } = await pluginPatchRows(profileDirectory, pluginName)
   if (foreignDisables.length > 0) {
     return {
@@ -247,7 +252,7 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
   // rows as a newer enable decision and clears its persisted disabled flag on
   // boot. Remove only those force-enable blocks; adding `disabled: true` here
   // would also switch off a Desktop or other bundle sharing the row ID.
-  const patchPath = profileCordisPatchPath(dshHome)
+  const patchPath = profileCordisPatchPath(dshHome, profile)
   let originalPatch: string | undefined
   let clearedPatch: string | undefined
   try {
@@ -281,12 +286,13 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
 /** Undo disableProfilePlugin and legacy row blocks written by older Desktop versions. */
 export async function enableProfilePlugin(
   dshHome: string,
-  pluginName: string
+  pluginName: string,
+  profile = 'web'
 ): Promise<{ ok: boolean; detail?: string }> {
-  const profileDirectory = dirname(profilePackageJsonPath(dshHome))
+  const profileDirectory = dirname(profilePackageJsonPath(dshHome, profile))
   const { inserted } = await pluginPatchRows(profileDirectory, pluginName)
   try {
-    const patchPath = profileCordisPatchPath(dshHome)
+    const patchPath = profileCordisPatchPath(dshHome, profile)
     const layer = await readTextIfPresent(patchPath)
     if (layer !== undefined && inserted.length > 0) {
       const result = enablePatchRows(layer, inserted)
@@ -314,9 +320,10 @@ export async function forgetMarketDisable(dshHome: string, pluginName: string): 
  */
 export async function listDisabledProfilePlugins(
   dshHome: string,
-  plugins: readonly string[]
+  plugins: readonly string[],
+  profile = 'web'
 ): Promise<string[]> {
-  const profileDirectory = dirname(profilePackageJsonPath(dshHome))
+  const profileDirectory = dirname(profilePackageJsonPath(dshHome, profile))
   let marketDisabled: Set<string>
   try {
     marketDisabled = new Set((await readMarketState(profileDirectory)).disabled)

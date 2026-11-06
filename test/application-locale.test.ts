@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applicationText,
   localePreferenceFromProfilePatch,
+  localePreferenceFromSettings,
   resolveHarnessLocale,
   selectHarnessLocale
 } from '../src/main/application-locale'
@@ -48,6 +49,13 @@ describe('application locale', () => {
     expect(localePreferenceFromProfilePatch(chineseTagChoice)).toBe('zh-CN')
     expect(resolveHarnessLocale('zh-CN', ['en-US'])).toBe('zh')
     expect(resolveHarnessLocale('en-GB', ['zh-CN'])).toBe('en')
+  })
+
+  it('reads a legacy settings language without failing on a missing field', () => {
+    expect(localePreferenceFromSettings('locale:\n  preference: zh-CN\n')).toBe('zh-CN')
+    expect(localePreferenceFromSettings('locale: {}\n')).toBeUndefined()
+    expect(localePreferenceFromSettings('other: 1\n')).toBeUndefined()
+    expect(localePreferenceFromSettings('[')).toBeUndefined()
   })
 
   it('ignores a missing or damaged profile patch', () => {

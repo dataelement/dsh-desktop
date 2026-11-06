@@ -44,6 +44,10 @@ registerHooks({ resolve(specifier, context, next) {
     dshSafePatchPath,
     dshHome: home,
     logPath: join(home, logName),
+    // The broken control and the recovery boot run back to back. An ephemeral
+    // port keeps the second listen off the desktop default while the first
+    // child is still releasing it.
+    preferredPort: 0,
     startupTimeoutMs: 30_000,
     launchProcess: (executable, args, options) => spawn(executable, ['--import', pathToFileURL(hook).href, ...args], options),
     onChanged() {}

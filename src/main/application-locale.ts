@@ -111,3 +111,17 @@ export function localePreferenceFromProfilePatch(patchText: string): unknown {
   }
   return undefined
 }
+
+/** Read `locale.preference` from a legacy settings document. A missing row is not a choice. */
+export function localePreferenceFromSettings(settingsText: string): unknown {
+  let value: unknown
+  try {
+    value = parse(settingsText)
+  } catch {
+    return undefined
+  }
+  if (!value || typeof value !== 'object') return undefined
+  const locale = (value as { locale?: unknown }).locale
+  if (!locale || typeof locale !== 'object') return undefined
+  return (locale as { preference?: unknown }).preference
+}

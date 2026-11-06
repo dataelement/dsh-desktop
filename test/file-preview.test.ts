@@ -31,7 +31,8 @@ describe('uploaded file preview', () => {
     const helpersStart = source.indexOf('const FILE_ADDRESS_PREFIX =')
     const helpersEnd = source.indexOf('\n\t\t//#endregion', helpersStart)
     const callbackStart = source.indexOf('openFile: async (path, options) => {') + 'openFile: '.length
-    const callbackEnd = source.indexOf(',\n\t\t\t\t\t\t\topenExternalLink:', callbackStart)
+    // rc.1 inserts resolveFilePath between openFile and openExternalLink.
+    const callbackEnd = source.lastIndexOf(',', source.indexOf('resolveFilePath:', callbackStart))
     expect(callbackEnd).toBeGreaterThan(callbackStart)
     let workingDirectory = '/workspace/nested'
     let attached = false

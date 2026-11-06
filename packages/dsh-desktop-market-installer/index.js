@@ -27,7 +27,19 @@ import { hideConsoleCmdAssignment, hideConsoleImportArguments } from './windows-
 
 export const RECOMMENDED_MARKET_VERSION = '^1.66.47'
 export const MARKET_PACKAGE = 'dshmarket'
+/** Profile used when the host does not name one. The old shell leaves it unset. */
 export const MARKET_PROFILE = 'web'
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+
+/**
+ * The new shell sets DSH_DESKTOP_PROFILE to `desktop`. An absent or unsafe
+ * value stays on the old shell's `web` profile.
+ */
+export function marketProfile(env = process.env) {
+  const requested = env.DSH_DESKTOP_PROFILE
+  if (typeof requested === 'string' && PROFILE_NAME.test(requested)) return requested
+  return MARKET_PROFILE
+}
 export const STATUS_PATH = '/dsh-desktop/market-installer/status'
 export const INSTALL_PATH = '/dsh-desktop/market-installer/install'
 export const UNINSTALL_PATH = '/dsh-desktop/market-installer/uninstall'
@@ -42,8 +54,8 @@ function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh')
 }
 
-export function profileDirectory(home = dshHome()) {
-  return join(home, 'profiles', MARKET_PROFILE)
+export function profileDirectory(home = dshHome(), env = process.env) {
+  return join(home, 'profiles', marketProfile(env))
 }
 
 const LEGACY_PACKAGE_IMPORT_METHOD = /^package-import-method=clone-or-copy(?:\r?\n|$)/mu
@@ -364,17 +376,18 @@ export function buildPnpmEnvironment(
   return result
 }
 
-export function createDesktopProfilesService(home = dshHome()) {
+export function createDesktopProfilesService(home = dshHome(), env = process.env) {
+  const name = marketProfile(env)
   const current = Object.freeze({
-    name: MARKET_PROFILE,
-    dir: profileDirectory(home)
+    name,
+    dir: profileDirectory(home, env)
   })
   return Object.freeze({
     current,
     list: () => [current],
-    select: async (name) => {
-      if (name !== MARKET_PROFILE) {
-        throw new Error(`DSH Desktop only exposes the ${MARKET_PROFILE} profile.`)
+    select: async (requested) => {
+      if (requested !== name) {
+        throw new Error(`DSH Desktop only exposes the ${name} profile.`)
       }
     }
   })
@@ -403,11 +416,11 @@ function removalTarget(args) {
  * the dependency the CLI just removed. The marker is written by the projector
  * into an otherwise market-transparent manifest field.
  */
-export function projectedGenerationRemoval(args, home = dshHome()) {
+export function projectedGenerationRemoval(args, home = dshHome(), env = process.env) {
   const target = removalTarget(args)
   if (target === undefined) return undefined
   try {
-    const manifest = JSON.parse(readFileSync(join(profileDirectory(home), 'package.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(join(profileDirectory(home, env), 'package.json'), 'utf8'))
     const plugins = manifest.dsh?.desktop?.generationProjection?.plugins
     if (typeof plugins === 'object' && plugins !== null && Object.hasOwn(plugins, target)) {
       return target
@@ -420,9 +433,9 @@ export function projectedGenerationRemoval(args, home = dshHome()) {
   }
 }
 
-function hasGenerationProjection(home) {
+function hasGenerationProjection(home, env = process.env) {
   try {
-    const manifest = JSON.parse(readFileSync(join(profileDirectory(home), 'package.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(join(profileDirectory(home, env), 'package.json'), 'utf8'))
     const plugins = manifest.dsh?.desktop?.generationProjection?.plugins
     return typeof plugins === 'object' && plugins !== null && Object.keys(plugins).length > 0
   } catch {
@@ -439,6 +452,8 @@ export function createDesktopPnpmService(options) {
     spawnProcess = spawn,
     home = dshHome()
   } = options
+  const activeProfile = marketProfile(environment)
+  const activeProfileDirectory = (root = home) => profileDirectory(root, environment)
   let active
   let closed = false
 
@@ -495,7 +510,7 @@ export function createDesktopPnpmService(options) {
   // pnpm is allowed to touch the path, so dshmarket always lands back as a
   // real directory.
   const updateSharedMarket = async (args, spec, invokingDir, write, isCancelled, setCancel) => {
-    const profile = profileDirectory(home)
+    const profile = activeProfileDirectory()
     const manifestPath = join(profile, 'package.json')
     const marketPath = join(profile, 'node_modules', MARKET_PACKAGE)
     const before = await readFile(manifestPath, 'utf8')
@@ -618,7 +633,7 @@ export function createDesktopPnpmService(options) {
       // too, so a market that names a registry outright is believed over
       // anything inferred here.
       const registry = await resolveMarketRegistry({
-        profileDir: profileDirectory(home),
+        profileDir: activeProfileDirectory(),
         args,
         environment
       })
@@ -675,7 +690,7 @@ export function createDesktopPnpmService(options) {
     if (active) throw new Error('Another desktop pnpm operation is already running.')
 
     const handle = asHandle(async ({ write, isCancelled, setCancel }) => {
-      const registry = await resolveMarketRegistry({ profileDir: profileDirectory(home), args: [], environment })
+      const registry = await resolveMarketRegistry({ profileDir: activeProfileDirectory(), args: [], environment })
       if (npmIntegrity !== undefined) {
         const base = (registry ?? DEFAULT_NPM_REGISTRY).replace(/\/+$/u, '')
         const response = await (options.fetchImpl ?? fetch)(`${base}/${expectedPluginName.replace('/', '%2F')}/${encodeURIComponent(expectedVersion)}`, {
@@ -733,9 +748,9 @@ export function createDesktopPnpmService(options) {
         if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
         const disabled = await disableGeneration(home, pluginName)
         if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-        const published = await publishGenerationManifest(home, MARKET_PROFILE, { syncBundles: true })
+        const published = await publishGenerationManifest(home, activeProfile, { syncBundles: true })
         // A removed package leaves no switch behind; a reinstall starts enabled.
-        await forgetPlugin(profileDirectory(home), pluginName)
+        await forgetPlugin(activeProfileDirectory(), pluginName)
         write(disabled
           ? `staged for next restart: ${published.plugins.join(', ')}`
           : `already absent from the next restart: ${pluginName}`)
@@ -757,7 +772,7 @@ export function createDesktopPnpmService(options) {
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
 
-    const generationRemoval = projectedGenerationRemoval(args, home)
+    const generationRemoval = projectedGenerationRemoval(args, home, environment)
     if (generationRemoval !== undefined) {
       const handle = asHandle(async ({ write, isCancelled }) =>
         withRegistryLock(home, async () => {
@@ -768,10 +783,10 @@ export function createDesktopPnpmService(options) {
           // remove this bundle from the next boot's composition now. Waiting
           // for startup projection leaves an uninstalled plugin live forever
           // when an unrelated migration preflight is deferred.
-          const published = await publishGenerationManifest(home, MARKET_PROFILE, {
+          const published = await publishGenerationManifest(home, activeProfile, {
             syncBundles: true
           })
-          await forgetPlugin(profileDirectory(home), generationRemoval)
+          await forgetPlugin(activeProfileDirectory(), generationRemoval)
           write(`staged for next restart: ${published.plugins.join(', ')}`)
           return { exitCode: 0 }
         })
@@ -808,7 +823,7 @@ export function createDesktopPnpmService(options) {
     }).then(async (exit) => {
       // pnpm removed a Profile-owned package; its switch must not outlive it.
       if (removed !== undefined && exit.exitCode === 0) {
-        await forgetPlugin(profileDirectory(home), removed).catch((error) => {
+        await forgetPlugin(activeProfileDirectory(), removed).catch((error) => {
           process.stderr.write(
             `dsh-desktop: could not clear the package switch for ${removed}: ${error instanceof Error ? error.message : String(error)}\n`
           )
@@ -852,10 +867,18 @@ export function createDesktopPnpmService(options) {
 
 export function resolveDshEntry(argv = process.argv) {
   const entry = argv[1]
-  if (!entry || !/[/\\]bin\.js$/u.test(entry)) {
-    throw new Error('The running DSH entry could not be identified.')
+  if (entry && /[/\\]bin\.js$/u.test(entry)) return resolve(entry)
+  // The new shell starts host.js, so argv is not the dsh CLI. The CLI still
+  // sits beside this package in the install that loaded the installer.
+  try {
+    const require = createRequire(import.meta.url)
+    const packageJson = require.resolve('@deepseek-ai/dsh/package.json')
+    const bin = join(dirname(packageJson), 'lib', 'bin.js')
+    if (existsSync(bin)) return bin
+  } catch {
+    // Fall through to the same error the old argv check raised.
   }
-  return resolve(entry)
+  throw new Error('The running DSH entry could not be identified.')
 }
 
 export function pluginCommandArguments(dshEntryPath, args, env = process.env, platform = process.platform) {
@@ -864,27 +887,27 @@ export function pluginCommandArguments(dshEntryPath, args, env = process.env, pl
     dshEntryPath,
     'plugin',
     '--profile',
-    MARKET_PROFILE,
+    marketProfile(env),
     ...args
   ]
 }
 
-export function buildInstallArguments(dshEntry = resolveDshEntry()) {
+export function buildInstallArguments(dshEntry = resolveDshEntry(), env = process.env) {
   return [
     dshEntry,
     'plugin',
     '--profile',
-    MARKET_PROFILE,
+    marketProfile(env),
     ...buildMarketInstallArguments()
   ]
 }
 
-export function buildUninstallArguments(dshEntry = resolveDshEntry()) {
+export function buildUninstallArguments(dshEntry = resolveDshEntry(), env = process.env) {
   return [
     dshEntry,
     'plugin',
     '--profile',
-    MARKET_PROFILE,
+    marketProfile(env),
     ...buildMarketUninstallArguments()
   ]
 }

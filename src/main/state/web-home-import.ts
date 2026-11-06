@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import {
   cp,
@@ -25,7 +26,8 @@ const KEEP_IN_SHARED_TREE = new Set([
   '@deepseek-ai/dsh-web-app'
 ])
 
-const HOME_FILES = ['settings.yaml', '.credentials.yaml'] as const
+const CREDENTIALS_FILE = '.credentials.yaml'
+const HOME_FILES = ['settings.yaml', CREDENTIALS_FILE] as const
 const HOME_DIRECTORIES = [
   'sessions',
   'storages',
@@ -96,9 +98,10 @@ export async function desktopHomeIsUnused(desktopHome: string): Promise<boolean>
   if (await readImportDecision(desktopHome)) return false
   if (await isFile(join(desktopHome, 'settings.yaml'))) return false
   if (await directoryHasEntries(join(desktopHome, 'sessions'))) return false
-  // A desktop that predates the import (e.g. 0.9.0-rc1) may hold credentials or
-  // plugins without settings or sessions; replacing it would lose them.
+  // A desktop that predates the import (e.g. 0.9.0-rc1) may hold credentials,
+  // a workspace registry, or plugins without settings or sessions; replacing it would lose them.
   if (await isFile(join(desktopHome, '.credentials.yaml'))) return false
+  if (await isFile(join(desktopHome, 'storages', WORKSPACE_REGISTRY))) return false
   if (await directoryHasEntries(join(desktopHome, 'profiles', '.generations'))) return false
   if ((await communityPluginNames(desktopHome)).length > 0) return false
   return true
@@ -164,6 +167,55 @@ export async function writeImportedDecision(
   source: string
 ): Promise<void> {
   await writeDecision(desktopHome, 'imported', source)
+}
+
+export interface CredentialFileDigest {
+  readonly path: '.credentials.yaml'
+  readonly sha256?: string
+}
+
+/** Hash the home's credentials file. A missing file has no digest and is not a match. */
+export async function credentialFileDigest(home: string): Promise<CredentialFileDigest> {
+  try {
+    const bytes = await readFile(join(home, CREDENTIALS_FILE))
+    return { path: CREDENTIALS_FILE, sha256: createHash('sha256').update(bytes).digest('hex') }
+  } catch (error) {
+    if (isNotFound(error)) return { path: CREDENTIALS_FILE }
+    throw error
+  }
+}
+
+/** True only when both homes have the same credentials bytes. Missing or partial copies fail. */
+export function credentialsCopyMatches(source: CredentialFileDigest, dest: CredentialFileDigest): boolean {
+  return source.sha256 !== undefined && source.sha256.length > 0 && source.sha256 === dest.sha256
+}
+
+export interface WorkspaceRegistryDigest {
+  readonly path: 'storages/workspace.json'
+  readonly sha256?: string
+  readonly count: number
+}
+
+/** Hash the workspace registry and count its entries. A missing file has no digest. */
+export async function workspaceRegistryDigest(home: string): Promise<WorkspaceRegistryDigest> {
+  try {
+    const bytes = await readFile(join(home, 'storages', WORKSPACE_REGISTRY))
+    return {
+      path: 'storages/workspace.json',
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      count: countWorkspaceBytes(bytes)
+    }
+  } catch (error) {
+    if (isNotFound(error)) return { path: 'storages/workspace.json', count: 0 }
+    throw error
+  }
+}
+
+/** True only when both registries have the same bytes and the same entry count. */
+export function workspaceCopyMatches(source: WorkspaceRegistryDigest, dest: WorkspaceRegistryDigest): boolean {
+  return source.sha256 !== undefined && source.sha256.length > 0
+    && source.sha256 === dest.sha256
+    && source.count === dest.count
 }
 
 export async function importWebHome(options: ImportWebHomeOptions): Promise<void> {
@@ -352,6 +404,14 @@ async function countWorkspaceEntries(storagesDir: string): Promise<number> {
   }
 }
 
+function countWorkspaceBytes(bytes: Buffer): number {
+  try {
+    return countWorkspaceValue(JSON.parse(bytes.toString('utf8')))
+  } catch {
+    return 0
+  }
+}
+
 function countWorkspaceValue(value: unknown): number {
   if (Array.isArray(value)) return value.length
   if (!value || typeof value !== 'object') return 0
@@ -394,6 +454,10 @@ async function hasCredentials(path: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+function isNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 async function exists(path: string): Promise<boolean> {

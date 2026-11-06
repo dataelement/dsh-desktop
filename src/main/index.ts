@@ -82,7 +82,7 @@ import {
   quarantineProfileWorkspaces,
   type ProfileCompatibilityIssue
 } from './state/profile-compatibility'
-import { ensureStoreDirPinned, inspectStoreConsistency } from './state/profile-store'
+import { ensureStoreDirPinned, inspectStoreConsistency } from './profile/profile-store'
 import { LanMobileBridge } from './mobile/lan-mobile-bridge'
 import { createFilePairingPinStore, pairingPinStorePath } from './mobile/pairing-pin-store'
 import {
@@ -123,7 +123,7 @@ import {
   isProjectedGenerationPlugin,
   prepareGenerationsForLaunch,
   uninstallGenerationPlugin
-} from './state/generation-launch'
+} from './profile/generation-launch'
 import {
   confirmMigration,
   inspectMigrationRecoveryLock,
@@ -159,7 +159,7 @@ import {
 import {
   DesktopStorageManager,
   type DesktopStorageAction
-} from './state/desktop-storage'
+} from './profile/desktop-storage'
 import { registerDesktopNotificationBridge } from './desktop-notification'
 import {
   raiseWindowWithoutStealingFocus,

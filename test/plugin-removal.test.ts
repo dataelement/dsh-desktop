@@ -44,7 +44,7 @@ import {
 } from '../packages/dsh-desktop-market-installer/generations/registry'
 import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection'
 import { readDisabledPlugins } from '../packages/dsh-desktop-market-installer/plugin-state'
-import { prepareGenerationsForLaunch } from '../src/main/state/generation-launch'
+import { prepareGenerationsForLaunch } from '../src/main/profile/generation-launch'
 import type { PluginComponentRestoreOptions } from '../src/main/state/plugin-component-cleanup'
 import {
   cleanupVerifiedRemovalBackup,

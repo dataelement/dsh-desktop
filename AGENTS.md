@@ -12,7 +12,8 @@ DSH Desktop 是 Electron 宿主，复用 Harness runtime 和 Web UI。保持这�
 
 | 目录 | 职责 / 专项规则 |
 | --- | --- |
-| `src/main/` | 原生能力、运行时编排、Profile、更新、手机桥接和企业登录；见该目录 `AGENTS.md` |
+| `src/main/` | 原生能力、运行时编排、Profile、更新、手机桥接和企业登录；见该目录 `AGENTS.md`。`src/main/shell/` 是移植中的新壳，规则见该目录 `AGENTS.md` |
+| `src/host/` | Harness 子进程入口，不导入 Electron；见该目录 `AGENTS.md` |
 | `src/preload/` | 窄 IPC 桥和桌面 UI 接缝；见该目录 `AGENTS.md` |
 | `src/shared/` | 跨进程数据契约和纯逻辑；不得依赖 main/preload、Electron 或 Node 特权 API |
 | `packages/` | 宿主插件、运行时包和第三方分发包；见该目录 `AGENTS.md` |
@@ -21,6 +22,15 @@ DSH Desktop 是 Electron 宿主，复用 Harness runtime 和 Web UI。保持这�
 | `scripts/`、`test/` | 构建发布工具、行为与契约回归测试 |
 
 先阅读受影响模块和测试；涉及架构时阅读 `docs/architecture.md`，开发和发布分别参考 `docs/development.md`、`docs/release-runbook.md`。实际依赖与命令以当前 `package.json`、锁文件、构建配置和 workflow 为准；发现文档过期时修正文档，不按旧版本描述修改代码。
+
+### 移植代码
+
+官方 Desktop 与 Host 按模块改写进本仓库，不把上游源码原样放进仓库。每个移植模块登记在根目录 `upstream-baseline.json`：`path` 是本仓库文件，`upstream` 是基线提交里的路径，`divergences` 写有意差异。不移植的上游文件写入 `skipped`，且必须是基线提交里真实存在的路径。
+
+- 改写沿用本仓库的 TypeScript、两空格、单引号和无分号风格。上游行为变化写进 `divergences`，不靠注释里的机器路径说明。
+- 对版本敏感的上游类型和调用集中到对应目录的 `upstream-api.ts`。该文件还没有；新增这类调用时先建它。
+- 新壳测试放 `test/shell/`，Host 子进程测试放 `test/host/`。会启动 Electron 子进程的文件列入 `vitest.config.ts` 的 `WINDOWS_SERIAL_SUITES`。
+- 本仓库提交说明用中文。改动基线的 PR 按模块列出移植、有意差异和跳过。
 
 ## 2. 代码规范
 
@@ -60,7 +70,7 @@ DSH Desktop 是 Electron 宿主，复用 Harness runtime 和 Web UI。保持这�
 - Safe Mode 是例外但不是第二套模糊规则：它只加载安装包自带的包，可以显式使用宿主 anchor，并且不能依赖普通 Profile 的共享 fallback。普通 Profile 不得套用 Safe Mode 的“所有 bare package 都从宿主解析”语义。
 - fallback 必须遵守 `exports`、子路径和当前实际运行安装目录，不能硬编码开发仓库的 `node_modules` 或机器绝对路径；应用升级后不得继续引用旧安装 generation。
 - 加载失败须保留最内层的包名、父模块和解析阶段。外层插件首次查找失败、fallback 失败和插件内部 peer 缺失不能互相覆盖，不能把“插件内部缺少宿主依赖”误报成“插件不存在”。
-- 修改启动入口、loader、Profile 投影、generation 或依赖闭包时，至少验证：安装包内置插件、普通市场插件、本地软链接插件、缺少宿主 peer、插件自带普通依赖、Safe Mode 无 `profiles/node_modules`；涉及 Windows 时补 junction 与物理路径验证。
+- 修改启动入口、loader、Profile 投影、generation 或依赖闭包时，至少验证：安装包内置插件、普通市场插件、本地软链接插件、缺少宿主 peer、插件自带普通依赖、Safe Mode 无 `profiles/node_modules`；涉及 Windows 时补 junction 与物理路径验证。新壳启动前的复制、投影和 Safe Mode 顺序见 `src/main/shell/AGENTS.md`。下面的客户端启动协议表仍描述旧壳。
 - 单元测试中 `import` 成功只证明源码路径可达。交付前还要按影响范围验证实际 Harness 子进程、打包资源清单及安装后的应用；已安装旧版本未重建时不得声称修复已在正式版生效。
 
 ### 后端与客户端启动协议
@@ -103,7 +113,8 @@ git diff --check
 - 纯文档修改只需检查差异、链接和命令真实性；不要求启动应用或重装依赖。
 - 功能开发把相关单元测试纳入同一次改动，不能只改实现。先定位覆盖该模块、输入输出、状态转换或失败路径的测试文件；新行为补能捕获偏差的用例，契约变化则更新对应断言。测试文件的增删改与实现一并评审：断言改动要说明旧契约、新契约，以及失败时会抓住什么。与本次功能无关的测试整理不混入。交付说明列出变动的测试文件和实际运行结果。
 - 行为修复应有能捕获该缺陷的回归，优先验证输入、输出、状态转换和失败路径。字符串/源码契约测试只作为补充，不能替代行为验证。
-- 当前 `typecheck` 只覆盖配置及 `src/main`、`src/preload`、`src/shared`、TS 测试；插件 JS、脚本和 HTML 不在其覆盖范围。当前没有 `npm run lint` 或 `npm run format:check`，不得报告它们通过。
+- 当前 `typecheck` 覆盖配置及 `src/main`、`src/host`、`src/preload`、`src/shared`、TS 测试；插件 JS、脚本和 HTML 不在其覆盖范围。当前没有 `npm run lint` 或 `npm run format:check`，不得报告它们通过。
+- 新壳行为测试在 `test/shell/`，Host 子进程测试在 `test/host/`。`npm run build:shell` 只证明新壳能编译；安装和进入工作区要单独验收。
 - 涉及启动、IPC、UI、安装迁移、更新或打包，补充对应真实流程验收。Windows 路径/进程/安装行为必须有 Windows 验证；其他平台通过不能代替。
 - 发版遵循 release runbook 和目标原生构建脚本，不绕过 `verify-target`。PR 检查通过或本地打包成功不等于正式发布。
 - 交付写清改动、原因、实际运行的检查、未完成的验收与限制。不得把尚未执行的检查写成通过。

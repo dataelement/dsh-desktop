@@ -154,6 +154,11 @@
           <p class="empty" id="empty"></p>
         </section>
         <p class="safety" id="safety-note"></p>
+        <section class="list-card" id="backup-card" hidden>
+          <p class="list-heading" id="backup-heading"></p>
+          <p class="summary" id="backup-summary"></p>
+          <ul class="plugins" id="backup-items"></ul>
+        </section>
         <div class="actions">
           <button class="button" id="recovery-open" type="button" hidden></button>
           <button class="button success" id="upgrade-all" type="button" hidden></button>
@@ -344,6 +349,20 @@
         else label.append(checkbox, copy)
         item.appendChild(label)
 
+        if (plugin.upgradeButtonLabel) {
+          const upgradeBtn = document.createElement('button')
+          upgradeBtn.type = 'button'
+          upgradeBtn.className = 'plugin-upgrade-btn'
+          upgradeBtn.textContent = String(plugin.upgradeButtonLabel)
+          upgradeBtn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            upgradeBtn.disabled = true
+            apply.disabled = true
+            restart.disabled = true
+            void window.dshSafeMode.action('upgrade', { plugins: [plugin.name] })
+          })
+          item.appendChild(upgradeBtn)
+        }
         if (plugin.enableButtonLabel) {
           const enableBtn = document.createElement('button')
           enableBtn.type = 'button'
@@ -421,6 +440,44 @@
         restart.disabled = true
         void window.dshSafeMode.action('upgrade', { plugins: targets })
       })
+      const backupCard = document.getElementById('backup-card')
+      const backupItems = Array.isArray(model.backupItems) ? model.backupItems : []
+      if (backupItems.length > 0) {
+        backupCard.hidden = false
+        setText('backup-heading', model.backupHeading)
+        setText('backup-summary', model.backupSummary)
+        const backupList = document.getElementById('backup-items')
+        for (const backup of backupItems) {
+          const item = document.createElement('li')
+          item.className = 'plugin-item'
+          const copy = document.createElement('span')
+          copy.className = 'plugin-copy'
+          const title = document.createElement('span')
+          title.className = 'plugin-title'
+          title.textContent = String(backup.pluginName || '')
+          const detail = document.createElement('span')
+          detail.className = 'plugin-action'
+          detail.textContent = String(backup.statusLabel || '')
+          copy.append(title, detail)
+          item.appendChild(copy)
+          const addBackupButton = (label, action) => {
+            if (!label) return
+            const button = document.createElement('button')
+            button.type = 'button'
+            button.className = 'plugin-upgrade-btn'
+            button.textContent = String(label)
+            button.addEventListener('click', () => {
+              button.disabled = true
+              void window.dshSafeMode.action(action, { removalId: backup.removalId })
+            })
+            item.appendChild(button)
+          }
+          addBackupButton(backup.openLabel, 'backup-open')
+          if (backup.restoreReady) addBackupButton(backup.restoreLabel, 'backup-restore')
+          if (backup.cleanupReady) addBackupButton(backup.deleteLabel, 'backup-delete')
+          backupList.appendChild(item)
+        }
+      }
       recoveryOpen.addEventListener('click', () => { recoveryOpen.disabled = true; void window.dshSafeMode.action('recovery-open', {}) })
       restart.addEventListener('click', () => {
         if (model.restartConfirm && !window.confirm(String(model.restartConfirm))) return

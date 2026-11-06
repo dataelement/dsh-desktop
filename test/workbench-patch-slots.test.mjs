@@ -13,7 +13,7 @@ const conversationPath = new URL('../node_modules/@deepseek-ai/dsh-client-ui-con
 function loadSidebar() {
   let exports
   const document = {
-    documentElement: { hasAttribute: () => false },
+    documentElement: { hasAttribute: (name) => name === 'data-platform' },
     querySelector: () => null,
     createElement: () => ({ dataset: {} }),
     head: { appendChild: () => {} }

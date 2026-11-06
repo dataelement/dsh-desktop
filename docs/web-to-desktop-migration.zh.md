@@ -162,7 +162,9 @@ if (await shouldOfferWebHomeImport(dshHome)) {
 
 ## 8. 官方桌面端对照
 
-上游仓库 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 自带官方 Electron 桌面端：[`apps/desktop`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop) 与私有 Host [`apps/desktop-host`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop-host)。说明见 [`apps/desktop/README.zh.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.zh.md)。
+> 本节写于 2026-09，描述的是当时官方「无端口、分帧管道」启动链。2026-11-03 的上游 `master`（`8bd073392eef6f54e921a093b95076248eb08cbb`）已改为共享 Web HTTP、系统分配的回环端口，以及 `dsh-app://app/` 静态壳。架构差异和改造方案以 [三套 Desktop 架构对照与迁移方案](three-desktop-architecture.zh.md) 为准。下面保留的是本导入方案当时的数据归属理由。
+
+上游仓库 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 自带官方 Electron 桌面端：[`apps/desktop`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop) 与仓库内 Host [`apps/desktop-host`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop-host)。说明见 [`apps/desktop/README.zh.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.zh.md)。
 
 官方**没有**「从网页版导入」向导，也没有把 `~/.dsh` 拷到另一份 home。数据同步方式是：**共用同一个 `$DSH_HOME`，只隔离可执行 profile 和包管理器**。
 

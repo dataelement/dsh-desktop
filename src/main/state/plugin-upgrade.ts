@@ -18,6 +18,8 @@ export interface PluginUpgradeOptions {
   dshHome: string
   pluginName: string
   targetVersion: string
+  /** Profile that receives the projected generation. The previous shell uses `web`. */
+  profile?: string
   nodeExecutablePath: string
   pnpmEntryPath: string
   /** The packaged lock-recovery runner the `.desktop-bin` pnpm shim routes through. */
@@ -41,6 +43,7 @@ export async function upgradePluginToGeneration(
   options: PluginUpgradeOptions
 ): Promise<PluginUpgradeResult> {
   const { dshHome, pluginName, targetVersion, nodeExecutablePath, pnpmEntryPath, pnpmRunnerPath, hideConsoleBootstrapPath, note } = options
+  const profile = options.profile ?? 'web'
   const spec = `${pluginName}@${targetVersion}`
 
   return withRegistryLock(dshHome, async () => {
@@ -55,7 +58,7 @@ export async function upgradePluginToGeneration(
       environment: await packageCommandEnvironment({ dshHome, nodeExecutablePath, pnpmEntryPath, pnpmRunnerPath, hideConsoleBootstrapPath }),
       // targetVersion came from the market's registry; fetch it from there
       // too rather than from whatever ~/.npmrc happens to name (#337).
-      registry: await resolveMarketRegistry({ profileDir: join(dshHome, 'profiles', 'web') }),
+      registry: await resolveMarketRegistry({ profileDir: join(dshHome, 'profiles', profile) }),
       onTrace: (line) => note?.(`[plugin-upgrade] ${line}`)
     })
 
@@ -77,7 +80,7 @@ export async function upgradePluginToGeneration(
 
     await writeDesired(dshHome, [...kept, install.generation.id])
     try {
-      await publishInstalledGeneration(dshHome, pluginName, 'web', { allowRealDirectory: true, syncBundles: true })
+      await publishInstalledGeneration(dshHome, pluginName, profile, { allowRealDirectory: true, syncBundles: true })
     } catch (error) {
       await writeDesired(dshHome, desired)
       throw error

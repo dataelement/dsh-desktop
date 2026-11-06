@@ -26,6 +26,7 @@ export const WINDOWS_SERIAL_SUITES = [
   'test/desktop-plugin-closure.test.ts',
   'test/plugin-startup-failure.test.ts',
   'test/host-disabled-plugins.test.ts',
+  'test/host/*.test.ts',
   'test/plugin-recovery.test.ts',
   'test/market-installer.test.js',
   'test/migration-failure-paths.test.ts',

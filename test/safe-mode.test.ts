@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSafeModeViewModel,
   safeModeBlockingGroupCount,
+  normalRelaunchArguments,
+  relaunchArguments,
   safeModeExitConfirmation,
   shouldStartInSafeMode
 } from '../src/main/safe-mode'
@@ -20,6 +22,15 @@ describe('Safe Mode', () => {
   it('is opt-in through an exact command-line switch', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode'])).toBe(true)
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
+    expect(relaunchArguments(['/Electron', '/app', '--user-data-dir=/tmp/dsh', '--safe-mode'])).toEqual([
+      '/app',
+      '--user-data-dir=/tmp/dsh',
+      '--safe-mode'
+    ])
+    expect(normalRelaunchArguments(['/Electron', '/app', '--user-data-dir=/tmp/dsh', '--safe-mode'])).toEqual([
+      '/app',
+      '--user-data-dir=/tmp/dsh'
+    ])
   })
 
   it('marks plugins as still being checked until the market check answers', () => {

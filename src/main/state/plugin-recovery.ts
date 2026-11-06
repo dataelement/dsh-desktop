@@ -16,12 +16,20 @@ export function isDisposableModuleDirectory(name: string): boolean {
   return name.includes('_tmp_') || name.includes('.dsh-old-')
 }
 
-export function profilePackageJsonPath(dshHome: string): string {
-  return join(dshHome, 'profiles', 'web', 'package.json')
+const PROFILE_DIRECTORY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+
+/** Profile directory under `profiles/`. The default stays `web` for the shipping shell. */
+export function profileDirectoryName(profile = 'web'): string {
+  if (!PROFILE_DIRECTORY_NAME.test(profile)) throw new Error('Invalid profile name')
+  return profile
 }
 
-export function profileCordisPatchPath(dshHome: string): string {
-  return join(dshHome, 'profiles', 'web', 'cordis.patch.yml')
+export function profilePackageJsonPath(dshHome: string, profile = 'web'): string {
+  return join(dshHome, 'profiles', profileDirectoryName(profile), 'package.json')
+}
+
+export function profileCordisPatchPath(dshHome: string, profile = 'web'): string {
+  return join(dshHome, 'profiles', profileDirectoryName(profile), 'cordis.patch.yml')
 }
 
 interface ProfileManifest {
@@ -116,9 +124,10 @@ function configuredProfilePlugins(manifest: ProfileManifest): string[] {
  */
 export async function isStaleGenerationBundle(
   dshHome: string,
-  packageName: string
+  packageName: string,
+  profile = 'web'
 ): Promise<boolean> {
-  const packagePath = join(dshHome, 'profiles', 'web', 'node_modules', packageName)
+  const packagePath = join(dirname(profilePackageJsonPath(dshHome, profile)), 'node_modules', packageName)
   const generationsDirectory = resolve(dshHome, 'profiles', '.generations', 'live')
 
   try {
@@ -157,10 +166,10 @@ export async function isStaleGenerationBundle(
  * into the generation registry. Including it lets Safe Mode finish an
  * interrupted uninstall without treating arbitrary bundle entries as plugins.
  */
-export async function listInstalledProfilePlugins(dshHome: string): Promise<string[]> {
+export async function listInstalledProfilePlugins(dshHome: string, profile = 'web'): Promise<string[]> {
   try {
     const manifest = JSON.parse(
-      await readFile(profilePackageJsonPath(dshHome), 'utf8')
+      await readFile(profilePackageJsonPath(dshHome, profile), 'utf8')
     ) as ProfileManifest
     const dependencies = manifest.dependencies ?? {}
     const configuredPlugins = configuredProfilePlugins(manifest)
@@ -169,14 +178,14 @@ export async function listInstalledProfilePlugins(dshHome: string): Promise<stri
     )
     const residualPlugins = await Promise.all(
       residualCandidates.map(async (bundle) =>
-        await isStaleGenerationBundle(dshHome, bundle) ? bundle : undefined
+        await isStaleGenerationBundle(dshHome, bundle, profile) ? bundle : undefined
       )
     )
     const plugins = [...new Set([
       ...configuredPlugins,
       ...residualPlugins.filter((plugin): plugin is string => plugin !== undefined)
     ])]
-    const modulesDirectory = join(dshHome, 'profiles', 'web', 'node_modules')
+    const modulesDirectory = join(dirname(profilePackageJsonPath(dshHome, profile)), 'node_modules')
     const entries = await Promise.all(
       plugins.map(async (name, index) => {
         try {

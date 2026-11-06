@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/state/profile-store'
+import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/profile/profile-store'
 import { readDesired } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
 import {
   INSTALL_PATH,
@@ -15,6 +15,8 @@ import {
   buildPnpmEnvironment,
   buildInstallArguments,
   buildUninstallArguments,
+  marketProfile,
+  resolveDshEntry,
   cleanStaleTemporaryDirectories,
   createDesktopPnpmService,
   createDesktopProfilesService,
@@ -255,6 +257,21 @@ describe('desktop plugin market installer', () => {
     expect(profiles.list()).toEqual([profiles.current])
     await expect(profiles.select('web')).resolves.toBeUndefined()
     await expect(profiles.select('other')).rejects.toThrow('only exposes the web profile')
+    await expect(profiles.select('desktop')).rejects.toThrow('only exposes the web profile')
+
+    const desktop = createDesktopProfilesService(home, { DSH_DESKTOP_PROFILE: 'desktop' })
+    expect(desktop.current).toEqual({
+      name: 'desktop',
+      dir: join(home, 'profiles', 'desktop')
+    })
+    await expect(desktop.select('desktop')).resolves.toBeUndefined()
+    await expect(desktop.select('web')).rejects.toThrow('only exposes the desktop profile')
+    expect(marketProfile({})).toBe('web')
+    expect(marketProfile({ DSH_DESKTOP_PROFILE: '../web' })).toBe('web')
+    expect(resolveDshEntry(['node', '/app/dsh/bin.js'])).toBe('/app/dsh/bin.js')
+    expect(resolveDshEntry(['node', '/tmp/host.js'])).toMatch(/[/\\]@deepseek-ai[/\\]dsh[/\\]lib[/\\]bin\.js$/u)
+    expect(buildInstallArguments('/app/dsh/bin.js', { DSH_DESKTOP_PROFILE: 'desktop' })).toContain('desktop')
+    expect(buildUninstallArguments('/app/dsh/bin.js', { DSH_DESKTOP_PROFILE: 'desktop' })).toContain('desktop')
   })
 
   it('runs plugin mutations through one packaged pnpm operation boundary', async () => {

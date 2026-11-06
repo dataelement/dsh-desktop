@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.2-alpha.2'
+const HARNESS_VERSION = '0.2.2-rc.1'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -270,6 +270,10 @@ describe('GitHub release contract', () => {
       from: 'build/web-import.html',
       to: 'web-import.html'
     })
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'THIRD_PARTY_NOTICES.md',
+      to: 'THIRD_PARTY_NOTICES.md'
+    })
     expect(packageJson.build.nsis.artifactName).toBe(
       'dsh-desktop-windows-${arch}-setup.${ext}'
     )
@@ -384,6 +388,51 @@ describe('GitHub release contract', () => {
     expect(developmentConfig.extraMetadata.dshDesktopChannel).toBe('development')
     expect(developmentConfig.artifactName).toBe('dsh-desktop-dev-${os}-${arch}.${ext}')
     expect(developmentConfig.nsis.artifactName).toBe('dsh-desktop-dev-windows-${arch}-setup.${ext}')
+  })
+
+  it('packages the new shell under a separate app id and output directory', async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as { scripts: Record<string, string> }
+    const shellConfig = createRequire(import.meta.url)('../electron-builder.shell.cjs') as {
+      appId: string
+      productName: string
+      directories: { output: string }
+      files: unknown[]
+      extraMetadata: { name: string, main: string }
+      extraResources: Array<{ from: string, to: string }>
+      publish: unknown
+      artifactName: string
+      nsis: { artifactName: string }
+    }
+    const shellVite = await readFile(path.join(projectRoot, 'electron.vite.shell.config.ts'), 'utf8')
+
+    expect(packageJson.scripts['build:shell']).toContain('electron.vite.shell.config.ts')
+    expect(packageJson.scripts['build:shell']).toContain('--outDir out-shell')
+    for (const script of ['package:shell:mac:arm64', 'package:shell:mac:x64', 'package:shell:win']) {
+      expect(packageJson.scripts[script]).toContain('verify-target.mjs')
+      expect(packageJson.scripts[script]).toContain('--publish never')
+      expect(packageJson.scripts[script]).toContain('electron-builder.shell.cjs')
+    }
+    expect(packageJson.scripts['package:shell:win']).toContain('electron-builder-windows.mjs')
+    expect(shellConfig.appId).toBe('io.dsh.desktop.shell')
+    expect(shellConfig.appId).not.toBe('io.dsh.desktop')
+    expect(shellConfig.productName).toBe('DSH Desktop Shell')
+    expect(shellConfig.directories.output).toBe('dist-shell')
+    expect(shellConfig.files).toContain('out-shell/**/*')
+    expect(shellConfig.files).not.toContain('out/**/*')
+    expect(shellConfig.extraMetadata.name).toBe('dsh-desktop-shell')
+    expect(shellConfig.extraMetadata.main).toBe('./out-shell/main/index.js')
+    expect(shellConfig.extraResources).toContainEqual({
+      from: 'THIRD_PARTY_NOTICES.md',
+      to: 'THIRD_PARTY_NOTICES.md'
+    })
+    expect(shellConfig.publish).toBeNull()
+    expect(shellConfig.artifactName).toBe('dsh-desktop-shell-${os}-${arch}.${ext}')
+    expect(shellConfig.nsis.artifactName).toBe('dsh-desktop-shell-windows-${arch}-setup.${ext}')
+    expect(shellVite).toContain("resolve('src/main/shell/app.ts')")
+    expect(shellVite).toContain("resolve('src/host/index.ts')")
+    expect(shellVite).toContain("resolve('src/preload/app.ts')")
   })
 
   it('builds and publishes every supported platform', async () => {
