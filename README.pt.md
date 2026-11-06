@@ -48,17 +48,27 @@ O DeepSeek Harness fornece o Agent Runtime, a Web UI e a conexão básica com mo
 - **Acesso pelo celular**: pareamento por QR e continuação de sessões pela LAN ou por um túnel público opcional.
 - **Experiência nativa**: gerenciamento da inicialização do Harness, seletor de pastas do sistema, menus e janelas nativos, preservação de dados e verificação automática de atualizações.
 
-## Criação de PPT
+## Suíte Office
 
-Ative o botão **PPT**, escolha um modelo e descreva a apresentação desejada. O catálogo inclui **16 modelos e 192 layouts**, com exportação para PPTX editável. As prévias são em inglês; as apresentações podem ser geradas em inglês ou chinês, com configurações de fontes para ambos. O idioma da prévia não determina o idioma do resultado.
+Escolha o modo Word, Excel ou PPT, um modelo e os materiais para o Agent criar arquivos editáveis.
 
-O PPT vem pré-instalado e suas instruções automáticas se aplicam apenas às sessões com o botão PPT ativado. Consulte o [guia de PPT](packages/ppt-runtime/README.md) para detalhes sobre modelos, validação e fontes de referência.
+- **Word**: preserva o layout e os estilos de modelos nativos para avisos, atas e relatórios, com saída DOCX.
+- **Excel**: organiza dados, análises e gráficos com pastas de trabalho de exemplo, com saída XLSX.
+- **PPT**: **16 modelos integrados e 192 layouts**, saída PPTX editável e importação de modelos pessoais. As prévias integradas são em inglês; as apresentações podem ser em inglês ou chinês. O idioma da prévia não determina o resultado.
+
+Python e dependências de Office estão incluídos, sem instalar outro ambiente de execução. As instruções do modo de modelos PPT só se aplicam quando ele está ativado na sessão atual.
+
+## Workbench
+
+O Workbench combina interfaces específicas de negócio com conversas do Agent, oferecendo mais do que um chat.
+
+Navegue, favorite e instale aplicativos pelo mercado ou importe um Workbench desenvolvido localmente. Use a interface com as conversas associadas do Agent; após instalar ou atualizar, reinicie quando solicitado. Remover um Workbench preserva as sessões e os arquivos do projeto.
 
 ## Acesso pelo celular
 
-Selecione **Connect Phone…** no menu `Harness` e leia o código. O desktop precisa aprovar explicitamente a conexão antes que o celular acesse as sessões.
+Selecione **Connect Phone…** no menu `Harness` e leia o QR. No Wi-Fi a conexão é imediata; pela internet também digite a senha de 6 dígitos do computador. Por padrão ela vale por 5 minutos; uma senha duradoura só é salva com sua autorização na janela de conexão.
 
-O Harness permanece em uma porta aleatória de `127.0.0.1`. O celular usa um Bridge separado e pareado: ele pode ficar restrito à rede local ou ativar um Cloudflare Quick Tunnel temporário para acesso remoto.
+Você pode usar a LAN ou um túnel público temporário. Se o Cloudflare estiver indisponível, usa-se o Pinggy; o Pinggy gratuito expira em cerca de 60 minutos.
 
 Se o Cloudflare não iniciar, o aplicativo tenta usar o Pinggy. Se o link do Cloudflare aparecer, mas o celular não conseguir abri-lo, selecione **Can’t open? Try another link** para mudar para o Pinggy.
 
@@ -66,7 +76,7 @@ Se o Cloudflare não iniciar, o aplicativo tenta usar o Pinggy. Se o link do Clo
 
 Se um plugin de terceiros impedir a inicialização ou a renderização, o DSH Desktop relaciona as evidências do Runtime e do frontend aos plugins instalados e abre uma recuperação guiada.
 
-Selecione **Restart as Safe Mode…** no menu `Harness` para iniciar um Profile isolado apenas com os Bundle oficiais principais. Os plugins externos do Profile normal ficam bloqueados, mas o Agent, as sessões, as configurações de modelos e os espaços de trabalho continuam disponíveis.
+Selecione **Restart as Safe Mode…** no menu `Harness` para bloquear temporariamente plugins externos e manter o Agent, as sessões, os modelos e os espaços de trabalho. Desative o plugin problemático na tela de gerenciamento e reinicie normalmente para verificar a recuperação. Desativar não remove o plugin nem os dados, e ele pode ser reativado depois.
 
 A tela de recuperação verifica se há atualizações compatíveis dos plugins e permite instalá-las quando disponíveis. O Modo de segurança também permite atualizar vários plugins de uma vez. Para obter ajuda, passe o cursor sobre **WeChat group** para exibir o QR code ou clique em **Discord** para abrir a comunidade.
 
@@ -78,11 +88,10 @@ open -a "DSH Desktop" --args --safe-mode
 
 ## Dados locais e segurança
 
-- A Web UI do Harness é servida somente em uma porta de loopback aleatória.
-- O Renderer não tem privilégios de Node.js e usa Context Isolation e sandbox.
-- WebView, navegação interna não confiável e solicitações inesperadas de permissões são bloqueados.
-- Profile e sessões ficam nos dados de usuário do aplicativo, não no diretório de instalação.
-- O celular exige um Token de curta duração e aprovação explícita do desktop.
+- Sessões e configurações ficam nos dados locais do usuário e são preservadas nas atualizações do aplicativo.
+- O navegador lateral integrado é isolado dos privilégios do aplicativo; links externos comuns abrem no navegador do sistema.
+- Pareie o celular lendo o código; pela internet também é exigida a senha mostrada no computador.
+- Arquivos e comandos do Agent estão sujeitos a controles de permissão. Aprove ações sensíveis com cuidado e instale apenas plugins confiáveis.
 
 ## Plataformas compatíveis
 
@@ -119,4 +128,4 @@ O DeepSeek Harness e suas dependências continuam sujeitos às respectivas licen
 
 A edição empresarial combina o cliente de desktop BISHENG com o servidor da plataforma empresarial BISHENG. Baseado no DSH Desktop, o cliente permite trabalhar com arquivos locais e modelos, conhecimento, ferramentas e habilidades autorizados por meio de uma conta empresarial. O servidor configura recursos e permissões de forma centralizada e gerencia créditos e uso. O cliente e o servidor BISHENG da edição empresarial são de código aberto; o código-fonte está disponível nos repositórios abaixo.
 
-[Site empresarial](https://www.dshdesktop.com/pt/enterprise/) · [Repositório do cliente](https://github.com/dataelement/bisheng-desktop) · [Repositório do servidor](https://github.com/dataelement/bisheng)
+[Código da plataforma de gestão empresarial](https://github.com/dataelement/bisheng) · [Repositório do cliente empresarial](https://github.com/dataelement/bisheng-desktop) · [Sobre a edição empresarial](https://www.dshdesktop.com/pt/enterprise/)

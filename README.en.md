@@ -48,11 +48,21 @@ DeepSeek Harness provides the Agent runtime, Web UI, and basic model-provider in
 - **Phone access**: pair by QR code and continue sessions over the local network or an optional public tunnel.
 - **Native desktop experience**: managed Harness startup and shutdown, system directory pickers, native menus and windows, user-data preservation across upgrades, and automatic update checks.
 
-## PPT generation
+## Office suite
 
-Enable the **PPT** button, choose a template, and describe the deck you need. The built-in catalog includes **16 templates and 192 layouts** with editable PPTX output. Previews use English; decks can use English or Chinese, with corresponding font settings. Preview language does not determine output language.
+Word, Excel, and PPT modes let you choose a template and provide source material for the Agent to create editable files.
 
-PPT is preinstalled, and its automatic instructions apply only to sessions where the PPT button is enabled. See the [PPT runtime guide](packages/ppt-runtime/README.md) for templates, validation, and source acknowledgments.
+- **Word**: preserve native template layout and styles for notices, minutes, and reports, with DOCX output.
+- **Excel**: organize data, analyses, and charts using example workbooks, with XLSX output.
+- **PPT**: **16 built-in templates and 192 layouts** with editable PPTX output and support for importing personal templates. Built-in previews use English; generated decks support English and Chinese. Preview language does not determine output language.
+
+Python and Office processing dependencies ship with the desktop app, so no separate runtime installation is needed. PPT template-mode instructions apply only when that mode is enabled for the current session.
+
+## Workbenches
+
+Workbenches combine task-specific business interfaces with Agent conversations, giving common workflows more than a chat-only entry point.
+
+Browse, favorite, and install apps from the workbench market, or import a locally developed workbench. Use its business interface alongside the associated Agent conversations; after installation or updates, restart when prompted to load the changes. Removing a workbench preserves existing sessions and project files.
 
 ## Phone access
 
@@ -69,7 +79,7 @@ If Cloudflare fails to start, the app tries Pinggy. If a Cloudflare pairing link
 
 If a third-party plugin interferes with startup or rendering, DSH Desktop can identify the implicated plugin from runtime and frontend evidence and open a guided recovery surface.
 
-Choose **Restart as Safe Mode…** from the `Harness` menu to start an isolated profile containing only official core bundles. The Agent, sessions, model settings, and workspaces remain available while third-party plugins from the normal profile stay blocked. You can remove selected plugins or return to a normal launch from the Safe Mode banner.
+Choose **Restart as Safe Mode…** from the `Harness` menu to temporarily block third-party plugins while keeping the Agent, sessions, model settings, and workspaces available. Disable a problematic plugin in the management screen, then restart normally to verify recovery. Disabling preserves the plugin and user data, and you can re-enable it later.
 
 Recovery screens check for compatible plugin updates. When available, you can upgrade an affected plugin; Safe Mode also offers batch upgrades. For help, hover over **WeChat group** to display its QR code, or click **Discord** to open the community.
 
@@ -81,12 +91,10 @@ open -a "DSH Desktop" --args --safe-mode
 
 ## Local data and security
 
-- The Harness Web UI is served only on a random loopback port.
-- The renderer has no Node.js privileges and uses context isolation and sandboxing.
-- Webviews, untrusted in-app navigation, and unexpected permission requests are blocked.
-- External web links open in the system browser.
-- User profiles and sessions live under Electron's per-user application data directory, not inside the installed app.
-- Phone access requires a short-lived pairing token. Wi-Fi connects on scan; the internet tunnel also requires the pairing password shown on the computer.
+- Sessions and settings stay in your local user-data directory and are preserved across app upgrades.
+- The built-in sidebar browser is isolated from application privileges; ordinary external links open in your system browser.
+- Pair your phone by scanning the code; internet connections also require the pairing password shown on the computer.
+- Agent file and command operations are subject to permission controls. Approve sensitive actions carefully and install only trusted plugins.
 
 ## Platform support
 
@@ -125,4 +133,4 @@ DeepSeek Harness and its dependencies remain subject to their respective upstrea
 
 The enterprise edition combines the BISHENG desktop client with the BISHENG enterprise platform server. Built on DSH Desktop, the client works with local files and enterprise-authorized models, knowledge, tools and skills through an enterprise account. The server centrally configures resources and permissions and manages credits and usage. Both the BISHENG client and server for the enterprise edition are open source; their source code is available in the repositories below.
 
-[Enterprise website](https://www.dshdesktop.com/en/enterprise/) · [Client repository](https://github.com/dataelement/bisheng-desktop) · [Server repository](https://github.com/dataelement/bisheng)
+[Enterprise management platform source](https://github.com/dataelement/bisheng) · [Enterprise client repository](https://github.com/dataelement/bisheng-desktop) · [About the enterprise edition](https://www.dshdesktop.com/en/enterprise/)
