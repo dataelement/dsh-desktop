@@ -37,7 +37,20 @@ const GIT_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@git\+https:\/\/github\.com\/
 const CODELOAD_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@https:\/\/codeload\.github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/tar\.gz\/[0-9a-f]{40}$/u
 const PINNED_GITHUB_TARGET_PATTERN = /^github:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
 const PINNED_GIT_APPROVAL_PATTERN = /@git\+ssh:\/\/git@github\.com\//u
-const GENERATION_INSTALL_TIMEOUT_MS = 90 * 1000
+// A generation install is bounded by two independent clocks. pnpm reports
+// progress continuously, so the idle limit only fires on a stalled process;
+// measuring one total duration instead killed large platform packages that
+// legitimately spend over 90 seconds downloading and unpacking (#851). The
+// hard ceiling still ends a process that keeps talking but never finishes.
+// Six minutes per phase keeps the whole installGeneration (a second peers
+// phase plus staging and validation) inside the registry lock's own budget:
+// waiters give up after 15 minutes and the lock is judged stale at 20, and
+// neither re-arms while the owner is alive (registry.mjs withRegistryLock).
+// The kill grace mirrors pnpm-runner.mjs: SIGKILL may race an exiting child,
+// and a close that never arrives must still settle the promise.
+const GENERATION_INSTALL_IDLE_TIMEOUT_MS = 90 * 1000
+const GENERATION_INSTALL_HARD_TIMEOUT_MS = 6 * 60 * 1000
+const GENERATION_INSTALL_KILL_GRACE_MS = 5_000
 
 function isHostSingleton(name) {
   return HOST_SINGLETON_PATTERNS.some((pattern) => pattern.test(name))
@@ -216,6 +229,11 @@ export function installPnpmArguments(options, env = process.env, platform = proc
   ]
 }
 
+/** A timeout must read as a timeout, not as the last Progress: line (#851). */
+function timeoutNotice(killedBy) {
+  return `generation install timed out and the pnpm process was killed (${killedBy})`
+}
+
 async function defaultRunInstall(options, stagingDir) {
   const spawnProcess = options.spawnProcess ?? spawn
   return new Promise((resolve) => {
@@ -239,26 +257,71 @@ async function defaultRunInstall(options, stagingDir) {
       }
     )
     let output = ''
+    const startedAt = Date.now()
+    let killedBy
     const collect = (chunk) => {
       output = `${output}${chunk.toString()}`.slice(-64 * 1024)
       options.onOutput?.(chunk.toString())
     }
-    child.stdout?.on('data', collect)
-    child.stderr?.on('data', collect)
-    // Do not leave a launch or generation operation stalled indefinitely; the
-    // caller may override this ceiling when a longer explicit operation is
-    // appropriate.
-    const timer = setTimeout(
-      () => child.kill('SIGKILL'),
-      options.installTimeoutMs ?? GENERATION_INSTALL_TIMEOUT_MS
-    )
+    // Two independent bounds. pnpm reports progress continuously, so the idle
+    // clock only fires on a stalled process and re-arms on every chunk;
+    // installTimeoutMs overrides the idle bound. The hard ceiling still ends a
+    // process that keeps producing output but never finishes.
+    // Same guard style as minimumReleaseAge below: a 0 or NaN ceiling would
+    // SIGKILL every install on the next tick.
+    const idleTimeoutMs =
+      Number.isSafeInteger(options.installTimeoutMs) && options.installTimeoutMs > 0
+        ? options.installTimeoutMs
+        : GENERATION_INSTALL_IDLE_TIMEOUT_MS
+    let idleTimer
+    const watchProgress = () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        killedBy = `no output for ${idleTimeoutMs}ms`
+        killAndGuaranteeClose()
+      }, idleTimeoutMs)
+    }
+    const onData = (chunk) => { watchProgress(); collect(chunk) }
+    child.stdout?.on('data', onData)
+    child.stderr?.on('data', onData)
+    watchProgress()
+    const hardTimeoutMs =
+      Number.isSafeInteger(options.installHardTimeoutMs) && options.installHardTimeoutMs > 0
+        ? options.installHardTimeoutMs
+        : GENERATION_INSTALL_HARD_TIMEOUT_MS
+    const hardTimer = setTimeout(() => {
+      killedBy = `exceeded the ${hardTimeoutMs}ms hard ceiling`
+      killAndGuaranteeClose()
+    }, hardTimeoutMs)
+    let graceTimer
+    const clearTimers = () => {
+      clearTimeout(idleTimer)
+      clearTimeout(hardTimer)
+      clearTimeout(graceTimer)
+    }
+    const killAndGuaranteeClose = () => {
+      child.kill('SIGKILL')
+      // If the killed child never reports close, settle after the grace so
+      // the install cannot hang forever on a wedged process.
+      graceTimer = setTimeout(() => {
+        clearTimers()
+        resolve({ code: 1, output: `${output}\n${timeoutNotice(killedBy)}` })
+      }, GENERATION_INSTALL_KILL_GRACE_MS)
+    }
     options.registerChild?.(child)
     child.once('close', (code) => {
-      clearTimeout(timer)
+      clearTimers()
+      if (killedBy !== undefined) {
+        // Name the kill in the log: previously a timed-out install looked like a
+        // pnpm error whose diagnostic was the last Progress: line (#851).
+        const notice = timeoutNotice(killedBy)
+        options.onTrace?.(notice)
+        output = `${output}\n${notice}`
+      }
       resolve({ code: code ?? 1, output })
     })
     child.once('error', (error) => {
-      clearTimeout(timer)
+      clearTimers()
       resolve({ code: 1, output: `${output}\n${error.message}` })
     })
   })
