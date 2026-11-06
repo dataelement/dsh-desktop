@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path'
 import { resolveEnabledGenerations } from './registry.mjs'
 
 /**
@@ -246,12 +246,49 @@ export async function projectGenerations(dshHome, profile = 'web') {
 }
 
 /**
+ * `fs.promises.realpath` is the native Windows syscall. A directory junction
+ * is a valid profile link, but that syscall still returns
+ * `ENOENT: ... realpath '<profile>/node_modules/<plugin>'`. Comparing the
+ * junction text from `readlink` is the check that matches what Harness loads.
+ */
+export function windowsJunctionTargets(linkPath, readLinkResult, expectedPath) {
+  const linked = win32.resolve(win32.dirname(linkPath), stripWin32DevicePrefix(readLinkResult))
+  return normalizeWindowsPath(linked) === normalizeWindowsPath(expectedPath)
+}
+
+function stripWin32DevicePrefix(value) {
+  const text = value.replaceAll('/', '\\')
+  if (text.startsWith('\\\\?\\UNC\\') || text.startsWith('\\??\\UNC\\')) return `\\\\${text.slice(8)}`
+  if (text.startsWith('\\\\?\\') || text.startsWith('\\??\\')) return text.slice(4)
+  return text
+}
+
+function normalizeWindowsPath(value) {
+  const normalized = win32.normalize(stripWin32DevicePrefix(value))
+  const root = win32.parse(normalized).root
+  const trimmed = normalized.length > root.length && normalized.endsWith('\\')
+    ? normalized.slice(0, -1)
+    : normalized
+  return trimmed.toLowerCase()
+}
+
+async function profileLinkMatches(link, target) {
+  const canonicalTarget = await realpath(target)
+  if (process.platform !== 'win32') return (await realpath(link)) === canonicalTarget
+  const info = await lstat(link)
+  if (!info.isSymbolicLink()) return (await realpath(link)) === canonicalTarget
+  const linked = await readlink(link)
+  return windowsJunctionTargets(link, linked, canonicalTarget)
+    || windowsJunctionTargets(link, linked, target)
+}
+
+/**
  * Point `link` at `target`, recording each step `state` must undo.
  *
- * Other platforms stage a symlink and rename it into place. Windows reports
- * `ENOENT` from `realpath` after that rename, so a junction is created at the
- * final path instead. Renaming the junction is what makes both plugin and
- * workbench installs fail once the generation itself is already on disk.
+ * Other platforms stage a symlink and rename it into place. Windows creates
+ * the junction at the final path: renaming a junction leaves `realpath` unable
+ * to open it. The publish check still must not call native `realpath` on that
+ * junction; see `windowsJunctionTargets`.
  *
  * @param {{ symlink: Function, rename: Function, unlink: Function, readlink: Function }} fs
  * @param {{ platform: NodeJS.Platform, link: string, target: string, previousIsDirectory: boolean, nextLink: string, oldLink: string }} options
@@ -322,7 +359,7 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
           code: REAL_DIRECTORY_IN_PLACE
         })
       }
-      if (await realpath(link) === await realpath(target)) {
+      if (await profileLinkMatches(link, target)) {
         const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })
         return { plugins: [pluginName], bundles }
       }
@@ -335,7 +372,7 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
       placed
     )
     // Validate through the public profile path, exactly where the market reads.
-    if (await realpath(link) !== await realpath(target)) throw new Error(`Plugin link switch did not select ${pluginName}`)
+    if (!(await profileLinkMatches(link, target))) throw new Error(`Plugin link switch did not select ${pluginName}`)
     const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })
     // Old plugin bytes remain in their generation for already-loaded modules.
     await rm(oldLink, { force: true, recursive: previousIsDirectory }).catch(() => {})

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { placeProfilePackageLink } from '../packages/dsh-desktop-market-installer/generations/projection.mjs'
+import { placeProfilePackageLink, windowsJunctionTargets } from '../packages/dsh-desktop-market-installer/generations/projection.mjs'
 
 const missing = () => Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
 
@@ -8,6 +8,20 @@ function callsOf(fn) {
 }
 
 describe('Windows profile package links', () => {
+  it('treats a namespaced junction target as the generation directory', () => {
+    const link = 'C:\\Users\\dev\\AppData\\Roaming\\dsh-desktop\\harness\\profiles\\web\\node_modules\\dsh-context'
+    const target = 'C:\\Users\\dev\\AppData\\Roaming\\dsh-desktop\\harness\\profiles\\.generations\\live\\dsh-context@0.82.1\\node_modules\\dsh-context'
+    expect(windowsJunctionTargets(link, `\\\\?\\${target}`, target)).toBe(true)
+    expect(windowsJunctionTargets(link, `\\??\\${target}`, target.toLowerCase())).toBe(true)
+    expect(windowsJunctionTargets(link, target, `${target}\\`)).toBe(true)
+    expect(windowsJunctionTargets(
+      link,
+      '\\\\?\\UNC\\server\\share\\generation\\node_modules\\dsh-context',
+      '\\\\server\\share\\generation\\node_modules\\dsh-context'
+    )).toBe(true)
+    expect(windowsJunctionTargets(link, 'C:\\somewhere\\else\\dsh-context', target)).toBe(false)
+  })
+
   it('creates a missing junction at the final path instead of renaming it', async () => {
     const fs = {
       symlink: vi.fn(async () => {}),

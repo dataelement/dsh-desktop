@@ -22,6 +22,12 @@ export function exposeMissingGenerationLinks(dshHome: string, profile?: string):
 
 export function publishInstalledGeneration(dshHome: string, pluginName: string, profile?: string, options?: { allowRealDirectory?: boolean; syncBundles?: boolean }): Promise<PublishedGenerationManifest>
 
+export function windowsJunctionTargets(
+  linkPath: string,
+  readLinkResult: string,
+  expectedPath: string
+): boolean
+
 export function placeProfilePackageLink(
   fs: {
     symlink: (target: string, path: string, type: string) => Promise<void>
