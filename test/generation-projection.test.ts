@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { projectGenerations, publishGenerationManifest } from '../packages/dsh-desktop-market-installer/generations/projection'
+import { projectGenerations, publishGenerationManifest, publishInstalledGeneration } from '../packages/dsh-desktop-market-installer/generations/projection'
 import { suspendGenerationProjectionForPnpm } from '../packages/dsh-desktop-market-installer/pnpm-runner.mjs'
 import {
   ensureRegistryDirectories,
@@ -93,6 +93,27 @@ describe('generation projection onto the app-boot contract', () => {
     generationMetaReadFault.matches = undefined
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
+  })
+
+  it('publishes physical generation targets when the home is accessed through an alias', async () => {
+    const root = await freshHome()
+    const physical = join(root, 'physical')
+    const home = join(root, 'alias')
+    await mkdir(physical)
+    await symlink(physical, home, process.platform === 'win32' ? 'junction' : 'dir')
+    await ensureRegistryDirectories(home)
+    await initProfile(home)
+    const id = 'context+1.0.0+aaaa'
+    await fakeGeneration(home, id, 'dsh-context', '1.0.0')
+    await writeDesired(home, [id])
+    await publishInstalledGeneration(home, 'dsh-context')
+    const link = join(home, 'profiles', 'web', 'node_modules', 'dsh-context')
+    const target = await realpath(join(registryLayout(home).generations, id, 'node_modules', 'dsh-context'))
+    expect(await readlink(link)).toBe(target)
+    expect(JSON.parse(await readFile(join(link, 'package.json'), 'utf8')).name).toBe('dsh-context')
+    // Cold-start projection must preserve the same physical target.
+    await projectGenerations(home)
+    expect(await readlink(link)).toBe(target)
   })
 
   it('links enabled generations into the profile node_modules and lists them as bundles', async () => {

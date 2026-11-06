@@ -101,7 +101,10 @@ async function validateEnabledGenerationTarget(pluginName, generation) {
   if (!isInsideDirectory(canonicalTarget, canonicalManifest)) {
     throw new Error(`Enabled generation package manifest resolves outside its package: ${pluginName}`)
   }
-  return target
+  // AppData may be redirected by an MSIX host. A junction containing the
+  // virtual path can be readable via readlink while file opens through it
+  // fail with ENOENT. Store the physical target, which every consumer can open.
+  return canonicalTarget
 }
 
 /** Whether an installed package declares its own `dsh.bundle` patch layer. */
@@ -246,10 +249,9 @@ export async function projectGenerations(dshHome, profile = 'web') {
 }
 
 /**
- * `fs.promises.realpath` is the native Windows syscall. A directory junction
- * is a valid profile link, but that syscall still returns
- * `ENOENT: ... realpath '<profile>/node_modules/<plugin>'`. Comparing the
- * junction text from `readlink` is the check that matches what Harness loads.
+ * Compare junction target spellings, including Windows device prefixes.
+ * This is only an identity check; publication must also open the manifest
+ * through the link, because a redirected target can name inaccessible bytes.
  */
 export function windowsJunctionTargets(linkPath, readLinkResult, expectedPath) {
   const linked = win32.resolve(win32.dirname(linkPath), stripWin32DevicePrefix(readLinkResult))
@@ -278,17 +280,17 @@ async function profileLinkMatches(link, target) {
   const info = await lstat(link)
   if (!info.isSymbolicLink()) return (await realpath(link)) === canonicalTarget
   const linked = await readlink(link)
-  return windowsJunctionTargets(link, linked, canonicalTarget)
-    || windowsJunctionTargets(link, linked, target)
+  if (!windowsJunctionTargets(link, linked, canonicalTarget)) return false
+  return await readFile(join(link, 'package.json'), 'utf8') ===
+    await readFile(join(canonicalTarget, 'package.json'), 'utf8')
 }
 
 /**
  * Point `link` at `target`, recording each step `state` must undo.
  *
  * Other platforms stage a symlink and rename it into place. Windows creates
- * the junction at the final path: renaming a junction leaves `realpath` unable
- * to open it. The publish check still must not call native `realpath` on that
- * junction; see `windowsJunctionTargets`.
+ * the junction at the final path, targeting the prevalidated physical path.
+ * Publication also checks that the manifest is readable through that link.
  *
  * @param {{ symlink: Function, rename: Function, unlink: Function, readlink: Function }} fs
  * @param {{ platform: NodeJS.Platform, link: string, target: string, previousIsDirectory: boolean, nextLink: string, oldLink: string }} options
