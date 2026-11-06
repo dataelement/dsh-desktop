@@ -20,20 +20,13 @@
 
 ![DSH Desktop overview with portable presets, model providers, phone control, and editable PPT generation](docs/images/dsh-desktop-hero-v021.png)
 
-<p align="center"><strong>Use official DeepSeek models or mainstream third-party providers, manage portable Agent presets, continue Harness sessions from your phone, and turn source material into editable PPTX decks.</strong></p>
-
-DSH Desktop packages the local DeepSeek Harness experience as an installed desktop application. It starts Harness automatically, keeps profiles, plugins, workspaces, model settings, and sessions outside the application directory, and opens the full Harness interface as soon as the local runtime is ready.
-
-> [!IMPORTANT]
-> DSH Desktop is an early preview built on the rapidly evolving `@deepseek-ai/dsh@0.2.2-alpha.2`. macOS releases are code-signed and notarized by Apple. Windows x64 installers are code-signed; Windows security warnings may still decrease gradually as the publisher builds download and installation reputation.
+Built on DeepSeek Harness, with enhanced model-provider integration, Word / Excel / PPT templates, startup recovery, and workbenches in a ready-to-use desktop app.
 
 ## Download
 
-We offer stable and preview releases: download the **stable release**, recommended for everyday use, from our [official website](https://www.dshdesktop.com/#download). To try a **preview release**, choose a version marked **Pre-release** on [GitHub Releases](https://github.com/dataelement/dsh-desktop/releases).
+Download DSH Desktop from the [official website](https://www.dshdesktop.com/en/).
 
-Preview releases include our newest features and closely track the latest official DeepSeek Harness versions. They may be incompatible with community plugins and are **not recommended for general users**. Early adopters are welcome to try them and share feedback in our community; we roll out updates to the wider community only after validation by early adopters.
-
-Installed builds check for updates shortly after startup and every six hours. When a new version is available, DSH Desktop asks before downloading it; installation begins only after you choose **Restart and install**. You can also check manually from the application menu or skip one version without hiding future releases.
+DSH Desktop automatically checks for updates. New versions undergo a staged rollout for testing before being released to all users once confirmed stable.
 
 ## Community
 
@@ -45,20 +38,15 @@ Installed builds check for updates shortly after startup and every six hours. Wh
 
 ## What DSH Desktop adds
 
-DeepSeek Harness already provides the Agent runtime and Web UI. DSH Desktop adds the native host capabilities needed for a practical desktop product:
+DeepSeek Harness provides the Agent runtime, Web UI, and basic model-provider integration. DSH Desktop builds on these foundations with:
 
-- Starts and stops Harness without requiring a separate CLI or browser tab
-- Uses the native system directory picker to add and manage project workspaces
-- Supports official DeepSeek models and mainstream third-party model providers
-- Imports and exports complete custom Agent presets as portable [`.dshpreset` packages](docs/preset-packages.md), with conflict checks and a trust warning before installation
-- Turns source material into editable PPTX decks through the built-in PPT mode
-- Includes offline DOCX, PPTX and XLSX skills with bundled Python libraries on macOS and Windows
-- Preserves profiles, plugins, workspaces, sessions, and model settings across app upgrades
-- Detects startup and frontend plugin failures, keeps diagnostics in `harness.log`, and offers guided recovery actions
-- Provides a non-destructive Safe Mode that temporarily blocks third-party plugins
-- Lets a paired phone continue sessions over the local network or an optional temporary public tunnel
-- Checks for desktop updates and keeps download and installation under user control
-- Adapts native menus, titlebar behavior, window focus, theme, and application branding for macOS and Windows
+- **Model-provider integration**: improved provider setup and onboarding, model search, image-input and reasoning-capability configuration, and third-party model compatibility.
+- **Office templates**: native Word template editing, Excel example workbooks, and editable PPT templates, paired with business skills to create DOCX, XLSX, and PPTX; Python and Office processing dependencies ship with the desktop app.
+- **Startup and plugin recovery**: startup and frontend diagnostics, guided recovery, Safe Mode, and a repair Agent entry point, designed to preserve user sessions and settings.
+- **Workbenches**: browse, install, and open workbench apps through market installation or local import, reusing Harness conversations.
+- **Portable Agent presets**: import and export custom presets as [`.dshpreset` packages](docs/preset-packages.md), with conflict checks and trust warnings before installation.
+- **Phone access**: pair by QR code and continue sessions over the local network or an optional public tunnel.
+- **Native desktop experience**: managed Harness startup and shutdown, system directory pickers, native menus and windows, user-data preservation across upgrades, and automatic update checks.
 
 ## PPT generation
 
