@@ -4,12 +4,12 @@
 </h1>
 
 <p align="center">
-  <strong>DSH Desktop by Dataelem</strong> — настольное Agent-приложение, разработанное командой Dataelem на базе фреймворка DeepSeek Harness. Доступны версия с открытым исходным кодом и корпоративная версия.<br />
+  <strong>DSH Desktop by Dataelem</strong> — настольное Agent-приложение, разработанное командой Dataelem на базе фреймворка DeepSeek Harness. Доступны версия с открытым исходным кодом и <a href="https://www.dshdesktop.com/ru/enterprise/">корпоративная версия</a>.<br />
   Официальный сайт：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
+  <a href="README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
 </p>
 
 <p align="center">
@@ -131,4 +131,4 @@ DSH Desktop распространяется по [лицензии MIT](LICENSE
 
 Корпоративная версия состоит из настольного клиента BISHENG и сервера корпоративной платформы BISHENG. Клиент на базе DSH Desktop позволяет работать с локальными файлами и разрешенными моделями, знаниями, инструментами и навыками через корпоративную учетную запись. Сервер централизованно настраивает ресурсы и права, управляет кредитами и использованием. Клиент и сервер BISHENG для корпоративной версии имеют открытый исходный код, доступный в репозиториях ниже.
 
-[Сайт корпоративной версии](https://dshdesktop.com/zh/enterprise/) · [Репозиторий клиента](https://github.com/dataelement/bisheng-desktop) · [Репозиторий сервера](https://github.com/dataelement/bisheng)
+[Сайт корпоративной версии](https://www.dshdesktop.com/ru/enterprise/) · [Репозиторий клиента](https://github.com/dataelement/bisheng-desktop) · [Репозиторий сервера](https://github.com/dataelement/bisheng)
