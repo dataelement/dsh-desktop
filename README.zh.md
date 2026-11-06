@@ -20,6 +20,8 @@
 
 ![DSH Desktop 的 Preset、模型提供方、手机控制与可编辑 PPT 生成功能](docs/images/dsh-desktop-hero-v021.png)
 
+基于 DeepSeek Harness，增强主流模型适配、Word / Excel / PPT 模板、启动异常恢复与工作台，提供开箱即用的桌面体验。
+
 ## 下载安装
 
 请前往[官方网站](https://www.dshdesktop.com/zh/)下载 DSH Desktop。
@@ -36,20 +38,15 @@ DSH Desktop 会自动检查更新。新版本会先进行灰度测试，确认�
 
 ## DSH Desktop 带来了什么
 
-DeepSeek Harness 已经提供 Agent Runtime 与 Web UI。DSH Desktop 在此基础上补齐真正的桌面宿主能力：
+DeepSeek Harness 提供 Agent Runtime、Web UI 和基础模型接入能力。DSH Desktop 复用这些基础，重点增强以下体验：
 
-- 自动启动和停止 Harness，不需要另开 CLI 或浏览器标签页
-- 通过系统原生目录选择器添加和管理项目工作区
-- 支持 DeepSeek 官方模型与主流第三方模型提供方
-- 将完整的自定义 Agent Preset 导入或导出为便携的 [`.dshpreset` 压缩包](docs/preset-packages.md)，安装前检查命名冲突并提示信任风险
-- 通过内置 PPT 模式将材料生成并交付为可继续编辑的 PPTX
-- 在 macOS 和 Windows 自带 Python 及 Office 库，支持离线生成和检查 DOCX、PPTX、XLSX
-- 应用升级时保留 Profile、插件、工作区、会话和模型配置
-- 识别 Harness 启动或前端插件故障，把诊断写入 `harness.log` 并提供引导恢复入口
-- 提供不破坏用户数据的安全模式，临时屏蔽第三方插件
-- 让已配对的手机通过局域网或可选的临时公网隧道继续会话
-- 在应用内检查桌面更新，并由用户决定是否下载和安装
-- 针对 macOS 和 Windows 优化原生菜单、标题栏、窗口焦点、主题和品牌体验
+- **主流模型适配**：优化模型提供方配置与首次接入，补充模型搜索、图片输入及推理能力配置，并改善第三方模型兼容性。
+- **Office 三件套模板**：提供 Word 原生套版、Excel 案例工作簿及 PPT 可编辑模板，结合业务技能生成 DOCX、XLSX、PPTX；桌面端随附 Python 和 Office 处理依赖。
+- **启动异常与插件故障恢复**：结合启动和前端诊断定位问题，提供引导恢复、安全模式及修复 Agent 入口，尽量保留用户会话与配置。
+- **工作台**：集中浏览、安装和打开工作台应用，支持市场安装与本地导入，并复用 Harness 会话交互。
+- **Agent Preset 迁移**：通过 [`.dshpreset` 包](docs/preset-packages.md)导入导出自定义 Preset，安装前检查冲突并提示信任风险。
+- **手机连接**：扫码配对后，通过局域网或可选公网隧道在手机上继续会话。
+- **原生桌面体验**：自动管理 Harness 启停，集成系统目录选择、原生菜单与窗口；应用升级保留用户数据，并提供自动更新检查。
 
 ## PPT 生成
 
