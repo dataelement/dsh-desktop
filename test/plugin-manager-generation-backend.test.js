@@ -67,6 +67,38 @@ describe('Plugin Manager generation package backend', () => {
     expect(await readDesired(home)).toEqual([])
   })
 
+  it('publishes a desktop-profile install into that profile, not web', async () => {
+    const home = await freshHome()
+    const desktop = join(home, 'profiles', 'desktop')
+    await mkdir(desktop, { recursive: true })
+    await writeFile(join(desktop, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-desktop',
+      private: true,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } }
+    }))
+    const backend = createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused',
+      profile: 'desktop',
+      runInstall: installer('demo-plugin', '1.0.0')
+    })
+    const installed = await backend.install({
+      spec: 'demo-plugin@1.0.0',
+      kind: 'registry',
+      expectedName: 'demo-plugin',
+      signal: new AbortController().signal
+    })
+    expect(installed.packageResult.exitCode).toBe(0)
+    const desktopManifest = JSON.parse(await readFile(join(desktop, 'package.json'), 'utf8'))
+    expect(desktopManifest.dependencies['demo-plugin']).toBe('1.0.0')
+    const webManifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(webManifest.dependencies['demo-plugin']).toBeUndefined()
+    const link = await lstat(join(desktop, 'node_modules', 'demo-plugin'))
+    expect(link.isSymbolicLink()).toBe(true)
+  })
+
   it('publishes immutable installs and restores the exact prior desired pointer on rollback', async () => {
     const home = await freshHome()
     const backend = createGenerationPackageBackend({

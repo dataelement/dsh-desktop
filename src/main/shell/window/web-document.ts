@@ -96,6 +96,9 @@ export async function forwardWebRequest(request: Request, host: string, cookie: 
   const headers = new Headers(request.headers)
   for (const name of ['host', 'origin', 'cookie', 'sec-fetch-site']) headers.delete(name)
   headers.set('cookie', cookie)
+  // The document origin is dsh-app://app. Host mutation checks compare Origin
+  // with their own loopback host, the same rewrite the socket path already does.
+  if (origin === 'dsh-app://app') headers.set('origin', target.origin)
   const init: RequestInit & { duplex: 'half' } = {
     method: request.method,
     headers,

@@ -51,4 +51,6 @@ export function createGenerationPackageBackend(options: {
   spawnProcess?: unknown
   runInstall?: unknown
   fetchImpl?: typeof fetch
+  /** Profile that receives the generation link. The old shell uses `web`. */
+  profile?: string
 }): ProfileBundlePackageBackend

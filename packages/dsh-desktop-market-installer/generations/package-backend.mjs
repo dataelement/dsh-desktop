@@ -18,8 +18,9 @@ import {
   publishInstalledGeneration
 } from './projection.mjs'
 
-const PROFILE = 'web'
-const profileDirectory = dshHome => join(dshHome, 'profiles', PROFILE)
+function profileDirectory(dshHome, profile) {
+  return join(dshHome, 'profiles', profile)
+}
 const MAX_OUTPUT_BYTES = 16 * 1024
 
 function errorText(error) {
@@ -47,8 +48,8 @@ function replaceDesiredGeneration(desired, generations, pluginName, generationId
   ]
 }
 
-async function createOperationLog(dshHome) {
-  const directory = join(dshHome, 'profiles', PROFILE, '.plugin-manager', 'logs', randomUUID())
+async function createOperationLog(dshHome, profile) {
+  const directory = join(dshHome, 'profiles', profile, '.plugin-manager', 'logs', randomUUID())
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const path = join(directory, 'generation.log')
   const file = await open(path, 'wx', 0o600)
@@ -91,13 +92,14 @@ export function createGenerationPackageBackend(options) {
     pnpmEntryPath,
     environment = process.env,
     spawnProcess,
-    runInstall
+    runInstall,
+    profile = 'web'
   } = options
 
   return Object.freeze({
     supportsVerifiedInstall: true,
     async install(request) {
-      const log = await createOperationLog(dshHome)
+      const log = await createOperationLog(dshHome, profile)
       let activeChild
       const abortChild = () => activeChild?.kill('SIGKILL')
       request.signal?.addEventListener('abort', abortChild, { once: true })
@@ -157,7 +159,7 @@ export function createGenerationPackageBackend(options) {
           const beforeGenerations = await listGenerations(dshHome)
           const install = await installGeneration({
             dshHome,
-            profile: PROFILE,
+            profile,
             pluginSpec: request.spec,
             expectedPluginName,
             sourceDirectory,
@@ -199,7 +201,7 @@ export function createGenerationPackageBackend(options) {
           await writeDesired(dshHome, nextDesired)
           let deferredSwitch = false
           try {
-            await publishInstalledGeneration(dshHome, generation.pluginName, PROFILE, {
+            await publishInstalledGeneration(dshHome, generation.pluginName, profile, {
               syncBundles: false
             })
           } catch (error) {
@@ -211,7 +213,7 @@ export function createGenerationPackageBackend(options) {
             // replaced while Harness runs. Launch projection swaps it for the
             // generation link, so this install completes on restart.
             try {
-              await publishGenerationManifest(dshHome, PROFILE, { syncBundles: false })
+              await publishGenerationManifest(dshHome, profile, { syncBundles: false })
             } catch (manifestError) {
               await writeDesired(dshHome, beforeDesired)
               throw manifestError
@@ -238,7 +240,7 @@ export function createGenerationPackageBackend(options) {
               ]
               await writeDesired(dshHome, restored)
               try {
-                await projectGenerations(dshHome, PROFILE)
+                await projectGenerations(dshHome, profile)
               } catch (error) {
                 await writeDesired(dshHome, currentDesired)
                 throw error
@@ -294,7 +296,7 @@ export function createGenerationPackageBackend(options) {
     },
 
     async remove(request) {
-      const log = await createOperationLog(dshHome)
+      const log = await createOperationLog(dshHome, profile)
       const emit = async (text, stream = 'stdout') => {
         await log.append(text)
         request.onOutput?.(text, stream)
@@ -314,7 +316,7 @@ export function createGenerationPackageBackend(options) {
           if (nextDesired.length === beforeDesired.length) return false
           await writeDesired(dshHome, nextDesired)
           try {
-            await publishGenerationManifest(dshHome, PROFILE, { syncBundles: true })
+            await publishGenerationManifest(dshHome, profile, { syncBundles: true })
           } catch (error) {
             await writeDesired(dshHome, beforeDesired)
             throw error
@@ -333,19 +335,19 @@ export function createGenerationPackageBackend(options) {
     },
 
     async validateSwitch(request) {
-      await validatePluginSwitch(profileDirectory(dshHome), request.name, request.enabled, {
+      await validatePluginSwitch(profileDirectory(dshHome, profile), request.name, request.enabled, {
         rowIds: request.rowIds ?? []
       })
     },
 
     async switched(request) {
-      await recordPluginSwitch(profileDirectory(dshHome), request.name, request.enabled, {
+      await recordPluginSwitch(profileDirectory(dshHome, profile), request.name, request.enabled, {
         rowIds: request.rowIds ?? []
       })
     },
 
     async removed(request) {
-      await forgetPlugin(profileDirectory(dshHome), request.name)
+      await forgetPlugin(profileDirectory(dshHome, profile), request.name)
     }
   })
 }

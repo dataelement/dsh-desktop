@@ -49,7 +49,7 @@ describe('shell document and paths', () => {
     globalThis.fetch = (async (_input, init) => {
       const headers = new Headers(init?.headers)
       expect(headers.get('cookie')).toBe('dsh=token')
-      expect(headers.get('origin')).toBeNull()
+      expect(headers.get('origin')).toBe('http://127.0.0.1:9')
       return new Response('ok', { headers: { 'set-cookie': 'dsh=token', 'content-type': 'text/plain' } })
     }) as typeof fetch
     const response = await forwardWebRequest(new Request('dsh-app://app/plugins/app.js', { headers: { origin: 'dsh-app://app' } }), 'http://127.0.0.1:9/', 'dsh=token')

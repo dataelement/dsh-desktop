@@ -755,6 +755,25 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['app'])
     return bootSession.readBoot()
   })
+  let restartingHarness = false
+  ipcMain.handle(DESKTOP_IPC.restartHarness, async event => {
+    assertMain(event)
+    if (restartingHarness || quitting) return { ok: false }
+    restartingHarness = true
+    try {
+      await backend.stop()
+      await backend.start(async () => {})
+      setImmediate(() => {
+        if (!window.isDestroyed()) window.webContents.reload()
+      })
+      return { ok: true }
+    } catch (error: unknown) {
+      console.error(error)
+      return { ok: false }
+    } finally {
+      restartingHarness = false
+    }
+  })
   let waitForSafeModeAction: ((value: { action: unknown; selection: unknown }) => void) | undefined
   if (safeMode) {
     ipcMain.handle(DESKTOP_IPC.safeModeAction, (event, action: unknown, selection: unknown) => {

@@ -365,7 +365,11 @@ window.__ModuleLoader__.load({
         setRestarting(true)
         setError(undefined)
         try {
-          await bridge.restartHarness()
+          const result = await bridge.restartHarness()
+          if (!result?.ok) {
+            setRestarting(false)
+            setError(t('uninstallFailed'))
+          }
         } catch (failure) {
           setRestarting(false)
           setError(failure instanceof Error ? failure.message : String(failure))
@@ -584,7 +588,15 @@ window.__ModuleLoader__.load({
           }
           setStatus(payload)
         } catch (failure) {
-          setError(failure instanceof Error ? failure.message : String(failure))
+          const message = failure instanceof Error ? failure.message : String(failure)
+          setError(message)
+          // A rejected request must not stay on the optimistic installing phase,
+          // or the retry button stays disabled and the error stays hidden.
+          setStatus((current) => ({
+            ...(current ?? {}),
+            phase: 'error',
+            detail: message
+          }))
         }
       }
 
@@ -597,7 +609,11 @@ window.__ModuleLoader__.load({
         setRestarting(true)
         setError(undefined)
         try {
-          await bridge.restartHarness()
+          const result = await bridge.restartHarness()
+          if (!result?.ok) {
+            setRestarting(false)
+            setError(t('failed'))
+          }
         } catch (failure) {
           setRestarting(false)
           setError(failure instanceof Error ? failure.message : String(failure))

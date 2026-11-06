@@ -15,6 +15,7 @@ export const DESKTOP_IPC = {
   onboardingActive: 'dsh-desktop:onboarding-active',
   onboardingApiKey: 'dsh-desktop:onboarding-api-key',
   bootFailed: 'dsh-desktop:boot-failed',
+  restartHarness: 'dsh-desktop:restart-harness',
   webImportAction: 'dsh-desktop:web-import-action',
   safeModeFrame: 'dsh-desktop:safe-mode-frame',
   safeModeAction: 'dsh-desktop:safe-mode-action',

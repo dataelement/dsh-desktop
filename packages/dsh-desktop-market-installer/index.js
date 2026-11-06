@@ -465,7 +465,8 @@ export function createDesktopPnpmService(options) {
     pnpmEntryPath,
     environment,
     spawnProcess,
-    runInstall: options.runGenerationInstall
+    runInstall: options.runGenerationInstall,
+    profile: activeProfile
   })
 
   /**
@@ -881,10 +882,16 @@ export function resolveDshEntry(argv = process.argv) {
   throw new Error('The running DSH entry could not be identified.')
 }
 
+/** Public `dsh plugin` rejects the reserved desktop profile. The desktop carrier does not. */
+export function pluginCliEntry(dshEntryPath, env = process.env) {
+  if (marketProfile(env) !== 'desktop') return dshEntryPath
+  return fileURLToPath(new URL('./desktop-plugin-cli.mjs', import.meta.url))
+}
+
 export function pluginCommandArguments(dshEntryPath, args, env = process.env, platform = process.platform) {
   return [
     ...hideConsoleImportArguments(env, platform),
-    dshEntryPath,
+    pluginCliEntry(dshEntryPath, env),
     'plugin',
     '--profile',
     marketProfile(env),
@@ -894,7 +901,7 @@ export function pluginCommandArguments(dshEntryPath, args, env = process.env, pl
 
 export function buildInstallArguments(dshEntry = resolveDshEntry(), env = process.env) {
   return [
-    dshEntry,
+    pluginCliEntry(dshEntry, env),
     'plugin',
     '--profile',
     marketProfile(env),
@@ -904,7 +911,7 @@ export function buildInstallArguments(dshEntry = resolveDshEntry(), env = proces
 
 export function buildUninstallArguments(dshEntry = resolveDshEntry(), env = process.env) {
   return [
-    dshEntry,
+    pluginCliEntry(dshEntry, env),
     'plugin',
     '--profile',
     marketProfile(env),
@@ -970,7 +977,8 @@ export async function apply(ctx) {
     dshHome: home,
     dshEntryPath: resolveDshEntry(),
     nodeExecutablePath: process.execPath,
-    pnpmEntryPath: resolvePnpmEntry()
+    pnpmEntryPath: resolvePnpmEntry(),
+    profile: marketProfile()
   })
   ctx.provide('desktopProfiles', desktopProfiles)
   ctx.provide('desktopPnpm', desktopPnpm)
@@ -1079,7 +1087,7 @@ export async function apply(ctx) {
 
       const installed = await readMarketInstallation(home)
       if (!installed.installedVersion) {
-        throw new Error('pnpm completed, but dshmarket was not found in the web profile.')
+        throw new Error(`pnpm completed, but dshmarket was not found in the ${marketProfile()} profile.`)
       }
       phase = 'idle'
       detail = undefined
@@ -1122,7 +1130,7 @@ export async function apply(ctx) {
 
       const removed = await readMarketInstallation(home)
       if (removed.dependency || removed.installedVersion) {
-        throw new Error('pnpm completed, but dshmarket is still present in the web profile.')
+        throw new Error(`pnpm completed, but dshmarket is still present in the ${marketProfile()} profile.`)
       }
       phase = 'uninstalled'
       detail = undefined

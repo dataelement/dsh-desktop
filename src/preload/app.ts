@@ -53,6 +53,7 @@ const desktopBridge: {
   getMobileStatus?: () => Promise<{ connected?: boolean }>
   onMobileStatus?: (listener: (status: { connected: boolean }) => void) => () => void
   openRepairAgent?: () => Promise<{ ok?: boolean; error?: string }>
+  restartHarness?: () => Promise<{ ok: boolean }>
   getRepairDraft?: (sessionId: string) => Promise<{ text?: string; token?: string }>
   acknowledgeRepairDraft?: (sessionId: string, token: string) => Promise<{ ok: boolean }>
   browser?: ReturnType<typeof createSidebarBrowserBridge>
@@ -114,6 +115,7 @@ if (appDocument) {
     }
   }
   desktopBridge.openRepairAgent = () => ipcRenderer.invoke(DESKTOP_IPC.repairOpen) as Promise<{ ok?: boolean; error?: string }>
+  desktopBridge.restartHarness = () => ipcRenderer.invoke(DESKTOP_IPC.restartHarness) as Promise<{ ok: boolean }>
   desktopBridge.getRepairDraft = sessionId => ipcRenderer.invoke(DESKTOP_IPC.repairDraftGet, sessionId) as Promise<{ text?: string; token?: string }>
   desktopBridge.acknowledgeRepairDraft = (sessionId, token) => ipcRenderer.invoke(DESKTOP_IPC.repairDraftAck, sessionId, token) as Promise<{ ok: boolean }>
 }

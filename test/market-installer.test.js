@@ -16,6 +16,7 @@ import {
   buildInstallArguments,
   buildUninstallArguments,
   marketProfile,
+  pluginCliEntry,
   resolveDshEntry,
   cleanStaleTemporaryDirectories,
   createDesktopPnpmService,
@@ -271,7 +272,10 @@ describe('desktop plugin market installer', () => {
     expect(resolveDshEntry(['node', '/app/dsh/bin.js'])).toBe('/app/dsh/bin.js')
     expect(resolveDshEntry(['node', '/tmp/host.js'])).toMatch(/[/\\]@deepseek-ai[/\\]dsh[/\\]lib[/\\]bin\.js$/u)
     expect(buildInstallArguments('/app/dsh/bin.js', { DSH_DESKTOP_PROFILE: 'desktop' })).toContain('desktop')
-    expect(buildUninstallArguments('/app/dsh/bin.js', { DSH_DESKTOP_PROFILE: 'desktop' })).toContain('desktop')
+    expect(buildUninstallArguments('/app/dsh/bin.js', { DSH_DESKTOP_PROFILE: 'desktop' })[0]).toMatch(/desktop-plugin-cli\.mjs$/u)
+    expect(pluginCliEntry('/app/dsh/bin.js', {})).toBe('/app/dsh/bin.js')
+    expect(pluginCommandArguments('/app/dsh/bin.js', ['add', 'demo'], { DSH_DESKTOP_PROFILE: 'desktop' }, 'darwin')[0])
+      .toMatch(/desktop-plugin-cli\.mjs$/u)
   })
 
   it('runs plugin mutations through one packaged pnpm operation boundary', async () => {
