@@ -133,8 +133,8 @@ DSH Desktop 采用 [MIT License](LICENSE) 开源。
 
 DeepSeek Harness 及其依赖仍遵循各自的上游许可证与商标规则。DSH Desktop 是独立的社区桌面应用。
 
-## 企业版：BISHENG
+## 了解企业版
 
-企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。
+企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。企业版的 BISHENG 客户端与服务端均已开源，可通过下方仓库获取源码。
 
 [企业版官网](https://dshdesktop.com/zh/enterprise/) · [客户端仓库](https://github.com/dataelement/bisheng-desktop) · [服务端仓库](https://github.com/dataelement/bisheng)
