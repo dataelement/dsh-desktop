@@ -34,6 +34,7 @@ import { buildWebImportViewModel } from '../web-import-view'
 import { DesktopBackendController } from './backend/backend-controller'
 import { DesktopBootSession, retainDesktopBoot } from './backend/boot-session'
 import { DesktopHostFatalError, DesktopHostProcess } from './backend/host-process'
+import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './backend/login-shell-environment'
 import { attachDesktopStorage } from './desktop-storage-bridge'
 import { ENTERPRISE_URL, aboutUsesPage, buildDarwinDesktopMenu, externalUrlToOpen, insertFileMenu, shortcutFileMenuLabels } from './enterprise-menu'
 import { installDesktopShortcuts, type DesktopShortcutController } from './keyboard'
@@ -369,6 +370,14 @@ async function main(): Promise<void> {
     app.quit()
     return
   }
+  // Overlap the GUI-session read with Electron startup and the splash. Windows keeps the registry environment.
+  const loginShellAbort = new AbortController()
+  const loginShell = readDesktopLoginShellEnvironment(
+    process.env,
+    resolveDesktopLoginShellConfig(process.env),
+    { signal: loginShellAbort.signal }
+  )
+  app.on('will-quit', () => { loginShellAbort.abort() })
   await app.whenReady()
   let desktopWindow: BrowserWindow | undefined
   registerUpdateHandlers({
@@ -537,6 +546,7 @@ async function main(): Promise<void> {
   })
   activeOperationJournal = operationJournal
   let desktopHost: DesktopHostProcess | undefined
+  let hostEnvironment: NodeJS.ProcessEnv = process.env
   const backend = new DesktopBackendController(onFailure => {
     const host = new DesktopHostProcess({
       node: process.execPath,
@@ -546,7 +556,7 @@ async function main(): Promise<void> {
       dshHome,
       profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
       environment: {
-        ...process.env,
+        ...hostEnvironment,
         DSH_CLIENT_VERSION: app.getVersion(),
         DSH_DESKTOP_PATCH_FILE: productPatch,
         ...(safeMode ? {} : officeEnvironment(primaryRuntime))
@@ -590,7 +600,13 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['app'])
     return window
   }, (address, signal) => desktopHost?.resolveDragResource(address, signal) ?? Promise.resolve(null))
-  const startup = backend.start(async () => {})
+  const startup = backend.start(async () => {
+    const result = await loginShell
+    hostEnvironment = result.environment
+    if (result.failures.length > 0) {
+      console.error(`[desktop] login shell: ${result.failures.map(item => `${item.shell} (${item.reason})`).join('; ')}`)
+    }
+  })
   bootSession.track(startup)
   installDesktopProtocol(name => packagedPagePath(name))
   protocol.handle(SCHEME, request => dispatchAppDocument(request, bootSession.documentTarget(frontend)))

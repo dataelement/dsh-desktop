@@ -350,7 +350,6 @@ src/
 │   │   │   ├── host-process.ts          官方：Host 子进程；macOS UtilityProcess 按阶段 2 结论决定
 │   │   │   ├── host-protocol.ts         官方：ready / fatal 等事件
 │   │   │   ├── node-environment.ts  login-shell-environment.ts   官方：子进程环境
-│   │   │   ├── windows-powershell-environment.ts                 现有：从 runtime/harness-runtime.ts 拆出
 │   │   │   ├── core-package-set.ts  runtime-tree.ts               官方：核心包与安装树
 │   │   │   └── startup-error.ts         官方：启动失败的渲染与原始错误
 │   │   ├── window/
@@ -359,7 +358,8 @@ src/
 │   │   │   ├── ipc.ts                   官方：通道常量
 │   │   │   ├── windows-layout.ts  tray.ts  background-notice.ts  quit-confirmation.ts   官方
 │   │   │   ├── macos-window-backdrop.ts  gpu-fallback.ts  window-state.ts   现有
-│   │   │   ├── desktop-notification.ts  security.ts               现有
+│   │   │   ├── desktop-notification.ts                            最后重写。阶段 3 不把现有通知桥原样搬进新壳
+│   │   │   ├── security.ts                                        现有
 │   │   │   ├── context-menu.ts  context-menu-template.ts          现有，与官方菜单对照后保留差异
 │   │   │   └── security-policy.ts  window-permissions.ts  microphone-permissions.ts   现有 + 官方
 │   │   ├── browser/
@@ -405,12 +405,13 @@ src/
 │   ├── fatal-diagnostic.ts  operation-diagnostics.ts      官方：失败诊断与插件组合
 │   ├── office.ts  office-engine.ts                        官方 + 现有 Office 引擎解析
 │   ├── file-drag.ts  platform-session.ts  quit-inspection.ts   官方
-│   ├── windows-cli-signals.ts  windows-child-process.ts   官方 + 现有 Windows 子进程隐藏
+│   ├── windows-cli-signals.ts                             官方。旧壳的 Windows 子进程隐藏不移植
 │   └── pnpm-invocation.ts           现有：由 build/packaged-pnpm-invocation.mjs 改写，阶段 2 决定是否保留
 ├── preload/
 │   ├── app.ts  browser.ts  menu.ts  theme.ts  windows.ts  platform.ts   官方 preload-*
 │   ├── desktop-update-ui.ts  update-view.ts  update-notes-view.ts       现有：产品层更新界面
-│   ├── plugin-error-view.ts  desktop-notification.ts  desktop-storage.ts   现有
+│   ├── plugin-error-view.ts  desktop-storage.ts                            现有
+│   ├── desktop-notification.ts                                              最后重写，不原样搬现有通知桥
 │   └── macos-window-chrome.ts  windows-titlebar.ts  windows-menu-bar.ts    现有，与官方 preload-windows 对照后合并
 └── shared/
     ├── contracts.ts  desktop-menu.ts  plugin-startup-failure.ts  update-release-notes.ts  persona-prefix.ts   现有
@@ -475,7 +476,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 | 手机桥与隧道 | 产品层，读取壳层的 Host 地址和认证 | `src/main/mobile/` |
 | Office / PPT | 先按官方 Host 的 Office 组合移植，缺的 PPT 能力由产品层补 | 现有 Office 运行时，阶段 3 逐项对照 |
 | 侧边栏浏览器、快捷键、文件拖放、登录 shell 环境 | 壳层（按官方移植） | `sidebar-browser.ts`、`windows-menu.ts` 等，逐项删除 |
-| Windows PowerShell profile 环境 | 产品层补充，官方只用注册表环境 | `runtime/harness-runtime.ts` 的环境捕获 |
+| Windows PowerShell profile 环境、子进程隐藏 | 不移植。旧壳为修 bug 所写，官方框架已经修好 | `runtime/harness-runtime.ts` 的 PowerShell 捕获，`build/harness-node-entry.mjs` 与 `build/windows-child-process-hide.mjs` 的 `windowsHide`。切换后随旧壳删除，不拆进新壳 |
 | 工作台、网页版导入、企业入口 | 产品层 | 对应模块原样迁移 |
 | 欢迎窗口、账号登录、`dsh` 命令注册、产品分析 | 不移植。欢迎、账号和命令文件在基线 `skipped`；产品分析是已发布包，不接入 | 阶段 0 已决定 |
 | 强制更新、Nightly、飞书测试鉴权 | 不移植，登记在基线的 `skipped` 里 | 无 |
@@ -559,7 +560,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 - 投影只替换自己写下的 generation 链接。pnpm 的真实目录遇到投影会得到 `EDSH_REAL_PLUGIN_DIRECTORY`，不会被换成链接。投影写进 manifest 的 generation 版本和 override，仍由旧壳的 pnpm runner 在安装前临时拿掉。新壳还没有插件安装，所以这条没有在新壳里重做。
 - Safe Mode：`DSH_DESKTOP_SAFE_MODE=1` 时准备 `profiles/desktop-safe-mode`，只含 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`，不跑投影。临时目录启动后没有 `profiles/node_modules`。`mountRootInclude` 补丁仍被旧壳和 `test/safe-mode-host-resolved.test.ts` 使用，这次不删。
 - macOS：新壳继续用 `ELECTRON_RUN_AS_NODE`。旧壳的 UtilityProcess 把第三方工具的隐私权限请求从主应用拆开。这次没有做 TCC 实测，所以不把新壳改成 UtilityProcess。
-- Windows 的 PowerShell profile 环境和 `windowsHide` 仍在旧壳。新壳的 Host 还不启动用户 shell。Windows 没验。
+- Windows 的 PowerShell profile 捕获和 `windowsHide` 不移植。这是旧壳为修 bug 写的，官方框架已经修好；新壳沿用官方的注册表环境和子进程方式。登录 shell 已接到新壳：macOS 和 Linux 在第一次启动 Host 前读取一次，Windows 使用继承的注册表环境。Windows 没验。
 - `build/harness-node-entry.mjs` 仍是旧壳入口，这次不搬。搬它会同时改掉正在发布的启动路径。
 
 2026-11-06 用新壳 Host 在临时目录里跑了五种解析。安装包里的 `@deepseek-ai/dsh-client-modules` 进入了启动注入。放在 `profiles/node_modules` 的市场插件，以及指向目录外的符号链接，都加载了自己的 `sample-ordinary`。缺少 `@deepseek-ai/missing-host-peer` 和缺少 `sample-ordinary-missing` 都留下 `ERR_MODULE_NOT_FOUND`，并带上插件名；Profile 里根本没有的插件只报自己的包名。普通 profile 没有走出旧壳的 `host fallback from`。Safe Mode 不创建 `profiles/node_modules` 仍由 `test/host/run-profile.test.ts` 覆盖。Windows junction 没跑。
@@ -568,8 +569,11 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 
 ### 阶段 3：恢复和产品功能
 
+功能对照、使用路径和测试命令见 [相对官方 Desktop 的增量与改动](phase3-product-delta.zh.md)。这份说明同时包括阶段 1 的数据目录、阶段 2 的加载，以及仍留在旧壳的行为。
+
 - 已建 `src/main/recovery/fatal-entry.ts`。新壳把致命失败写到调用方传入的 `DSH_HOME/fatal-report.json`，抹掉 `token` 查询参数，再显示一条短提示。不移植官方 `DesktopFatalRecovery`。进程退出前会等这份报告写完。
 - 两个 `startup-config-recovery.ts` 仍分开：纯判断在 `state/`，原生对话框在旧壳。合成进一个带 Electron 的文件会让不碰窗口的测试带上 Electron，所以这次不合。
+- 桌面通知留到其余壳层功能之后重写。阶段 3 不把旧壳的通知桥接到新壳。现有 `src/main/desktop-notification.ts` 和 preload 桥继续只服务旧壳。
 - 插件操作记录已接到新壳：Host 把管理事件发给壳，壳写入 `userData/plugin-operations`，恢复页的修复方案列出最近的记录。快捷键已接到新壳：`@deepseek-ai/dsh-client-shortcuts` 成为直接依赖，偏好写在 `userData/keybindings.json`，应用页使用原生快捷键桥。侧边栏浏览器已接到新壳：应用页可以创建隔离 webview，沿用现有客人策略。文件拖放已接到新壳：页面拖出 Host 授权过的会话文件，或壳写下的临时副本。崩溃记录已接到新壳：致命失败时在应用日志目录写 `crash-*.log`，再按 64 KiB 和 500 毫秒上限把 `userData/plugin-operations` 附进同一份文件。这份记录不向外发送，恢复页不改。
 - 启动页使用现有 `build/splash.html` 鲸鱼页，Host 就绪后再进入应用页，不使用官方欢迎窗。2026-11-06 用临时 `userData` 启动 `build:shell` 产物，导航记录先是标题为「DSH Desktop」的 `splash.html`，随后才是应用页。这次没有截图。目录包没有重打。手机桥已接到新壳：普通启动在 Host 就绪后监听配对，侧边栏宽时可以打开「连接手机」。桥使用壳已经换到的 Host cookie，不把启动 token 交给手机页，Harness 仍在回环。没有局域网地址时才打开互联网隧道。Safe Mode 不启动手机桥。普通 profile 已挂上 `dsh-desktop-office` 和 `dsh-ppt-composer`。Office 读取 primary runtime 上一级资源目录和旁边的 `office-cli.mjs`；开发目录 `.build/office-runtime` 仍使用 `build/office-cli.mjs`。PPT 工程目录仍是 `kimi-ppt`。Safe Mode 不挂这两项。产品更新已接到新壳：已安装的 macOS 或 Windows 包才会自动检查，下载要等用户同意，可以跳过一个版本，更新卡片可以选择历史版本。未打包的启动只注册检查，不自动联网。安装前会停掉 Host，并隔离指向当前应用包的 LaunchAgent。普通 profile 已挂上 `dsh-desktop-workbenches` 和 `dsh-desktop-market-installer`；Safe Mode 的补丁不含工作台和市场。安装器在没有 `DSH_DESKTOP_PROFILE` 时仍使用 `web`。企业入口沿用现有地址 `https://dshdesktop.com/zh/enterprise/`：设置页底部由 `dsh-desktop-client-ui` 挂出。macOS 菜单前三项依次是「关于 DSH Desktop」、「检查更新…」和「了解企业版」。普通启动时下一项是「以安全模式重启…」，用 `--safe-mode` 重新进入 `desktop-safe-mode`。Safe Mode 启动后，现有 safe-mode.html 铺满整个窗口，包括侧边栏，管理普通 desktop profile 的第三方插件：可以停用或重新启用，再用一次不带 --safe-mode 的重启退出。普通 profile 启动失败且错误点名已安装的第三方插件时，现有 plugin-recovery.html 只停用这些插件并重启。Safe Mode 的启动失败仍用短对话框。修复代理已接到当前 Host：侧边栏和 Safe Mode 页可以打开维修会话，草稿放进输入框，不会自动发送。Safe Mode 页可以升级 `desktop` profile 的插件，也可以打开、恢复或删除卸载备份。插件操作记录写在 `userData/plugin-operations`，恢复页列出最近的记录。快捷键写在 `userData/keybindings.json`，应用页走原生桥。侧边栏浏览器使用隔离 webview。文件拖放只接受 Host 授权过的会话文件。崩溃记录写在应用日志目录，并附上最近的插件操作。恢复页不改。应用页打开现有关于对话框，其它页面使用系统对话框。2026-11-06 用临时 `userData` 启动 `build:shell` 产物，应用页挂出了更新卡片并保持隐藏；这次没有点开系统菜单，也没有下载或回滚。目录包没有重打。2026-11-06 用临时 `userData` 启动 `build:shell` 产物，打开设置后底部链接文案是「了解企业版」，地址是上述企业页。应用菜单由单元测试覆盖，这次没有点开系统菜单。目录包没有重打。网页版导入在复制 profile 之前询问：桌面家目录已有数据时不询问，跳过只写下决定，关闭窗口不写决定，网页版目录只读。Safe Mode 不询问。2026-11-06 用空的临时 `userData` 启动 `build:shell` 产物，页面标题是「发现网页版数据」；选择「从空白开始」后只在临时目录写下 skipped，网页版家目录的标记文件没有变化，也没有把设置复制过去。目录包没有重打。
 - 规范已写入 `src/main/recovery/AGENTS.md`。`test/recovery/fatal-entry.test.ts` 检查致命入口不导入 Electron，壳不导入官方恢复对话框、更新目录和旧入口。
@@ -616,7 +620,7 @@ git diff --check
 | 恢复 | 会让 Host 启动失败的第三方插件进入产品层恢复页；禁用、卸载、还原、Safe Mode、修复代理可用；恢复页显示插件操作记录 |
 | 产品功能 | 市场安装与回滚、手机配对与隧道、工作台、PPT / Office、网页版导入、企业入口 |
 | 更新 | 用户同意后才下载；跳过一个版本；回滚；不出现强制更新窗口 |
-| 平台 | macOS 隐私权限归属；Windows 路径、junction、子进程窗口、PowerShell 环境、安装和卸载 |
+| 平台 | macOS 隐私权限归属；Windows 路径、junction、安装和卸载。PowerShell profile 捕获和子进程隐藏不在清单里 |
 | 安装包 | 来源基线的 dsh 版本与锁文件一致；npm 补丁的哈希与发布清单一致；第三方声明包含上游 MIT 许可 |
 
 Windows 的结果只在 Windows 上算数。开发仓库里 import 成功，不能用来声称正式安装包已经迁移完成。
@@ -635,7 +639,7 @@ Windows 的结果只在 Windows 上算数。开发仓库里 import 成功，不�
 | 恢复 | 单元测试覆盖：启动失败只停用错误里点名的 desktop 插件；恢复页视图能列出最近的插件操作；Safe Mode 页可以停用、启用、升级和恢复备份，并打开修复代理；致命入口不导入 Electron，壳不引用官方恢复对话框。崩溃记录测试确认 `token` 查询参数被抹掉，操作记录按预算附进日志，已取消的收集不会启动。 | 没有在真实窗口里制造一次第三方插件启动失败，也没有点停用、还原或修复代理。没有看到一条真实插件操作记录，也没有弹出带崩溃日志路径的短对话框。 |
 | 产品功能 | 网页版导入：空的临时 `userData` 打开「发现网页版数据」，选择「从空白开始」后只在临时目录写下 skipped，网页版家目录的标记文件没有变化。企业入口：设置页底部链接文案是「了解企业版」。菜单前三项由单元测试覆盖。2026-11-06 用当前 `build:shell` 产物和临时 `userData` 启动，产品补丁写上了工作台、市场安装器、Office 和 PPT；应用页文字里同时有「工作台」和「PPT」。同一天重跑了市场安装和恢复的单元测试，安装仍走测试里的替身。 | 没有安装或回滚一个真实市场插件，没有打开配对页，没有打开 PPT 或 Office 文档。配对没有点，是为了避免打开互联网隧道。企业菜单没有在系统菜单里点开。 |
 | 更新 | 未打包的 `build:shell` 启动挂出更新卡片并保持隐藏，没有联网下载。强制更新留在基线 `skipped`，致命入口测试确认壳不引用 `mandatory-update`。2026-11-06 重跑 `test/update-skip.test.ts`、`test/update-rollout.test.ts` 和 `test/update-ui.test.ts`：跳过只记住被跳过的版本；下载要等用户点过的提议；历史版本列表去掉当前和更新的版本。 | 同意后下载、跳过一个版本和回滚没有在已安装的包上走过。 |
-| 平台 | 新壳 Host 仍用 `ELECTRON_RUN_AS_NODE` 启动。 | macOS 隐私权限归属没有实测。Windows 的路径、junction、子进程窗口、PowerShell 环境、安装和卸载都没有验。 |
+| 平台 | 新壳 Host 仍用 `ELECTRON_RUN_AS_NODE` 启动。PowerShell profile 捕获和子进程隐藏留在旧壳，不移植。 | macOS 隐私权限归属没有实测。Windows 的路径、junction、安装和卸载都没有验。 |
 | 安装包 | 基线测试确认 `dshVersion` 与锁文件里的 `@deepseek-ai/dsh` 一致，提交是 `66491b05`。更早的目录包 `Contents/Resources/THIRD_PARTY_NOTICES.md` 核对过存在。2026-11-06 `test/verify/patch-lock.test.ts` 核对 `patches/` 里 37 个补丁：文件名里的版本与 `package-lock.json` 的 `version` 一致，对应的包都有 `sha512` integrity。锁文件就是这次的发布记录，没有另存一份补丁哈希清单。2026-11-06 向 npm 重新拉取了这 37 个包的 `dist.integrity`，与锁文件一致，不一致的数量是 0。 | 没有对照安装包的 `latest.yml`。仓库里没有这份清单。当前目录包不包含快捷键、侧边栏浏览器、文件拖放和崩溃记录，也没有安装。 |
 
 ## 9. 影响范围
@@ -678,7 +682,7 @@ Windows 的结果只在 Windows 上算数。开发仓库里 import 成功，不�
 | generation 与官方插件管理器冲突 | 插件被重复安装、投影链接被删 | 阶段 2 单独核对两者的所有权，冲突时以市场 `state.json` 和 generation 为准 |
 | profile 迁移中断 | 插件开关或 generation 只迁了一半 | 迁移带标记、可重入、失败回到旧目录；不搬动 `harness/` 本身 |
 | macOS 权限归属变化 | Office、终端或 Computer Use 弹出的系统授权归到错误的进程 | 阶段 2 实测后决定 Host 进程方式 |
-| Windows 行为差异 | 子进程弹窗、环境变量缺失、安装器行为变化 | 只以 Windows 真机结果为准 |
+| Windows 行为差异 | 路径、junction、安装和卸载与旧壳不一致 | 只以 Windows 真机结果为准。PowerShell profile 捕获和子进程隐藏不移植 |
 | 构建脱离 monorepo | 官方构建脚本依赖 monorepo 路径 | 打包配置参照官方移植，不直接复用 monorepo 脚本。阶段 0 已在 macOS arm64 打出未安装的目录包；没有安装启动，Windows 没打 |
 | 许可证 | 移植代码缺少上游版权声明 | `THIRD_PARTY_NOTICES.md` 写明上游 MIT 许可和版权，随安装包附带 |
 

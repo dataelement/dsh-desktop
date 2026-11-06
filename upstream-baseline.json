@@ -18,7 +18,8 @@
         "安装包中的 primary runtime 位于 Resources/office-runtime/primary-runtime",
         "侧边栏浏览器沿用现有客人策略，不另写一份官方 browser-guests",
         "文件拖放只接受 Host 授权过的会话文件；渲染进程不能提交本机路径",
-        "Host 离开就绪后清掉启动注入和认证 Cookie；boot 只返回仍处于就绪的那一次，失败的刷新不交回上一次"
+        "Host 离开就绪后清掉启动注入和认证 Cookie；boot 只返回仍处于就绪的那一次，失败的刷新不交回上一次",
+        "启动 Host 前读取 POSIX 登录 shell 环境；Windows 使用继承的注册表环境，不读 PowerShell profile"
       ]
     },
     {
@@ -50,6 +51,15 @@
       "path": "src/main/shell/backend/node-environment.ts",
       "upstream": ["apps/desktop/src/node-environment.ts"],
       "divergences": []
+    },
+    {
+      "path": "src/main/shell/backend/login-shell-environment.ts",
+      "upstream": ["apps/desktop/src/login-shell-environment.ts"],
+      "divergences": [
+        "Windows 不读 PowerShell profile，直接使用继承的注册表环境",
+        "超时只解析 DSH_DESKTOP_LOGIN_SHELL_TIMEOUT_MS，不依赖官方 duration-env.ts",
+        "测试可以替换子进程创建；产品启动不传"
+      ]
     },
     {
       "path": "src/main/shell/backend/startup-error.ts",
