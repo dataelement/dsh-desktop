@@ -107,6 +107,7 @@ export function windowsMenuTemplate(
     { type: 'separator' },
     command('check-for-updates', '检查更新…', 'Check for Updates…', 'Ctrl+U'),
     command('about', '关于 DSH Desktop', 'About DSH Desktop'),
+    command('explore-enterprise', '了解企业版', 'Explore Enterprise'),
     { type: 'separator' },
     command('quit', '退出', 'Exit')
   ]

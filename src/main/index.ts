@@ -2154,6 +2154,9 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<n
     case 'about':
       await showAbout(window)
       break
+    case 'explore-enterprise':
+      await shell.openExternal('https://dshdesktop.com/zh/enterprise/')
+      break
     case 'quit':
       app.quit()
       break
