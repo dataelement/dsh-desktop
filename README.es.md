@@ -5,7 +5,7 @@
 
 <p align="center">
   <strong>DSH Desktop by Dataelem</strong> es una aplicación Agent de escritorio desarrollada por el equipo de Dataelem sobre el framework DeepSeek Harness, disponible en ediciones de código abierto y empresarial.<br />
-  Sitio web oficial：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · Repositorio de código abierto：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
+  Sitio web oficial：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
 <p align="center">
@@ -126,3 +126,9 @@ Antes de enviar cambios, ejecuta `npm test`, `npm run typecheck` y `npm run buil
 DSH Desktop se publica bajo la [licencia MIT](LICENSE).
 
 DeepSeek Harness y sus dependencias siguen sujetos a sus licencias y políticas de marcas correspondientes. DSH Desktop es una aplicación de escritorio comunitaria independiente.
+
+## Conoce la edición empresarial
+
+La edición empresarial combina el cliente de escritorio BISHENG con el servidor de la plataforma empresarial BISHENG. El cliente, basado en DSH Desktop, permite trabajar con archivos locales y modelos, conocimiento, herramientas y habilidades autorizados mediante una cuenta empresarial. El servidor configura recursos y permisos de forma centralizada y gestiona créditos y uso. Tanto el cliente como el servidor BISHENG de la edición empresarial son de código abierto; su código fuente está disponible en los repositorios siguientes.
+
+[Sitio empresarial](https://dshdesktop.com/zh/enterprise/) · [Repositorio del cliente](https://github.com/dataelement/bisheng-desktop) · [Repositorio del servidor](https://github.com/dataelement/bisheng)
