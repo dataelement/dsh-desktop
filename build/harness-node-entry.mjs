@@ -1,4 +1,5 @@
 import childProcess from 'node:child_process'
+import net from 'node:net'
 import { syncBuiltinESMExports } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -10,6 +11,7 @@ import {
   buildPackagedPnpmInvocation
 } from './packaged-pnpm-invocation.mjs'
 import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs'
+import { installTypeOfServiceGuard } from './type-of-service-guard.mjs'
 
 // On macOS Harness runs inside an Electron utility process (TCC responsibility
 // isolation), so `process.execPath` and `argv0` point at the Electron helper
@@ -83,6 +85,17 @@ if (process.platform === 'win32') {
   enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExports)
 
   process.stdout.write('[harness-node] windowsHide enforcement enabled for child processes\n')
+}
+
+// Same reach as the windowsHide enforcement above: the guard patches the
+// socket prototype before dshEntryPath loads, so the bundled undici's
+// HTTP/1.1 write path — and anything else in this process tree — stops
+// dying on a platform EINVAL (issue #821). Self-disables once the bundled
+// runtime reports undici >= 7.30.1.
+if (installTypeOfServiceGuard(net, process.versions.undici, (message) => process.stderr.write(message))) {
+  process.stderr.write(
+    `[harness-node] type-of-service guard enabled (bundled undici ${process.versions.undici})\n`
+  )
 }
 
 if (!dshEntryPath) {
