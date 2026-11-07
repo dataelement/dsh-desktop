@@ -185,13 +185,30 @@ function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`
 }
 
+/**
+ * The physical copy of a packaged pnpm path. The archive member spelling is
+ * readable only through Electron's asar-aware fs; the shims and node-mode
+ * children that execute pnpm see `app.asar` as a regular file and the OS
+ * answers ENOTDIR. The build unpacks pnpm (asarUnpack), so rewrite the
+ * archive segment to its `app.asar.unpacked` sibling — development installs
+ * carry no archive segment and pass through unchanged.
+ */
+function unpackedPnpmPath(path) {
+  const separator = path.includes('\\') && !path.includes('/') ? '\\' : '/'
+  const segments = path.split(/[\\/]/u)
+  const archiveAt = segments.lastIndexOf('app.asar')
+  if (archiveAt === -1) return path
+  segments[archiveAt] = 'app.asar.unpacked'
+  return segments.join(separator)
+}
+
 export function resolvePnpmEntry(requireFrom = import.meta.url) {
   const require = createRequire(requireFrom)
   // pnpm intentionally maps its package root export to package.json instead of
   // exporting the package.json subpath. Resolving the root therefore gives us
   // the stable package anchor without reaching through an unexported path.
   const manifest = require.resolve('pnpm')
-  const root = dirname(manifest)
+  const root = unpackedPnpmPath(dirname(manifest))
   const candidates = [join(root, 'bin', 'pnpm.cjs'), join(root, 'bin', 'pnpm.mjs')]
   const entry = candidates.find((candidate) => existsSync(candidate))
   if (!entry) throw new Error('The packaged pnpm entry was not found.')

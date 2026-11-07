@@ -58,6 +58,22 @@ describe('desktop plugin market installer', () => {
     expect(resolvePnpmEntry()).toMatch(/node_modules[/\\]pnpm[/\\]bin[/\\]pnpm\.(c|m)js$/u)
   })
 
+  it('resolves the packaged pnpm entry to the unpacked copy node-mode children can execute', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'dsh-pnpm-'))
+    const archivePackage = join(base, 'app.asar', 'node_modules', 'pnpm')
+    const unpackedPackage = join(base, 'app.asar.unpacked', 'node_modules', 'pnpm')
+    for (const root of [archivePackage, unpackedPackage]) {
+      await mkdir(join(root, 'bin'), { recursive: true })
+      await writeFile(join(root, 'package.json'), '{"name":"pnpm","main":"package.json"}', 'utf8')
+      await writeFile(join(root, 'bin', 'pnpm.cjs'), '', 'utf8')
+    }
+    // require.resolve('pnpm') from inside the archive returns the package.json
+    // anchor; the entry must be the physical app.asar.unpacked sibling.
+    const requireFrom = pathToFileURL(join(archivePackage, 'loader.js')).href
+    const expected = join(await realpath(unpackedPackage), 'bin', 'pnpm.cjs')
+    expect(resolvePnpmEntry(requireFrom)).toBe(expected)
+  })
+
   it('removes only Desktop’s exact legacy pnpm settings and preserves sensitive config bytes', () => {
     const npmrc = [
       '# user configuration',
