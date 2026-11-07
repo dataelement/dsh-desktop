@@ -11,6 +11,11 @@ window.__ModuleLoader__.load({
     const INSTALL_PATH = '/dsh-desktop/market-installer/install'
     const UNINSTALL_PATH = '/dsh-desktop/market-installer/uninstall'
     const MARKET_REPOSITORY = 'https://github.com/dsh-market/dsh-market'
+    // A Harness restart can leave a same-origin fetch pending indefinitely
+    // (the renderer keeps the pre-restart connection). Without a deadline the
+    // installer section waits forever: no status, no error, a disabled button,
+    // and a click that appears dead (#831).
+    const REQUEST_TIMEOUT_MS = 10_000
 
     const en = {
       nav: 'Plugin market',
@@ -26,6 +31,8 @@ window.__ModuleLoader__.load({
       restart: 'Restart Harness',
       restarting: 'Restarting…',
       retry: 'Try again',
+      checking: 'Checking plugin market state…',
+      checkingHint: 'Reading the status from Harness. If the request stalls, it times out and you can try again.',
       incomplete: 'The previous installation is incomplete. Run the installer again to repair it.',
       failed: 'Plugin market could not be installed.',
       statusFailed: 'Could not read installation status.',
@@ -62,6 +69,8 @@ window.__ModuleLoader__.load({
       restart: '重启 Harness',
       restarting: '正在重启…',
       retry: '重试',
+      checking: '正在检查插件市场状态…',
+      checkingHint: '正在从宿主读取状态。请求停滞时会自动超时，之后可以重试。',
       incomplete: '上一次安装没有完成，请重新运行安装以修复。',
       failed: '插件市场安装失败。',
       statusFailed: '无法读取安装状态。',
@@ -197,8 +206,23 @@ window.__ModuleLoader__.load({
         restart && React.createElement('button', { className: 'dshDesktopMarketButton dshDesktopMarketSecondary', type: 'button', disabled: busy, onClick: restartHarness }, t('builtInImageRestart')))
     }
 
+    async function fetchWithTimeout(path, options = {}, timeout = REQUEST_TIMEOUT_MS) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeout)
+      try {
+        return await fetch(path, { ...options, signal: controller.signal })
+      } catch (failure) {
+        if (failure && failure.name === 'AbortError') {
+          throw new Error(`request timed out after ${Math.round(timeout / 1000)}s`)
+        }
+        throw failure
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
     async function readStatus() {
-      const response = await fetch(STATUS_PATH, {
+      const response = await fetchWithTimeout(STATUS_PATH, {
         method: 'GET',
         credentials: 'same-origin',
         cache: 'no-store'
@@ -573,7 +597,7 @@ window.__ModuleLoader__.load({
           recommendedVersion: current?.recommendedVersion || 'latest'
         }))
         try {
-          const response = await fetch(INSTALL_PATH, {
+          const response = await fetchWithTimeout(INSTALL_PATH, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { accept: 'application/json' }
@@ -695,7 +719,30 @@ window.__ModuleLoader__.load({
                         )
                       : null
                   )
-                : null,
+                : !status && !error
+                  ? React.createElement(
+                      'div',
+                      { className: 'dshDesktopMarketStatus' },
+                      React.createElement(
+                        'div',
+                        { className: 'dshDesktopMarketBusy' },
+                        React.createElement('span', {
+                          className: 'dshDesktopMarketSpinner',
+                          'aria-hidden': 'true'
+                        }),
+                        React.createElement(
+                          'span',
+                          { className: 'dshDesktopMarketStatusTitle' },
+                          t('checking')
+                        )
+                      ),
+                      React.createElement(
+                        'p',
+                        { className: 'dshDesktopMarketStatusDetail' },
+                        t('checkingHint')
+                      )
+                    )
+                  : null,
           React.createElement(
             'div',
             { className: 'dshDesktopMarketActions' },
