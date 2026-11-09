@@ -205,7 +205,7 @@ describe('the market install boundary', () => {
     ))
 
     expect(result.exitCode).toBe(0)
-    expect(npmrc).toContain('registry=https://mirrors.cloud.tencent.com/npm/')
+    expect(npmrc).toContain('registry=https://registry.npmmirror.com/')
   })
 
   it('passes release-age overrides and refuses to promote an install with blocked scripts', async () => {
@@ -572,7 +572,7 @@ describe('the market install boundary', () => {
       ])
     )
     // Pinned to the market's own registry, exactly as the generation path is.
-    expect(calls[0].options.env.npm_config_registry).toBe('https://mirrors.cloud.tencent.com/npm')
+    expect(calls[0].options.env.npm_config_registry).toBe('https://registry.npmmirror.com')
     // No generation artifacts: desired.json untouched, entry stays a real dir.
     expect(await readDesired(home)).toEqual([])
     expect((await lstat(join(profile, 'node_modules', 'dshmarket'))).isSymbolicLink()).toBe(false)
