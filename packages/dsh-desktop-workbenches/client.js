@@ -1418,6 +1418,7 @@ window.__ModuleLoader__.load({
         const current = this.currentSession()
         if (current === this.lastSession) return
         this.lastSession = current
+        if (current) this.setMarketOpen(false)
         ++this.navigation
         const owner = workbenchPreference.getSnapshot() && current && this.state.sessionBindings[current]
         if (!owner) this.rememberNativeSession(current)

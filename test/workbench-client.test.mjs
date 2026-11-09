@@ -631,6 +631,21 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('does not restore the market after navigating to an ordinary session', async () => {
+    const { service, ctx, request, list } = await fixture()
+    service.showMarket()
+    selectIn(list, 'old')
+    service.selectionChanged()
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBeNull()
+    expect(service.getSnapshot().marketOpen).toBe(false)
+
+    const reloaded = new Workbenches(ctx, request)
+    await reloaded.load()
+    expect(reloaded.getSnapshot().marketOpen).toBe(false)
+    service.dispose()
+    reloaded.dispose()
+  })
+
   it('refreshes the catalog without changing navigation or persisted workbench state', async () => {
     const { service, request } = await fixture(boundState())
     service.setMarketOpen(true)
