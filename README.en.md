@@ -104,9 +104,19 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | Signed and notarized DMG/ZIP | Supported |
 | Windows x64 | Code-signed NSIS installer | Supported |
 | Windows ARM64 | — | Not currently supported |
-| Linux | — | Not currently supported |
+| Linux x64 | Unsigned deb / AppImage built from source | Supported ([build guide](docs/linux-port.md)) |
 
 Harness includes target-native dependencies, so every release artifact is built on the matching operating system and architecture.
+
+Linux x64 builds on Ubuntu 24.04:
+
+```bash
+npm ci
+npm run package:linux    # dist/dsh-desktop-linux-amd64.deb and .AppImage
+sudo dpkg -i dist/dsh-desktop-linux-amd64.deb
+```
+
+Both packages are unsigned. The Linux build ships without the Office runtime and PPT template preview; everything else uses the same tree as macOS and Windows. See the [Linux port guide](docs/linux-port.md).
 
 ## Development and architecture
 

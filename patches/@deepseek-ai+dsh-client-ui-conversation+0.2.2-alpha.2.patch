@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 00c292ffb9..a4d5467f08 100644
+index 00c292f..cbadbff 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -19999,12 +19999,13 @@ window.__ModuleLoader__.load({
@@ -25,7 +25,25 @@ index 00c292ffb9..a4d5467f08 100644
  			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow",
  			"root": "wSkVaW_root",
  			"scrollBody": "wSkVaW_scrollBody",
-@@ -20495,12 +20497,17 @@ window.__ModuleLoader__.load({
+@@ -20108,10 +20110,15 @@ window.__ModuleLoader__.load({
+ 				event.currentTarget.toggleAttribute("data-dragging", true);
+ 			}, []);
+ 			const onPointerMove = (0, react.useCallback)((event) => {
+-				if (!dragging.current) return;
+-				if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
++				// The reveal line is placed by this variable, and its CSS reads the
++				// variable on hover as well as while dragging. This handler used to
++				// write it only once a drag was live, so hovering showed the line at
++				// the fallback 50% — or wherever the last drag left it — until the
++				// next drag refreshed it.
+ 				const box = event.currentTarget.getBoundingClientRect();
+ 				event.currentTarget.style.setProperty("--dsh-width-handle-pointer-y", `${event.clientY - box.top}px`);
++				if (!dragging.current) return;
++				if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+ 				latest.current = event.clientX;
+ 				frame.current ??= requestAnimationFrame(() => {
+ 					frame.current = null;
+@@ -20495,12 +20502,17 @@ window.__ModuleLoader__.load({
  					sessionId === void 0 ? null : (0, react_jsx_runtime.jsx)("div", {
  						className: ConversationRoot_module_css_default.heroOptions,
  						children: renderSlot("conversation.hero.options", {})
@@ -43,7 +61,7 @@ index 00c292ffb9..a4d5467f08 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -20522,7 +20529,8 @@ window.__ModuleLoader__.load({
+@@ -20522,7 +20534,8 @@ window.__ModuleLoader__.load({
  					}),
  					hero && heroWorkspaceRow,
  					zone !== void 0 && renderSlot("conversation.input.dock", zone),
@@ -53,7 +71,7 @@ index 00c292ffb9..a4d5467f08 100644
  				]
  			});
  			const composer = renderSlotChain("conversation.composer", {
-@@ -20566,7 +20574,8 @@ window.__ModuleLoader__.load({
+@@ -20566,7 +20579,8 @@ window.__ModuleLoader__.load({
  		* @returns the Conversation subtree.
  		*/
  		function ConversationPanel({ renderSlot }) {
@@ -63,7 +81,7 @@ index 00c292ffb9..a4d5467f08 100644
  		}
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationHeader.js
-@@ -21635,12 +21644,14 @@ window.__ModuleLoader__.load({
+@@ -21635,12 +21649,14 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
  		const css$1 = ".uV2eYG_root{padding:0 var(--dsh-composer-side-clearance) 4px;flex-direction:column;align-items:center;display:flex}.uV2eYG_dock{justify-content:center;align-items:center;gap:12px;max-width:100%;padding-top:4px;display:flex}.uV2eYG_hero .uV2eYG_dock:empty{display:none}.uV2eYG_hero{padding:0 var(--dsh-composer-side-clearance)}.uV2eYG_notice{width:100%;max-width:var(--dsh-composer-card-max-width);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);margin-bottom:6px;padding:4px 8px;font-size:12px;line-height:18px}.uV2eYG_card{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);--dsw-elevation-stroke-color:var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-panel);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-elevation-soft);font-size:var(--dsh-content-font-size,14px);line-height:calc(24px + var(--dsh-content-font-delta,0px));--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;flex-direction:column;gap:12px;padding-top:8px;display:flex;position:relative}@media (pointer:coarse){.uV2eYG_card{font-size:max(16px, var(--dsh-content-font-size,14px))}}.uV2eYG_cardWorkspaceTrigger{--dsw-elevation-stroke-color:transparent;cursor:pointer}.uV2eYG_cardWorkspaceTrigger:after{content:\"\";box-sizing:border-box;border-radius:var(--dsw-radius-panel);color:var(--dsw-alias-border-l4);pointer-events:none;border:1px dashed;transition:color .1s;position:absolute;inset:0}.uV2eYG_cardWorkspaceTrigger :disabled{pointer-events:none}@media (hover:hover){.uV2eYG_cardWorkspaceTrigger:hover:after{color:var(--dsw-alias-state-business-primary)}}.uV2eYG_accessory{align-items:center;gap:8px;padding:10px 12px 0;display:flex}.uV2eYG_overlayAnchor{height:0;position:absolute;inset:0 0 auto}.uV2eYG_scroll{max-height:var(--dsh-composer-text-max-height);margin-right:4px;overflow-y:auto}.uV2eYG_scroll::-webkit-scrollbar-track{margin-top:8px}.uV2eYG_grow{position:relative}.uV2eYG_pending{corner-shape:round;background:var(--dsw-alias-state-business-primary);border-radius:50%;width:8px;height:8px;animation:1s ease-in-out infinite alternate uV2eYG_input-pending}@keyframes uV2eYG_input-pending{0%{opacity:.35}to{opacity:1}}.uV2eYG_input{box-sizing:border-box;min-height:36px;font-family:var(--dsw-font-family);font-size:inherit;line-height:inherit;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary);caret-color:var(--dsw-alias-state-business-primary);outline:none;padding:4px 8px 0 14px}.uV2eYG_input p{margin:0}.uV2eYG_input p:last-child:after{content:var(--dsh-composer-hint);color:var(--dsw-alias-label-caption)}.uV2eYG_input[data-composer-composing] p:last-child:after{content:none}.uV2eYG_input[data-composer-chip-selected]{caret-color:#0000}.uV2eYG_input[data-composer-composing]+.uV2eYG_placeholder{visibility:hidden}.uV2eYG_placeholder{color:var(--dsw-alias-label-caption);white-space:nowrap;text-overflow:ellipsis;pointer-events:none;user-select:none;position:absolute;inset:4px 8px auto 14px;overflow:hidden}.uV2eYG_inputDisabled{color:var(--dsw-alias-label-tertiary);cursor:not-allowed}.uV2eYG_input[aria-haspopup=menu]{cursor:pointer}.uV2eYG_hero .uV2eYG_input{min-height:52px}.uV2eYG_hero .uV2eYG_placeholder{white-space:normal;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;display:-webkit-box}.uV2eYG_row{flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:2px 8px 6px;display:flex;container-type:inline-size}.uV2eYG_row[data-model-compact]{--dsh-composer-model-text-display:none;--dsh-composer-model-icon-display:block}.uV2eYG_tools,.uV2eYG_modes,.uV2eYG_trailing{align-items:center;min-width:0;display:flex}.uV2eYG_tools,.uV2eYG_modes{gap:12px}.uV2eYG_trailing{flex:none;gap:12px;margin-left:auto}@container (width<=560px){.uV2eYG_tools,.uV2eYG_modes,.uV2eYG_trailing{gap:8px}}.uV2eYG_add{corner-shape:round;background:var(--dsw-specific-selector);width:28px;height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;display:grid}@media (hover:hover){.uV2eYG_add:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-solid)}}.uV2eYG_add:disabled{opacity:.5;cursor:default}.uV2eYG_select{border-radius:var(--dsw-radius-sm);max-width:220px;height:28px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer;appearance:none;background-color:#0000;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");background-position:right 4px center;background-repeat:no-repeat;background-size:12px 12px;border:none;outline:none;padding:0 20px 0 8px;font-size:13px;font-weight:500;line-height:20px}@media (hover:hover){.uV2eYG_select:hover:not(:disabled){background-color:var(--dsw-alias-interactive-bg-hover)}}.uV2eYG_select:disabled{opacity:.5;cursor:default}.uV2eYG_primary{corner-shape:round;background:var(--dsw-alias-button-info-fill);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}@media (hover:hover){.uV2eYG_primary:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}}.uV2eYG_primary:disabled{opacity:.4;cursor:default}.uV2eYG_primary[data-sending]:disabled{opacity:1;cursor:progress}.uV2eYG_sendingSpinner{animation:.8s linear infinite uV2eYG_input-sending}@media (prefers-reduced-motion:reduce){.uV2eYG_sendingSpinner{animation-duration:2.4s}}@keyframes uV2eYG_input-sending{to{transform:rotate(360deg)}}.uV2eYG_retry{border-radius:var(--dsw-radius-sm);color:inherit;cursor:pointer;background:0 0;border:1px solid;margin-left:8px;padding:1px 8px;font-size:12px}.uV2eYG_standardControls{align-items:center;gap:12px;min-width:0;display:flex}.uV2eYG_tools[hidden],.uV2eYG_standardControls[hidden]{display:none}.uV2eYG_trailingActive{flex:1;margin-left:0}.uV2eYG_activity{flex:none;align-items:center;display:flex}.uV2eYG_activity:empty{display:none}.uV2eYG_activityExpanded{flex:1;min-width:0}";
@@ -79,7 +97,7 @@ index 00c292ffb9..a4d5467f08 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -21663,6 +21674,7 @@ window.__ModuleLoader__.load({
+@@ -21663,6 +21679,7 @@ window.__ModuleLoader__.load({
  			"pending": "uV2eYG_pending",
  			"placeholder": "uV2eYG_placeholder",
  			"primary": "uV2eYG_primary",
@@ -87,7 +105,7 @@ index 00c292ffb9..a4d5467f08 100644
  			"retry": "uV2eYG_retry",
  			"root": "uV2eYG_root",
  			"row": "uV2eYG_row",
-@@ -21690,7 +21702,7 @@ window.__ModuleLoader__.load({
+@@ -21690,7 +21707,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -96,7 +114,7 @@ index 00c292ffb9..a4d5467f08 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -21963,10 +21975,6 @@ window.__ModuleLoader__.load({
+@@ -21963,10 +21980,6 @@ window.__ModuleLoader__.load({
  								"data-composer-overlay": true,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -107,7 +125,7 @@ index 00c292ffb9..a4d5467f08 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -21978,12 +21986,19 @@ window.__ModuleLoader__.load({
+@@ -21978,12 +21991,19 @@ window.__ModuleLoader__.load({
  								onRetryFile: (id) => {
  									retryFileUpload?.(id);
  								},
@@ -127,7 +145,7 @@ index 00c292ffb9..a4d5467f08 100644
  							(0, react_jsx_runtime.jsx)(DraftEditor, {
  								classNames: InputBar_module_css_default,
  								editor,
-@@ -21998,6 +22013,8 @@ window.__ModuleLoader__.load({
+@@ -21998,6 +22018,8 @@ window.__ModuleLoader__.load({
  								onWorkspaceKeyDown,
  								hint,
  								showPlaceholder: draft === "" && attachments.length === 0 && !claimActive
@@ -136,7 +154,7 @@ index 00c292ffb9..a4d5467f08 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								ref: rowRef,
-@@ -22148,8 +22165,7 @@ window.__ModuleLoader__.load({
+@@ -22148,8 +22170,7 @@ window.__ModuleLoader__.load({
  					}),
  					(0, react_jsx_runtime.jsxs)("div", {
  						className: InputBar_module_css_default.dock,
@@ -146,7 +164,7 @@ index 00c292ffb9..a4d5467f08 100644
  							useProjection,
  							t
  						})]
-@@ -22765,6 +22781,14 @@ window.__ModuleLoader__.load({
+@@ -22765,6 +22786,14 @@ window.__ModuleLoader__.load({
  					"conversation.hero.options": {
  						kind: "list",
  						scope: "session"
@@ -161,7 +179,7 @@ index 00c292ffb9..a4d5467f08 100644
  					}
  				},
  				slots: {
-@@ -22900,6 +22924,10 @@ window.__ModuleLoader__.load({
+@@ -22900,6 +22929,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -172,7 +190,7 @@ index 00c292ffb9..a4d5467f08 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -22936,6 +22964,7 @@ window.__ModuleLoader__.load({
+@@ -22936,6 +22969,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
  						retryFileUpload: void 0,
@@ -180,7 +198,7 @@ index 00c292ffb9..a4d5467f08 100644
  						toggleCommandMenu: void 0,
  						stop: void 0,
  						hooks: {
-@@ -23004,6 +23033,11 @@ window.__ModuleLoader__.load({
+@@ -23004,6 +23038,11 @@ window.__ModuleLoader__.load({
  						retryFileUpload: (id) => {
  							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
  						},
@@ -192,7 +210,7 @@ index 00c292ffb9..a4d5467f08 100644
  						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
-@@ -23036,10 +23070,7 @@ window.__ModuleLoader__.load({
+@@ -23036,10 +23075,7 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",
@@ -205,7 +223,7 @@ index 00c292ffb9..a4d5467f08 100644
  				yield registerConversationRoot();
  				yield registerConversationContent();
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 98ebb233c1..1d430aecd7 100644
+index 98ebb23..1d430ae 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -83,6 +83,8 @@ export interface ComposerAttachmentsOwnerProps {
@@ -297,7 +315,7 @@ index 98ebb233c1..1d430aecd7 100644
  export interface ComposerChainProps {
      /** Current Session identity used by temporary business-owned entries. */
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
-index 046ea88c62..1b46f8d619 100644
+index 046ea88..1b46f8d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
 @@ -5,5 +5,5 @@ import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-
@@ -310,7 +328,7 @@ index 046ea88c62..1b46f8d619 100644
 +export declare function ConversationPanel({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlots<'main.conversation' | 'desktop.workbench.frame'>): import("react").ReactNode;
 +//# sourceMappingURL=ConversationPanel.d.ts.map
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts
-index bd93dea409..1da5fbb51e 100644
+index bd93dea..1da5fbb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts
 @@ -14,5 +14,5 @@

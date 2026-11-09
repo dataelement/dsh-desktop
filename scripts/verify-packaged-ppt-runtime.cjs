@@ -90,6 +90,13 @@ async function verifyRuntime(appRoot) {
 }
 
 module.exports = async function verifyPackagedPptRuntime(context) {
+  // Preview rendering goes through LibreOfficeKit, whose native packages ship
+  // for macOS and Windows only. The Linux build carries the wasm kit and the
+  // rest of the PPT runtime; docs/linux-port.md records the gap.
+  if (process.platform === 'linux') {
+    console.log('PPT runtime: LibreOfficeKit has no Linux native package; skipping the preview gate')
+    return
+  }
   const product = context.packager.appInfo.productFilename
   const macContents = path.join(context.appOutDir, product + '.app', 'Contents')
   // Verify through the path the Desktop loads packages from: app.asar, read by
@@ -106,7 +113,9 @@ module.exports = async function verifyPackagedPptRuntime(context) {
   // macOS runs Node work through its Helper, as the Desktop does.
   const executable = process.platform === 'win32'
     ? path.join(context.appOutDir, product + '.exe')
-    : path.join(macContents, 'Frameworks', product + ' Helper.app', 'Contents', 'MacOS', product + ' Helper')
+    : process.platform === 'darwin'
+      ? path.join(macContents, 'Frameworks', product + ' Helper.app', 'Contents', 'MacOS', product + ' Helper')
+      : path.join(context.appOutDir, product)
   if (!require('node:fs').existsSync(executable)) throw new Error('Cannot locate the packaged Electron executable')
   await execFileAsync(executable, [__filename, '--verify-runtime', appRoot], {
     cwd: path.dirname(appRoot),

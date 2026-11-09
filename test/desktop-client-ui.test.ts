@@ -52,7 +52,9 @@ describe('DSH Desktop client slot occupants', () => {
       props: { ...props, children }
     })
     const BrandWordmark = vi.fn()
+    const Button = vi.fn()
     const FishLogo = vi.fn()
+    const Menu = vi.fn()
     const plugin = definition!.factory((id) => {
       if (id === 'react') {
         return {
@@ -62,7 +64,7 @@ describe('DSH Desktop client slot occupants', () => {
         }
       }
       if (id === '@deepseek-ai/dsh-client-ui-primitives') {
-        return { BrandWordmark, FishLogo }
+        return { BrandWordmark, Button, FishLogo, Menu }
       }
       throw new Error(`Unexpected client dependency: ${id}`)
     })
@@ -84,7 +86,15 @@ describe('DSH Desktop client slot occupants', () => {
         return () => undefined
       }
     }
-    plugin.apply({ slots, locale: { register: () => () => undefined, bind: () => (key: string) => key }, effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() } })
+    const locale = {
+      register: vi.fn(() => () => undefined),
+      bind: vi.fn(() => (key: string) => key)
+    }
+    plugin.apply({
+      slots,
+      locale,
+      effect: (setup: () => (() => void) | undefined, _label?: string) => { disposeStyle = setup() }
+    })
 
     expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
@@ -97,7 +107,8 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.right.tab.document.unpreviewable',
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item',
-      'sidebar.workspaces.session.menu.item'
+      'sidebar.workspaces.session.menu.item',
+      'settings.action'
     ])
     const enterprise = registrations.find(({ config }) => config.name === 'settings.sidebar.footer')
     expect(enterprise?.config.id).toBe('desktop-enterprise-entry')
@@ -119,15 +130,13 @@ describe('DSH Desktop client slot occupants', () => {
     expect(sidebarName.type).toBe(BrandWordmark)
     expect(sidebarName.props.includeMark).toBe(false)
 
+    // The sidebar seat renders the shared whale primitive at the width the retired
+    // window mark occupied there, so the brand lockup keeps its size.
     const sidebarMark = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.mark'
     )!.component({ size: 24 }) as { type: unknown; props: Record<string, unknown> }
-    expect(sidebarMark.type).toBe('svg')
-    expect(sidebarMark.props.height).toBe(17)
-    const [markPath] = sidebarMark.props.children as Array<{ type: unknown; props: Record<string, unknown> }>
-    if (!markPath) throw new Error('Expected the sidebar brand SVG path')
-    expect(markPath.type).toBe('path')
-    expect(markPath.props.fill).toBe('currentColor')
+    expect(sidebarMark.type).toBe(FishLogo)
+    expect(sidebarMark.props.size).toBeCloseTo(27.1, 5)
 
     const heroMark = registrations.find(
       ({ config }) => config.name === 'conversation.hero.brand.mark'

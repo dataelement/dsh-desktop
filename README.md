@@ -104,9 +104,19 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | 已签名并通过公证的 DMG/ZIP | 支持 |
 | Windows x64 | 已完成代码签名的 NSIS 安装包 | 支持 |
 | Windows ARM64 | — | 当前不支持 |
-| Linux | — | 当前不支持 |
+| Linux x64 | 源码构建的未签名 deb / AppImage | 支持（[构建说明](docs/linux-port.md)） |
 
 Harness 包含目标平台原生依赖，因此每一种正式安装包都在对应操作系统与架构上构建。
+
+Linux x64 在 Ubuntu 24.04 上构建：
+
+```bash
+npm ci
+npm run package:linux    # dist/dsh-desktop-linux-amd64.deb 与 .AppImage
+sudo dpkg -i dist/dsh-desktop-linux-amd64.deb
+```
+
+两个包均未签名。Linux 版不包含 Office 运行时与 PPT 模板预览，其余功能与 macOS/Windows 共用同一套代码；细节见 [Linux port guide](docs/linux-port.md)。
 
 ## 开发与架构
 

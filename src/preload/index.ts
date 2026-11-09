@@ -3,6 +3,12 @@ import { createSidebarBrowserBridge } from './sidebar-browser'
 import { isHarnessBootPage } from '../shared/harness-boot'
 import { installHarnessBootBridge } from './harness-boot'
 import type { UpdateLocale } from './update-view'
+import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
+// Type-only on purpose: a value import shared with another preload entry makes
+// Rollup emit a chunk both of them `require` at load, and a sandboxed preload
+// cannot load files at all — the whole bridge disappears. main validates the
+// command at runtime (assertTrustedDesktopMenuEvent plus isDesktopMenuCommand).
+import type { DesktopMenuCommand } from '../shared/desktop-menu'
 import { setupDesktopStoragePersistence } from './desktop-storage'
 import { setupDesktopNotificationBridge } from './desktop-notification'
 import { mountDesktopUpdateUi } from './desktop-update-ui'
@@ -12,6 +18,11 @@ import { mountBootCover, shouldReleaseBootCover } from './boot-cover'
 import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'
 import { mountMacosWindowChrome } from './macos-window-chrome'
 import { createHostPathsBridge, HOST_PATHS_BRIDGE } from './host-paths'
+import { markLinuxPlatform, mountLinuxWindowChrome } from './linux-window-chrome'
+
+if (process.platform === 'linux') {
+  markLinuxPlatform(document)
+}
 
 if (process.platform === 'darwin') {
   const dispose = mountMacosWindowChrome(document, listener => {
@@ -320,6 +331,10 @@ function initializeUi(): void {
   if (process.platform === 'win32') {
     mountWindowsTitlebarLayout({ document, ipcRenderer })
   }
+  if (process.platform === 'linux') {
+    const dispose = mountLinuxWindowChrome({ document, ipcRenderer })
+    window.addEventListener('unload', dispose, { once: true })
+  }
   mountDesktopUpdateUi()
   syncBootCover()
   domObserver.observe(document.documentElement, {
@@ -524,7 +539,14 @@ contextBridge.exposeInMainWorld(
     setBuiltInImageGenerationEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled?: boolean; restartRequired?: boolean; reason?: string }> =>
       ipcRenderer.invoke('desktop-host-plugin:set-enabled', enabled),
     uninstallMarket: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('market:uninstall'),
-    openInFinder: (path: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:open-in-finder', path)
+    openInFinder: (path: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:open-in-finder', path),
+    // Runs one of the desktop's own menu commands, for the settings panel
+    // header that replaces the Linux menu bar. One named capability over a
+    // closed command set rather than a channel passthrough: main validates the
+    // command against the shared list and authorizes the sender
+    // (assertTrustedDesktopMenuEvent trusts only this window).
+    runMenuCommand: (command: DesktopMenuCommand): Promise<{ ok: boolean; zoomFactor?: number }> =>
+      ipcRenderer.invoke('desktop-menu:execute', command)
   })
 )
 

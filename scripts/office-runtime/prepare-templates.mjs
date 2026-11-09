@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { electronExecutable } from '../electron-node-loader.mjs'
 import { createTemplateLibrary } from '../../packages/dsh-desktop-office/lib/templates.js'
+import { officeTargetOrNull } from './prepare.mjs'
 
 const exec = promisify(execFile)
 const project = resolve(import.meta.dirname, '../..')
@@ -155,4 +156,9 @@ export async function prepareOfficeTemplates({ runtime = join(project, '.build/o
   console.log(`Office template resources prepared: ${fingerprint.slice(0, 12)}`)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await prepareOfficeTemplates()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // The templates are rendered by the bundled LibreOffice kit, which the lock
+  // only covers for macOS and Windows. Linux ships without them.
+  if (officeTargetOrNull() === null) console.log(`Office templates: skipped on ${process.platform}/${process.arch}; no payload in lock.json`)
+  else await prepareOfficeTemplates()
+}

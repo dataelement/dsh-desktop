@@ -2,15 +2,29 @@ import { describe, expect, it } from 'vitest'
 import { shouldKeepRunningInBackground } from '../src/main/close-to-tray'
 
 describe('shouldKeepRunningInBackground', () => {
-  it('keeps the Windows app running while it is not explicitly quitting', () => {
-    expect(shouldKeepRunningInBackground('win32', false)).toBe(true)
-  })
+  it.each(['win32', 'linux'] as const)(
+    'hides the window into the tray on %s while the app is not quitting',
+    (platform) => {
+      expect(shouldKeepRunningInBackground(platform, false, true)).toBe(true)
+    }
+  )
 
-  it('allows an explicit Windows quit to close the window', () => {
-    expect(shouldKeepRunningInBackground('win32', true)).toBe(false)
-  })
+  it.each(['win32', 'linux'] as const)(
+    'lets an explicit quit close the %s window',
+    (platform) => {
+      expect(shouldKeepRunningInBackground(platform, true, true)).toBe(false)
+    }
+  )
 
-  it.each(['darwin', 'linux'] as const)('does not change native %s close behavior', (platform) => {
-    expect(shouldKeepRunningInBackground(platform, false)).toBe(false)
+  it.each(['win32', 'linux'] as const)(
+    'keeps the native %s close behavior when no tray icon exists',
+    (platform) => {
+      expect(shouldKeepRunningInBackground(platform, false, false)).toBe(false)
+    }
+  )
+
+  it('does not change native darwin close behavior', () => {
+    expect(shouldKeepRunningInBackground('darwin', false, true)).toBe(false)
+    expect(shouldKeepRunningInBackground('darwin', false, false)).toBe(false)
   })
 })

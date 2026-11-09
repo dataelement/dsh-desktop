@@ -52,6 +52,17 @@ export const WINDOWS_SERIAL_SUITES = [
   'test/ptc-electron-helper.test.js'
 ]
 
+export const LINUX_UNSUPPORTED_SUITES = [
+  // lock.json carries no Linux Office/Python runtime and LibreOfficeKit has no
+  // Linux native package; the deb/AppImage have no updater channel either.
+  // docs/linux-port.md records the gaps.
+  'test/application-rollback-manager.test.ts',
+  'test/docx-template-fidelity.test.mjs',
+  'test/office-meeting-minutes.test.mjs',
+  'test/office-runtime.test.mjs',
+  'test/office-templates.test.mjs'
+]
+
 function resolveCliMode(argv = process.argv): string | undefined {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -85,6 +96,7 @@ export function resolveVitestConfig(mode = resolveCliMode()) {
   return {
     test: {
       include: ['test/**/*.{test,spec}.{ts,js,mjs}'],
+      exclude: process.platform === 'linux' ? LINUX_UNSUPPORTED_SUITES : [],
       // Native Intel runners and Windows CI contend for CPU and disk while integration suites
       // unpack archives and launch subprocesses (hitting EBUSY locks). Keep every test, but serialize files.
       fileParallelism: !(
