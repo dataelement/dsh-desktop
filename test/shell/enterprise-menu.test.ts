@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { ENTERPRISE_URL, aboutMenuLabel, aboutUsesPage, buildDarwinDesktopMenu, enterpriseMenuLabel, externalUrlToOpen, insertFileMenu, safeModeMenuLabel, shortcutFileMenuLabels, updateMenuLabel } from '../../src/main/shell/enterprise-menu'
+import { ENTERPRISE_URL, aboutMenuLabel, aboutUsesPage, buildDarwinDesktopMenu, enterpriseMenuLabel, externalUrlToOpen, insertFileMenu, safeModeMenuLabel, shortcutFileMenuLabels, standardMenuLabels, updateMenuLabel } from '../../src/main/shell/enterprise-menu'
 
 describe('enterprise entry', () => {
   it('uses the product enterprise page for both languages', () => {
@@ -25,6 +25,7 @@ describe('enterprise entry', () => {
     const openEnterprise = vi.fn()
     const showAbout = vi.fn()
     const checkForUpdates = vi.fn()
+    const restart = vi.fn()
     const restartSafeMode = vi.fn()
     const hide = vi.fn()
     const hideOthers = vi.fn()
@@ -36,6 +37,7 @@ describe('enterprise entry', () => {
       openEnterprise,
       showAbout,
       checkForUpdates,
+      restart,
       restartSafeMode,
       hide,
       hideOthers,
@@ -47,24 +49,33 @@ describe('enterprise entry', () => {
     expect(submenu[1]?.label).toBe(locale.startsWith('zh') ? '检查更新…' : 'Check for Updates…')
     expect(submenu[1]?.accelerator).toBe('CmdOrCtrl+U')
     expect(submenu[2]?.label).toBe(locale.startsWith('zh') ? '了解企业版' : 'Explore Enterprise')
-    expect(submenu[3]?.label).toBe(locale.startsWith('zh') ? '以安全模式重启…' : 'Restart as Safe Mode…')
+    expect(submenu[3]?.label).toBe(locale.startsWith('zh') ? '重启' : 'Restart')
+    expect(submenu[3]?.accelerator).toBe('CmdOrCtrl+Shift+R')
+    expect(submenu[4]?.label).toBe(locale.startsWith('zh') ? '以安全模式重启…' : 'Restart as Safe Mode…')
     submenu[0]?.click?.()
     submenu[1]?.click?.()
     submenu[2]?.click?.()
     submenu[3]?.click?.()
+    submenu[4]?.click?.()
     expect(showAbout).toHaveBeenCalledOnce()
     expect(checkForUpdates).toHaveBeenCalledOnce()
     expect(openEnterprise).toHaveBeenCalledOnce()
+    expect(restart).toHaveBeenCalledOnce()
     expect(restartSafeMode).toHaveBeenCalledOnce()
-    submenu[5]?.click?.()
     submenu[6]?.click?.()
     submenu[7]?.click?.()
-    submenu[9]?.click?.()
+    submenu[8]?.click?.()
+    submenu[10]?.click?.()
     expect(hide).toHaveBeenCalledOnce()
     expect(hideOthers).toHaveBeenCalledOnce()
     expect(unhideAll).toHaveBeenCalledOnce()
     expect(quit).toHaveBeenCalledOnce()
-    expect(menu.some(item => item.label === 'Edit')).toBe(true)
+    const standard = standardMenuLabels(locale)
+    expect(menu.map(item => item.label)).toEqual(['DSH Desktop Shell', standard.edit, standard.window])
+    expect(menu[1]?.submenu?.[0]).toMatchObject({ role: 'undo', label: standard.undo })
+    expect(menu[1]?.submenu?.[6]).toMatchObject({ role: 'selectAll', label: standard.selectAll })
+    expect(menu[2]?.submenu?.[0]).toMatchObject({ role: 'minimize', label: standard.minimize })
+    expect(menu[2]?.submenu?.[1]).toMatchObject({ role: 'close', label: standard.close })
     const withoutSafeMode = buildDarwinDesktopMenu({
       locale,
       appName: 'DSH Desktop Shell',
@@ -95,12 +106,19 @@ describe('enterprise entry', () => {
   it('installs the menu from the new shell', async () => {
     const source = await readFile(join(import.meta.dirname, '../../src/main/shell/app.ts'), 'utf8')
     expect(source.includes('buildDarwinDesktopMenu(')).toBe(true)
+    expect(source.includes('locale: menuLocale')).toBe(true)
+    expect(source.includes('savedDesktopMenuLocale(')).toBe(true)
+    expect(source.includes('menuLocale = resolved')).toBe(true)
     expect(source.includes('ENTERPRISE_URL')).toBe(true)
     expect(source.includes('externalUrlToOpen(')).toBe(true)
     expect(source.includes('registerUpdateHandlers(')).toBe(true)
     expect(source.includes('startUpdateManager(')).toBe(true)
     expect(source.includes('checkForUpdates(true)')).toBe(true)
     expect(source.includes('desktop:show-about')).toBe(true)
+    expect(source.includes('presentAbout(target, menuLocale)')).toBe(true)
+    expect(source.includes('locale: () => menuLocale')).toBe(true)
+    expect(source.includes('desktop:ui-locale')).toBe(true)
+    expect(source.includes('void restartDesktop()')).toBe(true)
     expect(source.includes('restartInSafeMode()')).toBe(true)
     expect(source.includes('shouldStartInSafeMode(process.argv)')).toBe(true)
     expect(source.includes('bundledHarnessVersion(')).toBe(true)

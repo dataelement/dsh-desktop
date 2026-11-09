@@ -156,7 +156,7 @@ index cc97db4..91dd95a 100644
  		/** Render the flow without adding a DOM parent or changing keyed row positions. */
  		const ChatFlow = (0, react.memo)(function ChatFlow({ entries, pendingInputs, lastInputTurn, deferCollapse, useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useConnectionState, useStore, actions, renderSlot, renderFactorySlot, t, useGroupAction, useGroupHeaderAction, cwd, openFile, inspectCall, forkAt, loadImage }) {
  			const nodeStore = useChat((snapshot) => snapshot.nodes);
-+			const hasMore = useChat((snapshot) => snapshot.hasMore);
++			const hasMore = useSession((snapshot) => snapshot.hasMore);
 +			const order = useChat((snapshot) => snapshot.order);
 +			const { leadingUserKey, leadingPendingId } = openingUserMessageTarget(hasMore, order, (key) => nodeStore.get(key)?.kind, pendingInputs);
 +			const messageFooter = leadingUserKey !== null || leadingPendingId !== null ? renderSlot("conversation.chat.userMessageFooter", { leading: true }) : null;

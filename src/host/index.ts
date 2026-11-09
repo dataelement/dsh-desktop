@@ -5,6 +5,7 @@ import { installOperationDiagnostics } from './operation-diagnostics'
 import { pluginOperationHost } from './upstream-api'
 import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { registerOfficeEngineResolution } from '../../build/office-engine-resolution.mjs'
 import { inspect } from 'node:util'
 import { StartupError, loadLayeredEnv, loadProfileDirectory, reportSkippedBundles } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
@@ -25,6 +26,10 @@ async function main(): Promise<void> {
   if (runtimeDir === undefined || projectDir === undefined) {
     throw new Error('dsh desktop host: runtime and project directories are required')
   }
+  // The packaged engine is spawned by the OS, so it has to resolve under
+  // app.asar.unpacked. This path only supplies the archive depth; bin.js is
+  // not executed. Outside a package the registration does nothing.
+  registerOfficeEngineResolution(join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
   const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
   reportSkippedBundles('dsh', profile)

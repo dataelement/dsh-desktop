@@ -268,4 +268,49 @@ describe('desktop update presentation at the IPC boundary', () => {
     confirm.click()
     expect(document.activeElement?.id).toBe('origin')
   })
+
+  it('closes either dialog from the corner and keeps only one open', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.showAbout()
+    const aboutClose = required(ui.aboutShadow.querySelector<HTMLButtonElement>('.dialog-close'))
+    expect(aboutClose.getAttribute('aria-label')).toBe('关闭')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toContain('版本切换')
+    aboutClose.click()
+    expect(ui.aboutShadow.querySelector('.about-card')).toBeNull()
+
+    ui.showAbout()
+    ui.emit(status('checking', { locale: 'zh', presentationId: 12 }))
+    expect(ui.aboutShadow.querySelector('.about-card')).toBeNull()
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('正在检查更新')
+    expect(ui.shadow.activeElement?.classList.contains('dialog-close')).toBe(false)
+    expect(ui.shadow.querySelector('style')?.textContent).toContain('.dialog-close:focus, .dialog-close:focus-visible { outline:none; }')
+    ui.emit(status('error', {
+      locale: 'zh',
+      presentationId: 12,
+      message: 'Desktop update service is unavailable'
+    }))
+    const updateDialog = required(ui.shadow.querySelector<HTMLElement>('[role="dialog"]'))
+    expect(updateDialog.textContent).toContain('更新失败')
+    expect(updateDialog.textContent).toContain('桌面更新服务不可用。')
+    expect(updateDialog.textContent).not.toContain('Desktop update service is unavailable')
+    expect(ui.shadow.activeElement?.textContent).toBe('重试')
+    required(updateDialog.querySelector<HTMLButtonElement>('.dialog-close')).click()
+    expect(ui.host.style.display).toBe('none')
+
+    ui.emit(status('error', { locale: 'en', presentationId: 13, message: 'Manual check failed' }))
+    expect(ui.shadow.querySelector('[role="dialog"]')).not.toBeNull()
+    ui.showAbout()
+    expect(ui.host.style.display).toBe('none')
+    expect(ui.aboutShadow.querySelector('.about-card')).not.toBeNull()
+  })
+
+  it('switches an open dialog when the desktop language changes', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.showAbout()
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'en')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toContain('Switch version')
+    expect(ui.aboutShadow.querySelector('.dialog-close')?.getAttribute('aria-label')).toBe('Close')
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'zh')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toContain('版本切换')
+  })
 })

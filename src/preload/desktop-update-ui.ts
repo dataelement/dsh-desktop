@@ -10,6 +10,7 @@ import {
   comparePreloadVersions,
   rollbackReleases,
   rollbackEmptyMessage,
+  presentedUpdateMessage,
   type UpdateLocale
 } from './update-view'
 import brandMark from '../../build/brand-mark.svg?raw'
@@ -93,6 +94,7 @@ function applyStatus(status: UpdateStatus, delivery: 'event' | 'snapshot' = 'eve
     dismissedVersion = null
     dismissedTransientPhase = null
     detailOpen = true
+    closeAbout()
   }
   const failedActiveUpdate = delivery === 'event' && status.phase === 'error' &&
     (accepting || installing || currentStatus?.phase === 'downloading' || currentStatus?.phase === 'downloaded')
@@ -103,6 +105,7 @@ function applyStatus(status: UpdateStatus, delivery: 'event' | 'snapshot' = 'eve
     dismissedVersion = null
     dismissedTransientPhase = null
     detailOpen = true
+    closeAbout()
   }
   if (status.phase === 'idle') detailOpen = false
   currentStatus = status
@@ -162,8 +165,9 @@ function render(): void {
 
   // The failure's own words beat ours, when it has any.
   const description = element('p', 'description')
+  const failureText = presentedUpdateMessage(status.message, locale)
   description.textContent =
-    status.phase === 'error' && status.message ? status.message : status.phase === 'up-to-date' ? (locale === 'zh' ? '当前已是最新版本' : 'You’re on the latest version') : !centered && status.phase === 'available' ? (releaseNotes?.split('\n').find(line => line.trim()) || headline.description) : headline.description
+    status.phase === 'error' && failureText ? failureText : status.phase === 'up-to-date' ? (locale === 'zh' ? '当前已是最新版本' : 'You’re on the latest version') : !centered && status.phase === 'available' ? (releaseNotes?.split('\n').find(line => line.trim()) || headline.description) : headline.description
   if (description.textContent) body.appendChild(description)
 
   if (centered && status.phase === 'available') {
@@ -265,17 +269,20 @@ function render(): void {
     body.appendChild(current)
   }
   card.appendChild(row)
+  if (centered) card.appendChild(closeButton(locale === 'zh' ? '关闭' : 'Close', dismissCurrent))
   const wasVisible = content.childElementCount > 0
   const root = content.getRootNode()
   const focused = root instanceof ShadowRoot ? root.activeElement : null
-  const focusedClass = focused instanceof HTMLElement ? focused.className : ''
+  const focusedInside = focused instanceof HTMLElement && content.contains(focused)
+  const focusedButtonClass = focused instanceof HTMLElement && focused.tagName === 'BUTTON' && !focused.classList.contains('dialog-close')
+    ? focused.className
+    : ''
   content.replaceChildren(card)
-  if (focusedClass) Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find(node => node.className === focusedClass)?.focus()
-  else if (centered && !wasVisible) {
-    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    card.tabIndex = -1
-    const focusTarget = card.querySelector<HTMLButtonElement>('button') || card
-    focusTarget.focus()
+  if (focusedButtonClass) {
+    Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find(node => node.className === focusedButtonClass)?.focus()
+  } else if (centered && (!wasVisible || focusedInside)) {
+    if (!wasVisible) previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    focusDialog(card)
   }
 }
 
@@ -374,6 +381,7 @@ function renderAbout(): void {
 
   const header = element('div', 'about-header')
   header.appendChild(appIcon())
+  header.appendChild(closeButton(zh ? '关闭' : 'Close', closeAbout))
   const switcher = element('div', 'switcher')
   const selectVersionBtn = button(zh ? '版本切换' : 'Switch version', 'version-switch')
   const switchIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -526,10 +534,30 @@ function button(label: string, className: string): HTMLButtonElement {
   return node
 }
 
+function focusDialog(card: HTMLElement): void {
+  const action = card.querySelector<HTMLButtonElement>('button:not(.dialog-close)')
+  if (action) {
+    action.focus()
+    return
+  }
+  card.tabIndex = -1
+  card.focus()
+}
+
+function closeButton(label: string, onClick: () => void): HTMLButtonElement {
+  const node = button('×', 'dialog-close')
+  node.setAttribute('aria-label', label)
+  node.addEventListener('click', event => {
+    event.stopPropagation()
+    onClick()
+  })
+  return node
+}
+
 const styles = `
   :host { color-scheme: light; }
   * { box-sizing: border-box; }
-  .card, .about-card { pointer-events:auto; width:100%; color:var(--dsw-alias-label-primary,#202124); background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l2,#e5e7eb); border-radius:16px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:calc(100vh - 48px); overflow:auto; overflow-wrap:anywhere; }
+  .card, .about-card { position:relative; pointer-events:auto; width:100%; color:var(--dsw-alias-label-primary,#202124); background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l2,#e5e7eb); border-radius:16px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:calc(100vh - 48px); overflow:auto; overflow-wrap:anywhere; }
   .row { display:flex; gap:12px; align-items:center; }
   .body { min-width:0; flex:1; }
   .centered .row { display:block; }
@@ -579,9 +607,12 @@ const styles = `
   .notification .body { overflow-wrap:anywhere; }
   .about-overlay { width:100%; }
   .about-card { overflow:visible; }
-  .about-card:focus { outline:none; }
+  .card:focus, .about-card:focus { outline:none; }
   @media (max-width:440px) { .notification .row { flex-wrap:wrap; } .notification .actions { margin-left:auto; } }
-  .about-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .dialog-close { position:absolute; top:12px; right:12px; z-index:1; display:grid; place-items:center; width:28px; height:28px; min-height:28px; padding:0; background:transparent; color:var(--dsw-alias-label-secondary,#666b73); font-size:18px; line-height:1; }
+  .dialog-close:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover,#f0f2f5); }
+  .dialog-close:focus, .dialog-close:focus-visible { outline:none; }
+  .about-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-right:36px; }
   .about-line { display:flex; align-items:center; flex-wrap:wrap; gap:3px; }
   .info { position:relative; background:transparent; padding:0 3px; color:inherit; min-height:24px; }
   .tooltip { display:none; position:absolute; right:0; bottom:100%; width:220px; padding:8px 12px; font-size:12px; line-height:18px; background:var(--dsw-alias-bg-layer-2,#f0f2f5); color:var(--dsw-alias-label-primary,#202124); border-radius:8px; box-shadow:0 3px 12px rgba(0,0,0,.12); }
@@ -602,7 +633,7 @@ const styles = `
   :host([data-dsh-theme="dark"]) .primary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover,#e6e8eb); }
   :host([data-dsh-theme="dark"]) button:focus-visible { outline-color:var(--dsw-alias-label-primary,#f3f4f6); }
   :host([data-dsh-theme="dark"]) .details { color:var(--dsw-alias-label-primary,#f3f4f6); }
-  :host([data-dsh-theme="dark"]) :is(.secondary,.details,.version-switch,.version-tag-btn):hover { background:var(--dsw-alias-interactive-bg-hover,rgba(255, 255, 255, .12)); }
+  :host([data-dsh-theme="dark"]) :is(.secondary,.details,.version-switch,.version-tag-btn,.dialog-close):hover { background:var(--dsw-alias-interactive-bg-hover,rgba(255, 255, 255, .12)); }
   :host([data-dsh-theme="dark"]) .progress { background:var(--dsw-alias-bg-layer-2,#34363b); }
   :host([data-dsh-theme="dark"]) .progressValue { background:var(--dsw-alias-button-primary-fill,#f9fafb); }
   @media (prefers-reduced-motion:reduce) { .spinner { animation:none; } }
@@ -624,14 +655,24 @@ function onUpdateStatus(_event: Electron.IpcRendererEvent, status: UpdateStatus)
 
 function onShowAbout(_event: Electron.IpcRendererEvent, info: AboutInfo): void {
   locale = info.locale
+  if (detailOpen) dismissCurrent()
   previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   aboutInfo = info
   aboutOpen = true
   versionPickerOpen = false
   renderAbout()
 }
+
+function onUiLocale(_event: Electron.IpcRendererEvent, next: unknown): void {
+  if (next !== 'zh' && next !== 'en') return
+  locale = next
+  if (aboutInfo) aboutInfo = { ...aboutInfo, locale: next }
+  render()
+  renderAbout()
+}
 ipcRenderer.on('updates:status-changed', onUpdateStatus)
 ipcRenderer.on('desktop:show-about', onShowAbout)
+ipcRenderer.on('desktop:ui-locale', onUiLocale)
 
 function closeAbout(): void {
   aboutOpen = false
@@ -718,6 +759,7 @@ window.addEventListener('unload', () => {
   window.removeEventListener('keydown', onKeydown)
   ipcRenderer.removeListener('updates:status-changed', onUpdateStatus)
   ipcRenderer.removeListener('desktop:show-about', onShowAbout)
+  ipcRenderer.removeListener('desktop:ui-locale', onUiLocale)
 }, { once: true })
 
 void ipcRenderer

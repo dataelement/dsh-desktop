@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { electronNodeExecutable } from '../../src/main/runtime/electron-node-executable'
 import { DesktopHostFatalError, DesktopHostProcess, redactHostOutput } from '../../src/main/shell/backend/host-process'
 
 const require = createRequire(import.meta.url)
@@ -31,8 +32,27 @@ describe('desktop host process', () => {
     await expect(host.start()).resolves.toEqual({ url: 'http://127.0.0.1:9/', injections: ['boot'] })
     expect(JSON.parse(await readFile(report, 'utf8'))).toEqual({
       home: join(directory, 'harness'),
-      profile: 'desktop'
+      profile: 'desktop',
+      execPath: electron
     })
+    await host.stop()
+  })
+
+  it('keeps the macOS Helper as its own executable', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
+    temporary.push(directory)
+    const report = join(directory, 'report.json')
+    const node = electronNodeExecutable(electron)
+    const host = new DesktopHostProcess({
+      node,
+      entry: fixture,
+      runtimeDir: directory,
+      projectDir: directory,
+      dshHome: directory,
+      environment: { FIXTURE_REPORT: report }
+    })
+    await host.start()
+    expect(JSON.parse(await readFile(report, 'utf8')).execPath).toBe(node)
     await host.stop()
   })
 
@@ -69,5 +89,6 @@ describe('shell boundaries', () => {
     expect(source.includes('../index')).toBe(false)
     expect(source.includes('DesktopFatalRecovery')).toBe(false)
     expect(source.includes('../recovery/fatal-entry')).toBe(true)
+    expect(source.includes('node: electronNodeExecutable(process.execPath)')).toBe(true)
   })
 })

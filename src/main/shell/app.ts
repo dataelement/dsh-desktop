@@ -16,7 +16,7 @@ import { RepairSessionStore } from '../state/repair-agent-sessions'
 import { LanMobileBridge } from '../mobile/lan-mobile-bridge'
 import { createFilePairingPinStore, pairingPinStorePath } from '../mobile/pairing-pin-store'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
-import { checkForUpdates, registerUpdateHandlers, startUpdateManager } from '../update/update-manager'
+import { checkForUpdates, getUpdateStatus, registerUpdateHandlers, startUpdateManager } from '../update/update-manager'
 import { aboutDetail, bundledHarnessVersion } from '../version-info'
 import {
   chosenHarnessLocale,
@@ -24,6 +24,7 @@ import {
   localePreferenceFromProfilePatch,
   localePreferenceFromSettings,
   resolveHarnessLocale,
+  selectHarnessLocale,
   type HarnessLocale
 } from '../application-locale'
 import { defaultWebHome, type WebHomePreview } from '../state/web-home-import'
@@ -295,8 +296,7 @@ function createWindow(
   return window
 }
 
-async function presentAbout(window: BrowserWindow): Promise<void> {
-  const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promise<void> {
   const desktopVersion = app.getVersion()
   const harnessVersion = bundledHarnessVersion(app.getAppPath())
   if (aboutUsesPage(window.webContents.getURL(), SCHEME)) {
@@ -365,6 +365,27 @@ function askWebImport(
   })
 }
 
+/** Desktop language for the menu: the live choice, then the saved profile, then the machine language. */
+async function savedDesktopMenuLocale(
+  dshHome: string,
+  safeMode: boolean,
+  reported: HarnessLocale | undefined
+): Promise<HarnessLocale> {
+  const profileName = safeMode ? SAFE_MODE_PROFILE : 'desktop'
+  const profilePreference = await readFile(join(dshHome, 'profiles', profileName, 'cordis.patch.yml'), 'utf8')
+    .then(localePreferenceFromProfilePatch)
+    .catch(() => undefined)
+  const settingsPreference = await readFile(join(dshHome, 'settings.yaml'), 'utf8')
+    .then(localePreferenceFromSettings)
+    .catch(() => undefined)
+  return selectHarnessLocale({
+    reported,
+    profilePreference,
+    settingsPreference,
+    preferredSystemLanguages: app.getPreferredSystemLanguages()
+  })
+}
+
 async function main(): Promise<void> {
   if (!app.requestSingleInstanceLock()) {
     app.quit()
@@ -380,14 +401,18 @@ async function main(): Promise<void> {
   app.on('will-quit', () => { loginShellAbort.abort() })
   await app.whenReady()
   let desktopWindow: BrowserWindow | undefined
-  registerUpdateHandlers({
-    locale: () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
-  })
+  let reportedLocale: HarnessLocale | undefined
+  let menuLocale: HarnessLocale = 'en'
+  let restartDesktop = async (): Promise<boolean> => false
+  registerUpdateHandlers({ locale: () => menuLocale })
   let shortcuts: DesktopShortcutController | undefined
+  const dshHome = harnessHome()
+  const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
+  menuLocale = await savedDesktopMenuLocale(dshHome, safeMode, reportedLocale)
   const refreshDarwinMenu = (): void => {
     if (process.platform !== 'darwin') return
     const template = insertFileMenu(buildDarwinDesktopMenu({
-      locale: app.getLocale(),
+      locale: menuLocale,
       appName: app.name,
       openEnterprise: () => {
         void shell.openExternal(ENTERPRISE_URL).catch((error: unknown) => { console.error(error) })
@@ -395,11 +420,12 @@ async function main(): Promise<void> {
       showAbout: () => {
         const target = desktopWindow
         if (target === undefined || target.isDestroyed()) return
-        void presentAbout(target).catch((error: unknown) => { console.error(error) })
+        void presentAbout(target, menuLocale).catch((error: unknown) => { console.error(error) })
       },
       checkForUpdates: () => {
         void checkForUpdates(true).catch((error: unknown) => { console.error(error) })
       },
+      restart: () => { void restartDesktop() },
       ...(shouldStartInSafeMode(process.argv) || process.env.DSH_DESKTOP_SAFE_MODE === '1'
         ? {}
         : { restartSafeMode: () => { restartInSafeMode() } }),
@@ -407,12 +433,10 @@ async function main(): Promise<void> {
       hideOthers: () => { Menu.sendActionToFirstResponder('hideOtherApplications:') },
       unhideAll: () => { Menu.sendActionToFirstResponder('unhideAllApplications:') },
       quit: () => { app.quit() }
-    }), shortcuts?.fileMenu(shortcutFileMenuLabels(app.getLocale())))
+    }), shortcuts?.fileMenu(shortcutFileMenuLabels(menuLocale)))
     Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
   }
   refreshDarwinMenu()
-  const dshHome = harnessHome()
-  const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   const development = !app.isPackaged
   // Product packages place the primary runtime at Resources/office-runtime/primary-runtime.
   const primaryRuntime = development
@@ -549,7 +573,9 @@ async function main(): Promise<void> {
   let hostEnvironment: NodeJS.ProcessEnv = process.env
   const backend = new DesktopBackendController(onFailure => {
     const host = new DesktopHostProcess({
-      node: process.execPath,
+      // Market installs re-exec this binary. The macOS Helper stays in Node mode;
+      // launching the app's main executable opens a terminal.
+      node: electronNodeExecutable(process.execPath),
       entry: hostEntry,
       runtimeDir,
       projectDir,
@@ -620,7 +646,6 @@ async function main(): Promise<void> {
   }
   const iconPath = existsSync(packagedPagePath('app-icon.png')) ? packagedPagePath('app-icon.png') : undefined
   const brandLogos = desktopBrandLogoPaths([runtimeDir, primaryRuntime])
-  let reportedLocale: HarnessLocale | undefined
   async function explicitDesktopLocale(): Promise<HarnessLocale | undefined> {
     const profileName = safeMode ? SAFE_MODE_PROFILE : 'desktop'
     const profilePreference = await readFile(join(dshHome, 'profiles', profileName, 'cordis.patch.yml'), 'utf8')
@@ -645,7 +670,17 @@ async function main(): Promise<void> {
   ipcMain.on(DESKTOP_IPC.localeChanged, (event, locale: unknown) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return
     const resolved = explicitHarnessLocale(locale)
-    if (resolved !== undefined) reportedLocale = resolved
+    if (resolved === undefined || resolved === menuLocale) {
+      if (resolved !== undefined) reportedLocale = resolved
+      return
+    }
+    reportedLocale = resolved
+    menuLocale = resolved
+    refreshDarwinMenu()
+    if (!window.isDestroyed()) {
+      window.webContents.send('desktop:ui-locale', menuLocale)
+      window.webContents.send('updates:status-changed', getUpdateStatus())
+    }
   })
   ipcMain.handle(DESKTOP_IPC.directoryPick, async event => {
     assertMain(event)
@@ -772,9 +807,8 @@ async function main(): Promise<void> {
     return bootSession.readBoot()
   })
   let restartingHarness = false
-  ipcMain.handle(DESKTOP_IPC.restartHarness, async event => {
-    assertMain(event)
-    if (restartingHarness || quitting) return { ok: false }
+  restartDesktop = async () => {
+    if (restartingHarness || quitting) return false
     restartingHarness = true
     try {
       await backend.stop()
@@ -782,13 +816,17 @@ async function main(): Promise<void> {
       setImmediate(() => {
         if (!window.isDestroyed()) window.webContents.reload()
       })
-      return { ok: true }
+      return true
     } catch (error: unknown) {
       console.error(error)
-      return { ok: false }
+      return false
     } finally {
       restartingHarness = false
     }
+  }
+  ipcMain.handle(DESKTOP_IPC.restartHarness, async event => {
+    assertMain(event)
+    return { ok: await restartDesktop() }
   })
   let waitForSafeModeAction: ((value: { action: unknown; selection: unknown }) => void) | undefined
   if (safeMode) {

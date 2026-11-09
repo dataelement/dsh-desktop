@@ -4,7 +4,8 @@ const report = process.env.FIXTURE_REPORT
 if (typeof report === 'string' && report.length > 0) {
   writeFileSync(report, JSON.stringify({
     home: process.env.DSH_HOME ?? '',
-    profile: process.env.DSH_DESKTOP_PROFILE ?? ''
+    profile: process.env.DSH_DESKTOP_PROFILE ?? '',
+    execPath: process.execPath
   }))
 }
 

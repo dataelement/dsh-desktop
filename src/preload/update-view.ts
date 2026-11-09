@@ -195,3 +195,11 @@ export function rollbackReleases(releases: AvailableRelease[], currentVersion: s
 export function rollbackEmptyMessage(locale: UpdateLocale): string {
   return locale === 'zh' ? '暂无可回退的历史版本' : 'No older versions available to roll back to'
 }
+
+/** Known updater failures stay in the Desktop language instead of the English exception text. */
+export function presentedUpdateMessage(message: string | undefined, locale: UpdateLocale): string | undefined {
+  if (message === 'Desktop update service is unavailable') {
+    return locale === 'zh' ? '桌面更新服务不可用。' : message
+  }
+  return message
+}

@@ -321,6 +321,9 @@ describe('opening PPT template card', () => {
       leadingUserKey: null,
       leadingPendingId: null
     })
+    const flow = sourceSlice(chat, 'const ChatFlow = (0, react.memo)(function ChatFlow', 'const running = useSession')
+    expect(flow).toContain('const hasMore = useSession((snapshot) => snapshot.hasMore)')
+    expect(flow).not.toContain('useChat((snapshot) => snapshot.hasMore)')
     expect(chat).toContain('renderSlot("conversation.chat.userMessageFooter", { leading: true })')
     expect(chat).toContain('footer: item.requestId === leadingPendingId ? messageFooter : null')
     expect(chat).toContain('const showBubble = text !== "" || extraBlocks.length > 0 || footer != null')
