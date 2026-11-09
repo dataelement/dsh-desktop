@@ -2,15 +2,19 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, beforeAll, expect, it } from 'vitest'
 import { DesktopHostFatalError, DesktopHostProcess } from '../../src/main/shell/backend/host-process'
 import { DESKTOP_SAFE_PRODUCT_PATCH } from '../../src/main/shell/product-patch'
+import { ensureHostBundle, hostBundle } from './host-bundle-helper'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron') as string
 const root = resolve(import.meta.dirname, '../..')
-const hostBundle = join(root, 'out-shell', 'main', 'host.js')
 const temporary: string[] = []
+
+beforeAll(async () => {
+  await ensureHostBundle()
+}, 120_000)
 
 afterEach(async () => {
   await Promise.all(temporary.splice(0).map(path => rm(path, { recursive: true, force: true })))
