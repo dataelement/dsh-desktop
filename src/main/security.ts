@@ -1,14 +1,15 @@
 import { shell, type BrowserWindow } from 'electron'
-import { isTrustedAppUrl } from './security-policy'
+import { isTrustedAppUrl, isTrustedPopupUrl } from './security-policy'
 import { installWindowPermissions } from './window-permissions'
 
 export function secureWindow(
   window: Pick<BrowserWindow, 'webContents'>,
   allowMicrophone = false,
-  controlledBrowser = false
+  controlledBrowser = false,
+  appUrls: () => readonly (string | undefined)[] = () => []
 ): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isTrustedAppUrl(url)) return { action: 'allow' }
+    if (isTrustedPopupUrl(url, [window.webContents.getURL(), ...appUrls()])) return { action: 'allow' }
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
     return { action: 'deny' }
   })

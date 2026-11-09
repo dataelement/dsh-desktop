@@ -12,14 +12,40 @@ function isHarnessUrl(rawUrl: string): boolean {
   }
 }
 
-export function isTrustedAppUrl(rawUrl: string): boolean {
+function parseUrl(rawUrl: string): URL | undefined {
   try {
-    const parsed = new URL(rawUrl)
-    if (parsed.protocol === 'file:' || parsed.protocol === 'dsh-recovery:' || parsed.protocol === 'dsh-desktop:') return true
+    return new URL(rawUrl)
   } catch {
-    return false
+    return undefined
   }
+}
+
+function isAppProtocol(url: URL): boolean {
+  return url.protocol === 'file:' || url.protocol === 'dsh-recovery:' || url.protocol === 'dsh-desktop:'
+}
+
+export function isTrustedAppUrl(rawUrl: string): boolean {
+  const parsed = parseUrl(rawUrl)
+  if (parsed === undefined) return false
+  if (isAppProtocol(parsed)) return true
   return isHarnessUrl(rawUrl)
+}
+
+/**
+ * An allowed popup becomes an in-app BrowserWindow that inherits the opener's
+ * preload, so a loopback address alone is not enough: only the opener's own
+ * origin and the running Harness backend qualify. Any other local server (a
+ * user's dev server, a local tool) is ordinary web content for the system browser.
+ */
+export function isTrustedPopupUrl(rawUrl: string, appUrls: readonly (string | undefined)[]): boolean {
+  const parsed = parseUrl(rawUrl)
+  if (parsed === undefined) return false
+  if (isAppProtocol(parsed)) return true
+  if (!isHarnessUrl(rawUrl)) return false
+  return appUrls.some((appUrl) => {
+    const app = appUrl === undefined ? undefined : parseUrl(appUrl)
+    return app !== undefined && isHarnessUrl(app.href) && app.origin === parsed.origin
+  })
 }
 
 export function canGrantWindowPermission(
