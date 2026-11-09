@@ -5,7 +5,7 @@ import {
   shouldOfferWebHomeImport,
   writeSkipDecision,
   type WebHomePreview
-} from '../state/web-home-import'
+} from '../profile/web-home-import'
 
 export type WebImportChoice = 'import' | 'skip'
 export type WebImportOfferResult = 'imported' | 'skipped' | 'not-offered' | 'cancelled'

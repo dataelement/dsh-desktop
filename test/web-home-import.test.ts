@@ -18,7 +18,7 @@ import {
   workspaceCopyMatches,
   workspaceRegistryDigest,
   writeSkipDecision
-} from '../src/main/state/web-home-import'
+} from '../src/main/profile/web-home-import'
 
 describe('web home import', () => {
   const homes: string[] = []

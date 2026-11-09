@@ -12,7 +12,7 @@ import { listGenerations, registryLayout } from '../packages/dsh-desktop-market-
 
 /**
  * These exercise the promotion and hoist logic with a stubbed install, so they
- * run anywhere. The real pnpm path is covered by scripts/generation-poc.mjs
+ * run anywhere. The real pnpm path is covered by the profile plugin command tests.
  * against live Market plugins on Windows.
  */
 describe('the generation installer', () => {

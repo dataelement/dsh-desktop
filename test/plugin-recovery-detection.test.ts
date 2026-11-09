@@ -2,11 +2,11 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { detectPluginRecovery } from '../src/main/plugin-recovery-detection'
-import { extractSlotConflictName } from '../src/main/runtime/harness-runtime'
+import { extractSlotConflictName } from '../src/main/recovery/harness-log'
 import {
   profilePackageJsonPath,
   resolveProfileRecoveryPlugins
-} from '../src/main/state/plugin-recovery'
+} from '../src/main/recovery/plugin-recovery'
 
 describe('plugin recovery detection', () => {
   const testDir = join(__dirname, '.temp-plugin-recovery-detection-test')

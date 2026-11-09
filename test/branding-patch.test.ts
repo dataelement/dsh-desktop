@@ -23,6 +23,6 @@ describe('DSH Desktop sidebar branding', () => {
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
     ) as { scripts: { postinstall: string } }
 
-    expect(packageJson.scripts.postinstall).toContain('node scripts/install-brand-assets.mjs')
+    expect(packageJson.scripts.postinstall).toContain('node scripts/release/install-brand-assets.mjs')
   })
 })

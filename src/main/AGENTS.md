@@ -4,8 +4,8 @@
 
 ## 模块边界
 
-- `index.ts` 负责当前正式壳的应用生命周期和组装；新的业务规则放入对应模块，避免继续堆叠 IPC handler、HTML 或文件操作实现。`shell/` 是移植中的新壳，不导入本目录的 `index.ts` 或 `update/`；致命失败只交给 `recovery/fatal-entry`，规则见 `shell/AGENTS.md`。`profile/` 保存 profile 数据和 `web` 到 `desktop` 的复制，规则见 `profile/AGENTS.md`。`recovery/` 接收壳层交来的致命失败，规则见 `recovery/AGENTS.md`。
-- `runtime/` 管 Harness 子进程；`state/` 管 Profile 和恢复；`update/` 管更新状态；`mobile/` 管配对和桥接；`enterprise/` 管企业登录、凭据和模型网关。模块不得反向导入 `index.ts`。
+- `shell/app.ts` 是正式包的主进程入口，由 `electron.vite.config.ts` 打成 `out/main/index.js`。新的业务规则放入对应模块，避免继续堆叠 IPC handler、HTML 或文件操作实现。致命失败只交给 `recovery/fatal-entry`，规则见 `shell/AGENTS.md`。`profile/` 保存 profile 数据和 `web` 到 `desktop` 的复制，规则见 `profile/AGENTS.md`。`recovery/` 接收壳层交来的致命失败，规则见 `recovery/AGENTS.md`。
+- Host 子进程入口在 `src/host/`，主进程侧的拉起在 `shell/backend/`。`update/` 管更新状态；`mobile/` 管配对和桥接；`enterprise/` 管企业登录、凭据和模型网关；`desktop-service/` 管登录项诊断。这些模块不得反向导入 `shell/app.ts`。
 - 可测试的决策与 Electron/文件系统副作用分离；共享协议放 `src/shared/`，不要让 preload 导入 main 实现。
 
 ## IPC 与安全

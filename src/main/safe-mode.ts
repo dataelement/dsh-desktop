@@ -1,5 +1,5 @@
-import type { ProfileCompatibilityIssue } from './state/profile-compatibility'
-import type { PluginHealthReport, PluginHealthStatus } from './state/plugin-market-check'
+import type { ProfileCompatibilityIssue } from './profile/profile-compatibility'
+import type { PluginHealthReport, PluginHealthStatus } from './recovery/plugin-market-check'
 
 export type SafeModeLocale = 'en' | 'zh'
 

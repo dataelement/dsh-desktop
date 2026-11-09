@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readDesired, registryLayout, writeDesired, writeGenerationMeta } from 'dsh-desktop-market-installer/generations/registry'
 
 const installMock = vi.hoisted(() => vi.fn())
-vi.mock('../src/main/runtime/profile-plugin-command', () => ({
+vi.mock('../src/main/profile/profile-plugin-command.ts', () => ({
   installProfileDependenciesWithDsh: installMock
 }))
 
-const { upgradeMarketInSharedTree, marketInstallPendingPath } = await import('../src/main/state/plugin-upgrade')
+const { upgradeMarketInSharedTree, marketInstallPendingPath } = await import('../src/main/profile/plugin-upgrade')
 
 const homes: string[] = []
 afterEach(async () => {
@@ -117,7 +117,7 @@ describe('upgradeMarketInSharedTree', () => {
   })
 
   it('retries a partially installed newer market instead of trusting its version', async () => {
-    const { ensureMarketBaseline } = await import('../src/main/state/market-baseline')
+    const { ensureMarketBaseline } = await import('../src/main/profile/market-baseline')
     const { home, profile, market, options } = await fixture()
     const before = await readFile(join(profile, 'package.json'), 'utf8')
     installMock.mockImplementationOnce(async () => {

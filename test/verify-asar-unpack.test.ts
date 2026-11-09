@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url)
 const asar = require('@electron/asar') as {
   createPackageWithOptions(src: string, dest: string, options: { unpack?: string }): Promise<void>
 }
-const { verifyAsarUnpack } = require('../scripts/verify-asar-unpack.cjs') as {
+const { verifyAsarUnpack } = require('../scripts/verify/verify-asar-unpack.cjs') as {
   verifyAsarUnpack(resourcesDir: string): void
 }
 

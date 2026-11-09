@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -9,7 +10,7 @@ import { DESKTOP_SAFE_PRODUCT_PATCH } from '../../src/main/shell/product-patch'
 const require = createRequire(import.meta.url)
 const electron = require('electron') as string
 const root = resolve(import.meta.dirname, '../..')
-const hostBundle = join(root, 'out-shell', 'main', 'host.js')
+const hostBundle = join(root, 'out', 'main', 'host.js')
 const temporary: string[] = []
 
 afterEach(async () => {
@@ -119,7 +120,25 @@ async function installOrdinary(pluginDirectory: string, marker: string): Promise
   await writeFile(join(directory, 'index.js'), `export const marker = ${JSON.stringify(marker)}\n`)
 }
 
+async function ensureHostBundle(): Promise<void> {
+  const sourceTime = (await stat(join(root, 'src/host/index.ts'))).mtimeMs
+  let builtTime = 0
+  try {
+    builtTime = (await stat(hostBundle)).mtimeMs
+  } catch {
+    builtTime = 0
+  }
+  if (builtTime >= sourceTime) return
+  await new Promise<void>((resolveBuild, reject) => {
+    execFile('npx', ['electron-vite', 'build'], { cwd: root, timeout: 180_000 }, error => {
+      if (error === null) resolveBuild()
+      else reject(error)
+    })
+  })
+}
+
 async function boot(home: string, input: { marker?: string, plugin?: string }): Promise<{ ok: boolean, diagnostic: string }> {
+  await ensureHostBundle()
   const profile = join(home, 'profiles', 'desktop')
   await mkdir(profile, { recursive: true })
   await writeFile(join(profile, 'package.json'), JSON.stringify({

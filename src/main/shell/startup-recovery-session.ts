@@ -1,4 +1,4 @@
-import { disableProfilePlugin } from '../state/plugin-disable'
+import { disableProfilePlugin } from '../profile/plugin-disable'
 import type { PluginRecoveryLocale } from '../plugin-recovery-view'
 import { readStartupRecoveryNavigation, startupRecoveryPageUrl, startupRecoveryViewModel } from './startup-recovery'
 

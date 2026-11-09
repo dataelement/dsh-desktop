@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { unresolvedPatchedIdentifiers } from '../scripts/check-patched-js-identifiers.mjs'
+import { unresolvedPatchedIdentifiers } from '../scripts/verify/check-patched-js-identifiers.mjs'
 import { createRequire } from 'node:module'
 import ts from 'typescript'
 import { expect, it } from 'vitest'

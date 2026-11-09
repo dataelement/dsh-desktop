@@ -8,7 +8,7 @@ vi.mock('electron', () => ({ protocol: { registerSchemesAsPrivileged: vi.fn(), h
 import { runSafeModeManager } from '../../src/main/shell/safe-mode-manager'
 import { DESKTOP_PROFILE, readSafeModeManagerAction, safeModePageUrl } from '../../src/main/shell/safe-mode-page'
 import { buildSafeModeViewModel } from '../../src/main/safe-mode'
-import { profileDirectoryName, profilePackageJsonPath } from '../../src/main/state/plugin-recovery'
+import { profileDirectoryName, profilePackageJsonPath } from '../../src/main/recovery/plugin-recovery'
 
 const temporary: string[] = []
 

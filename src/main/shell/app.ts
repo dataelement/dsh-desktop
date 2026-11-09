@@ -1,21 +1,21 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { DesktopStorageManager } from '../profile/desktop-storage'
 import { prepareGenerationsForLaunch } from '../profile/generation-launch'
 import { FATAL_REPORT_NAME, recordFatalFailure, redactFatalText } from '../recovery/fatal-entry'
 import { migrateWebProfile } from '../profile/profile-rename'
-import { appBundlePathFromExecutable, quarantineAppBundleLaunchAgents } from '../state/launch-agent-audit'
+import { appBundlePathFromExecutable, quarantineAppBundleLaunchAgents } from '../desktop-service/launch-agent-audit'
 import { DESKTOP_SCHEME, installDesktopProtocol } from '../desktop-protocol'
 import { normalRelaunchArguments, relaunchArguments, shouldStartInSafeMode } from '../safe-mode'
 import { RepairDrafts } from '../repair-drafts'
 import { RepairAgentService } from '../repair-agent'
-import { RepairSessionStore } from '../state/repair-agent-sessions'
+import { RepairSessionStore } from '../recovery/repair-agent-sessions'
 import { LanMobileBridge } from '../mobile/lan-mobile-bridge'
 import { createFilePairingPinStore, pairingPinStorePath } from '../mobile/pairing-pin-store'
-import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
+import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../recovery/safe-mode-profile'
 import { checkForUpdates, getUpdateStatus, registerUpdateHandlers, startUpdateManager } from '../update/update-manager'
 import { aboutDetail, bundledHarnessVersion } from '../version-info'
 import {
@@ -27,7 +27,8 @@ import {
   selectHarnessLocale,
   type HarnessLocale
 } from '../application-locale'
-import { defaultWebHome, type WebHomePreview } from '../state/web-home-import'
+import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
+import { developmentEnvironment } from '../development-environment'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
 import { desktopWindowChrome } from './window-chrome'
@@ -62,22 +63,31 @@ import { OperationJournal } from './operation-journal'
 import { pluginOperationDirectory, readRecentPluginOperations } from './plugin-operations'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report'
 import { runOperationReportJob, type OperationReportJobResult } from './operation-report-job'
-import { evaluatePluginMarketCompatibility, type PluginHealthReport } from '../state/plugin-market-check'
-import { listInstalledProfilePlugins } from '../state/plugin-recovery'
-import { upgradePluginToGeneration } from '../state/plugin-upgrade'
+import { evaluatePluginMarketCompatibility, type PluginHealthReport } from '../recovery/plugin-market-check'
+import { listInstalledProfilePlugins } from '../recovery/plugin-recovery'
+import { upgradePluginToGeneration } from '../profile/plugin-upgrade'
 import {
   cleanupVerifiedRemovalBackup,
   resolvePluginRemovalBackup,
   restorePluginRemovalBackup,
   snapshotPluginRemovalLedger
-} from '../state/plugin-removal'
-import { electronNodeExecutable } from '../runtime/electron-node-executable'
+} from '../profile/plugin-removal'
+import { electronNodeExecutable } from './backend/electron-node-executable'
 import { installedPluginVersion, pnpmEntryPath, upgradeTargets } from './plugin-maintenance'
 import { applyRepairNavigation, safeModeRepairPrompt, sidebarRepairPrompt } from './repair-session'
 import { runSafeModeManager } from './safe-mode-manager'
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME, assertDesktopSender } from './window/ipc'
 import { DesktopPlatformView, platformBounds } from './window/platform-view'
 import { authenticateWebHost, dispatchAppDocument } from './window/web-document'
+import { desktopFileUrl } from '../desktop-navigation'
+import {
+  applyPersistedGpuFallback,
+  attachBackgroundClose,
+  attachMainWindowRecovery,
+  DesktopStability,
+  handleDesktopHostFailure,
+  type PageRecovery
+} from './stability-session'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: SCHEME,
@@ -101,9 +111,37 @@ protocol.registerSchemesAsPrivileged([{
   }
 }])
 
+function desktopDevelopmentBuild(): boolean {
+  if (!app.isPackaged) return true
+  try {
+    const metadata = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as { dshDesktopChannel?: unknown }
+    return metadata.dshDesktopChannel === 'development'
+  } catch {
+    return false
+  }
+}
+
+function configureDesktopIdentity(): void {
+  const development = desktopDevelopmentBuild()
+  const environment = developmentEnvironment(development, 43129)
+  if (development) {
+    app.setName('DSH Desktop Dev')
+    app.setPath('userData', join(app.getPath('appData'), environment.profile))
+    return
+  }
+  app.setName('DSH Desktop')
+  // Keep the historical lowercase directory. Deriving it from the product name
+  // would hide the existing sessions on an ordinary upgrade.
+  app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
+}
+
+configureDesktopIdentity()
 app.setAppLogsPath()
+applyPersistedGpuFallback(app.getPath('userData'), app.commandLine, () => { app.disableHardwareAcceleration() })
 
 let quitting = false
+let pageRecovery: PageRecovery | undefined
+let windowsTray: Tray | undefined
 let backendReady = false
 let acceptRecoveryNavigation: ((url: string) => void) | undefined
 const rendererConsole = new RendererConsoleTail()
@@ -322,8 +360,21 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
 
 async function showSplash(window: BrowserWindow, pagePath: string): Promise<void> {
   if (window.isDestroyed()) return
-  if (!isSplashPageUrl(window.webContents.getURL(), pagePath)) await window.loadFile(pagePath)
+  if (!isSplashPageUrl(window.webContents.getURL(), pagePath) && !await loadDesktopPage(window, pathToFileURL(pagePath).href)) return
   if (!window.isDestroyed()) window.show()
+}
+
+async function loadDesktopPage(window: BrowserWindow, url: string): Promise<boolean> {
+  try {
+    if (pageRecovery === undefined) {
+      await window.loadURL(url)
+      return !window.isDestroyed()
+    }
+    return await pageRecovery.navigate(url)
+  } catch (error: unknown) {
+    console.error(error)
+    return false
+  }
 }
 
 function askWebImport(
@@ -355,9 +406,14 @@ function askWebImport(
     finish(parsed)
     return { ok: true }
   })
-  return window.loadFile(pagePath, {
-    query: { state: JSON.stringify(state), theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }
-  }).then(() => {
+  return loadDesktopPage(window, desktopFileUrl(pagePath, {
+    state: JSON.stringify(state),
+    theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+  })).then(loaded => {
+    if (!loaded) {
+      finish(undefined)
+      return choice
+    }
     window.show()
     return choice
   }).finally(() => {
@@ -451,6 +507,63 @@ async function main(): Promise<void> {
   let mainWindow: BrowserWindow | undefined
   const window = createWindow(preload, importPage, splashPage, safeMode ? [SAFE_MODE_RENDERER_FLAG] : [])
   desktopWindow = window
+  let stopRecoveredHost = async (): Promise<void> => {}
+  let releaseRecoveredPage = async (): Promise<void> => {}
+  const stability = new DesktopStability({
+    platform: process.platform,
+    userData: app.getPath('userData'),
+    quitting: () => quitting,
+    locale: () => menuLocale,
+    note: line => { console.error(line) },
+    stopHost: () => stopRecoveredHost(),
+    releasePage: () => releaseRecoveredPage(),
+    showMessageBox: options => window.isDestroyed() ? dialog.showMessageBox(options) : dialog.showMessageBox(window, options),
+    flushDiagnostics: async () => { await activeOperationJournal?.drain(500) },
+    relaunch: () => { app.relaunch() },
+    quit: () => { app.quit() },
+    probePage: async () => {
+      const contents = window.webContents
+      if (window.isDestroyed() || contents.isDestroyed() || contents.isCrashed() || !stability.harnessRendered) return false
+      return await contents.executeJavaScript('document.readyState === "complete" && document.body !== null') === true
+    }
+  })
+  stability.attachProcessWatch(app)
+  app.on('child-process-gone', (_event, details) => {
+    stability.handleGpuProcess({ type: details.type, reason: details.reason, exitCode: details.exitCode })
+  })
+  pageRecovery = attachMainWindowRecovery(window, stability, {
+    onError: error => { stability.processRecovery.start('window') },
+    note: line => { console.error(line) }
+  })
+  const showMainWindow = (): void => {
+    if (window.isDestroyed()) return
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
+  const refreshWindowsTray = (): void => {
+    if (process.platform !== 'win32') return
+    const icon = packagedPagePath(app.isPackaged ? 'icon.png' : 'app-icon.png')
+    if (!existsSync(icon)) return
+    if (windowsTray === undefined || windowsTray.isDestroyed()) {
+      windowsTray = new Tray(icon)
+      windowsTray.on('click', showMainWindow)
+    }
+    windowsTray.setToolTip(app.name)
+    windowsTray.setContextMenu(Menu.buildFromTemplate([
+      { label: menuLocale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: showMainWindow },
+      { type: 'separator' },
+      { label: menuLocale === 'zh' ? '退出' : 'Exit', click: () => { app.quit() } }
+    ]))
+  }
+  refreshWindowsTray()
+  let flushOnClose = (): void => {}
+  attachBackgroundClose(window, {
+    platform: process.platform,
+    quitting: () => quitting || stability.isQuitting(),
+    onClose: () => { flushOnClose() },
+    onHidden: refreshWindowsTray
+  })
   await showSplash(window, splashPage)
   mainWindow = window
   shortcuts = installDesktopShortcuts(
@@ -488,6 +601,7 @@ async function main(): Promise<void> {
     onError: (error, context) => { console.error(`[desktop-storage] ${context}:`, error) }
   })
   if (!safeMode) await prepareGenerationsForLaunch(dshHome, line => { console.error(line) }, 'desktop')
+  flushOnClose = () => { desktopStorage.flushSync() }
   const runtimeDir = app.getAppPath()
   const hostEntry = fileURLToPath(new URL('./host.js', import.meta.url))
   const frontend = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-web-frontend', 'dist')
@@ -549,7 +663,7 @@ async function main(): Promise<void> {
       operationLines,
       theme: nativeTheme.themeSource,
       show: url => {
-        if (!owner.isDestroyed()) void owner.loadURL(url)
+        if (!owner.isDestroyed()) void loadDesktopPage(owner, url).catch((error: unknown) => { console.error(error) })
       },
       nextAction: () => new Promise(resolve => { acceptRecoveryNavigation = resolve }),
       relaunch: () => {
@@ -571,6 +685,55 @@ async function main(): Promise<void> {
   activeOperationJournal = operationJournal
   let desktopHost: DesktopHostProcess | undefined
   let hostEnvironment: NodeJS.ProcessEnv = process.env
+  const pendingHostFailures: unknown[] = []
+  let drainingHostFailures = false
+  async function drainHostFailures(): Promise<void> {
+    drainingHostFailures = true
+    try {
+      while (pendingHostFailures.length > 0 && !quitting) {
+        const failure = pendingHostFailures.shift()
+        await handleDesktopHostFailure(failure, {
+          quitting: () => quitting,
+          safeMode,
+          recoverConfiguration: () => stability.recoverStartupConfiguration({
+            dshHome,
+            profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
+            environment: hostEnvironment,
+            launchDirectory: projectDir,
+            showOpenDialog: options => window.isDestroyed() ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options),
+            reveal: path => { shell.showItemInFolder(path) }
+          }),
+          restartHost: async () => {
+            try {
+              await backend.start(async () => {})
+            } catch (error: unknown) {
+              console.error(error)
+            }
+          },
+          presentPluginRecovery: async current => {
+            if (startupRecoveryOpen) return true
+            startupRecoveryOpen = true
+            try {
+              const presented = await presentStartupRecovery(window, current)
+              if (!presented) startupRecoveryOpen = false
+              return presented
+            } catch (error: unknown) {
+              startupRecoveryOpen = false
+              throw error
+            }
+          },
+          reportFatal: current => reportFatal(current)
+        })
+      }
+    } finally {
+      drainingHostFailures = false
+      if (pendingHostFailures.length > 0 && !quitting) void drainHostFailures()
+    }
+  }
+  function enqueueHostFailure(failure: unknown): void {
+    pendingHostFailures.push(failure)
+    if (!drainingHostFailures) void drainHostFailures()
+  }
   const backend = new DesktopBackendController(onFailure => {
     const host = new DesktopHostProcess({
       // Market installs re-exec this binary. The macOS Helper stays in Node mode;
@@ -605,19 +768,7 @@ async function main(): Promise<void> {
   }, state => {
     retainDesktopBoot(bootSession, state.phase)
     if (state.phase !== 'error' || quitting) return
-    if (safeMode || startupRecoveryOpen) {
-      if (!startupRecoveryOpen) void reportFatal(state.failure)
-      return
-    }
-    startupRecoveryOpen = true
-    void presentStartupRecovery(window, state.failure).then(presented => {
-      if (presented || quitting) return
-      startupRecoveryOpen = false
-      void reportFatal(state.failure)
-    }).catch((error: unknown) => {
-      startupRecoveryOpen = false
-      void reportFatal(error)
-    })
+    enqueueHostFailure(state.failure)
   })
   const disposeFileDrag = installDesktopFileDrag(event => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
@@ -677,6 +828,7 @@ async function main(): Promise<void> {
     reportedLocale = resolved
     menuLocale = resolved
     refreshDarwinMenu()
+    refreshWindowsTray()
     if (!window.isDestroyed()) {
       window.webContents.send('desktop:ui-locale', menuLocale)
       window.webContents.send('updates:status-changed', getUpdateStatus())
@@ -713,6 +865,20 @@ async function main(): Promise<void> {
     },
     pairingPinStore: createFilePairingPinStore(pairingPinStorePath(app.getPath('userData')))
   })
+  stopRecoveredHost = async () => {
+    await backend.stop()
+    await mobileBridge?.stop()
+  }
+  releaseRecoveredPage = async () => {
+    desktopStorage.flushSync()
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return
+    window.webContents.stop()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      window.loadURL('about:blank').catch((error: unknown) => { console.error(error) }),
+      new Promise<void>(resolve => { timer = setTimeout(resolve, 3000) })
+    ]).finally(() => { if (timer !== undefined) clearTimeout(timer) })
+  }
   async function openMobilePairing(): Promise<void> {
     if (mobileBridge === undefined) return
     const opened = await presentMobilePairing({
@@ -786,7 +952,7 @@ async function main(): Promise<void> {
       const detail = error instanceof Error ? error.message : String(error)
       return { ok: false, error: detail.slice(0, 240) }
     }
-    if (!window.isDestroyed()) window.webContents.reload()
+    if (!window.isDestroyed()) await loadDesktopPage(window, window.webContents.getURL())
     return { ok: true }
   }
   ipcMain.handle(DESKTOP_IPC.repairOpen, event => {
@@ -814,7 +980,7 @@ async function main(): Promise<void> {
       await backend.stop()
       await backend.start(async () => {})
       setImmediate(() => {
-        if (!window.isDestroyed()) window.webContents.reload()
+        if (!window.isDestroyed()) void loadDesktopPage(window, window.webContents.getURL()).catch((error: unknown) => { console.error(error) })
       })
       return true
     } catch (error: unknown) {
@@ -879,11 +1045,8 @@ async function main(): Promise<void> {
     }
     callback({ requestHeaders: { ...headers, origin: target.origin, cookie, 'sec-fetch-site': 'same-origin' } })
   })
-  app.on('second-instance', () => {
-    if (window.isDestroyed()) return
-    if (window.isMinimized()) window.restore()
-    window.focus()
-  })
+  app.on('second-instance', () => { showMainWindow() })
+  app.on('activate', () => { showMainWindow() })
   let hostReady = false
   if (app.isPackaged) {
     startUpdateManager({
@@ -917,6 +1080,9 @@ async function main(): Promise<void> {
     if (quitting) return
     event.preventDefault()
     quitting = true
+    if (windowsTray !== undefined && !windowsTray.isDestroyed()) windowsTray.destroy()
+    windowsTray = undefined
+    stability.dispose()
     desktopStorage.flushSync()
     // Safe Mode has no phone bridge. Each step is awaited on its own so
     // closing the Host and the second quit still run.
@@ -935,7 +1101,11 @@ async function main(): Promise<void> {
   if (mobileBridge !== undefined) {
     void mobileBridge.start().catch((error: unknown) => { console.error(error) })
   }
-  await window.loadURL(`${SCHEME}://app/`)
+  const opened = await loadDesktopPage(window, `${SCHEME}://app/`)
+  if (!opened) {
+    if (!quitting && !stability.blocksNavigation()) stability.processRecovery.start('window')
+    return
+  }
   window.show()
   let desktopHealthReports: PluginHealthReport[] = []
   let desktopHealthLoaded = false

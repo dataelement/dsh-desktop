@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { RepairSessionStore } from './state/repair-agent-sessions'
+import { RepairSessionStore } from './recovery/repair-agent-sessions'
 import { cookiePair } from './mobile/lan-mobile-bridge'
 import {
   extractDshEntryFailureCause,
   extractOffendingPlugins,
   latestHarnessAttemptLogs
-} from './runtime/harness-runtime'
+} from './recovery/harness-log'
 import type { RuntimeSnapshot } from '../shared/contracts'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../shared/plugin-startup-failure'
 

@@ -9,7 +9,7 @@ import {
   importDecisionPath,
   workspaceCopyMatches,
   workspaceRegistryDigest
-} from '../../src/main/state/web-home-import'
+} from '../../src/main/profile/web-home-import'
 import { isWebImportPageUrl, offerWebHomeImport, readWebImportAction } from '../../src/main/shell/web-import-offer'
 
 const temporary: string[] = []

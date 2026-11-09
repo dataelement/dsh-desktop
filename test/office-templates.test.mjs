@@ -11,7 +11,7 @@ import { workspacePolicy, templateTool } from '../packages/dsh-desktop-office/li
 import { registerOfficeContext, registerOfficeRoutes } from '../packages/dsh-desktop-office/lib/modes.js'
 import { registerBusinessSkills } from '../packages/dsh-desktop-office/lib/business-skills.js'
 import { apply as applyPpt } from 'dsh-ppt'
-import { electronExecutable } from '../scripts/electron-node-loader.mjs'
+import { electronExecutable } from '../scripts/verify/electron-node-loader.mjs'
 
 const scratch = []
 afterEach(async () => { for (const directory of scratch.splice(0)) await rm(directory, { recursive: true, force: true }) })

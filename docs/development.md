@@ -77,17 +77,20 @@ Automatic fallback still happens only when Cloudflare fails to start. If a Cloud
 ## Project map
 
 ```text
-src/main/                 Electron main process and application orchestration
-src/main/runtime/         Harness process lifecycle and diagnostics
-src/main/state/           Profile consistency, repair, recovery, and Safe Mode
+src/main/shell/           Official Electron main process
+src/host/                 Harness child process, spawned with ELECTRON_RUN_AS_NODE
+src/main/profile/         Profile copy, generation projection, and plugin maintenance
+src/main/recovery/        Fatal reports, Safe Mode profile, and repair state
 src/main/mobile/          Paired phone bridge and optional Cloudflare tunnel
 src/main/update/          Installed-build update state and lifecycle
-src/preload/              Narrow renderer-to-main IPC and desktop UI seams
+src/preload/app.ts        Packaged preload
 src/shared/               Shared contracts and desktop menu definitions
 packages/                 Bundled desktop support packages
 patches/                  Reproducible patches for the pinned Harness packages
-build/                    Packaged HTML, icons, loaders, and Harness entry files
-scripts/                  Build, signing, metadata, and target verification tools
+build/                    Packaged HTML, icons, Office CLI, and pnpm invocation
+scripts/release/          Packaging, signing, notarization, and release assets
+scripts/ppt/              PPT runtime and template generation
+scripts/verify/           Target, package, and smoke checks
 test/                     Unit and source-contract regression coverage
 .github/workflows/        Native CI, signing, release, and publication workflows
 ```
@@ -126,7 +129,7 @@ npm run package:win
 
 Do not invoke `electron-builder --win` from macOS or Linux for a distributable Windows package. The target verification scripts intentionally reject host/target mismatches.
 
-For local unsigned development packages, use the corresponding `package:dev:*` command. Packages run Harness and package commands through the packaged Electron runtime (a utility process and the Helper in Node mode on macOS, the executable in Node mode on Windows); no standalone `node_modules/node` may be present under `app.asar.unpacked`. Verify the packaged native-module, pnpm and Harness smokes, then the final signed installer's separate installed-app smoke before handoff. Office preparation is included in dev, build and test: it fetches hash-locked native Python and wheels into `.build/office-runtime`, outside ASAR, and ships no second Node runtime. See [Office runtime](office-runtime.md). The locked Electron 44.7.0 must remain compatible with the native loader: `scripts/verify-target.mjs` fails packaging when Electron in Node mode cannot load it, and changing Electron still requires a new Windows package qualification. Before packaging, `node scripts/probe-electron-node-runtime.mjs` boots Harness from the repository through Electron Node mode with a disposable `DSH_HOME` and checks an authenticated HTTP response; the Windows CI job runs it on every build.
+For local unsigned development packages, use the corresponding `package:dev:*` command. Packages run Host and package commands through the packaged Electron runtime (the Helper in Node mode on macOS, the executable in Node mode on Windows); no standalone `node_modules/node` may be present under `app.asar.unpacked`. Verify the packaged native-module, pnpm and Harness smokes, then the final signed installer's separate installed-app smoke before handoff. Office preparation is included in dev, build and test: it fetches hash-locked native Python and wheels into `.build/office-runtime`, outside ASAR, and ships no second Node runtime. See [Office runtime](office-runtime.md). The locked Electron 44.7.0 must remain compatible with the native loader: `scripts/verify/verify-target.mjs` fails packaging when Electron in Node mode cannot load it, and changing Electron still requires a new Windows package qualification. Before packaging, `node scripts/verify/probe-electron-node-runtime.mjs` boots Harness from the repository through Electron Node mode with a disposable `DSH_HOME` and checks an authenticated HTTP response; the Windows CI job runs it on every build.
 
 Formal release artifacts are built, signed, and published by the tag workflow. A local build or pull-request check is not formal release evidence.
 

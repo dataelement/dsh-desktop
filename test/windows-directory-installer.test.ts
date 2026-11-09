@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { assertWindowsExecutable, directoryInstallSection, directoryInstallerExits, directoryInstallUtil } from '../scripts/windows-directory-installer.mjs'
+import { assertWindowsExecutable, directoryInstallSection, directoryInstallerExits, directoryInstallUtil } from '../scripts/release/windows-directory-installer.mjs'
 
 const require = createRequire(import.meta.url)
 const template = join(dirname(require.resolve('app-builder-lib/package.json')), 'templates', 'nsis', 'installSection.nsh')

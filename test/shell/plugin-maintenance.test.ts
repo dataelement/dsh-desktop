@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installedPluginVersion, pnpmEntryPath, upgradeTargets } from '../../src/main/shell/plugin-maintenance'
-import type { PluginHealthReport } from '../../src/main/state/plugin-market-check'
+import type { PluginHealthReport } from '../../src/main/recovery/plugin-market-check'
 
 const ready: PluginHealthReport = {
   packageName: 'example-plugin',

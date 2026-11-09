@@ -1,6 +1,6 @@
 import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { profilePackageJsonPath } from '../state/plugin-recovery'
+import { profilePackageJsonPath } from '../recovery/plugin-recovery'
 
 /**
  * Where the profile's packages are linked from, and why it has to be written

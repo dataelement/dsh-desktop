@@ -1,12 +1,12 @@
 import { buildSafeModeViewModel, type SafeModeLocale } from '../safe-mode'
-import type { PluginHealthReport } from '../state/plugin-market-check'
-import type { PluginRemovalBackup } from '../state/plugin-removal'
+import type { PluginHealthReport } from '../recovery/plugin-market-check'
+import type { PluginRemovalBackup } from '../profile/plugin-removal'
 import {
   disableProfilePlugin,
   enableProfilePlugin,
   listDisabledProfilePlugins
-} from '../state/plugin-disable'
-import { listInstalledProfilePlugins } from '../state/plugin-recovery'
+} from '../profile/plugin-disable'
+import { listInstalledProfilePlugins } from '../recovery/plugin-recovery'
 import { readSafeModeManagerAction, safeModePageUrl } from './safe-mode-page'
 
 export interface SafeModeManagerOptions {

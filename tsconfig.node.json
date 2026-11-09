@@ -6,7 +6,6 @@
   },
   "include": [
     "electron.vite.config.ts",
-    "electron.vite.shell.config.ts",
     "src/main/**/*.ts",
     "src/host/**/*.ts",
     "src/preload/**/*.ts",

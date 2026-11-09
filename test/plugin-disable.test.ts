@@ -10,7 +10,7 @@ import {
   forgetMarketDisable,
   listDisabledProfilePlugins,
   patchLayerDisabledRows
-} from '../src/main/state/plugin-disable'
+} from '../src/main/profile/plugin-disable'
 
 const TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
 # a top-level YAML array of loader patch entries.

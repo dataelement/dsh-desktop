@@ -22,7 +22,7 @@
 - **复制，不共用**：不把桌面 `DSH_HOME` 指到 `~/.dsh`。官方桌面端选择共用 home、隔离 `profiles/desktop`（见第 8 节）；我们仍用 `profiles/web` + generation，共用会改写网页版 profile，也不适合长期双开。
 - **只问一次**：仅当桌面端尚未产生用户数据时弹出。跳过或导入后都写决策标记，不再打扰。
 - **不破坏网页版**：只读 `~/.dsh`，不移动、不删除。用户仍可继续用 `dsh web`，只是之后数据不再同步。
-- **插件不整树拷贝**：不复制完整 `node_modules` / `pnpm-lock.yaml`。只带上清单和每个社区插件已安装的 `package.json`，交给现有 `src/main/state/generation-migration.ts` 从 registry 装成 generation。
+- **插件不整树拷贝**：不复制完整 `node_modules` / `pnpm-lock.yaml`。只带上清单和每个社区插件已安装的 `package.json`，交给现有 `src/main/profile/generation-migration.ts` 从 registry 装成 generation。
 
 ## 3. 用户路径
 
@@ -105,7 +105,7 @@ $DSH_HOME/
 
 ### 5.1 导入逻辑
 
-新增纯逻辑模块 `src/main/state/web-home-import.ts`：
+新增纯逻辑模块 `src/main/profile/web-home-import.ts`：
 
 - `defaultWebHome()` → `~/.dsh`
 - `inspectWebHome(path)`：是否像 Harness home（存在 `settings.yaml` / `sessions` / `profiles/web/package.json` 任一）
@@ -122,7 +122,7 @@ $DSH_HOME/
 
 ### 5.3 启动插入点
 
-在 `src/main/index.ts` 的 `launchHarness()` 里，`await runtime.stop()` 之后、`runProfileStartupMaintenance` 之前插入：
+正式壳在 `src/main/shell/app.ts` 里、复制 profile 之前询问。当时计划插在旧启动函数里的位置是：
 
 ```ts
 if (await shouldOfferWebHomeImport(dshHome)) {

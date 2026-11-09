@@ -1,6 +1,6 @@
 # 相对官方 Desktop 的增量与改动
 
-对照基线是官方 tag `dsh-v0.2.2-rc.1`（提交 `66491b05`）。本文收本项目相对官方 Desktop 的功能差：阶段 1 的数据目录、阶段 2 的加载、阶段 3 接到新壳的产品功能，以及仍留在旧壳、新壳还没接上的行为。基线里只改写法、不改变使用路径的差异放在文末。阶段 3 还没按 [架构文档第 8 章](three-desktop-architecture.zh.md) 逐项通过。写过「窗口看过」的记录只来自 2026-11-06。
+对照基线是官方 tag `dsh-v0.2.2-rc.1`（提交 `66491b05`）。本文收本项目相对官方 Desktop 的功能差：阶段 1 的数据目录、阶段 2 的加载、阶段 3 接到新壳的产品功能。桌面通知仍留到最后重写。基线里只改写法、不改变使用路径的差异放在文末。阶段 3 还没按 [架构文档第 8 章](three-desktop-architecture.zh.md) 逐项通过。写过「窗口看过」的记录只来自 2026-11-06。
 
 分类：
 
@@ -8,7 +8,6 @@
 | --- | --- |
 | 增量 | 官方 Desktop 没有这项，或官方有另一套实现而本产品不移植，改接现有产品层 |
 | 改动 | 官方有同名壳模块，新壳按产品改了行为 |
-| 旧壳保留 | 相对官方已经存在，新壳还没接上 |
 
 ## 怎么走一条路径
 
@@ -18,13 +17,13 @@
 npm test -- test/shell/<文件>.test.ts
 ```
 
-窗口不要用 `electron .`。仓库 `package.json` 的 `main` 仍是旧壳 `./out/main/index.js`。新壳入口是 `out-shell/main/index.js`，安装包由 `electron-builder.shell.cjs` 改成这个文件。
+窗口不要用 `electron .`。正式包由 `npm run build` 产出，入口是 `out/main/index.js`，应用身份是 `io.dsh.desktop` / `DSH Desktop`，用户数据目录是 `dsh-desktop`。提测用正式打包命令，不用已经删除的独立壳配置。
 
 ```bash
-npm run build:shell
-npm run package:shell:dir
-open "dist-shell/mac-arm64/DSH Desktop Shell.app" --args --user-data-dir="$TMPDIR/dsh-shell-qa"
+npm run package:mac:arm64
 ```
+
+产物是 `dist/dsh-desktop-mac-arm64.dmg`。安装前退出正在使用的正式应用，并保留当前应用和 `~/Library/Application Support/dsh-desktop` 的副本。
 
 安全模式在同一条命令后加 `--safe-mode`。临时目录不要指向正式 `dsh-desktop`、开发 Profile `dsh-desktop-dev` 或 `~/.dsh`。
 
@@ -102,23 +101,23 @@ open "dist-shell/mac-arm64/DSH Desktop Shell.app" --args --user-data-dir="$TMPDI
 | 启动注入 | Host 尚未给出认证 Cookie 时，应用请求返回 503。Host 离开就绪后清掉这一次的启动注入和 Cookie。页面再取启动数据时拿不到上一次的注入，失败的刷新也不会把已经离开的注入交回去 | 后端重启后，页面应只看到新的一套启动注入 | `npm test -- test/shell/boot-session.test.ts`。窗口还没重启过 Host |
 | 登录 shell 环境 | 从访达或开始菜单打开时，补上终端配置里的 `PATH`。macOS 和 Linux 在第一次启动 Host 前读一次账号记录里的 login shell。Windows 使用已经继承的注册表环境，不跑 PowerShell。`DSH_*` 和 `ELECTRON_*` 保持桌面进程的值。这不是账号登录 | 从访达打开后，Host 能找到 Homebrew、mise 或 nvm 安装的命令。终端里启动看不出差别。失败时应用仍会启动，日志只写 shell 路径和失败原因 | `npm test -- test/shell/login-shell-environment.test.ts`。还没有从访达启动后核对一次真实 `PATH` |
 
-## 仍在旧壳
+## 启动恢复
 
-这些行为相对官方已经存在，代码还在正在发布的旧壳里。新壳窗口目前走不到。
+这四项相对官方已经存在。正式壳从 `src/main/shell/stability-session.ts` 调用，纯判断和对话框仍然分开，避免不碰窗口的测试带上 Electron。
 
 | 功能 | 相对官方 | 使用路径 | 测试 |
 | --- | --- | --- | --- |
-| 启动配置恢复 | 官方没有这套原生对话框。纯判断在 `src/main/state/startup-config-recovery.ts`，对话框留在旧壳 `src/main/startup-config-recovery.ts`。合成进一个带 Electron 的文件会让不碰窗口的测试带上 Electron，所以这次不合 | 旧壳在 Harness 停止时发现可修复的启动配置，会备份并重试。新壳窗口没有这个对话框 | `npm test -- test/startup-config-recovery.test.ts test/startup-config-runtime.test.ts` |
-| 关闭后留在后台 | 阶段 0 的新壳不接官方托盘。旧壳只在 Windows 上、且用户不是在退出时，关闭窗口后继续运行 | 仅旧壳。Windows 上关掉窗口，进程仍在；退出则结束 | `npm test -- test/close-to-tray.test.ts` |
-| 进程恢复与渲染重试 | 仍是旧壳步骤。进程恢复管退出证据、GPU 探测和恢复提示；主窗口恢复管渲染导航丢失后的重试 | 旧壳窗口进程异常或页面导航丢失时出现。新壳还没接这两处 | `npm test -- test/stability-protection.test.ts test/main-window-recovery.test.ts` |
+| 启动配置恢复 | 官方没有这套原生对话框。纯判断在 `src/main/recovery/startup-config-recovery.ts`，对话框在 `src/main/startup-config-recovery.ts` | Host 进入错误后、插件恢复页或短对话框之前。能修复就备份并重新启动 Host；点「返回」才继续原来的失败处理。Safe Mode 没有插件恢复页，放弃修复后仍是短对话框 | `npm test -- test/startup-config-recovery.test.ts test/shell/stability-session.test.ts` |
+| 关闭后留在后台 | 不接官方托盘。只在 Windows 上、且用户不是在退出时，关闭窗口后继续运行。托盘可以显示窗口或退出 | Windows 上关掉窗口，进程仍在；从托盘退出则结束。再次打开应用会显示原来的窗口 | `npm test -- test/close-to-tray.test.ts test/shell/stability-session.test.ts` |
+| 进程恢复与渲染重试 | 进程恢复管退出证据、GPU 探测和恢复提示；主窗口恢复管渲染导航丢失后的重试。上一份图形模式写在 `userData/gpu-fallback.json`，下次启动在 Chromium 起来之前生效 | 窗口进程异常、内存耗尽，或图形恢复用尽时出现重启或退出提示。页面加载失败或渲染进程退出时，同一地址最多重试 3 次 | `npm test -- test/stability-protection.test.ts test/main-window-recovery.test.ts test/shell/stability-session.test.ts` |
 
 ## 留到最后重写
 
-桌面通知不在阶段 3 接到新壳。旧壳仍由会话触发系统通知，不支持通知的环境直接跳过。现有实现留在 `src/main/desktop-notification.ts` 和 `src/preload/desktop-notification.ts`，`npm test -- test/desktop-notification.test.ts` 只覆盖旧壳。其余壳层功能做完后重写，不把这份桥原样搬进新壳。
+桌面通知不在阶段 3 接到新壳。现有实现留在 `src/main/desktop-notification.ts` 和 `src/preload/desktop-notification.ts`，正式壳没有调用。不支持通知的环境会直接跳过。`npm test -- test/desktop-notification.test.ts` 覆盖这份模块。其余壳层功能做完后重写，不把这份桥原样搬进新壳。
 
 ## 不再移植的旧壳补丁
 
-Windows 的 PowerShell profile 捕获和子进程隐藏是旧壳为修 bug 写的。官方框架已经修好，新壳不再处理，也不拆成 `windows-powershell-environment.ts` 或 `windows-child-process.ts`。旧壳里的实现留到阶段 5 随 `runtime/` 和 `build/harness-node-entry.mjs` 一起删除。现有测试 `test/shell-environment-encoding.test.ts`、`test/harness-node-entry.test.ts` 只覆盖旧壳，不作为新壳验收。
+Windows 的 PowerShell profile 捕获和子进程隐藏是旧壳为修 bug 写的。官方框架已经修好，正式壳不处理，也不拆成 `windows-powershell-environment.ts` 或 `windows-child-process.ts`。这些入口已经随旧壳删除。市场安装器自己的 Windows 隐藏控制台仍留在 `packages/dsh-desktop-market-installer`。
 
 ## 阶段 3 明确不接
 
@@ -148,4 +147,4 @@ Windows 的 PowerShell profile 捕获和子进程隐藏是旧壳为修 bug 写�
 - 安装或回滚一个真实市场插件，打开配对页、PPT 或 Office 文档。
 - 在已安装的包上走完同意后下载、跳过一个版本和回滚。
 - macOS 隐私权限归属，以及 Windows 的路径、junction、安装和卸载。PowerShell profile 捕获和子进程隐藏不在这条里。
-- 旧壳上的启动配置对话框、关闭留在后台、进程恢复和渲染重试，还没接到新壳窗口。桌面通知留到这些做完后重写。
+- 桌面通知留到最后重写，现在没有接到新壳。启动配置对话框、关闭留在后台、进程恢复和渲染重试已经接到新壳，真实窗口还没走过。

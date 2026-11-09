@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { PluginHealthReport } from '../state/plugin-market-check'
-import { profilePackageJsonPath } from '../state/plugin-recovery'
+import type { PluginHealthReport } from '../recovery/plugin-market-check'
+import { profilePackageJsonPath } from '../recovery/plugin-recovery'
 
 export function pnpmEntryPath(appPath: string, exists: (path: string) => boolean): string | undefined {
   const root = join(appPath, 'node_modules', 'pnpm', 'bin')

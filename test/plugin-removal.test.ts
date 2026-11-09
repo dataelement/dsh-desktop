@@ -45,7 +45,7 @@ import {
 import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection'
 import { readDisabledPlugins } from '../packages/dsh-desktop-market-installer/plugin-state'
 import { prepareGenerationsForLaunch } from '../src/main/profile/generation-launch'
-import type { PluginComponentRestoreOptions } from '../src/main/state/plugin-component-cleanup'
+import type { PluginComponentRestoreOptions } from '../src/main/profile/plugin-component-cleanup'
 import {
   cleanupVerifiedRemovalBackup,
   confirmPluginRemovalsBooted,
@@ -56,7 +56,7 @@ import {
   restorePluginRemovalBackup,
   shouldDeferProfileMaintenance,
   snapshotPluginRemovalLedger
-} from '../src/main/state/plugin-removal'
+} from '../src/main/profile/plugin-removal'
 
 describe('durable plugin removal', () => {
   const homes: string[] = []

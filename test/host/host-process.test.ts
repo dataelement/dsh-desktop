@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { electronNodeExecutable } from '../../src/main/runtime/electron-node-executable'
+import { electronNodeExecutable } from '../../src/main/shell/backend/electron-node-executable'
 import { DesktopHostFatalError, DesktopHostProcess, redactHostOutput } from '../../src/main/shell/backend/host-process'
 
 const require = createRequire(import.meta.url)

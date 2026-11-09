@@ -4,14 +4,14 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../../src/main/state/safe-mode-profile'
+import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../../src/main/recovery/safe-mode-profile'
 import { DesktopHostProcess } from '../../src/main/shell/backend/host-process'
 import { writeDesktopProductPatch } from '../../src/main/shell/product-patch'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron') as string
 const root = resolve(import.meta.dirname, '../..')
-const hostBundle = join(root, 'out-shell', 'main', 'host.js')
+const hostBundle = join(root, 'out', 'main', 'host.js')
 const temporary: string[] = []
 
 afterEach(async () => {
@@ -98,7 +98,7 @@ async function ensureHostBundle(): Promise<void> {
   }
   if (builtTime >= sourceTime) return
   await new Promise<void>((resolveBuild, reject) => {
-    execFile('npm', ['run', 'build:shell'], { cwd: root, timeout: 120_000 }, error => {
+    execFile('npx', ['electron-vite', 'build'], { cwd: root, timeout: 180_000 }, error => {
       if (error === null) resolveBuild()
       else reject(error)
     })

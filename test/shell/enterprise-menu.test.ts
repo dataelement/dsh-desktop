@@ -122,6 +122,8 @@ describe('enterprise entry', () => {
     expect(source.includes('restartInSafeMode()')).toBe(true)
     expect(source.includes('shouldStartInSafeMode(process.argv)')).toBe(true)
     expect(source.includes('bundledHarnessVersion(')).toBe(true)
+    expect(source.includes("app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))")).toBe(true)
+    expect(source.includes('configureDesktopIdentity()')).toBe(true)
     expect(source.includes('mandatory-update')).toBe(false)
     expect(source.includes('autoDownload = true')).toBe(false)
   })

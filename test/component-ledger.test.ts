@@ -6,7 +6,7 @@ import {
   recordComponentRepair,
   REPAIR_ESCALATION_THRESHOLD,
   shouldEscalateRepairs
-} from '../src/main/state/component-ledger'
+} from '../src/main/profile/component-ledger'
 
 describe('component ledger', () => {
   const testRoot = join(__dirname, '.temp-component-ledger')

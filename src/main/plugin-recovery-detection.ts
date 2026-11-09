@@ -3,8 +3,8 @@ import {
   extractDuplicateLoaderEntryId,
   extractPluginFailureReferences,
   extractSlotConflictName
-} from './runtime/harness-runtime'
-import { resolveProfileRecoveryPlugins, resolveStartupFailureOwners } from './state/plugin-recovery'
+} from './recovery/harness-log'
+import { resolveProfileRecoveryPlugins, resolveStartupFailureOwners } from './recovery/plugin-recovery'
 import type { PluginStartupFailure } from '../shared/plugin-startup-failure'
 
 export const PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS = 1_500

@@ -5,7 +5,7 @@ import {
   DEFAULT_PERCENTAGE,
   isValidVersion,
   SUPPORTED_PLATFORMS
-} from '../scripts/configure-rollout.mjs'
+} from '../scripts/release/configure-rollout.mjs'
 
 describe('configureRollout', () => {
   it('validates canonical SemVer versions', () => {

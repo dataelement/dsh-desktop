@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { MessageBoxOptions, OpenDialogOptions } from 'electron'
-import { importStartupConfig, inspectStartupConfiguration, repairStartupConfig } from './state/startup-config-recovery'
+import { importStartupConfig, inspectStartupConfiguration, repairStartupConfig } from './recovery/startup-config-recovery'
 
 interface ConfigRecoveryOperations {
   dshHome: string

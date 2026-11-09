@@ -12,7 +12,7 @@ import {
   pruneUnresolvableProfileBundles,
   resolveProfileRecoveryPlugins,
   uninstallPluginFromProfile
-} from '../src/main/state/plugin-recovery'
+} from '../src/main/recovery/plugin-recovery'
 
 describe('plugin-recovery', () => {
   const testDir = join(__dirname, '.temp-plugin-recovery-test')

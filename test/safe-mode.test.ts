@@ -9,14 +9,14 @@ import {
   safeModeExitConfirmation,
   shouldStartInSafeMode
 } from '../src/main/safe-mode'
-import type { ProfileCompatibilityIssue } from '../src/main/state/profile-compatibility'
+import type { ProfileCompatibilityIssue } from '../src/main/profile/profile-compatibility'
 import {
   ensureSafeModeProfile,
   extractSafeModePatch,
   SAFE_MODE_BUNDLES,
   SAFE_MODE_MODEL_ENTRY_IDS,
   SAFE_MODE_PROFILE
-} from '../src/main/state/safe-mode-profile'
+} from '../src/main/recovery/safe-mode-profile'
 
 describe('Safe Mode', () => {
   it('is opt-in through an exact command-line switch', () => {

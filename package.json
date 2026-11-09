@@ -23,30 +23,25 @@
     "agent"
   ],
   "scripts": {
-    "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
+    "postinstall": "patch-package && node scripts/release/install-brand-assets.mjs && install-electron --no",
     "dev": "npm run office:prepare && npm run ppt:build && electron-vite dev",
     "build": "npm run office:prepare && npm run ppt:build && electron-vite build",
-    "build:shell": "electron-vite build --config electron.vite.shell.config.ts --outDir out-shell",
-    "package:shell:dir": "npm run office:prepare && npm run ppt:build && npm run build:shell && electron-builder --dir --publish never --config electron-builder.shell.cjs",
-    "package:shell:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run office:prepare && npm run ppt:build && npm run build:shell && electron-builder --mac --arm64 --publish never --config electron-builder.shell.cjs",
-    "package:shell:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run office:prepare && npm run ppt:build && npm run build:shell && electron-builder --mac --x64 --publish never --config electron-builder.shell.cjs",
-    "package:shell:win": "node scripts/verify-target.mjs win32 x64 && npm run office:prepare && npm run ppt:build && npm run build:shell && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.shell.cjs",
-    "icons:generate": "node scripts/generate-app-icons.mjs",
-    "loader:generate": "node scripts/generate-loader-gifs.mjs",
+    "icons:generate": "node scripts/release/generate-app-icons.mjs",
+    "loader:generate": "node scripts/release/generate-loader-gifs.mjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "package:dir": "npm run build && electron-builder --dir",
     "package:dev:dir": "npm run build && electron-builder --dir --config electron-builder.dev.cjs",
-    "package:dev:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.dev.cjs",
-    "package:dev:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never --config electron-builder.dev.cjs",
-    "package:dev:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs",
+    "package:dev:mac:arm64": "node scripts/verify/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.dev.cjs",
+    "package:dev:mac:x64": "node scripts/verify/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never --config electron-builder.dev.cjs",
+    "package:dev:win": "node scripts/verify/verify-target.mjs win32 x64 && npm run build && node scripts/release/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs",
     "package:mac": "npm run build && electron-builder --mac --publish never",
-    "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
-    "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/electron-builder-windows.mjs --win --x64 --publish never",
-    "ppt:build": "node scripts/prepare-ppt-runtime.mjs",
+    "package:mac:arm64": "node scripts/verify/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
+    "package:mac:x64": "node scripts/verify/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
+    "package:win": "node scripts/verify/verify-target.mjs win32 x64 && npm run build && node scripts/release/electron-builder-windows.mjs --win --x64 --publish never",
+    "ppt:build": "node scripts/ppt/prepare-ppt-runtime.mjs",
     "pretest": "npm run office:prepare && npm run ppt:build",
     "pretest:watch": "npm run office:prepare && npm run ppt:build",
     "office:prepare": "node scripts/office-runtime/prepare.mjs && node scripts/office-runtime/prepare-templates.mjs"
@@ -406,32 +401,12 @@
         "to": "icon.png"
       },
       {
-        "from": "build/harness-node-entry.mjs",
-        "to": "harness-node-entry.mjs"
-      },
-      {
-        "from": "build/host-module-fallback.mjs",
-        "to": "host-module-fallback.mjs"
-      },
-      {
         "from": "build/packaged-pnpm-invocation.mjs",
         "to": "packaged-pnpm-invocation.mjs"
       },
       {
         "from": "build/office-engine-resolution.mjs",
         "to": "office-engine-resolution.mjs"
-      },
-      {
-        "from": "build/windows-hidden-console.mjs",
-        "to": "windows-hidden-console.mjs"
-      },
-      {
-        "from": "build/windows-child-process-hide.mjs",
-        "to": "windows-child-process-hide.mjs"
-      },
-      {
-        "from": "build/windows-hide-console-import.mjs",
-        "to": "windows-hide-console-import.mjs"
       },
       {
         "from": "build/dsh-desktop.patch.yml",
@@ -570,8 +545,8 @@
       "createStartMenuShortcut": true,
       "runAfterFinish": true
     },
-    "beforePack": "scripts/prepare-dmg-background.cjs",
-    "afterPack": "scripts/after-pack.cjs",
-    "afterSign": "scripts/notarize-macos.mjs"
+    "beforePack": "scripts/release/prepare-dmg-background.cjs",
+    "afterPack": "scripts/release/after-pack.cjs",
+    "afterSign": "scripts/release/notarize-macos.mjs"
   }
 }

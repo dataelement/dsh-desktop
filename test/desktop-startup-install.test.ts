@@ -3,8 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { initializeDesktopInstall } from '../src/main/state/desktop-startup-install'
-import { desktopInstallStatePath } from '../src/main/state/desktop-install-state'
+import { initializeDesktopInstall } from '../src/main/profile/desktop-startup-install'
+import { desktopInstallStatePath } from '../src/main/profile/desktop-install-state'
 
 const roots: string[] = []
 

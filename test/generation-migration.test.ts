@@ -8,7 +8,7 @@ import {
   isProfileMigrated,
   migrateProfileToGenerations,
   rollBackMigration
-} from '../src/main/state/generation-migration'
+} from '../src/main/profile/generation-migration'
 import {
   listGenerations,
   readDesired,

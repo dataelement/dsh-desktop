@@ -1,6 +1,8 @@
 # 三套 Desktop 架构对照与迁移方案
 
-文档日期：2026-11-05。本文比较官方 Desktop、当前仓库和 anywhere-labs/dsh-desktop，并给出迁移方案：以官方 `apps/desktop` 和 `apps/desktop-host` 的源码为底座，把当前产品的数据归属、恢复、市场、手机桥和更新迁上去。优劣、可行性、目标架构、迁移步骤、影响范围和风险都写在这里。不记录已经完成的代码改动。
+文档日期：2026-11-05。本文比较官方 Desktop、当前仓库和 anywhere-labs/dsh-desktop，并给出迁移方案：以官方 `apps/desktop` 和 `apps/desktop-host` 的源码为底座，把当前产品的数据归属、恢复、市场、手机桥和更新迁上去。优劣、可行性、目标架构、迁移步骤、影响范围和风险都写在这里。
+
+2026-11-09 的代码切换已经完成：正式包入口是 `src/main/shell/app.ts`，Host 入口是 `src/host/index.ts`，用户数据目录仍是 `dsh-desktop`。旧的主进程入口和独立壳配置已删除。下面各阶段里写「仍留在旧壳」的句子是当时的记录；当前规则以根目录 `AGENTS.md` 和 `src/main/shell/AGENTS.md` 为准。从当前正式版升级、升级中断和退回旧版，仍要在正式安装包上验证。
 
 ## 1. 对照边界
 
@@ -71,13 +73,13 @@ flowchart TD
   MOBILE --> WEB
 ```
 
-现行启动顺序见 [architecture.md](architecture.md) 和 [parallel-page-boot.md](parallel-page-boot.md)：固定应用身份和 `userData`，取得单实例锁，先打开 `dsh-desktop://harness/`，再修补 profile 的 pnpm store、做市场基线和 generation 投影，然后在随机回环端口启动 Harness。Main 认证后通过窄 IPC 注入启动数据。Cookie 不出现在页面 URL 里。
+现行启动顺序见 [architecture.md](architecture.md) 和 [parallel-page-boot.md](parallel-page-boot.md)：固定应用身份和 `userData`，取得单实例锁，先显示启动页，把 `profiles/web` 复制到 `profiles/desktop`，再由 `src/host/index.ts` 在随机回环端口启动 Host。应用页是 `dsh-app://app/`。Main 认证后通过窄 IPC 注入启动数据。Cookie 不出现在页面 URL 里。
 
-持久化根是 Electron `userData` 下的 `harness/`。正常 profile 名叫 `web`。第三方插件可以安装成不可变 generation，也可以留在 pnpm 共享树里。市场开关的权威记录是 `profiles/web/.dsh-market/state.json`。Safe Mode 使用同一 `DSH_HOME` 下的 `desktop-safe-mode`，只放官方核心 bundle，不删除正常 profile。
+持久化根是 Electron `userData` 下的 `harness/`。正式 profile 名叫 `desktop`。`profiles/web` 留下给旧版本读取。第三方插件可以安装成不可变 generation，也可以留在 pnpm 共享树里。Safe Mode 使用同一 `DSH_HOME` 下的 `desktop-safe-mode`，只放官方核心 bundle，不删除正常 profile。
 
-核心包解析已经有两层。上游 `dsh-app-boot` 在启动时创建 runtime resolution；`build/harness-node-entry.mjs` 在加载 dsh 之前注册 `build/host-module-fallback.mjs`，它排在上游钩子之后，只在上游也报 `ERR_MODULE_NOT_FOUND` 时，把 `@deepseek-ai/*` 改从安装目录再解析一次。这个回退不分 profile，Safe Mode 进程里也注册了。Safe Mode 的安装目录锚点另有来源：补丁后的 `mountRootInclude` 把根 Include 的导入基准指向安装目录，见 `test/safe-mode-host-resolved.test.ts`，它不依赖 `profiles/node_modules`。
+普通 profile 按插件自己的路径解析，不再注册把 `@deepseek-ai/*` 改从安装目录再找一次的宿主回退。Safe Mode 由上游安装锚点解析核心包，不创建 `profiles/node_modules`。见 `test/host/plugin-resolution.test.ts` 和 `test/safe-mode-host-resolved.test.ts`。
 
-新建的正常 profile 由上游 `initProfile` 生成，`dependencies` 为空，官方核心包只出现在 `dsh.profile.bundles` 里（`src/main/state/generation-launch.ts`）。profile 依赖里出现核心包，只可能来自旧版本留下的 profile，或从网页版导入的 `package.json`。
+新建的正常 profile 由上游 `initProfile` 生成，`dependencies` 为空，官方核心包只出现在 `dsh.profile.bundles` 里（`src/main/profile/generation-launch.ts`）。profile 依赖里出现核心包，只可能来自旧版本留下的 profile，或从网页版导入的 `package.json`。
 
 Harness 子进程由 `runtime.stop()` 和 `runtime.start()` 串行重启。`launchHarness()` 和 `launchSafeHarness()` 共用一个进行中的启动操作，先停旧进程再做 profile 维护；`HarnessRuntime` 用 `this.child === child` 丢弃过期子进程的事件，每次启动重新分配端口和启动令牌。Safe Mode 切换不重启 Electron。
 
@@ -469,7 +471,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 | 启动传输、认证代理、Cookie、WebSocket | 壳层（按官方移植），删除旧实现 | `harness-shell.ts`、`desktop-protocol.ts`、`window-navigation.ts`、`harness-boot-*`、`runtime/harness-runtime.ts` 的大部分 |
 | 核心包解析 | Host 入口（按官方移植），删除宿主回退 | `build/host-module-fallback.mjs`、`build/harness-node-entry.mjs` 的对应部分 |
 | 插件管理页、pnpm 插件 | npm 上的 `dsh-plugin-manager`，壳层按官方方式接入 | 我们的 pnpm 调用逐项改为官方路径；锁恢复 runner 是否保留，阶段 2 决定 |
-| 市场 generation | 产品层，Host 启动前投影 | `src/main/state/generation-*`、`packages/dsh-desktop-market-installer/` |
+| 市场 generation | 产品层，Host 启动前投影 | `src/main/profile/generation-*`、`packages/dsh-desktop-market-installer/` |
 | 致命恢复、Safe Mode、修复代理 | 产品层，壳层把致命失败交给它 | `plugin-recovery-*`、`repair-*`、`safe-mode*`、`process-recovery.ts`、`main-window-recovery.ts`、`startup-config-recovery.ts` |
 | 崩溃报告、插件操作记录 | 壳层（按官方移植），供产品层恢复页读取 | 操作记录在 `src/host/operation-diagnostics.ts` 和 `src/main/shell/operation-journal.ts`，恢复页读取最近记录。崩溃记录写在应用日志目录的 `crash-*.log`，写完后把最近的操作记录附进同一份文件。 |
 | 更新、跳过、回滚 | 产品层，不移植官方更新实现 | `src/main/update/` |
@@ -520,7 +522,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 
 - 每个阶段结束时，本阶段新增或搬动的目录都有对应规则，且规则描述的是当时的实际代码，不提前写未实现的行为。
 - 规则里引用的命令、脚本和测试文件真实存在；新增的检查实际接入并跑过，未接入的不写成已启用。
-- 阶段 5 切换后，全仓库搜索不到指向已删除文件（`harness-node-entry.mjs`、`host-module-fallback.mjs`、`runtime/`、`state/`）的规则或文档。
+- 现行 `AGENTS.md`、`docs/architecture.md`、`docs/development.md` 和 `docs/parallel-page-boot.md` 不再把已删除的旧壳入口当作现有代码。迁移对照和 `docs/history/` 保留切换前的名字。
 
 ## 7. 迁移步骤
 
@@ -528,11 +530,11 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 
 ### 阶段 0：基准和最小移植
 
-- 官方基线定为 tag `dsh-v0.2.2-rc.1`（`66491b05`，2026-11-04）。两层 `package.json` 版本都是 `0.2.2-rc.1`，等于要发布的 `@deepseek-ai/dsh` 版本。本项目从 `main`（`8504fd59`，`v0.13.2`）切出升级分支，把直接依赖从 `0.2.2-alpha.2` 升到 `0.2.2-rc.1`。37 个补丁已重放。typecheck、构建、完整测试和临时目录里的普通 profile、Safe Mode 启动已在 macOS 通过，见 [Harness 0.2.2-rc.1 升级记录](harness-0.2.2-rc.1-upgrade.md)。Windows 还没验。最小壳已在 macOS 上移植，并打出未安装的目录包。
+- 官方基线定为 tag `dsh-v0.2.2-rc.1`（`66491b05`，2026-11-04）。两层 `package.json` 版本都是 `0.2.2-rc.1`，等于要发布的 `@deepseek-ai/dsh` 版本。本项目从 `main`（`8504fd59`，`v0.13.2`）切出升级分支，把直接依赖从 `0.2.2-alpha.2` 升到 `0.2.2-rc.1`。37 个补丁已重放。typecheck、构建、完整测试和临时目录里的普通 profile、Safe Mode 启动已在 macOS 通过，见 [Harness 0.2.2-rc.1 升级记录](history/harness-0.2.2-rc.1-upgrade.md)。Windows 还没验。最小壳已在 macOS 上移植，并打出未安装的目录包。
 - 仓库外的官方 Desktop 已在 macOS arm64 上按官方方式构建并启动，观察记在 [upstream-reference/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db.md](upstream-reference/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db.md)。官方源码没有进入本仓库。Windows 上的同一对照还没做。
 - 来源基线在仓库根的 `upstream-baseline.json`，只含元数据。`scripts/upstream-diff.mjs` 把两个提交的 `apps/desktop/src` 与 `apps/desktop-host/src` 拉到被忽略的 `.upstream-cache/`，按模块列出改动；未登记的新文件让脚本失败。`scripts/check-upstream-baseline.mjs` 核对 `dshVersion` 与锁文件里的 `@deepseek-ai/dsh`，并确认已登记路径存在。测试在 `test/upstream/baseline.test.ts`。
 - 上游 MIT 声明在 `THIRD_PARTY_NOTICES.md`。`package.json` 的 `extraResources` 会把它放进安装包，开发包配置继承同一份列表。macOS arm64 目录包的 `Contents/Resources/THIRD_PARTY_NOTICES.md` 已核对存在。
-- 新壳构建入口是 `electron.vite.shell.config.ts` 和 `electron-builder.shell.cjs`。app ID 是 `io.dsh.desktop.shell`，产物目录是 `dist-shell`，`publish` 为 `null`。`npm run build:shell` 已在 macOS 产出 `out-shell/main/index.js`、`out-shell/main/host.js` 和 `out-shell/preload/app.cjs`。electron-vite 仍提示 `renderer config is missing`。
+- 正式包构建入口已切到 `electron.vite.config.ts`。`npm run build` 把新壳打进 `out/main/index.js`，应用身份沿用 `io.dsh.desktop` / `DSH Desktop`，用户数据目录固定为 `dsh-desktop`。`electron.vite.shell.config.ts` 和 `electron-builder.shell.cjs` 仍保留独立测试身份 `io.dsh.desktop.shell`。electron-vite 仍提示 `renderer config is missing`。
 - 最小壳已写入 `src/main/shell/`、`src/host/index.ts` 和 `src/preload/app.ts`。数据目录是 `userData/harness`。强制更新、官方更新和飞书测试鉴权没有进入。`npm run package:shell:dir` 在 macOS arm64 产出 `dist-shell/mac-arm64/DSH Desktop Shell.app`，app ID 是 `io.dsh.desktop.shell`。2026-11-06 用临时 `--user-data-dir` 启动了当前代码的目录包：Host 使用 `Resources/office-runtime/primary-runtime`，页面是 `dsh-app://app/`，模块加载器和启动注入都在，界面停在工作区输入框，并提示选择模型。正式 `dsh-desktop`、`dsh-desktop-dev` 和 `~/.dsh` 的修改时间没有变化。这个包没有安装。Windows 没验。旧数据副本对照没做。
 - 第 4 节末尾的四项已经回答：不搬官方 monorepo 构建脚本；官方测试按行为重写；产品分析不接入；欢迎窗口、账号登录和 `dsh` 命令不移植，源文件已写入 `skipped`。
 - 已建 `src/main/shell/`、`src/host/`、`test/shell/` 和 `test/host/`。旧壳代码暂不移动。
@@ -542,7 +544,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 
 ### 阶段 1：产品身份和数据目录
 
-- 打包身份仍是 `io.dsh.desktop.shell` / `DSH Desktop Shell`。正式产品名和 app ID 留到阶段 5；现在改掉会让目录包写进正式 `userData`。运行时的数据目录仍是 Electron `userData/harness`。
+- 正式包身份是 `io.dsh.desktop` / `DSH Desktop`。用户数据目录固定为 `dsh-desktop`，开发包和未打包启动使用 `dsh-desktop-dev`。运行时的数据目录是 `userData/harness`。旧壳源码还没有删除。
 - 启动 Host 时设置 `DSH_HOME` 为 `userData/harness`；Host 入口接受 profile 名。两处都登记为有意差异。产品分析关闭补丁也已登记。
 - 强制更新、Nightly 和飞书测试鉴权不移植，已在基线 `skipped`。产品分析不接入；它不是 desktop 源文件，不写入 `skipped`。壳用补丁关闭 `dsh-web-app` 在 `desktop` profile 上的默认启用。
 - 已建 `src/main/profile/`。`desktop-storage.ts` 和 `profile-store.ts` 从 `state/` 迁入。generation、插件开关和恢复仍留在 `state/`。
@@ -561,7 +563,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 - Safe Mode：`DSH_DESKTOP_SAFE_MODE=1` 时准备 `profiles/desktop-safe-mode`，只含 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`，不跑投影。临时目录启动后没有 `profiles/node_modules`。`mountRootInclude` 补丁仍被旧壳和 `test/safe-mode-host-resolved.test.ts` 使用，这次不删。
 - macOS：新壳继续用 `ELECTRON_RUN_AS_NODE`。旧壳的 UtilityProcess 把第三方工具的隐私权限请求从主应用拆开。这次没有做 TCC 实测，所以不把新壳改成 UtilityProcess。
 - Windows 的 PowerShell profile 捕获和 `windowsHide` 不移植。这是旧壳为修 bug 写的，官方框架已经修好；新壳沿用官方的注册表环境和子进程方式。登录 shell 已接到新壳：macOS 和 Linux 在第一次启动 Host 前读取一次，Windows 使用继承的注册表环境。Windows 没验。
-- `build/harness-node-entry.mjs` 仍是旧壳入口，这次不搬。搬它会同时改掉正在发布的启动路径。
+- 旧的 Host 启动入口已经删除。正式 Host 是 `src/host/index.ts`，打包后是 `out/main/host.js`。
 
 2026-11-06 用新壳 Host 在临时目录里跑了五种解析。安装包里的 `@deepseek-ai/dsh-client-modules` 进入了启动注入。放在 `profiles/node_modules` 的市场插件，以及指向目录外的符号链接，都加载了自己的 `sample-ordinary`。缺少 `@deepseek-ai/missing-host-peer` 和缺少 `sample-ordinary-missing` 都留下 `ERR_MODULE_NOT_FOUND`，并带上插件名；Profile 里根本没有的插件只报自己的包名。普通 profile 没有走出旧壳的 `host fallback from`。Safe Mode 不创建 `profiles/node_modules` 仍由 `test/host/run-profile.test.ts` 覆盖。Windows junction 没跑。
 
@@ -572,8 +574,9 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 功能对照、使用路径和测试命令见 [相对官方 Desktop 的增量与改动](phase3-product-delta.zh.md)。这份说明同时包括阶段 1 的数据目录、阶段 2 的加载，以及仍留在旧壳的行为。
 
 - 已建 `src/main/recovery/fatal-entry.ts`。新壳把致命失败写到调用方传入的 `DSH_HOME/fatal-report.json`，抹掉 `token` 查询参数，再显示一条短提示。不移植官方 `DesktopFatalRecovery`。进程退出前会等这份报告写完。
-- 两个 `startup-config-recovery.ts` 仍分开：纯判断在 `state/`，原生对话框在旧壳。合成进一个带 Electron 的文件会让不碰窗口的测试带上 Electron，所以这次不合。
-- 桌面通知留到其余壳层功能之后重写。阶段 3 不把旧壳的通知桥接到新壳。现有 `src/main/desktop-notification.ts` 和 preload 桥继续只服务旧壳。
+- 两个 `startup-config-recovery.ts` 仍分开：纯判断在 `recovery/`，原生对话框在 `src/main/startup-config-recovery.ts`。正式壳在 Host 失败时调用它。合成进一个带 Electron 的文件会让不碰窗口的测试带上 Electron，所以这次不合。
+- Windows 关闭窗口后留在后台，进程恢复和主窗口渲染重试由 `src/main/shell/stability-session.ts` 接到正式壳。图形降级写在 `userData/gpu-fallback.json`。
+- 桌面通知留到其余壳层功能之后重写。阶段 3 不把旧壳的通知桥接到新壳。现有 `src/main/desktop-notification.ts` 和 preload 桥还没有接到正式壳。
 - 插件操作记录已接到新壳：Host 把管理事件发给壳，壳写入 `userData/plugin-operations`，恢复页的修复方案列出最近的记录。快捷键已接到新壳：`@deepseek-ai/dsh-client-shortcuts` 成为直接依赖，偏好写在 `userData/keybindings.json`，应用页使用原生快捷键桥。侧边栏浏览器已接到新壳：应用页可以创建隔离 webview，沿用现有客人策略。文件拖放已接到新壳：页面拖出 Host 授权过的会话文件，或壳写下的临时副本。崩溃记录已接到新壳：致命失败时在应用日志目录写 `crash-*.log`，再按 64 KiB 和 500 毫秒上限把 `userData/plugin-operations` 附进同一份文件。这份记录不向外发送，恢复页不改。
 - 启动页使用现有 `build/splash.html` 鲸鱼页，Host 就绪后再进入应用页，不使用官方欢迎窗。2026-11-06 用临时 `userData` 启动 `build:shell` 产物，导航记录先是标题为「DSH Desktop」的 `splash.html`，随后才是应用页。这次没有截图。目录包没有重打。手机桥已接到新壳：普通启动在 Host 就绪后监听配对，侧边栏宽时可以打开「连接手机」。桥使用壳已经换到的 Host cookie，不把启动 token 交给手机页，Harness 仍在回环。没有局域网地址时才打开互联网隧道。Safe Mode 不启动手机桥。普通 profile 已挂上 `dsh-desktop-office` 和 `dsh-ppt-composer`。Office 读取 primary runtime 上一级资源目录和旁边的 `office-cli.mjs`；开发目录 `.build/office-runtime` 仍使用 `build/office-cli.mjs`。PPT 工程目录仍是 `kimi-ppt`。Safe Mode 不挂这两项。产品更新已接到新壳：已安装的 macOS 或 Windows 包才会自动检查，下载要等用户同意，可以跳过一个版本，更新卡片可以选择历史版本。未打包的启动只注册检查，不自动联网。安装前会停掉 Host，并隔离指向当前应用包的 LaunchAgent。普通 profile 已挂上 `dsh-desktop-workbenches` 和 `dsh-desktop-market-installer`；Safe Mode 的补丁不含工作台和市场。安装器在没有 `DSH_DESKTOP_PROFILE` 时仍使用 `web`。企业入口沿用现有地址 `https://dshdesktop.com/zh/enterprise/`：设置页底部由 `dsh-desktop-client-ui` 挂出。macOS 菜单前三项依次是「关于 DSH Desktop」、「检查更新…」和「了解企业版」。普通启动时下一项是「以安全模式重启…」，用 `--safe-mode` 重新进入 `desktop-safe-mode`。Safe Mode 启动后，现有 safe-mode.html 铺满整个窗口，包括侧边栏，管理普通 desktop profile 的第三方插件：可以停用或重新启用，再用一次不带 --safe-mode 的重启退出。普通 profile 启动失败且错误点名已安装的第三方插件时，现有 plugin-recovery.html 只停用这些插件并重启。Safe Mode 的启动失败仍用短对话框。修复代理已接到当前 Host：侧边栏和 Safe Mode 页可以打开维修会话，草稿放进输入框，不会自动发送。Safe Mode 页可以升级 `desktop` profile 的插件，也可以打开、恢复或删除卸载备份。插件操作记录写在 `userData/plugin-operations`，恢复页列出最近的记录。快捷键写在 `userData/keybindings.json`，应用页走原生桥。侧边栏浏览器使用隔离 webview。文件拖放只接受 Host 授权过的会话文件。崩溃记录写在应用日志目录，并附上最近的插件操作。恢复页不改。应用页打开现有关于对话框，其它页面使用系统对话框。2026-11-06 用临时 `userData` 启动 `build:shell` 产物，应用页挂出了更新卡片并保持隐藏；这次没有点开系统菜单，也没有下载或回滚。目录包没有重打。2026-11-06 用临时 `userData` 启动 `build:shell` 产物，打开设置后底部链接文案是「了解企业版」，地址是上述企业页。应用菜单由单元测试覆盖，这次没有点开系统菜单。目录包没有重打。网页版导入在复制 profile 之前询问：桌面家目录已有数据时不询问，跳过只写下决定，关闭窗口不写决定，网页版目录只读。Safe Mode 不询问。2026-11-06 用空的临时 `userData` 启动 `build:shell` 产物，页面标题是「发现网页版数据」；选择「从空白开始」后只在临时目录写下 skipped，网页版家目录的标记文件没有变化，也没有把设置复制过去。目录包没有重打。
 - 规范已写入 `src/main/recovery/AGENTS.md`。`test/recovery/fatal-entry.test.ts` 检查致命入口不导入 Electron，壳不导入官方恢复对话框、更新目录和旧入口。

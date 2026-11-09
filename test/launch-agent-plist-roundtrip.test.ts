@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { auditLaunchAgents } from '../src/main/state/launch-agent-audit'
+import { auditLaunchAgents } from '../src/main/desktop-service/launch-agent-audit'
 
 // Exercises the real plutil-backed reader and writer; only launchctl is stubbed
 // so the test never touches the user's actual services.

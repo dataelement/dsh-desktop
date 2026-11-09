@@ -19,16 +19,16 @@ flowchart TD
   MAIN --> UPDATE["Installed-build update manager"]
 ```
 
-On macOS, Harness runs in an Electron UtilityProcess with Node capabilities. On Windows, it is launched from the packaged Electron executable in Node mode (`ELECTRON_RUN_AS_NODE=1`); Package commands outside Harness (Profile repair, market baseline, generation installs and the `.desktop-bin` `node`/`pnpm` shims) use the same Electron runtime with `ELECTRON_RUN_AS_NODE=1` — the app's Helper on macOS, the main executable on Windows — and neither platform carries a standalone Node. Both paths reach Node internals through Harness's `node-addon-require-builtin`, which accepts only the Electron builds it was compiled for, so `scripts/verify-target.mjs` runs the same loader calls under the packaging Electron before every package build. Cordis HMR's `--expose-internals` permission is granted to that isolated process and never to the web renderer. On Windows the window uses a hidden title bar: Harness draws the 40 DIP caption row, and Desktop adds the "应用" / "编辑" caption menubar beside the sidebar toggle, whose native popups carry the Desktop commands.
+The official package is the transplanted shell. `electron.vite.config.ts` bundles `src/main/shell/app.ts` to `out/main/index.js` and `src/host/index.ts` to `out/main/host.js`. Main spawns that Host with the packaged Electron executable in Node mode (`ELECTRON_RUN_AS_NODE=1`): the app Helper on macOS, the main executable on Windows. Package commands outside Harness use the same runtime, and neither platform carries a standalone Node. Both paths reach Node internals through Harness's `node-addon-require-builtin`, which accepts only the Electron builds it was compiled for, so `scripts/verify/verify-target.mjs` runs the same loader calls under the packaging Electron before every package build. Cordis HMR's `--expose-internals` permission is granted to that isolated process and never to the web renderer. The application page is `dsh-app://app/`. On macOS the window uses `hiddenInset` so the traffic lights sit on the sidebar row. On Windows the window uses a hidden title bar: Harness draws the 40 DIP caption row, and Desktop adds the "应用" / "编辑" caption menubar beside the sidebar toggle, whose native popups carry the Desktop commands.
 
 ## Startup flow
 
 1. Configure a stable production or development application identity and user-data directory.
 2. Acquire the single-instance lock.
 3. Create the application-owned `launch-root` directory.
-4. Open the startup surface, then start loading the packaged Harness shell at `dsh-desktop://harness/` while inspecting the web Profile. Static modules prepare before the backend is ready.
+4. Show `build/splash.html`, copy `profiles/web` to `profiles/desktop` when that migration is due, then start Host. The application page is `dsh-app://app/`. Static files come from the packaged web frontend; other requests wait until Host has authenticated.
 5. Pin the profile's pnpm store and repair incomplete package state when needed.
-6. Start Harness on an available `127.0.0.1` port with the tracked desktop patch layer.
+6. Host runs the desktop profile on `127.0.0.1` with the product patch layer and reports readiness over IPC.
 7. After the endpoint is ready, authenticate in main, obtain the current structured boot injections and resolve the prepared shell through narrow IPC. Reuse the document; API requests are authenticated proxies and native WebSockets receive credentials only for the owned backend authority and main window. See [parallel page boot](parallel-page-boot.md) for ordering and recovery boundaries.
 8. Start the paired mobile bridge and, in installed builds, the update manager.
 
@@ -73,7 +73,7 @@ The sidebar uses the upstream ui-sidebar-browser Electron provider through the n
 
 Workspace guest partitions are ephemeral for the process lifetime, matching upstream behavior. Closing a tab destroys its guest; reloading, losing or destroying its owner releases the owner's reservations. The local trial uses a separate development Profile and does not replace the installed production app. This is host browser integration, with no custom frontend or generic renderer IPC. The upstream source is [Desktop browser guests at f3803c9](https://github.com/deepseek-ai/deepseek-harness/blob/f3803c96974ad4a94195fb97e5c637e9c2a3afe3/apps/desktop/src/browser-guests.ts).
 
-Run `node scripts/smoke-sidebar-browser.mjs` on a native desktop to exercise a real sandboxed WebView against a page with both X-Frame-Options DENY and frame-ancestors none, verify the absence of Node/application globals and verify guest destruction. This does not replace full sidebar UI acceptance: open Baidu and another website, test search/address entry, Back/Forward/reload, target-blank links, hide/show and tab close/reopen, then check the installed app and its Profile were not changed. Windows must be qualified on Windows before merging.
+Run `node scripts/verify/smoke-sidebar-browser.mjs` on a native desktop to exercise a real sandboxed WebView against a page with both X-Frame-Options DENY and frame-ancestors none, verify the absence of Node/application globals and verify guest destruction. This does not replace full sidebar UI acceptance: open Baidu and another website, test search/address entry, Back/Forward/reload, target-blank links, hide/show and tab close/reopen, then check the installed app and its Profile were not changed. Windows must be qualified on Windows before merging.
 
 ## Profiles and plugin recovery
 

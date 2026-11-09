@@ -2,9 +2,9 @@ import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { demoteMarketGeneration, ensureMarketBaseline, marketUsableWithoutBaseline, readProfileMarket, VERIFIED_MARKET_BASELINE } from '../src/main/state/market-baseline'
-import { runProfileStartupMaintenance, type ProfileStartupMaintenanceDeps } from '../src/main/state/profile-startup-maintenance'
-import { readInstalledPluginVersion } from '../src/main/state/plugin-market-check'
+import { demoteMarketGeneration, ensureMarketBaseline, marketUsableWithoutBaseline, readProfileMarket, VERIFIED_MARKET_BASELINE } from '../src/main/profile/market-baseline'
+import { runProfileStartupMaintenance, type ProfileStartupMaintenanceDeps } from '../src/main/profile/profile-startup-maintenance'
+import { readInstalledPluginVersion } from '../src/main/recovery/plugin-market-check'
 import { readDesired, registryLayout, writeDesired, writeGenerationMeta } from 'dsh-desktop-market-installer/generations/registry'
 
 const homes: string[] = []

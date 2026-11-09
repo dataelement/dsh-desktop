@@ -48,7 +48,7 @@ vi.mock('node:fs/promises', async importOriginal => {
 /**
  * `runExternalMarketPluginInstall` is the boundary dsh-market 1.6+
  * feature-detects for `add`. These drive it through a stubbed pnpm so they run
- * anywhere; the live pnpm path is covered by scripts/generation-poc.mjs.
+ * anywhere; the live pnpm path is covered by the profile plugin command tests.
  */
 describe('the market install boundary', () => {
   const homes = []
