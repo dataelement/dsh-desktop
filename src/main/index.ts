@@ -1200,7 +1200,7 @@ function createWindow(): BrowserWindow {
   })
   installPluginRecoveryNavigation(window)
   sidebarBrowser.bind(window)
-  secureWindow(window, true, true)
+  secureWindow(window, true, true, () => [runtime.snapshot().url])
   installContextMenu(window, harnessLocale)
   installMainWindowRendererRecovery(window)
   window.on('closed', () => {
