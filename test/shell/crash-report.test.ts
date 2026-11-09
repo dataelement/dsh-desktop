@@ -46,7 +46,9 @@ describe('crash reports', () => {
     expect(text).toContain('token=[redacted]')
     expect(text).not.toContain('secret')
     expect(text).toContain('source: host')
-    expect((await stat(path ?? '')).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') {
+      expect((await stat(path ?? '')).mode & 0o777).toBe(0o600)
+    }
   })
 
   it('prunes only aged crash logs', async () => {
