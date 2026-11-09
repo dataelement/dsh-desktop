@@ -97,8 +97,9 @@ async function ensureHostBundle(): Promise<void> {
     builtTime = 0
   }
   if (builtTime >= sourceTime) return
+  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
   await new Promise<void>((resolveBuild, reject) => {
-    execFile('npm', ['run', 'build:shell'], { cwd: root, timeout: 120_000 }, error => {
+    execFile(npmCommand, ['run', 'build:shell'], { cwd: root, timeout: 120_000, shell: process.platform === 'win32' }, error => {
       if (error === null) resolveBuild()
       else reject(error)
     })
