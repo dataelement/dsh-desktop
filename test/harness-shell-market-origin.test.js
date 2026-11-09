@@ -63,10 +63,9 @@ describe('desktop shell and market installer origin contract', () => {
     const shellRequest = (path, method, originHeader = 'dsh-desktop://harness') => shell.handle(new Request(HARNESS_SHELL_URL + path.slice(1), { method, headers: { origin: originHeader } }))
     expect((await shellRequest(STATUS_PATH, 'GET')).status).toBe(200)
     expect((await shellRequest(INSTALL_PATH, 'POST')).status).toBe(200)
-    // Windows custom-scheme posts often omit Origin. This handler only sees the
-    // shell document, so a missing header is filled with the loopback host.
-    // The opaque origin "null" stays rejected.
-    expect((await shell.handle(new Request(HARNESS_SHELL_URL + INSTALL_PATH.slice(1), { method: 'POST' }))).status).toBe(200)
+    // A missing Origin stays missing. Filling it would let the request pass the
+    // backend CSRF check. The opaque origin "null" stays rejected.
+    expect((await shell.handle(new Request(HARNESS_SHELL_URL + INSTALL_PATH.slice(1), { method: 'POST' }))).status).toBe(403)
     expect((await shell.handle(new Request(HARNESS_SHELL_URL + INSTALL_PATH.slice(1), { method: 'POST', headers: { origin: 'null' } }))).status).toBe(403)
     expect((await shellRequest(UNINSTALL_PATH, 'POST', 'https://attacker.example')).status).toBe(403)
     expect((await fetch(origin + INSTALL_PATH, { method: 'POST', headers: { cookie: 'session=owned', origin } })).status).toBe(200)

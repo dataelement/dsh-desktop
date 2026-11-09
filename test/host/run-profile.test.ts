@@ -1,5 +1,4 @@
-import { execFile } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -7,11 +6,11 @@ import { afterEach, expect, it } from 'vitest'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../../src/main/recovery/safe-mode-profile'
 import { DesktopHostProcess } from '../../src/main/shell/backend/host-process'
 import { writeDesktopProductPatch } from '../../src/main/shell/product-patch'
+import { ensureHostBundle, hostBundle } from './host-bundle-helper'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron') as string
 const root = resolve(import.meta.dirname, '../..')
-const hostBundle = join(root, 'out', 'main', 'host.js')
 const temporary: string[] = []
 
 afterEach(async () => {
@@ -87,20 +86,3 @@ it('boots safe mode without creating the shared profile modules directory', asyn
     await host.stop()
   }
 }, 120_000)
-
-async function ensureHostBundle(): Promise<void> {
-  const sourceTime = (await stat(join(root, 'src/host/index.ts'))).mtimeMs
-  let builtTime = 0
-  try {
-    builtTime = (await stat(hostBundle)).mtimeMs
-  } catch {
-    builtTime = 0
-  }
-  if (builtTime >= sourceTime) return
-  await new Promise<void>((resolveBuild, reject) => {
-    execFile('npx', ['electron-vite', 'build'], { cwd: root, timeout: 180_000 }, error => {
-      if (error === null) resolveBuild()
-      else reject(error)
-    })
-  })
-}

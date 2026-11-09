@@ -1,17 +1,20 @@
-import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, beforeAll, expect, it } from 'vitest'
 import { DesktopHostFatalError, DesktopHostProcess } from '../../src/main/shell/backend/host-process'
 import { DESKTOP_SAFE_PRODUCT_PATCH } from '../../src/main/shell/product-patch'
+import { ensureHostBundle, hostBundle } from './host-bundle-helper'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron') as string
 const root = resolve(import.meta.dirname, '../..')
-const hostBundle = join(root, 'out', 'main', 'host.js')
 const temporary: string[] = []
+
+beforeAll(async () => {
+  await ensureHostBundle()
+}, 180_000)
 
 afterEach(async () => {
   await Promise.all(temporary.splice(0).map(path => rm(path, { recursive: true, force: true })))
@@ -118,23 +121,6 @@ async function installOrdinary(pluginDirectory: string, marker: string): Promise
     exports: { '.': './index.js' }
   }))
   await writeFile(join(directory, 'index.js'), `export const marker = ${JSON.stringify(marker)}\n`)
-}
-
-async function ensureHostBundle(): Promise<void> {
-  const sourceTime = (await stat(join(root, 'src/host/index.ts'))).mtimeMs
-  let builtTime = 0
-  try {
-    builtTime = (await stat(hostBundle)).mtimeMs
-  } catch {
-    builtTime = 0
-  }
-  if (builtTime >= sourceTime) return
-  await new Promise<void>((resolveBuild, reject) => {
-    execFile('npx', ['electron-vite', 'build'], { cwd: root, timeout: 180_000 }, error => {
-      if (error === null) resolveBuild()
-      else reject(error)
-    })
-  })
 }
 
 async function boot(home: string, input: { marker?: string, plugin?: string }): Promise<{ ok: boolean, diagnostic: string }> {

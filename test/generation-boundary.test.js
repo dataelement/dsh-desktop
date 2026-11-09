@@ -33,6 +33,12 @@ vi.mock('node:fs/promises', async importOriginal => {
       throw Object.assign(new Error('EPERM: simulated occupied junction'), { code: 'EPERM' })
     }
     return fs.unlink(path)
+  }, symlink: async (target, path, type) => {
+    if (renameFault.phase === 'new-link' && process.platform === 'win32') {
+      renameFault.phase = ''
+      throw Object.assign(new Error('EPERM: simulated occupied link path'), { code: 'EPERM' })
+    }
+    return fs.symlink(target, path, type)
   }, rename: async (from, to) => {
     const matches = renameFault.phase === 'old-link' ? String(to).includes('.dsh-previous-')
       : renameFault.phase === 'new-link' ? String(from).includes('.dsh-next-')

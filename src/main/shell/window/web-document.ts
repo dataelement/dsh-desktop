@@ -96,12 +96,10 @@ export async function forwardWebRequest(request: Request, host: string, cookie: 
   const headers = new Headers(request.headers)
   for (const name of ['host', 'origin', 'cookie', 'sec-fetch-site']) headers.delete(name)
   headers.set('cookie', cookie)
-  // The document origin is dsh-app://app. Host mutation checks compare Origin
-  // with their own loopback host, the same rewrite the socket path already does.
-  // Windows often omits Origin on a custom-scheme POST; this handler only
-  // receives the app document, so that request still carries the loopback host.
-  // The opaque origin "null" stays rejected above.
-  if (origin === null || origin === 'dsh-app://app') headers.set('origin', target.origin)
+  // Only a request that already presents the app origin is rewritten to the
+  // loopback host. An absent Origin stays absent so a missing header cannot
+  // satisfy the Host CSRF check. The opaque origin "null" is rejected above.
+  if (origin === 'dsh-app://app') headers.set('origin', target.origin)
   const init: RequestInit & { duplex: 'half' } = {
     method: request.method,
     headers,

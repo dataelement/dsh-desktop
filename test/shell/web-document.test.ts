@@ -48,15 +48,18 @@ describe('shell document and paths', () => {
     expect(foreign.status).toBe(403)
     const opaque = await forwardWebRequest(new Request('dsh-app://app/api', { headers: { origin: 'null' } }), 'http://127.0.0.1:9/', 'dsh=token')
     expect(opaque.status).toBe(403)
+    const seenOrigins: Array<string | null> = []
     globalThis.fetch = (async (_input, init) => {
       const headers = new Headers(init?.headers)
       expect(headers.get('cookie')).toBe('dsh=token')
-      expect(headers.get('origin')).toBe('http://127.0.0.1:9')
+      seenOrigins.push(headers.get('origin'))
       return new Response('ok', { headers: { 'set-cookie': 'dsh=token', 'content-type': 'text/plain' } })
     }) as typeof fetch
     const omitted = await forwardWebRequest(new Request('dsh-app://app/api', { method: 'POST' }), 'http://127.0.0.1:9/', 'dsh=token')
     expect(omitted.status).toBe(200)
+    expect(seenOrigins[0]).toBeNull()
     const response = await forwardWebRequest(new Request('dsh-app://app/plugins/app.js', { headers: { origin: 'dsh-app://app' } }), 'http://127.0.0.1:9/', 'dsh=token')
+    expect(seenOrigins[1]).toBe('http://127.0.0.1:9')
     expect(response.headers.get('set-cookie')).toBeNull()
     expect(response.headers.get('cache-control')).toBe('no-store')
   })

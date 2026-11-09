@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/profile/profile-store'
@@ -269,7 +269,7 @@ describe('desktop plugin market installer', () => {
     await expect(desktop.select('web')).rejects.toThrow('only exposes the desktop profile')
     expect(marketProfile({})).toBe('web')
     expect(marketProfile({ DSH_DESKTOP_PROFILE: '../web' })).toBe('web')
-    expect(resolveDshEntry(['node', '/app/dsh/bin.js'])).toBe('/app/dsh/bin.js')
+    expect(resolveDshEntry(['node', '/app/dsh/bin.js'])).toBe(resolve('/app/dsh/bin.js'))
     expect(resolveDshEntry(['node', '/tmp/host.js'])).toMatch(/[/\\]@deepseek-ai[/\\]dsh[/\\]lib[/\\]bin\.js$/u)
     expect(buildInstallArguments('/app/dsh/bin.js', { DSH_DESKTOP_PROFILE: 'desktop' })).toContain('desktop')
     expect(buildUninstallArguments('/app/dsh/bin.js', { DSH_DESKTOP_PROFILE: 'desktop' })[0]).toMatch(/desktop-plugin-cli\.mjs$/u)
