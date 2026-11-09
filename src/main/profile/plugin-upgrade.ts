@@ -58,7 +58,13 @@ export async function upgradePluginToGeneration(
       environment: await packageCommandEnvironment({ dshHome, nodeExecutablePath, pnpmEntryPath, pnpmRunnerPath, hideConsoleBootstrapPath }),
       // targetVersion came from the market's registry; fetch it from there
       // too rather than from whatever ~/.npmrc happens to name (#337).
-      registry: await resolveMarketRegistry({ profileDir: join(dshHome, 'profiles', profile) }),
+      registry: (await resolveMarketRegistry({ profileDir: join(dshHome, 'profiles', profile) })) ?? (
+        (process.env.LANG ?? '').toLowerCase().startsWith('zh') ||
+        Intl.DateTimeFormat().resolvedOptions().timeZone.includes('Shanghai') ||
+        process.env.TZ === 'Asia/Shanghai'
+          ? 'https://registry.npmmirror.com'
+          : undefined
+      ),
       onTrace: (line) => note?.(`[plugin-upgrade] ${line}`)
     })
 

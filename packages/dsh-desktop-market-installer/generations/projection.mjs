@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path'
 import { resolveEnabledGenerations } from './registry.mjs'
+import { readDisabledPlugins } from '../plugin-state.mjs'
 
 /**
  * Make the enabled generations visible to Harness without teaching Harness
@@ -211,7 +212,10 @@ async function ensureDirLink(linkPath, target) {
     const stat = await lstat(linkPath)
     if (stat.isSymbolicLink()) {
       const resolved = await readlink(linkPath).catch(() => '')
-      if (resolved === target) return
+      const matches = process.platform === 'win32'
+        ? windowsJunctionTargets(linkPath, resolved, target)
+        : (resolved === target || (await realpath(linkPath).catch(() => '')) === (await realpath(target).catch(() => '')))
+      if (matches) return
     }
     await rm(linkPath, { recursive: true, force: true })
   } catch {
@@ -450,7 +454,14 @@ async function prepareGenerationProjection(dshHome, profile) {
   // malformed or temporarily unreadable existing file must never be mistaken
   // for an empty Profile and overwritten with a reduced generated manifest.
   const manifestState = await readProfileManifest(dir)
-  const enabled = await resolveEnabledGenerations(dshHome)
+  const allEnabled = await resolveEnabledGenerations(dshHome)
+  const disabled = new Set(await readDisabledPlugins(dir).catch(() => []))
+  const enabled = new Map()
+  for (const [pluginName, generation] of allEnabled) {
+    if (!disabled.has(pluginName)) {
+      enabled.set(pluginName, generation)
+    }
+  }
   const targets = new Map()
   for (const [pluginName, generation] of enabled) {
     targets.set(pluginName, await validateEnabledGenerationTarget(pluginName, generation))

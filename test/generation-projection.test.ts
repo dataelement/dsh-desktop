@@ -289,6 +289,34 @@ describe('generation projection onto the app-boot contract', () => {
     expect(manifest.dsh.desktop?.generationProjection?.plugins?.['plugin-b']).toBeUndefined()
   })
 
+  it('unlinks the junction and drops the bundle entry when a desired plugin is disabled in state.json', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await initProfile(home)
+    await fakeGeneration(home, 'a+1+x', 'plugin-a', '1.0.0')
+    await fakeGeneration(home, 'b+2+y', 'plugin-b', '2.0.0')
+
+    await writeDesired(home, ['a+1+x', 'b+2+y'])
+    await projectGenerations(home)
+
+    expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'plugin-b'))).toBe(true)
+
+    const stateFile = join(home, 'profiles', 'web', '.dsh-market', 'state.json')
+    await mkdir(dirname(stateFile), { recursive: true })
+    await writeFile(stateFile, JSON.stringify({ disabled: ['plugin-b'] }))
+
+    const result = await projectGenerations(home)
+
+    expect(result.unlinked).toEqual(['plugin-b'])
+    expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'plugin-b'))).toBe(false)
+    const manifest = JSON.parse(
+      await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
+    )
+    expect(manifest.dsh.profile.bundles).not.toContain('plugin-b')
+    expect(manifest.dependencies['plugin-b']).toBeUndefined()
+    expect(manifest.pnpm?.overrides?.['plugin-b']).toBeUndefined()
+  })
+
   it('restores a profile-owned pnpm override after the generation is disabled', async () => {
     const home = await freshHome()
     await ensureRegistryDirectories(home)
