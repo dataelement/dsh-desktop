@@ -307,6 +307,39 @@ describe('packaged Harness shell', () => {
     await expect(shell.waitUntilReady()).rejects.toThrow()
   })
 
+  it('waits for slow unary responses and leaves their lifetime to renderer cancellation and reset', async () => {
+    vi.useFakeTimers()
+    const pending: Array<{ respond: (response: Response) => void, signal?: AbortSignal | null }> = []
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(authResponse()).mockResolvedValueOnce(Response.json({ injections: [] }))
+      .mockImplementation((_url, init) => new Promise((resolve, reject) => {
+        pending.push({ respond: resolve, signal: init?.signal })
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      }))
+    shell = new HarnessShell({ frontendRoot: root, fetch: fetcher })
+    await shell.connect('http://127.0.0.1:9999')
+    // A unary RPC such as /compact only sends headers after the whole command finishes.
+    const command = shell.handle(request('api/commands/execute', { method: 'POST', body: '{}' }))
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(pending[0]?.signal?.aborted).toBe(false)
+    pending[0]?.respond(Response.json({ kind: 'done' }))
+    const response = await command
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ kind: 'done' })
+
+    const controller = new AbortController()
+    const cancelled = shell.handle(request('api/commands/execute', { method: 'POST', body: '{}', signal: controller.signal }))
+    const superseded = shell.handle(request('api/commands/execute', { method: 'POST', body: '{}' }))
+    await vi.waitFor(() => expect(pending).toHaveLength(3))
+    controller.abort()
+    expect((await cancelled).status).toBe(502)
+    expect(pending[1]?.signal?.aborted).toBe(true)
+    expect(pending[2]?.signal?.aborted).toBe(false)
+    shell.reset()
+    expect((await superseded).status).toBe(502)
+    expect(pending[2]?.signal?.aborted).toBe(true)
+  })
+
   it('streams immediately and forwards renderer cancellation/reset to the upstream stream', async () => {
     const cancelled = vi.fn()
     const upstream = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode('first')) }, cancel: cancelled })

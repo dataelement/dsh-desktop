@@ -115,20 +115,20 @@ export class HarnessShell {
     return { injections: payload.injections, streamBaseUrl: backend.origin }
   }
 
-  private operation(signal?: AbortSignal): { signal: AbortSignal, finish: () => void, headersReceived: () => void } {
+  private operation(signal?: AbortSignal, bounded = true): { signal: AbortSignal, finish: () => void } {
     const controller = new AbortController()
     this.active.add(controller)
     const abort = (): void => controller.abort(signal?.reason)
     if (signal?.aborted) abort()
     else signal?.addEventListener('abort', abort, { once: true })
-    const timer = setTimeout(() => controller.abort(new Error('Harness request timed out')), TIMEOUT_MS)
-    timer.unref()
+    const timer = bounded ? setTimeout(() => controller.abort(new Error('Harness request timed out')), TIMEOUT_MS) : undefined
+    timer?.unref()
     const finish = (): void => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', abort)
       this.active.delete(controller)
     }
-    return { signal: controller.signal, finish, headersReceived: () => clearTimeout(timer) }
+    return { signal: controller.signal, finish }
   }
 
   connect(value: string, token?: string): Promise<HarnessShellBoot> {
@@ -219,7 +219,11 @@ export class HarnessShell {
     if (url.pathname.startsWith('/assets') || /%(?:2f|5c|25)/i.test(url.pathname) || url.pathname.includes('\\')) return new Response('Not found', { status: 404 })
     const backend = this.backend
     if (!backend) return new Response('Harness unavailable', { status: 503, headers: { 'cache-control': 'no-store' } })
-    const operation = this.operation(request.signal)
+    // No deadline for response headers: a unary RPC such as /api/commands/execute
+    // only answers once the command finishes, and /compact on a large context
+    // routinely takes longer than 30s. Renderer cancellation and reset() still
+    // end the request, as they do for a stream after its headers arrive.
+    const operation = this.operation(request.signal, false)
     try {
       const headers = new Headers(request.headers)
       for (const name of ['host', 'origin', 'cookie', 'sec-fetch-site']) headers.delete(name)
@@ -239,7 +243,6 @@ export class HarnessShell {
       targetUrl.search = url.search
       const response = await this.fetcher(targetUrl, init)
       if (operation.signal.aborted) throw new Error('Harness request cancelled')
-      operation.headersReceived()
       const responseHeaders = new Headers(response.headers)
       for (const name of RESPONSE_PRIVATE_HEADERS) responseHeaders.delete(name)
       responseHeaders.set('cache-control', 'no-store')
