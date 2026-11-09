@@ -4,12 +4,12 @@
 </h1>
 
 <p align="center">
-  <strong>DSH Desktop by Dataelem</strong> es una aplicación Agent de escritorio desarrollada por el equipo de Dataelem sobre el framework DeepSeek Harness, disponible en ediciones de código abierto y empresarial.<br />
-  Sitio web oficial：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · Repositorio de código abierto：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
+  <strong>DSH Desktop by Dataelem</strong> es una aplicación Agent de escritorio desarrollada por el equipo de Dataelem sobre el framework DeepSeek Harness, disponible en ediciones de código abierto y <a href="https://www.dshdesktop.com/es/enterprise/">empresarial</a>.<br />
+  Sitio web oficial：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
+  <a href="README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
 </p>
 
 <p align="center">
@@ -20,20 +20,13 @@
 
 ![DSH Desktop con Preset portátiles, proveedores de modelos, control desde el teléfono y generación de PPTX editables](docs/images/dsh-desktop-hero-v021.png)
 
-<p align="center"><strong>Usa modelos oficiales de DeepSeek o proveedores externos populares, administra Agent Preset portátiles, continúa tus sesiones de Harness desde el teléfono y convierte material de origen en presentaciones PPTX editables.</strong></p>
-
-DSH Desktop convierte la experiencia local de DeepSeek Harness en una aplicación de escritorio instalable. Inicia Harness automáticamente, guarda Profile, plugins, espacios de trabajo, ajustes de modelos y sesiones fuera del directorio de la aplicación y abre la interfaz completa cuando el Runtime local está listo.
-
-> [!IMPORTANT]
-> DSH Desktop es una versión preliminar basada en `@deepseek-ai/dsh@0.2.2-alpha.2`, que evoluciona rápidamente. Las versiones de macOS están firmadas y notarizadas por Apple. Los instaladores para Windows x64 también están firmados; las advertencias de seguridad de Windows pueden disminuir gradualmente a medida que el editor acumula reputación de descargas e instalaciones.
+Basado en DeepSeek Harness, con mejoras en la integración de modelos, plantillas de Word / Excel / PPT, recuperación de inicio y aplicaciones Workbench.
 
 ## Descarga
 
-Ofrecemos versiones estables y preliminares: la **versión estable**, recomendada para el uso diario, se descarga desde el [sitio web oficial](https://www.dshdesktop.com/#download). Para probar una **versión preliminar**, elige una versión marcada como **Pre-release** en [GitHub Releases](https://github.com/dataelement/dsh-desktop/releases).
+Descarga DSH Desktop desde el [sitio web oficial](https://www.dshdesktop.com/es/).
 
-Las versiones preliminares incluyen nuestras nuevas funciones y adoptan con rapidez las últimas versiones oficiales de DeepSeek Harness. Pueden ser incompatibles con los plugins de la comunidad y **no se recomiendan para usuarios generales**. Invitamos a quienes quieran probar las novedades antes que nadie a compartir sus comentarios en la comunidad; solo distribuimos las actualizaciones a toda la comunidad después de que estos usuarios las hayan validado.
-
-Las versiones instaladas comprueban actualizaciones poco después del inicio y cada seis horas. Cuando hay una versión nueva, DSH Desktop pregunta antes de descargarla; la instalación solo comienza al elegir **Restart and install**. También puedes comprobar manualmente o saltar una versión sin ocultar versiones posteriores.
+DSH Desktop busca actualizaciones automáticamente. Las nuevas versiones se distribuyen primero a un grupo limitado de usuarios para probarlas y, una vez confirmada su estabilidad, se ofrecen a todos los usuarios.
 
 ## Comunidad
 
@@ -45,32 +38,37 @@ Las versiones instaladas comprueban actualizaciones poco después del inicio y c
 
 ## Qué añade DSH Desktop
 
-DeepSeek Harness ya proporciona el Agent Runtime y la Web UI. DSH Desktop añade las capacidades nativas necesarias para un producto de escritorio:
+DeepSeek Harness proporciona el Agent Runtime, la Web UI y la conexión básica con modelos. DSH Desktop amplía estas bases con:
 
-- Inicia y detiene Harness sin una CLI separada ni otra pestaña del navegador
-- Usa el selector de directorios del sistema para añadir y administrar espacios de trabajo
-- Admite modelos oficiales de DeepSeek y proveedores externos populares
-- Importa y exporta Agent Preset completos como [paquetes `.dshpreset`](docs/preset-packages.md) portátiles
-- Convierte material de origen en presentaciones PPTX editables mediante el modo PPT integrado
-- Incluye Python y bibliotecas de Office para crear y comprobar DOCX, PPTX y XLSX sin conexión en macOS y Windows
-- Conserva Profile, plugins, espacios de trabajo, sesiones y ajustes de modelos al actualizar la aplicación
-- Detecta fallos de inicio y de plugins de la interfaz, guarda diagnósticos y ofrece recuperación guiada
-- Incluye un Modo seguro no destructivo que bloquea temporalmente plugins de terceros
-- Permite que un teléfono vinculado continúe sesiones por LAN o mediante un túnel público temporal opcional
-- Comprueba actualizaciones de la aplicación y deja la descarga e instalación bajo control del usuario
-- Adapta menús, barra de título, foco de ventana, tema y marca para macOS y Windows
+- **Integración de modelos**: configuración inicial mejorada, búsqueda de modelos, configuración de entrada de imágenes y razonamiento, y compatibilidad con modelos externos.
+- **Plantillas de Office**: edición de plantillas nativas de Word, libros de ejemplo de Excel y plantillas PPT editables, junto con habilidades de negocio para crear DOCX, XLSX y PPTX; Python y dependencias de Office incluidos.
+- **Recuperación de fallos**: diagnósticos de inicio e interfaz, recuperación guiada, Modo seguro y acceso a un Agent de reparación, priorizando la conservación de sesiones y ajustes.
+- **Workbench**: explorar, instalar desde el mercado o importar localmente y abrir aplicaciones que reutilizan las conversaciones de Harness.
+- **Preset portátiles**: importar y exportar [paquetes `.dshpreset`](docs/preset-packages.md), con comprobación de conflictos y advertencias de confianza.
+- **Acceso desde el teléfono**: vinculación por QR y continuación de sesiones por LAN o un túnel público opcional.
+- **Experiencia nativa**: gestión del inicio y cierre de Harness, selector de carpetas del sistema, menús y ventanas nativos, conservación de datos y búsqueda automática de actualizaciones.
 
-## Creación de PPT
+## Suite Office
 
-Activa el botón **PPT**, elige una plantilla y describe la presentación que necesitas. El catálogo incluye **16 plantillas y 192 diseños**, con salida PPTX editable. Las vistas previas están en inglés; las presentaciones pueden generarse en inglés o chino, con ajustes de fuentes para ambos idiomas. El idioma de la vista previa no determina el del resultado.
+Elige un modo Word, Excel o PPT, una plantilla y los materiales para que el Agent cree archivos editables.
 
-PPT viene preinstalado y sus instrucciones automáticas solo se aplican a las sesiones con el botón PPT activado. Consulta la [guía de PPT](packages/ppt-runtime/README.md) para conocer las plantillas, las validaciones y las fuentes de referencia.
+- **Word**: conserva el diseño y los estilos de plantillas nativas para avisos, actas e informes, con salida DOCX.
+- **Excel**: organiza datos, análisis y gráficos a partir de libros de ejemplo, con salida XLSX.
+- **PPT**: **16 plantillas integradas y 192 diseños**, salida PPTX editable e importación de plantillas personales. Las vistas previas integradas están en inglés; las presentaciones admiten inglés y chino. El idioma de la vista previa no determina el resultado.
+
+Python y las dependencias de Office vienen incluidos, sin instalar otro entorno de ejecución. Las instrucciones del modo de plantillas PPT solo se aplican cuando está activado en la sesión actual.
+
+## Workbench
+
+Workbench combina interfaces específicas de negocio con conversaciones del Agent para ofrecer algo más que un chat.
+
+Explora, marca como favoritas e instala aplicaciones del mercado, o importa un Workbench desarrollado localmente. Utiliza su interfaz junto con las conversaciones asociadas del Agent; después de instalar o actualizar, reinicia cuando se indique. Quitar un Workbench conserva las sesiones y los archivos del proyecto.
 
 ## Acceso desde el teléfono
 
-Elige **Connect Phone…** en el menú `Harness` y escanea el código. El escritorio debe aprobar explícitamente la conexión antes de que el teléfono acceda a las sesiones.
+Elige **Connect Phone…** en el menú `Harness` y escanea el QR. Por Wi-Fi la conexión es inmediata; por internet también debes introducir la contraseña de 6 dígitos del ordenador. Por defecto caduca en 5 minutos; solo se guarda una contraseña duradera si lo autorizas en la ventana de conexión.
 
-Harness permanece en un puerto aleatorio de `127.0.0.1`. El teléfono usa un Bridge independiente y vinculado: puede limitarse a la red local o activar un Cloudflare Quick Tunnel temporal para el acceso remoto.
+Puedes usar la LAN o un túnel público temporal. Si Cloudflare no está disponible se usa Pinggy; el servicio gratuito de Pinggy caduca tras unos 60 minutos.
 
 Si Cloudflare no se inicia, la aplicación intenta usar Pinggy. Si aparece el enlace de Cloudflare pero el teléfono no puede abrirlo, selecciona **Can’t open? Try another link** para cambiar a Pinggy.
 
@@ -78,7 +76,7 @@ Si Cloudflare no se inicia, la aplicación intenta usar Pinggy. Si aparece el en
 
 Si un plugin de terceros impide el inicio o la visualización, DSH Desktop relaciona la evidencia del Runtime y del frontend con los plugins instalados y abre una recuperación guiada.
 
-Elige **Restart as Safe Mode…** en el menú `Harness` para iniciar un Profile aislado con los Bundle oficiales principales. Los plugins externos del Profile normal quedan bloqueados, pero el Agent, las sesiones, los ajustes de modelos y los espacios de trabajo siguen disponibles.
+Elige **Restart as Safe Mode…** en el menú `Harness` para bloquear temporalmente plugins externos y conservar el Agent, las sesiones, los modelos y los espacios de trabajo. Desactiva el plugin problemático en la pantalla de gestión y reinicia normalmente para comprobar la recuperación. Desactivarlo no elimina el plugin ni los datos y puedes volver a activarlo después.
 
 La pantalla de recuperación busca actualizaciones compatibles de los plugins y permite instalarlas cuando están disponibles. El Modo seguro también permite actualizar varios plugins a la vez. Para pedir ayuda, pasa el cursor sobre **WeChat group** para mostrar el código QR, o haz clic en **Discord** para abrir la comunidad.
 
@@ -90,11 +88,10 @@ open -a "DSH Desktop" --args --safe-mode
 
 ## Datos locales y seguridad
 
-- La Web UI de Harness solo se sirve en un puerto loopback aleatorio.
-- El Renderer no tiene privilegios de Node.js y utiliza Context Isolation y sandbox.
-- Se bloquean WebView, navegación interna no confiable y solicitudes inesperadas de permisos.
-- Profile y sesiones se guardan en los datos de usuario de la aplicación, no en el directorio de instalación.
-- El teléfono necesita un Token de corta duración y aprobación explícita del escritorio.
+- Las sesiones y los ajustes se guardan localmente en los datos de usuario y se conservan al actualizar la aplicación.
+- El navegador lateral integrado está aislado de los privilegios de la aplicación; los enlaces externos habituales se abren en el navegador del sistema.
+- Vincula el teléfono escaneando el código; por internet también se requiere la contraseña mostrada en el ordenador.
+- Los archivos y comandos del Agent están sujetos a controles de permisos. Aprueba las acciones sensibles con cuidado e instala solo plugins de confianza.
 
 ## Plataformas compatibles
 
@@ -126,3 +123,9 @@ Antes de enviar cambios, ejecuta `npm test`, `npm run typecheck` y `npm run buil
 DSH Desktop se publica bajo la [licencia MIT](LICENSE).
 
 DeepSeek Harness y sus dependencias siguen sujetos a sus licencias y políticas de marcas correspondientes. DSH Desktop es una aplicación de escritorio comunitaria independiente.
+
+## Conoce la edición empresarial
+
+La edición empresarial combina el cliente de escritorio BISHENG con el servidor de la plataforma empresarial BISHENG. El cliente, basado en DSH Desktop, permite trabajar con archivos locales y modelos, conocimiento, herramientas y habilidades autorizados mediante una cuenta empresarial. El servidor configura recursos y permisos de forma centralizada y gestiona créditos y uso. Tanto el cliente como el servidor BISHENG de la edición empresarial son de código abierto; su código fuente está disponible en los repositorios siguientes.
+
+[Código de la plataforma de gestión empresarial](https://github.com/dataelement/bisheng) · [Repositorio del cliente empresarial](https://github.com/dataelement/bisheng-desktop) · [Acerca de la edición empresarial](https://www.dshdesktop.com/es/enterprise/)
