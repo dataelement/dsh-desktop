@@ -222,6 +222,13 @@ window.__ModuleLoader__.load({
         style.id = id
         style.textContent = `
           [data-dsh-sidebar-brand-identity] { display:none !important; }
+          /* Third-party plugins (dshmarket, dsh-better-sidebar) draw custom icons via ::before on settings nav rows,
+             expecting direct > svg to hide the fallback gear. In 0.2.2-rc.1, navIcon wraps the fallback in a span,
+             so ensure the fallback gear container is hidden when custom nav marker is present. */
+          [data-dsh-market-nav-icon] span[class*="navIcon"],
+          [data-dsh-market-nav-icon] svg,
+          [data-dsh-better-sidebar-settings-nav] span[class*="navIcon"],
+          [data-dsh-better-sidebar-settings-nav] svg { display:none !important; }
           [data-dsh-enterprise-entry] {
             display:flex; align-items:center; gap:4px; min-height:36px; padding:0 12px;
             border-radius:8px; color:var(--dsw-alias-label-secondary); font-size:13px;
