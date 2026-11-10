@@ -14,6 +14,11 @@ describe('Desktop host plugin control in Plugins settings', () => {
       document: { querySelector: () => ({}) }
     })
     client.apply({
+      remote: {
+        pluginManager: { listBundles: async () => ({ ok: true, value: [] }) },
+        $on: () => () => {}
+      },
+      on: () => () => {},
       effect(callback) { callback() },
       locale: { register() {}, bind: () => key => key },
       slots: {

@@ -21,7 +21,6 @@ const IMPORT_DISCARD_SUFFIX = '.import-discarded'
 
 /** Packages that stay in the shared tree — never treated as community plugins. */
 const KEEP_IN_SHARED_TREE = new Set([
-  'dshmarket',
   '@deepseek-ai/dsh-base',
   '@deepseek-ai/dsh-web-app'
 ])

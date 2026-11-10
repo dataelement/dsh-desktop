@@ -69,7 +69,6 @@ interface SnapshotState {
 
 /** Packages that stay in the shared tree — never migrated to a generation. */
 const KEEP_IN_SHARED_TREE = new Set([
-  'dshmarket',
   '@deepseek-ai/dsh-base',
   '@deepseek-ai/dsh-web-app'
 ])
@@ -85,7 +84,7 @@ interface MigrationDeps {
   /** Windows console-hide bootstrap restored by the pnpm shim and passed to pnpm. */
   hideConsoleBootstrapPath?: string
   dshEntryPath: string
-  /** Rebuild the shared tree from the rewritten manifest (dshmarket only). */
+  /** Rebuild the shared tree from the remaining host dependencies. */
   reinstallSharedTree: () => Promise<{ ok: boolean; detail?: string }>
   note: Note
 }
@@ -529,7 +528,6 @@ async function rewriteManifest(dshHome: string): Promise<void> {
   for (const [name, spec] of Object.entries(snapshot.dependencies ?? {})) {
     if (KEEP_IN_SHARED_TREE.has(name)) keptDeps[name] = spec as string
   }
-  if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.66.47'
 
   // Bundles are left to projection, which runs next and knows the generations.
   // Here we only trim to the shared-tree packages and keep in-box bundles.

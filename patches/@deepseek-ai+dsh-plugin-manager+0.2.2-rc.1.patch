@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
-index ea6b83f..7d43c86 100644
+index ea6b83f..0e348bb 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 @@ -9,7 +9,7 @@ import semver from "semver";
@@ -96,7 +96,7 @@ index ea6b83f..7d43c86 100644
  				Object.assign(result, enabled ? await this.publishAndReload(this.bundleRows(name).map((row) => row.id)) : await this.reload());
  			}), {
  				stage: "enable",
-@@ -2726,24 +2735,61 @@ let PluginManager = (() => {
+@@ -2726,24 +2735,62 @@ let PluginManager = (() => {
  				});
  			};
  			const result = this.change(async (result) => {
@@ -135,6 +135,7 @@ index ea6b83f..7d43c86 100644
 +				let used = null;
  				let name;
  				let version;
++				let bundleDirectory;
  				try {
  					result.registries = [];
 -					const parsed = parsedForRegistry(spec);
@@ -163,7 +164,7 @@ index ea6b83f..7d43c86 100644
  						timeoutMs: this.githubConnectionTimeoutMs,
  						outputBytes: this.outputBytes,
  						signal,
-@@ -2772,7 +2818,7 @@ let PluginManager = (() => {
+@@ -2772,7 +2819,7 @@ let PluginManager = (() => {
  						});
  						throw new Error(connectionFailure.output);
  					}
@@ -172,7 +173,7 @@ index ea6b83f..7d43c86 100644
  						timeoutMs: this.gitTransportTimeoutMs,
  						signal,
  						...env
-@@ -2786,8 +2832,6 @@ let PluginManager = (() => {
+@@ -2786,8 +2833,6 @@ let PluginManager = (() => {
  					}
  					if (stopped()) throw new InstallCancelledError();
  					const plan = registryPlan(options?.registry, await this.registries());
@@ -181,7 +182,7 @@ index ea6b83f..7d43c86 100644
  					for (const [index, registry] of plan.entries()) {
  						if (index > 0) await this.restoreFiles(files);
  						if (stopped()) throw new InstallCancelledError();
-@@ -2818,10 +2862,17 @@ let PluginManager = (() => {
+@@ -2818,10 +2863,17 @@ let PluginManager = (() => {
  					}
  					/* v8 ignore next -- the plan is never empty, so a run always settled */
  					if (run === void 0) throw new Error("no registry was asked");
@@ -200,7 +201,7 @@ index ea6b83f..7d43c86 100644
  							result.pendingBuilds = await recordPendingBuilds(this.profile.dir, run.output);
  						} catch (error) {
  							this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
-@@ -2829,23 +2880,29 @@ let PluginManager = (() => {
+@@ -2829,38 +2881,59 @@ let PluginManager = (() => {
  						throw new Error(run.output);
  					}
  					const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -216,8 +217,12 @@ index ea6b83f..7d43c86 100644
 +					if (expectedName !== void 0 && target !== expectedName) throw new Error("Installed bundle name does not match expectedName");
 +					if (Object.hasOwn(before, target) && options?.replace !== true) throw new ManagementFailure("already-installed");
  					name = target;
- 					const dir = resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
- 					const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
+-					const dir = resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
+-					const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
++					bundleDirectory = mutation?.bundleDirectory;
++					if (bundleDirectory !== void 0 && (typeof bundleDirectory !== "string" || !isAbsolute(bundleDirectory))) throw new Error("Package backend bundleDirectory must be an absolute path");
++					const dir = bundleDirectory ?? resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
++					const manifest = bundleDirectory === void 0 ? bundleManifest(name, this.profile.dir, this.profile.installAnchor) : readProfileManifest("dsh", dir);
  					if (manifest?.dsh?.bundle === void 0) throw new ManagementFailure("not-bundle");
 +					if (expectedName !== void 0 && manifest.name !== expectedName) throw new Error("Installed manifest name does not match expectedName");
 +					if (options?.expectedVersion !== void 0 && manifest.version !== options.expectedVersion) throw new Error("Installed manifest version does not match expectedVersion");
@@ -227,12 +232,53 @@ index ea6b83f..7d43c86 100644
  					for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches("dsh", file);
  					version = manifest.version;
  					this.installedFrom.set(name, used);
++					control.phase = "applying";
++					announce("applying");
++					result.bundle = name;
++					if (version !== void 0) result.version = version;
++					result.target = name;
++					result.stage = "enable";
++					return await this.configure(async () => {
++						if (options?.enabled !== false) await this.selectBundle(name, true, void 0, bundleDirectory);
++						// Deferred publication must not reconcile against the still-running package directory.
++						if (mutation?.restartRequired === true || mutation?.replaced === true) {
++							result.restartRequired = true;
++							result.restartReason = "package-moved";
++							return "restart-required";
++						}
++						if (Object.hasOwn(before, name) && this.ownerContext.get("hmr") === void 0) return;
++						const selected = bundleSelection(readProfileManifest("dsh", this.profile.dir)).includes(name);
++						Object.assign(result, await this.publishAndReload(selected ? this.bundleRows(name, bundleDirectory).map((row) => row.id) : []));
++					});
  				} catch (error) {
-+					await mutation?.rollback?.();
- 					await this.restoreFiles(files);
+-					await this.restoreFiles(files);
++					const failures = [error];
++					try {
++						await mutation?.rollback?.();
++					} catch (rollbackError) {
++						failures.push(rollbackError);
++					} finally {
++						try { await this.restoreFiles(files); } catch (restoreError) { failures.push(restoreError); }
++					}
++					if (failures.length > 1) throw new AggregateError(failures, `Installation failed; rollback incomplete: ${failures.map(messageOf).join("; ")}`, { cause: error });
  					throw error;
  				}
-@@ -2909,20 +2966,22 @@ let PluginManager = (() => {
+-				control.phase = "applying";
+-				announce("applying");
+-				result.bundle = name;
+-				if (version !== void 0) result.version = version;
+-				result.target = name;
+-				result.stage = "enable";
+-				return this.configure(async () => {
+-					if (options?.enabled !== false) await this.selectBundle(name, true);
+-					if (Object.hasOwn(before, name) && this.ownerContext.get("hmr") === void 0) return;
+-					const selected = bundleSelection(readProfileManifest("dsh", this.profile.dir)).includes(name);
+-					Object.assign(result, await this.publishAndReload(selected ? this.bundleRows(name).map((row) => row.id) : []));
+-				});
+ 			}, {
+ 				stage: "install",
+ 				target: spec,
+@@ -2909,20 +2982,22 @@ let PluginManager = (() => {
  					if (bundle === void 0 || !bundle.removable) throw new ManagementFailure("not-removable");
  					if (this.ownerContext.get("hmr") === void 0 && (this.profile.startedBundles.includes(name) || bundle.error === void 0 && this.bundleRows(name).some((row) => [...this.ctx.loader.entries()].some((entry) => entry.options.id === row.id && entry.fiber !== void 0)))) throw new ManagementFailure("stop-profile");
  					const contributions = bundle.error === void 0 ? this.bundleRows(name) : [];
@@ -261,7 +307,7 @@ index ea6b83f..7d43c86 100644
  				this.installedFrom.delete(name);
  				Object.assign(result, await this.configure(() => this.publishAndReload()));
  			}, {
-@@ -2968,6 +3027,45 @@ let PluginManager = (() => {
+@@ -2968,6 +3043,45 @@ let PluginManager = (() => {
  				overrides: [...new Set(patches.flatMap((item) => item.insert === void 0 && typeof item.id === "string" && !declared.has(item.id) ? [item.id] : []))]
  			};
  		}
@@ -307,22 +353,25 @@ index ea6b83f..7d43c86 100644
  		/** Run one pnpm command in the profile, streaming its output as install-log chunks. */
  		async runPnpm(args, signal, requestId) {
  			const jobId = randomUUID();
-@@ -3045,7 +3143,7 @@ let PluginManager = (() => {
+@@ -3045,22 +3159,23 @@ let PluginManager = (() => {
  			for (const [path, content] of files) if (content === void 0) await rm(path, { force: true });
  			else await writeFileAtomic(path, content, { mode: 384 });
  		}
 -		async selectBundle(name, enabled) {
-+		async selectBundle(name, enabled, beforeSave) {
++		async selectBundle(name, enabled, beforeSave, bundleDirectory) {
  			const manifest = readProfileManifest("dsh", this.profile.dir);
  			const previous = bundleSelection(manifest);
  			if (enabled || !previous.includes(name)) {
-@@ -3054,13 +3152,14 @@ let PluginManager = (() => {
+-				const metadata = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
++				const metadata = bundleDirectory === void 0 ? bundleManifest(name, this.profile.dir, this.profile.installAnchor) : readProfileManifest("dsh", bundleDirectory);
+ 				if (metadata === void 0) throw new ManagementFailure("not-bundle");
  				if (enabled) {
  					assertBundlePlatform(metadata.dsh?.bundle?.platforms, process.platform);
  					const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir));
 -					if (compatibility !== void 0 && !compatibility.exempted) throw new ManagementFailure("incompatible-version", [incompatiblePlugin(compatibility)]);
+-					this.bundleRows(name);
 +					if (compatibility !== void 0 && !compatibility.exempted) reportPluginCompatibility(compatibility);
- 					this.bundleRows(name);
++					this.bundleRows(name, bundleDirectory);
  				}
  			}
  			if (!enabled && previous.includes(name)) {
@@ -332,7 +381,21 @@ index ea6b83f..7d43c86 100644
  			const bundles = enabled ? [...previous, ...previous.includes(name) ? [] : [name]] : previous.filter((item) => item !== name);
  			if (JSON.stringify(previous) === JSON.stringify(bundles)) return;
  			manifest.dsh = {
-@@ -3139,6 +3238,7 @@ let PluginManager = (() => {
+@@ -3073,10 +3188,10 @@ let PluginManager = (() => {
+ 			await saveManifest(this.profile.dir, manifest);
+ 			if (enabled) this.protectsManager(name);
+ 		}
+-		bundleRows(name) {
+-			const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
++		bundleRows(name, bundleDirectory) {
++			const info = bundleDirectory === void 0 ? bundleManifest(name, this.profile.dir, this.profile.installAnchor) : readProfileManifest("dsh", bundleDirectory);
+ 			if (info?.dsh?.bundle === void 0) return [];
+-			return flatten(composeEntries([bundlePatchPaths(resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir), info.dsh.bundle).flatMap((file) => loadOverlayPatches("dsh", file))]));
++			return flatten(composeEntries([bundlePatchPaths(bundleDirectory ?? resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir), info.dsh.bundle).flatMap((file) => loadOverlayPatches("dsh", file))]));
+ 		}
+ 		protectsManager(name) {
+ 			if (this.managementBundles.has(name)) return true;
+@@ -3139,6 +3254,7 @@ let PluginManager = (() => {
  				restartReason: restart
  			};
  		}
@@ -340,7 +403,7 @@ index ea6b83f..7d43c86 100644
  		async change(operation, request, reason, identity) {
  			const id = randomUUID();
  			const target = identity === void 0 ? this.operationTarget(reason, request.target) : identity.target;
-@@ -3182,6 +3282,11 @@ let PluginManager = (() => {
+@@ -3182,6 +3298,11 @@ let PluginManager = (() => {
  					}
  					if (result.application !== "restart-required") delete result.restartReason;
  					result.changed = before !== this.diskState();
@@ -353,7 +416,7 @@ index ea6b83f..7d43c86 100644
  					return result;
  				}, { waitMs: this.lockWaitMs });
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js
-index ffb85f5..75d9b5e 100644
+index 3394f4e..172c3a2 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js
 @@ -35,6 +35,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$sche
@@ -367,7 +430,71 @@ index ffb85f5..75d9b5e 100644
    'enabled': z.boolean().optional(),
    'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
    'requestId': z.string().optional(),
-@@ -569,6 +573,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_stri
+@@ -45,6 +49,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_result$schema$va
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -250,6 +255,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_removeBundle_result$schema$val
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_removeBundle_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_removeBundle_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -294,6 +300,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_setBundleEnabled_result$schema
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_setBundleEnabled_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_setBundleEnabled_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -338,6 +345,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_setPluginEnabled_result$schema
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_setPluginEnabled_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_setPluginEnabled_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -386,6 +394,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_setVersionExemption_result$sch
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_setVersionExemption_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_setVersionExemption_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -439,6 +448,7 @@ const _deepseek_ai_dsh_plugin_manager_pluginManager_updateBundle_result$schema =
+   'result': z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -478,6 +488,7 @@ const _deepseek_ai_dsh_plugin_manager_pluginManager_updateBundle_result$schema =
+   'restore': z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -521,6 +532,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_waitForInstall_result$schema$v
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_waitForInstall_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_waitForInstall_result$schema$value ??= z.union([z.literal(null), z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -569,6 +581,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_stri
  const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema$value ??= z.string())
  let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value
  const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value ??= z.union([z.undefined(), z.strictObject({
@@ -378,7 +505,7 @@ index ffb85f5..75d9b5e 100644
    'enabled': z.boolean().optional(),
    'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
    'requestId': z.string().optional(),
-@@ -736,13 +744,13 @@ const $remote = createTypertRemoteInfo({
+@@ -736,13 +752,13 @@ const $remote = createTypertRemoteInfo({
              mode: 'strict',
              typeSymbol: '@deepseek-ai/dsh-plugin-manager/types#InstallBundleOptions',
              create: _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema,
@@ -394,7 +521,7 @@ index ffb85f5..75d9b5e 100644
            },
          },
        ],
-@@ -1402,7 +1410,7 @@ export const TYPERT = {
+@@ -1402,7 +1418,7 @@ export const TYPERT = {
            },
            {
              "name": "InstallBundleOptions",
@@ -404,7 +531,7 @@ index ffb85f5..75d9b5e 100644
            {
              "name": "InstallSpecKind",
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js
-index 295ff46..af9af4b 100644
+index 295ff46..3c2bbf3 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js
 @@ -35,6 +35,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$sche
@@ -418,7 +545,71 @@ index 295ff46..af9af4b 100644
    'enabled': z.boolean().optional(),
    'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
    'requestId': z.string().optional(),
-@@ -569,6 +573,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_stri
+@@ -45,6 +49,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_result$schema$va
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -250,6 +255,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_removeBundle_result$schema$val
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_removeBundle_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_removeBundle_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -294,6 +300,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_setBundleEnabled_result$schema
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_setBundleEnabled_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_setBundleEnabled_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -338,6 +345,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_setPluginEnabled_result$schema
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_setPluginEnabled_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_setPluginEnabled_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -386,6 +394,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_setVersionExemption_result$sch
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_setVersionExemption_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_setVersionExemption_result$schema$value ??= z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -439,6 +448,7 @@ const _deepseek_ai_dsh_plugin_manager_pluginManager_updateBundle_result$schema =
+   'result': z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -478,6 +488,7 @@ const _deepseek_ai_dsh_plugin_manager_pluginManager_updateBundle_result$schema =
+   'restore': z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -521,6 +532,7 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_waitForInstall_result$schema$v
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_waitForInstall_result$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_waitForInstall_result$schema$value ??= z.union([z.literal(null), z.object({
+   'changed': z.boolean(),
+   'application': z.union([z.literal("cancelled"), z.literal("failed"), z.literal("applied"), z.literal("restart-required"), z.literal("overridden")]).describe('`cancelled` is an installation the caller stopped, its files restored.'),
++  'restartRequired': z.boolean().optional().describe('Package publication is deferred until the next host start.'),
+   'restartReason': z.union([z.literal("no-hmr"), z.literal("package-moved"), z.literal("host-module"), z.literal("unmanaged-plugin"), z.literal("module-comparison")]).optional().describe('Present with `restart-required`: why the change takes effect only at the next start.'),
+   'stage': z.union([z.literal("remove"), z.literal("install"), z.literal("enable")]).describe('Last attempted step; successful installation can proceed to enablement.'),
+   'target': z.string(),
+@@ -569,6 +581,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_stri
  const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema$value ??= z.string())
  let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value
  const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value ??= z.union([z.undefined(), z.strictObject({
@@ -429,7 +620,7 @@ index 295ff46..af9af4b 100644
    'enabled': z.boolean().optional(),
    'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
    'requestId': z.string().optional(),
-@@ -736,13 +744,13 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
+@@ -736,13 +752,13 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
              mode: 'strict',
              typeSymbol: '@deepseek-ai/dsh-plugin-manager/types#InstallBundleOptions',
              create: _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema,
@@ -446,7 +637,7 @@ index 295ff46..af9af4b 100644
          },
        ],
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
-index a896260..824df5a 100644
+index a896260..2465feb 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
 @@ -7,6 +7,20 @@ export type * from './types.ts';
@@ -457,7 +648,7 @@ index a896260..824df5a 100644
 +export interface ProfileBundlePackageBackend {
 +    /** Validates expected identity, version and npm SRI before publishing a generation. */
 +    readonly supportsVerifiedInstall?: boolean;
-+    install(request: { spec: string; kind: 'registry' | 'path' | 'git' | 'tarball'; path?: string; registry?: string; expectedName?: string; expectedVersion?: string; npmIntegrity?: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; bundle?: string; replaced?: boolean; pendingBuilds?: string[]; rollback?(): Promise<void>; commit?(): void; } | undefined>;
++    install(request: { spec: string; kind: 'registry' | 'path' | 'git' | 'tarball'; path?: string; registry?: string; expectedName?: string; expectedVersion?: string; npmIntegrity?: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; bundle?: string; bundleDirectory?: string; restartRequired?: boolean; replaced?: boolean; pendingBuilds?: string[]; rollback?(): Promise<void>; commit?(): void; } | undefined>;
 +    /** Resolves undefined when the package is not the backend's to remove; Plugin Manager then uses pnpm. */
 +    remove(request: { name: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; } | undefined>;
 +    /** Validate a switch without writes, after bundle guards and before profile selection is saved. */
@@ -480,10 +671,19 @@ index a896260..824df5a 100644
      private readBundles;
      /** Read the registries this manager asks: the configured first one, its fallbacks in order, and what pnpm's own configuration names.
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts
-index 5d01d73..cf8e430 100644
+index 5d01d73..091b026 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts
-@@ -180,6 +180,14 @@ export type PluginInstallRequestId = Branded<'PluginInstallRequestId'>;
+@@ -151,6 +151,8 @@ export interface ChangeResult {
+     application: 'applied' | 'restart-required' | 'overridden' | 'failed' | 'cancelled';
+     /** Present with `restart-required`: why the change takes effect only at the next start. */
+     restartReason?: RestartReason;
++    /** Package publication is deferred until the next host start. */
++    restartRequired?: boolean;
+     /** Last attempted step; successful installation can proceed to enablement. */
+     stage: 'install' | 'enable' | 'remove';
+     target: string;
+@@ -180,6 +182,14 @@ export type PluginInstallRequestId = Branded<'PluginInstallRequestId'>;
  /** Bundle installation defaults to activation; callers that offer cancellation supply their request id. */
  export interface InstallBundleOptions {
      enabled?: boolean;
