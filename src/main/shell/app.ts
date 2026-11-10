@@ -851,7 +851,7 @@ async function main(): Promise<void> {
     cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
     forceCloudflareFailure: process.env.DSH_TUNNEL_FORCE_PINGGY === '1',
     tunnelLog: message => { console.warn(message) },
-    port: desktopMobilePort(app.isPackaged),
+    port: desktopMobilePort(app.isPackaged && !desktopDevelopmentBuild()),
     onReconnectRequested: () => {
       void openMobilePairing().catch((error: unknown) => { console.error(error) })
     },
