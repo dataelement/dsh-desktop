@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 8f7ad1e..f3fb38e 100644
+index 8f7ad1e..9a33b16 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 @@ -82,6 +82,7 @@ window.__ModuleLoader__.load({
@@ -10,7 +10,47 @@ index 8f7ad1e..f3fb38e 100644
  						"aria-label": t("session.new.label"),
  						"aria-keyshortcuts": newShortcut?.aria,
  						onClick: () => {
-@@ -403,6 +404,8 @@ window.__ModuleLoader__.load({
+@@ -371,6 +372,39 @@ window.__ModuleLoader__.load({
+ 				});
+ 			};
+ 			const darwinDesktop = (0, _deepseek_ai_dsh_client_ui_primitives.isDarwinDesktop)();
++			function NavigationRow({ id, label, wide, active, onClick, icon, expanded }) {
++				return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++					label,
++					delayMs: 500,
++					side: "right",
++					disabled: wide,
++					children: (0, react_jsx_runtime.jsxs)("button", {
++						type: "button",
++						className: clsx(SidebarRoot_module_css_default.panelRow, active && SidebarRoot_module_css_default.panelActive),
++						"aria-label": label,
++						"data-navigation-id": id,
++						"aria-haspopup": expanded === void 0 ? void 0 : "menu",
++						"aria-expanded": expanded,
++						"aria-current": active ? "page" : void 0,
++						onClick: () => {
++							onClick();
++						},
++						children: [(0, react_jsx_runtime.jsx)("span", {
++							className: SidebarRoot_module_css_default.panelGlyph,
++							"aria-hidden": "true",
++							children: icon || renderSlot("sidebar.panellist", {
++								size: wide ? 16 : 18,
++								active
++							}, {
++								only: id
++							})
++						}), wide && (0, react_jsx_runtime.jsx)("span", {
++							className: clsx(SidebarRoot_module_css_default.panelTitle, SidebarRoot_module_css_default.wide),
++							children: label
++						})]
++					})
++				});
++			}
+ 			const toggle = (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+ 				label: toggleLabel,
+ 				shortcutKeys: shortcut?.keys,
+@@ -403,6 +437,8 @@ window.__ModuleLoader__.load({
  			});
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -19,7 +59,7 @@ index 8f7ad1e..f3fb38e 100644
  				onFocusCapture: (event) => {
  					sidebarFocus.current = event.target;
  				},
-@@ -426,22 +429,16 @@ window.__ModuleLoader__.load({
+@@ -426,22 +462,16 @@ window.__ModuleLoader__.load({
  						"data-window-drag": true,
  						children: toggle
  					}),
@@ -45,7 +85,7 @@ index 8f7ad1e..f3fb38e 100644
  									className: SidebarRoot_module_css_default.brandName,
  									children: renderSlot("sidebar.brand.name", {}, { fallback: buildVersion === void 0 ? (0, react_jsx_runtime.jsx)("span", {
  										className: SidebarRoot_module_css_default.fallbackBrandName,
-@@ -474,7 +471,7 @@ window.__ModuleLoader__.load({
+@@ -474,7 +504,7 @@ window.__ModuleLoader__.load({
  								},
  								children: identity
  							});
@@ -54,7 +94,7 @@ index 8f7ad1e..f3fb38e 100644
  					}),
  					canStartSession && (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
  						label: t("session.new.label"),
-@@ -485,6 +482,7 @@ window.__ModuleLoader__.load({
+@@ -485,6 +515,7 @@ window.__ModuleLoader__.load({
  						children: (0, react_jsx_runtime.jsxs)("button", {
  							type: "button",
  							className: SidebarRoot_module_css_default.newSession,
@@ -62,15 +102,99 @@ index 8f7ad1e..f3fb38e 100644
  							"aria-label": t("session.new.label"),
  							"aria-keyshortcuts": newShortcut?.aria,
  							onClick: openNewSession,
-@@ -504,6 +502,7 @@ window.__ModuleLoader__.load({
+@@ -504,39 +535,60 @@ window.__ModuleLoader__.load({
  							})]
  						})
  					}),
+-					panels.length > 0 && (0, react_jsx_runtime.jsxs)("nav", {
+-						className: SidebarRoot_module_css_default.panelList,
+-						"aria-label": t("panels.label"),
+-						children: [panels.filter(({ id }) => id === "plugins" || !unpinned.includes(id)).map(({ id, label }) => (0, react_jsx_runtime.jsx)(PanelRow, {
+-							id,
+-							label,
+-							wide,
+-							usePanelInfo,
+-							selectPanel,
+-							trackEntryClick,
+-							renderSlot
+-						}, id)), hasEntryActions && (0, react_jsx_runtime.jsx)(PanelMoreMenu, {
+-							wide,
+-							label: t("panels.more"),
+-							entries: panels.filter(({ id }) => id !== "plugins").map(({ id, label }) => ({
 +					renderSlot("sidebar.quickSwitcher", { wide, startSession }),
- 					panels.length > 0 && (0, react_jsx_runtime.jsxs)("nav", {
- 						className: SidebarRoot_module_css_default.panelList,
- 						"aria-label": t("panels.label"),
-@@ -560,8 +559,9 @@ window.__ModuleLoader__.load({
++					renderSlot("sidebar.primaryNavigation", {
++						wide,
++						startSession,
++						panels,
++						selectPanel,
++						expandSidebar: () => {
++							if (collapsed) toggleSidebar();
++						},
++						renderAction: (props) => (0, react_jsx_runtime.jsx)(NavigationRow, {
++							...props,
++							wide
++						}),
++						renderPanelIcon: (id) => renderSlot("sidebar.panellist", {
++							size: 16,
++							active: false
++						}, {
++							only: id
++						})
++					}, {
++						fallback: panels.length > 0 && (0, react_jsx_runtime.jsxs)("nav", {
++							className: SidebarRoot_module_css_default.panelList,
++							"aria-label": t("panels.label"),
++							children: [panels.filter(({ id }) => id === "plugins" || !unpinned.includes(id)).map(({ id, label }) => (0, react_jsx_runtime.jsx)(PanelRow, {
+ 								id,
+ 								label,
+-								pinned: !unpinned.includes(id),
+-								active: id === activePanelId
+-							})),
+-							onOpen: (id) => {
+-								const entry = officialEntry(id);
+-								if (entry !== void 0) trackEntryClick({
+-									menu_name: entry,
+-									position: "sidebar_more"
+-								});
+-								const panel = panels.find((candidate) => candidate.id === id);
+-								if (panel !== void 0) selectPanel(panel.id);
+-							},
+-							onPinnedChange: setPinned,
+-							trackEntryClick,
+-							renderSlot
+-						})]
++								wide,
++								usePanelInfo,
++								selectPanel,
++								trackEntryClick,
++								renderSlot
++							}, id)), hasEntryActions && (0, react_jsx_runtime.jsx)(PanelMoreMenu, {
++								wide,
++								label: t("panels.more"),
++								entries: panels.filter(({ id }) => id !== "plugins").map(({ id, label }) => ({
++									id,
++									label,
++									pinned: !unpinned.includes(id),
++									active: id === activePanelId
++								})),
++								onOpen: (id) => {
++									const entry = officialEntry(id);
++									if (entry !== void 0) trackEntryClick({
++										menu_name: entry,
++										position: "sidebar_more"
++									});
++									const panel = panels.find((candidate) => candidate.id === id);
++									if (panel !== void 0) selectPanel(panel.id);
++								},
++								onPinnedChange: setPinned,
++								trackEntryClick,
++								renderSlot
++							})]
++						})
+ 					}),
+ 					(0, react_jsx_runtime.jsx)("div", {
+ 						className: SidebarRoot_module_css_default.regionArea,
+@@ -560,8 +612,9 @@ window.__ModuleLoader__.load({
  							className: SidebarRoot_module_css_default.footerActions,
  							children: renderSlot("sidebar.footer.action", { wide })
  						}), (0, react_jsx_runtime.jsx)("div", {
@@ -81,7 +205,7 @@ index 8f7ad1e..f3fb38e 100644
  						})]
  					})
  				]
-@@ -746,6 +746,10 @@ window.__ModuleLoader__.load({
+@@ -746,6 +799,14 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "root"
  					},
@@ -89,10 +213,14 @@ index 8f7ad1e..f3fb38e 100644
 +						kind: "single",
 +						scope: "root"
 +					},
++					"sidebar.primaryNavigation": {
++						kind: "single",
++						scope: "root"
++					},
  					"sidebar.panellist": {
  						kind: "list",
  						scope: "root"
-@@ -762,6 +766,10 @@ window.__ModuleLoader__.load({
+@@ -762,6 +823,10 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "root"
  					},
@@ -104,13 +232,27 @@ index 8f7ad1e..f3fb38e 100644
  						kind: "list",
  						scope: "root"
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
-index 1f68270..9d4c0c7 100644
+index 1f68270..e2cae40 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
-@@ -40,6 +40,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -7,6 +7,7 @@
+  * `sidebar.settings` registrant's (ui-settings), followed by optional footer
+  * actions in `sidebar.footer.action`.
+  */
++import type { ReactNode } from 'react';
+ import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
+ import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store';
+ import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client';
+@@ -40,6 +41,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              scope: 'root';
              owner: SidebarBrandNameOwnerProps;
          };
++        /** Optional replacement for the native panel navigation; absence preserves the native rows and More menu. */
++        'sidebar.primaryNavigation': {
++            kind: 'single';
++            scope: 'root';
++            owner: SidebarPrimaryNavigationOwnerProps;
++        };
 +        /** Compact mode switcher between New Session and panel navigation. */
 +        'sidebar.quickSwitcher': {
 +            kind: 'single';
@@ -120,7 +262,7 @@ index 1f68270..9d4c0c7 100644
          /**
           * Global panel icons. Each list id addresses the matching main panel;
           * the sidebar owns the button and resolves its label from list metadata.
-@@ -76,6 +82,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -76,6 +89,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              scope: 'root';
              owner: SidebarSettingsOwnerProps;
          };
@@ -133,7 +275,7 @@ index 1f68270..9d4c0c7 100644
          /**
           * Optional actions beside Settings at the sidebar foot. Declared by this
           * package's 'sidebar' entry; each action receives only the column state.
-@@ -113,6 +125,11 @@ export interface SidebarPanelMetadata {
+@@ -113,6 +132,29 @@ export interface SidebarPanelMetadata {
      /** Row title and accessible name: resolved label, or the id when omitted. */
      label: string;
  }
@@ -142,26 +284,44 @@ index 1f68270..9d4c0c7 100644
 +    wide: boolean;
 +    startSession: (workspaceId?: WorkspaceId) => void;
 +}
++/** One action rendered with the shell's native panel-row geometry. */
++export interface SidebarNavigationActionProps {
++    id: string;
++    label: string;
++    active?: boolean;
++    icon?: ReactNode;
++    /** Presence makes the row a menu trigger, even when false. */
++    expanded?: boolean;
++    onClick: () => void;
++}
++/** Public navigation seat between New Session/quick switcher and workspaces. */
++export interface SidebarPrimaryNavigationOwnerProps extends SidebarQuickSwitcherOwnerProps {
++    panels: readonly SidebarPanelMetadata[];
++    selectPanel: (id: MainPanelId) => void;
++    expandSidebar: () => void;
++    renderAction: (props: SidebarNavigationActionProps) => ReactNode;
++    renderPanelIcon: (id: MainPanelId) => ReactNode;
++}
  /** One customizable panel launcher listed in the More menu. */
  export interface SidebarPanelActionEntry {
      /** Panel id. */
-@@ -203,5 +220,5 @@ export type SidebarRootInjected = {
+@@ -203,5 +245,5 @@ export type SidebarRootInjected = {
   * render shares, this package's injected callbacks, and the standard locale
   * seat. Panel metadata arrives through an injected observable.
   */
 -export type SidebarRootComponentProps = PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.brand.mark' | 'sidebar.brand.name' | 'sidebar.toggle.badge' | 'sidebar.panellist' | 'sidebar.panellist.actions' | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'> & InjectFace<SidebarRootInjected> & PropsLocale<'sidebar'>;
-+export type SidebarRootComponentProps = PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.brand.mark' | 'sidebar.brand.name' | 'sidebar.toggle.badge' | 'sidebar.quickSwitcher' | 'sidebar.panellist' | 'sidebar.panellist.actions' | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.settings.action' | 'sidebar.footer.action'> & InjectFace<SidebarRootInjected> & PropsLocale<'sidebar'>;
++export type SidebarRootComponentProps = PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.brand.mark' | 'sidebar.brand.name' | 'sidebar.toggle.badge' | 'sidebar.quickSwitcher' | 'sidebar.primaryNavigation' | 'sidebar.panellist' | 'sidebar.panellist.actions' | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.settings.action' | 'sidebar.footer.action'> & InjectFace<SidebarRootInjected> & PropsLocale<'sidebar'>;
  //# sourceMappingURL=slots.d.ts.map
 \ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts
-index c7da079..1539ef0 100644
+index c7da079..67314b2 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts
 @@ -1,6 +1,6 @@
  import type { Context as ClientContext } from '@deepseek-ai/cordis';
  import { type SidebarKey } from './locales.ts';
 -export type { SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps, SidebarPanelActionEntry, SidebarPanelActionsOwnerProps, SidebarPanelIconOwnerProps, SidebarPanelMetadata, SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps, } from './contract/slots.ts';
-+export type { SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps, SidebarPanelActionEntry, SidebarPanelActionsOwnerProps, SidebarPanelIconOwnerProps, SidebarQuickSwitcherOwnerProps, SidebarPanelMetadata, SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps, } from './contract/slots.ts';
++export type { SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps, SidebarPanelActionEntry, SidebarPanelActionsOwnerProps, SidebarPanelIconOwnerProps, SidebarQuickSwitcherOwnerProps, SidebarPrimaryNavigationOwnerProps, SidebarNavigationActionProps, SidebarPanelMetadata, SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps, } from './contract/slots.ts';
  export type { SidebarKey } from './locales.ts';
  declare module '@deepseek-ai/dsh-client-ui-slots' {
      interface LocaleNamespaceMap {

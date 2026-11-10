@@ -1,0 +1,108 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
+index 49851e3..8b56a13 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
+@@ -114,6 +114,7 @@ window.__ModuleLoader__.load({
+ 		function CenterColumn(props) {
+ 			return (0, react_jsx_runtime.jsx)("div", {
+ 				className: AppFrame_module_css_default.centerCol,
++				style: props.nested ? { gridColumn: 1 } : void 0,
+ 				inert: props.inert ? "" : void 0,
+ 				children: props.children
+ 			});
+@@ -135,6 +136,7 @@ window.__ModuleLoader__.load({
+ 		function RightbarColumn(props) {
+ 			return (0, react_jsx_runtime.jsx)("div", {
+ 				className: AppFrame_module_css_default.rightbarCol,
++				style: props.nested ? { gridColumn: 2 } : void 0,
+ 				"data-rightbar-col": true,
+ 				inert: props.inert ? "" : void 0,
+ 				children: props.children
+@@ -346,6 +348,14 @@ window.__ModuleLoader__.load({
+ 			const overlays = (0, react.useMemo)(() => renderSlot("shell.overlay", {}), [renderSlot]);
+ 			const leading = (0, react.useMemo)(() => renderSlot("shell.leading", {}), [renderSlot]);
+ 			const leadingMounted = drawer || darwin && sidebarCollapsed;
++			const rightbar = renderSlot("rightbar", { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 });
++			const work = (nested) => (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
++				(0, react_jsx_runtime.jsx)(CenterColumn, { nested, inert: drawerOpen, children: main }),
++				(0, react_jsx_runtime.jsx)(RightbarColumn, { nested, inert: drawerOpen, children: rightbar })
++			] });
++			const resizeHandle = layoutInfo.rightbarShown && !layoutInfo.rightbarFullscreen && normal.rightbar > 0 && (0, react_jsx_runtime.jsx)(DragHandle, {
++				side: "rightbar", left: viewport - normal.rightbar, onStart: onRightbarStart, onDrag: onRightbarDrag, onEnd: onDragEnd
++			});
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				ref: frameRef,
+ 				className: AppFrame_module_css_default.frame,
+@@ -381,17 +391,7 @@ window.__ModuleLoader__.load({
+ 						inert: drawer && sidebarCollapsed ? "" : void 0,
+ 						children: sidebar
+ 					}),
+-					(0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(CenterColumn, {
+-						inert: drawerOpen,
+-						children: main
+-					}), (0, react_jsx_runtime.jsx)(RightbarColumn, {
+-						inert: drawerOpen,
+-						children: renderSlot("rightbar", {
+-							width: normal.rightbar,
+-							viewportWidth: viewport,
+-							canShow: normal.rightbar > 0
+-						})
+-					})] }),
++					renderSlot("desktop.mode.content", { work: work(true), columns: `minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`, resizeHandle }, { fallback: (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [work(false), resizeHandle] }) }),
+ 					(0, react_jsx_runtime.jsx)("div", {
+ 						className: AppFrame_module_css_default.bottomRow,
+ 						"data-shell-bottom": true,
+@@ -416,13 +416,7 @@ window.__ModuleLoader__.load({
+ 						onDrag: onSidebarDrag,
+ 						onEnd: onDragEnd
+ 					}),
+-					layoutInfo.rightbarShown && !layoutInfo.rightbarFullscreen && normal.rightbar > 0 && (0, react_jsx_runtime.jsx)(DragHandle, {
+-						side: "rightbar",
+-						left: viewport - normal.rightbar,
+-						onStart: onRightbarStart,
+-						onDrag: onRightbarDrag,
+-						onEnd: onDragEnd
+-					})
++
+ 				]
+ 			});
+ 		}
+@@ -706,6 +700,7 @@ window.__ModuleLoader__.load({
+ 					name: "root",
+ 					locale: "common",
+ 					children: {
++						"desktop.mode.content": { kind: "single", scope: "root" },
+ 						"sidebar": {
+ 							kind: "single",
+ 							scope: "root"
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts
+index 9e53cc7..fbe0686 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts
+@@ -7,7 +7,7 @@ export interface AppFrameInjected {
+     };
+ }
+ /** Full composed props: runtime, child slots, store, locale, and injected posture. */
+-export type AppFrameProps = PropsRuntime<'root'> & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'shell.bottom' | 'shell.overlay' | 'shell.leading'> & PropsStore<ReturnType<typeof createLayoutStore>> & PropsLocale<'common'> & InjectFace<AppFrameInjected>;
++export type AppFrameProps = PropsRuntime<'root'> & PropsRenderSlots<'desktop.mode.content' | 'sidebar' | 'main' | 'rightbar' | 'shell.bottom' | 'shell.overlay' | 'shell.leading'> & PropsStore<ReturnType<typeof createLayoutStore>> & PropsLocale<'common'> & InjectFace<AppFrameInjected>;
+ /** The three-column frame (see module doc). */
+ export declare function AppFrame({ useStore, useSessions, usePanelInfo, useFoldedLandscape, actions, renderSlot, t, }: AppFrameProps): import("react").JSX.Element;
+ //# sourceMappingURL=AppFrame.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/index.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/index.d.ts
+index ae08b49..701f067 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/index.d.ts
+@@ -31,6 +31,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+         usePanelInfo: UsePanelInfo;
+     }
+     interface SlotMap {
++        /** Optional product wrapper; render work once, preserve its two-column geometry and resize handle. */
++        'desktop.mode.content': {
++            kind: 'single';
++            scope: 'root';
++            owner: { work: import('react').ReactNode; columns: string; resizeHandle: import('react').ReactNode };
++        };
+         /**
+          * The whole left column. OCCUPIED by ui-sidebar's SidebarRoot, which
+          * declares the workspace and settings seats inside it — registering here

@@ -1,8 +1,11 @@
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
+import ts from 'typescript'
+import { resolveDesktopIdentity } from '../src/main/shell/product-identity'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
@@ -14,6 +17,146 @@ const releaseAssets = [
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
 const HARNESS_VERSION = '0.2.2-rc.1'
+
+interface ProductManifest {
+  dshDesktopIdentity?: unknown
+  build: {
+    appId: string
+    productName: string
+    extraMetadata?: { dshDesktopIdentity?: unknown }
+  }
+}
+
+const productManifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as ProductManifest
+const explicitProduct = productManifest.dshDesktopIdentity !== undefined
+
+function assertProductIdentity(manifest: ProductManifest, development: { appId: string; productName: string }): void {
+  // Pass an empty environment so developer Profile overrides cannot mask packaging errors.
+  const production = resolveDesktopIdentity(manifest, true, 'app-data', {})
+  const unpackaged = resolveDesktopIdentity(manifest, false, 'app-data', {})
+  const devPackage = resolveDesktopIdentity({ ...manifest, dshDesktopChannel: 'development' }, true, 'app-data', {})
+  expect(devPackage).toEqual(unpackaged)
+  expect(production.userData.toLowerCase()).not.toBe(devPackage.userData.toLowerCase())
+  expect(manifest.build.productName).toBe(production.name)
+  expect(development.productName).toBe(devPackage.name)
+  expect(development.productName).not.toBe(manifest.build.productName)
+  for (const id of [manifest.build.appId, development.appId]) expect(id).toMatch(/^[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9-]*)+$/)
+  expect(development.appId.toLowerCase()).not.toBe(manifest.build.appId.toLowerCase())
+  if (manifest.dshDesktopIdentity === undefined) {
+    expect(manifest.build.appId).toBe('io.dsh.desktop')
+    expect(development.appId).toBe('io.dsh.desktop.dev')
+    expect(production).toEqual({ name: 'DSH Desktop', userData: path.join('app-data', 'dsh-desktop') })
+    expect(devPackage).toEqual({ name: 'DSH Desktop Dev', userData: path.join('app-data', 'dsh-desktop-dev') })
+  } else {
+    expect(manifest.build.extraMetadata?.dshDesktopIdentity).toEqual(manifest.dshDesktopIdentity)
+  }
+}
+
+function artifactPrefix(artifact: string, installer: string): string {
+  const match = /^([a-z0-9]+(?:-[a-z0-9]+)*)-\$\{os\}-\$\{arch\}\.\$\{ext\}$/.exec(artifact)
+  if (!match?.[1] || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(match[1])) throw new Error('Artifact must have a stable portable prefix and platform placeholders')
+  expect(installer).toBe(match[1] + '-windows-${arch}-setup.${ext}')
+  return match[1]
+}
+
+function assertUpdateSources(sources: Array<{ provider: string; url?: string }>): void {
+  expect(sources.length).toBeGreaterThan(0)
+  for (const source of sources) {
+    expect(source.provider).toBe('generic')
+    expect(typeof source.url).toBe('string')
+    const url = new URL(source.url ?? '')
+    expect(url.protocol).toBe('https:')
+    expect(url.hostname).not.toBe('')
+    expect(url.username + url.password + url.search + url.hash).toBe('')
+    expect(url.pathname.endsWith('/')).toBe(true)
+  }
+}
+
+// Parse syntax rather than accepting a commented-out core import as an entry.
+function entryPaths(source: string): Map<string, string> {
+  const parsed = ts.createSourceFile('config.ts', source, ts.ScriptTarget.Latest, true)
+  const exported = parsed.statements.find(ts.isExportAssignment)?.expression
+  const config = exported && ts.isCallExpression(exported) ? exported.arguments[0] : undefined
+  const property = (node: ts.Node | undefined, key: string): ts.Expression | undefined => {
+    if (!node || !ts.isObjectLiteralExpression(node)) return undefined
+    const row = node.properties.find(item => ts.isPropertyAssignment(item)
+      && (ts.isIdentifier(item.name) || ts.isStringLiteral(item.name)) && item.name.text === key)
+    return row && ts.isPropertyAssignment(row) ? row.initializer : undefined
+  }
+  const result = new Map<string, string>()
+  for (const [target, names] of [['main', ['index', 'host']], ['preload', ['app']]] as const) {
+    const inputs = property(property(property(property(config, target), 'build'), 'rollupOptions'), 'input')
+    for (const name of names) {
+      const entry = property(inputs, name)
+      if (!entry || !ts.isCallExpression(entry) || !ts.isIdentifier(entry.expression) || entry.expression.text !== 'resolve') continue
+      const argument = entry.arguments[0]
+      if (entry.arguments.length === 1 && argument && ts.isStringLiteral(argument)) result.set(name, argument.text)
+    }
+  }
+  return result
+}
+
+async function assertCoreEntry(entry: string | undefined, core: string, root = projectRoot): Promise<void> {
+  expect(entry).toBeTypeOf('string')
+  if (!entry || path.isAbsolute(entry) || entry.includes('\\') || entry.split('/').includes('..')) throw new Error('Entry must be project relative')
+  const filename = path.join(root, entry)
+  const source = await readFile(filename, 'utf8')
+  if (entry === core) return
+  const imports = ts.createSourceFile(entry, source, ts.ScriptTarget.Latest, true).statements
+    .filter(ts.isImportDeclaration)
+    .filter(node => !node.importClause && ts.isStringLiteral(node.moduleSpecifier))
+    .map(node => ts.isStringLiteral(node.moduleSpecifier) ? path.resolve(path.dirname(filename), node.moduleSpecifier.text).replace(/\.ts$/, '') : '')
+  expect(imports).toContain(path.join(root, core).replace(/\.ts$/, ''))
+}
+
+
+describe('product contract fixtures', () => {
+  const identity = { productName: 'Sample Desktop', userDataDirectory: 'sample', developmentUserDataDirectory: 'sample-dev' }
+  const manifest: ProductManifest = { dshDesktopIdentity: identity, build: { appId: 'org.sample.desktop', productName: identity.productName, extraMetadata: { dshDesktopIdentity: identity } } }
+  const development = { appId: 'org.sample.desktop.dev', productName: 'Sample Desktop Dev' }
+
+  it('accepts explicit identity and rejects colliding or malformed product isolation', () => {
+    expect(() => assertProductIdentity(manifest, development)).not.toThrow()
+    expect(() => assertProductIdentity(manifest, { ...development, appId: manifest.build.appId })).toThrow()
+    expect(() => assertProductIdentity(manifest, { ...development, productName: identity.productName })).toThrow()
+    for (const configured of [null, {}, { ...identity, userDataDirectory: '../sample' }, { ...identity, developmentUserDataDirectory: 'SAMPLE' }]) {
+      expect(() => assertProductIdentity({ ...manifest, dshDesktopIdentity: configured }, development)).toThrow()
+    }
+    expect(() => assertProductIdentity({ ...manifest, build: { ...manifest.build, extraMetadata: {} } }, development)).toThrow()
+  })
+
+  it('requires stable portable artifacts and credential-free HTTPS update sources', () => {
+    expect(artifactPrefix('sample-${os}-${arch}.${ext}', 'sample-windows-${arch}-setup.${ext}')).toBe('sample')
+    for (const invalid of ['../sample-${os}-${arch}.${ext}', 'sample-${version}-${os}-${arch}.${ext}', 'sample.exe', 'nul-${os}-${arch}.${ext}']) {
+      expect(() => artifactPrefix(invalid, 'sample-windows-${arch}-setup.${ext}')).toThrow()
+    }
+    expect(() => artifactPrefix('sample-${os}-${arch}.${ext}', 'other.exe')).toThrow()
+    expect(() => assertUpdateSources([{ provider: 'generic', url: 'https://updates.example.org/latest/' }])).not.toThrow()
+    expect(() => assertUpdateSources([])).toThrow()
+    for (const url of ['http://updates.example.org/', 'file:///updates/', 'arbitrary', 'https://user:password@updates.example.org/', 'https://updates.example.org/?token=secret']) {
+      expect(() => assertUpdateSources([{ provider: 'generic', url }])).toThrow()
+    }
+  })
+
+  it('requires an existing wrapper with a real side-effect import of the core entry', async () => {
+    expect(entryPaths("// index: resolve('src/main/shell/app.ts')").size).toBe(0)
+    expect(entryPaths("const unused = { index: resolve('src/main/shell/app.ts') }; export default defineConfig({})").size).toBe(0)
+    const root = await mkdtemp(path.join(tmpdir(), 'desktop-entry-'))
+    try {
+      await mkdir(path.join(root, 'product'))
+      await writeFile(path.join(root, 'product/main.ts'), "import '../src/main/shell/app'\n")
+      await expect(assertCoreEntry('product/main.ts', 'src/main/shell/app.ts', root)).resolves.toBeUndefined()
+      await expect(assertCoreEntry('product/missing.ts', 'src/main/shell/app.ts', root)).rejects.toThrow()
+      for (const source of ["// import '../src/main/shell/app'", "const entry = '../src/main/shell/app'", "import '../src/preload/app'", "export * from '../src/main/shell/app'"]) {
+        await writeFile(path.join(root, 'product/main.ts'), source)
+        await expect(assertCoreEntry('product/main.ts', 'src/main/shell/app.ts', root)).rejects.toThrow()
+      }
+      await expect(assertCoreEntry('../main.ts', 'src/main/shell/app.ts', root)).rejects.toThrow()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -182,7 +325,8 @@ describe('GitHub release contract', () => {
         portable?: unknown
       }
     }
-    expect(packageJson.build.artifactName).toBe('dsh-desktop-${os}-${arch}.${ext}')
+    const prefix = artifactPrefix(packageJson.build.artifactName, packageJson.build.nsis.artifactName)
+    if (!explicitProduct) expect(prefix).toBe('dsh-desktop')
     expect(packageJson.build.asar).toBe(true)
     // JavaScript stays in app.asar; only files the OS loads or executes unpack.
     expect(packageJson.build.asarUnpack).not.toContain('node_modules/**/*')
@@ -245,7 +389,7 @@ describe('GitHub release contract', () => {
       from: 'THIRD_PARTY_NOTICES.md',
       to: 'THIRD_PARTY_NOTICES.md'
     })
-    expect(packageJson.build.nsis.artifactName).toBe(
+    if (!explicitProduct) expect(packageJson.build.nsis.artifactName).toBe(
       'dsh-desktop-windows-${arch}-setup.${ext}'
     )
     expect(packageJson.build.nsis.include).toBe('build/installer.nsh')
@@ -281,11 +425,13 @@ describe('GitHub release contract', () => {
     )
 
     expect(packageJson.dependencies['electron-updater']).toBeTruthy()
-    expect(packageJson.build.publish).toEqual([
+    assertUpdateSources(packageJson.build.publish)
+    if (!explicitProduct) expect(packageJson.build.publish).toEqual([
       { provider: 'generic', url: 'https://dshdesktop.com/updates/latest/' }
     ])
     expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(true)
-    expect(packageJson.build.win.signtoolOptions.publisherName).toBe('Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.')
+    expect(packageJson.build.win.signtoolOptions.publisherName.trim()).not.toBe('')
+    if (!explicitProduct) expect(packageJson.build.win.signtoolOptions.publisherName).toBe('Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.')
     for (const asset of [
       'latest-mac-arm64.yml',
       'latest-mac-x64.yml',
@@ -334,7 +480,7 @@ describe('GitHub release contract', () => {
   it('packages an isolated development channel from the current workspace', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
-    ) as { scripts: Record<string, string> }
+    ) as { scripts: Record<string, string>; build: { artifactName: string; nsis: { artifactName: string } } }
     const developmentConfig = createRequire(import.meta.url)('../electron-builder.dev.cjs') as {
       appId: string
       productName: string
@@ -353,12 +499,15 @@ describe('GitHub release contract', () => {
     expect(packageJson.scripts['package:dev:win']).toContain('verify-target.mjs win32 x64')
     expect(packageJson.scripts['package:dev:win']).toContain('electron-builder.dev.cjs')
     expect(packageJson.scripts['package:dev:win']).toContain('--publish never')
-    expect(developmentConfig.appId).toBe('io.dsh.desktop.dev')
-    expect(developmentConfig.productName).toBe('DSH Desktop Dev')
+    assertProductIdentity(productManifest, developmentConfig)
     expect(developmentConfig.directories.output).toBe('dist-dev')
     expect(developmentConfig.extraMetadata.dshDesktopChannel).toBe('development')
-    expect(developmentConfig.artifactName).toBe('dsh-desktop-dev-${os}-${arch}.${ext}')
-    expect(developmentConfig.nsis.artifactName).toBe('dsh-desktop-dev-windows-${arch}-setup.${ext}')
+    const devPrefix = artifactPrefix(developmentConfig.artifactName, developmentConfig.nsis.artifactName)
+    expect(devPrefix).not.toBe(artifactPrefix(packageJson.build.artifactName, packageJson.build.nsis.artifactName))
+    if (!explicitProduct) {
+      expect(devPrefix).toBe('dsh-desktop-dev')
+      expect(developmentConfig.nsis.artifactName).toBe('dsh-desktop-dev-windows-${arch}-setup.${ext}')
+    }
   })
 
   it('builds the official package from the transplanted shell', async () => {
@@ -370,9 +519,16 @@ describe('GitHub release contract', () => {
     expect(packageJson.scripts['build:shell']).toBeUndefined()
     expect(packageJson.scripts['package:shell:mac:arm64']).toBeUndefined()
     expect(packageJson.scripts.build).toContain('electron-vite build')
-    expect(officialVite).toContain("resolve('src/main/shell/app.ts')")
-    expect(officialVite).toContain("resolve('src/host/index.ts')")
-    expect(officialVite).toContain("resolve('src/preload/app.ts')")
+    const entries = entryPaths(officialVite)
+    expect(entries.get('host')).toBe('src/host/index.ts')
+    if (!explicitProduct) {
+      expect(entries.get('index')).toBe('src/main/shell/app.ts')
+      expect(entries.get('app')).toBe('src/preload/app.ts')
+    }
+    await assertCoreEntry(entries.get('index'), 'src/main/shell/app.ts')
+    await assertCoreEntry(entries.get('app'), 'src/preload/app.ts')
+    const core = await readFile(path.join(projectRoot, 'src/main/shell/app.ts'), 'utf8')
+    for (const option of ['contextIsolation: true', 'nodeIntegration: false', 'sandbox: true', 'webSecurity: true']) expect(core).toContain(option)
     expect(officialVite).not.toContain('src/main/index.ts')
     expect(officialVite).not.toContain('src/preload/index.ts')
     expect(officialVite).not.toContain('electron.vite.shell.config.ts')

@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const React = require('react')
-    const { Menu, MenuItemButton, Modal, Button, ReferenceIconRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { Menu, MenuItemButton, Modal, Button, Tooltip, ReferenceIconRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
 
     // Paths are copied from build/bisheng-logo-mark.svg. Keeping the browser
     // occupant self-contained makes it replayable when Harness loads plugins
@@ -1091,7 +1091,7 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
       })
       ctx.slots.inject('sidebar.primaryNavigation', () => ctx.slots.register({ name: 'sidebar.primaryNavigation', id: 'desktop-primary-navigation', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS) }) }, PrimaryNavigation))
       ctx.slots.inject('sidebar.workspaces.title', () => ctx.slots.register({ name: 'sidebar.workspaces.title', inject: () => ({ t: ctx.locale.bind(MODES_NS) }) }, ({ flat, t }) => t(flat ? 'all' : 'projects')))
-      ctx.slots.inject('desktop.mode.content', () => ctx.slots.register({ name: 'desktop.mode.content', id: 'desktop-chat-work', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS), locale: ctx.locale }) }, DesktopModes))
+      if (typeof window.dshEnterpriseChat?.present === 'function') ctx.slots.inject('desktop.mode.content', () => ctx.slots.register({ name: 'desktop.mode.content', id: 'desktop-chat-work', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS), locale: ctx.locale }) }, DesktopModes))
       ctx.slots.inject('sidebar.workspaces.collection', () => ctx.slots.register({ name: 'sidebar.workspaces.collection', id: 'desktop-shared-collection', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS), deleteText: ctx.locale.bind(CLOUD_DELETE_NS) }) }, SharedCollection))
       return navigation
     }
@@ -1532,8 +1532,65 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
       })
     }
 
+    const REPAIR_NS = 'desktop.repair'
+    function RepairDraft({ session, input, inputActions }) {
+      const currentInput = React.useRef(input)
+      currentInput.current = input
+      React.useEffect(() => {
+        const bridge = window.dshDesktop
+        if (typeof bridge?.getRepairDraft !== 'function') return
+        let alive = true
+        const span = inputActions.captureInsertion()
+        const empty = input.draft === '' && input.attachmentIds.length === 0 && input.phase === 'plain'
+        void bridge.getRepairDraft(session.sessionId).then(async draft => {
+          if (!alive || typeof draft?.token !== 'string') return
+          const current = currentInput.current
+          if (empty && current.draft === '' && current.attachmentIds.length === 0 && current.phase === 'plain' && typeof draft.text === 'string' && draft.text) {
+            if (inputActions.insertText(draft.text, span)) inputActions.persistDraft()
+          }
+          await bridge.acknowledgeRepairDraft(session.sessionId, draft.token)
+        }).catch(error => { console.warn('[desktop-repair] draft initialization failed', error) })
+        return () => { alive = false }
+      }, [session.sessionId, inputActions])
+      return null
+    }
+    function DesktopUtilities({ wide, t }) {
+      const [busy, setBusy] = React.useState(false)
+      const [error, setError] = React.useState(false)
+      const alive = React.useRef(true)
+      React.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+      const bridge = window.dshDesktop
+      const open = async operation => {
+        if (busy) return
+        setBusy(true); setError(false)
+        try {
+          const result = await operation()
+          if (result?.ok === false) throw new Error('Desktop operation failed')
+        } catch { if (alive.current) setError(true) }
+        finally { if (alive.current) setBusy(false) }
+      }
+      const icon = phone => React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
+        phone ? React.createElement('rect', { x: 7, y: 3, width: 10, height: 18, rx: 2 })
+          : React.createElement('path', { d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-7.91 7.91a2.12 2.12 0 0 1-3-3l7.91-7.91a6 6 0 0 1 7.94-7.94z' }))
+      return React.createElement('div', { 'data-dsh-desktop-utilities': true, 'data-wide': wide },
+        typeof bridge?.openRepairAgent === 'function' && React.createElement(Tooltip, { label: t('description'), side: 'top', align: 'end', portal: true, maxWidth: 280, delayMs: 0, focusDelayMs: 0 },
+          React.createElement('button', { type: 'button', disabled: busy, 'aria-label': t('open'), 'aria-description': t('description'), 'data-dsh-repair-entry': true, onClick: () => { void open(() => bridge.openRepairAgent()) } }, icon(false))),
+        typeof bridge?.openMobilePairing === 'function' && wide && React.createElement('button', { type: 'button', disabled: busy, 'aria-label': t('phone'), 'data-dsh-mobile-entry': true, onClick: () => { void open(() => bridge.openMobilePairing()) } }, icon(true)),
+        error && React.createElement('span', { role: 'alert' }, t('failed')))
+    }
+    function applyRepair(ctx) {
+      ctx.effect(() => ctx.locale.register(REPAIR_NS, {
+        zh: { open: '进入维修模式', description: '维修 Agent：协助排查和修复问题。', phone: '连接手机', failed: '无法打开，请重试。' },
+        en: { open: 'Enter repair mode', description: 'Repair Agent helps diagnose and resolve problems.', phone: 'Connect phone', failed: 'Could not open. Try again.' }
+      }))
+      const bridge = window.dshDesktop
+      if (typeof bridge?.getRepairDraft === 'function') ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({ name: 'conversation.input.dock', id: 'desktop-repair-draft' }, RepairDraft))
+      if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilities))
+    }
+
     const inject = ['slots', 'locale', 'remote', 'remote.session', 'sessions', 'uiWorkspace', 'layout']
     function apply(ctx) {
+      applyRepair(ctx)
       ctx.effect(() => ctx.locale.register(DELETE_SESSION_NS, {
         zh: {
           menu: '永久删除会话', title: '删除会话', close: '关闭', cancel: '取消', confirm: '删除会话',

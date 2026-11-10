@@ -80,12 +80,12 @@ describe('0.2.2 workbench patch slots', () => {
       usePanels: () => panels, useEntryPins: () => unpinned, useEntryActions: () => hasActions,
       useRemoteAccess: () => true,
       useShortcuts: () => [], usePanelInfo: selector => selector({ activePanelId: 'schedules' }), t: key => key,
-      renderSlot: (name, owner) => {
+      renderSlot: (name, owner, options) => {
         rendered.push({ name, owner })
         if (name === 'sidebar.quickSwitcher') return React.createElement('span', null, 'Workbench switcher')
         if (name === 'sidebar.settings') return React.createElement('button', null, 'Settings contribution')
         if (name === 'sidebar.settings.action') return React.createElement('button', null, 'Recovery contribution')
-        return null
+        return options?.fallback ?? null
       }
     }))
     expect(markup.match(/data-dsh-sidebar-new-session=""/g)).toHaveLength(1)
