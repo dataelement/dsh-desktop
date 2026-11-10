@@ -1,11 +1,11 @@
 export const DEFAULTS = Object.freeze({
   bytedance: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedream-4-5-251128' },
-  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-1.5' },
+  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-2.6-sunburst' },
 })
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 // Models documented by Images API; text, legacy DALL-E and unknown adapters
 // remain outside this tool's parameter contract.
-const OPENAI_IMAGES = new Set(['gpt-image-2.5-sunburst', 'gpt-image-2.5-sunburst-2026-09-08', 'gpt-image-2.5-flare', 'gpt-image-2.5-flare-2026-09-08', 'gpt-image-2', 'gpt-image-2-2026-04-21', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'])
+const OPENAI_IMAGES = new Set(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-sunburst-2026-09-08', 'gpt-image-2.5-flare', 'gpt-image-2.5-flare-2026-09-08', 'gpt-image-2', 'gpt-image-2-2026-04-21', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'])
 export const MODEL_CATALOG = Object.freeze({
   openai: { source: 'builtin', canFetch: true, models: [...OPENAI_IMAGES] },
   // Ark image model list, checked 2026-09-10:
