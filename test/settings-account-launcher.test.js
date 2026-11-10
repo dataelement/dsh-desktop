@@ -51,6 +51,7 @@ describe('Desktop account UI composition', () => {
           cli: { __jsExpr: 'process.env.DSH_DESKTOP_OFFICE_CLI' }
         }
       })
+      expect(entries.find((entry) => entry.id === 'hmr')?.disabled).not.toBe(true)
       expect(entries.find((entry) => entry.id === 'dsh-ppt-composer')).toMatchObject({
         name: 'dsh-ppt-composer',
         config: { root: { __jsExpr: "dshHomePath('kimi-ppt')" } }
@@ -63,6 +64,11 @@ describe('Desktop account UI composition', () => {
       expect(safeEntries.find((entry) => entry.id === 'dsh-ppt-composer')).toBeUndefined()
       for (const name of ['@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-settings-models']) {
         expect(entries.filter((entry) => entry.name === name && !entry.disabled)).toHaveLength(1)
+      }
+      for (const mode of ['desktop', 'safe']) {
+        const windowsDev = await writeDesktopProductPatch(home, mode, { skipBlockingHmr: true })
+        const windowsEntries = composeEntries([base, loadOverlayPatches('test', windowsDev)])
+        expect(windowsEntries.find((entry) => entry.id === 'hmr')?.disabled).toBe(true)
       }
     } finally {
       await rm(home, { recursive: true, force: true })

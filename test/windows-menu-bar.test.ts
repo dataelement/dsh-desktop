@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFile } from 'node:fs/promises'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mountWindowsMenuBar } from '../src/preload/windows-menu-bar'
 
@@ -11,6 +12,12 @@ const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
 const host = (): HTMLElement | null => document.querySelector('[data-dsh-windows-menu]')
 const button = (name: string): HTMLButtonElement | null =>
   host()?.shadowRoot?.querySelector<HTMLButtonElement>(`button[data-menu="${name}"]`) ?? null
+
+it('marks the Windows caption from the shell preload before the page paints', async () => {
+  const preload = await readFile(new URL('../src/preload/app.ts', import.meta.url), 'utf8')
+  expect(preload).toContain('markWindowsTitlebar(document)')
+  expect(preload).toContain('mountWindowsTitlebarLayout(')
+})
 
 it('waits for the Harness shell overlay before taking the caption seat', async () => {
   const invoke = vi.fn(async () => undefined)
