@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const React = require('react')
     const { Service } = require('@deepseek-ai/cordis')
-    const { Switch, Toast, Menu, Modal, Button: UiButton, IconDownloadOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { Switch, Toast } = require('@deepseek-ai/dsh-client-ui-primitives')
     const h = React.createElement
     const INSTALL_NS = 'dsh-desktop-workbenches.install'
     const installCopy = {
@@ -2315,6 +2315,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h('span', { className: 'dshWbFailureIcon', tabIndex: 0, 'aria-label': both(`${label}详情：${tr(detail)}`, `${label} details: ${tr(detail)}`), 'aria-describedby': tooltipId }, h(MarketIcon, { name: 'failure', size: 17 })),
         h('span', { id: tooltipId, className: 'dshWbFailureTooltip', role: 'tooltip', tabIndex: 0 }, `${label}：${tr(detail)}`))
     }
+    const { Menu, Modal: InstallModal, Button: UiButton, IconDownloadOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
     function WorkbenchInstallMenu({ service, onInstalled }) {
       const t = service.ctx.locale.bind(INSTALL_NS)
       const { localInstall: install } = useWorkbench(service)
@@ -2358,7 +2359,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         }
         service.selectWorkbenchPackage(files[0])
       }
-      return h(Modal, {
+      return h(InstallModal, {
         open: true, onClose: dismiss, title: t('upload'), closeLabel: t('close'), description: t('uploadHelp'), className: 'dshWbInstallModal',
         footer: h(React.Fragment, null,
           h(UiButton, { variant: 'outline', disabled: busy, onClick: dismiss }, t('close')),
@@ -2812,9 +2813,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
     }
     function apply(ctx) {
       hostLocale = ctx.locale
-      ctx.effect(() => ctx.locale.register(INSTALL_NS, installCopy), 'workbenches: install dictionaries')
       ctx.effect(() => ctx.locale.register(DOWNLOAD_NS, downloadCopy), 'workbenches: download dictionaries')
       ctx.effect(() => ctx.locale.register(REGISTRATION_NS, registrationCopy), 'workbenches: registration dictionaries')
+      ctx.effect(() => ctx.locale.register(INSTALL_NS, installCopy), 'workbenches: install dictionaries')
       const service = new Workbenches(ctx)
       ctx.effect(() => ctx.reflect.provide('desktopWorkbenches', service), 'workbenches: service')
       ctx.effect(() => ctx.modules?.entries?.state?.subscribe?.(() => service.publish()), 'workbenches: client module failures')
