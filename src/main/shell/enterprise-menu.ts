@@ -112,7 +112,8 @@ export function externalUrlToOpen(url: string): string | undefined {
  * Enterprise opens the product site.
  * Restart starts the current Host again. Safe Mode relaunches into the core profile when that action is supplied.
  * Phone pairing stays out of this menu.
- * Other platforms keep Electron's menu; their enterprise entry is the settings footer.
+ * Windows keeps a hidden copy of this command set so accelerators survive; the visible
+ * caption is the in-page 应用 / 编辑 menu.
  */
 export function buildDarwinDesktopMenu(options: {
   locale: string
@@ -168,6 +169,85 @@ export function buildDarwinDesktopMenu(options: {
         { role: 'copy', label: standard.copy },
         { role: 'paste', label: standard.paste },
         { role: 'selectAll', label: standard.selectAll }
+      ]
+    },
+    {
+      label: standard.window,
+      submenu: [
+        { role: 'minimize', label: standard.minimize },
+        { role: 'close', label: standard.close }
+      ]
+    }
+  ]
+}
+
+/**
+ * Hidden Windows application menu. The bar stays invisible; roles and the
+ * Harness accelerators remain registered. The page caption draws 应用 / 编辑
+ * and does not register those accelerators again.
+ */
+export function buildWindowsApplicationMenu(options: {
+  locale: string
+  connectPhone: () => void
+  restart: () => void
+  restartSafeMode?: () => void
+  showHarnessLog: () => void
+  checkForUpdates: () => void
+  quit: () => void
+}): DesktopMenuItem[] {
+  const chinese = options.locale.toLowerCase().startsWith('zh')
+  const standard = standardMenuLabels(options.locale)
+  const viewLabel = (zh: string, en: string): string => chinese ? zh : en
+  return [
+    {
+      label: chinese ? '应用' : 'Application',
+      submenu: [
+        {
+          label: chinese ? '连接手机…' : 'Connect Phone…',
+          accelerator: 'CmdOrCtrl+Shift+M',
+          click: options.connectPhone
+        },
+        {
+          label: restartMenuLabel(options.locale),
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: options.restart
+        },
+        ...(options.restartSafeMode === undefined
+          ? []
+          : [{ label: safeModeMenuLabel(options.locale), click: options.restartSafeMode }]),
+        {
+          label: chinese ? '显示 Harness 日志' : 'Show Harness Log',
+          click: options.showHarnessLog
+        },
+        { type: 'separator' },
+        { label: updateMenuLabel(options.locale), accelerator: 'CmdOrCtrl+U', click: options.checkForUpdates },
+        { type: 'separator' },
+        { role: 'quit', label: chinese ? '退出' : 'Exit', click: options.quit }
+      ]
+    },
+    {
+      label: standard.edit,
+      submenu: [
+        { role: 'undo', label: standard.undo },
+        { role: 'redo', label: standard.redo },
+        { type: 'separator' },
+        { role: 'cut', label: standard.cut },
+        { role: 'copy', label: standard.copy },
+        { role: 'paste', label: standard.paste },
+        { role: 'selectAll', label: standard.selectAll }
+      ]
+    },
+    {
+      label: viewLabel('视图', 'View'),
+      submenu: [
+        { role: 'reload', label: viewLabel('重新加载', 'Reload') },
+        { role: 'toggleDevTools', label: viewLabel('开发者工具', 'Developer Tools') },
+        { type: 'separator' },
+        { role: 'resetZoom', label: viewLabel('实际大小', 'Actual Size') },
+        { role: 'zoomIn', label: viewLabel('放大', 'Zoom In') },
+        { role: 'zoomOut', label: viewLabel('缩小', 'Zoom Out') },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: viewLabel('切换全屏', 'Toggle Full Screen') }
       ]
     },
     {

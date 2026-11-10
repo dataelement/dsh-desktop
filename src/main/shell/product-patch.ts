@@ -51,12 +51,23 @@ export const DESKTOP_SAFE_PRODUCT_PATCH = DESKTOP_PRODUCT_PATCH_BASE
 
 export const DESKTOP_PRODUCT_PATCH = `${DESKTOP_PRODUCT_PATCH_BASE}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_PPT_ROW}`
 
+// Windows development only. The packaged overlay never includes this row.
+const WINDOWS_DEV_HMR_DISABLE = `# @deepseek-ai/dsh-hmr waits forever for a watcher ready event on Windows.
+- id: hmr
+  disabled: true
+`
+
 export type DesktopProductPatchMode = 'desktop' | 'safe'
 
-export async function writeDesktopProductPatch(dshHome: string, mode: DesktopProductPatchMode = 'desktop'): Promise<string> {
+export async function writeDesktopProductPatch(
+  dshHome: string,
+  mode: DesktopProductPatchMode = 'desktop',
+  options?: { skipBlockingHmr?: boolean }
+): Promise<string> {
   await mkdir(dshHome, { recursive: true })
   const path = join(dshHome, 'desktop-product.patch.yml')
-  const text = mode === 'safe' ? DESKTOP_SAFE_PRODUCT_PATCH : DESKTOP_PRODUCT_PATCH
+  const base = mode === 'safe' ? DESKTOP_SAFE_PRODUCT_PATCH : DESKTOP_PRODUCT_PATCH
+  const text = options?.skipBlockingHmr === true ? `${base}${WINDOWS_DEV_HMR_DISABLE}` : base
   await writeFile(path, text)
   return path
 }

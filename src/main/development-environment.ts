@@ -1,3 +1,12 @@
+/**
+ * Unpackaged Windows development deadlocks in `@deepseek-ai/dsh-hmr`:
+ * the watcher never becomes ready, so profile boot never finishes.
+ * Packaged launches keep the upstream service.
+ */
+export function skipBlockingWindowsDevHmr(packaged: boolean, platform: NodeJS.Platform): boolean {
+  return !packaged && platform === 'win32'
+}
+
 /** Development overrides isolate concurrent worktrees without changing production identity. */
 export function developmentEnvironment(development: boolean, defaultHarnessPort: number, env: NodeJS.ProcessEnv = process.env): {
   profile: string
