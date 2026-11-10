@@ -4,6 +4,14 @@ const { join, resolve } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const assert = require('node:assert/strict')
 
+// bwrap gives workspace-write a private /tmp. A test resources symlink under
+// host /tmp is therefore invisible to the child; use the existing physical
+// runtime, without adding mounts or write grants. Real runtimes under /tmp
+// remain subject to that isolation (realpath does not bypass it).
+async function confinedRuntime(resources) {
+  return require('node:fs/promises').realpath(join(resources, 'office-runtime'))
+}
+
 async function probe(appRoot, resources) {
   const host = createRequire(join(appRoot, 'package.json'))
   const load = name => import(pathToFileURL(host.resolve(name)).href)
@@ -65,7 +73,7 @@ async function probe(appRoot, resources) {
       const { createDocxWorkflow } = await import(new URL('./lib/docx-workflow.js', entry).href)
       const item = library.entry('government-notice')
       const modes = { state: async () => ({ documentMode: 'word', selectedDocumentTemplate: { id: item.id, revision: item.revision, mode: 'word' } }), record: async () => true }
-      const workflow = createDocxWorkflow({ sandbox: ctx.sandbox, subprocess: ctx.subprocess, workingDirectory: { ensure: async () => scratch }, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: scratch }) } }, library, modes, join(resources, 'office-runtime'))
+      const workflow = createDocxWorkflow({ sandbox: ctx.sandbox, subprocess: ctx.subprocess, workingDirectory: { ensure: async () => scratch }, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: scratch }) } }, library, modes, await confinedRuntime(resources))
       const exec = { agent: { id: 'packaged-notice', session: { header: { cwd: scratch } } }, signal: new AbortController().signal }
       await writeFile(join(scratch, 'source.docx'), await library.asset(item.id, item.sampleFile))
       const prepared = await workflow.run('prepare', { path: 'source.docx' }, exec)
@@ -83,7 +91,11 @@ async function probe(appRoot, resources) {
     for (const fiber of fibers.reverse()) await fiber.dispose()
   }
 }
-probe(process.argv[2], process.argv[3]).catch(error => {
-  console.error(error)
-  process.exitCode = 1
-})
+module.exports = { confinedRuntime }
+
+if (require.main === module) {
+  probe(process.argv[2], process.argv[3]).catch(error => {
+    console.error(error)
+    process.exitCode = 1
+  })
+}

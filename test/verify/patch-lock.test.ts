@@ -15,7 +15,11 @@ afterEach(async () => {
 describe('patch lock', () => {
   it('matches the tracked patches to the lockfile release set', async () => {
     const patches = (await readdir(join(root, 'patches'))).filter(name => name.endsWith('.patch'))
-    expect(patches).toHaveLength(37)
+    expect(patches).toHaveLength(39)
+    expect(patches).toEqual(expect.arrayContaining([
+      '@deepseek-ai+node-addon-system+0.1.2.patch',
+      'sherpa-onnx-node+1.13.8.patch'
+    ]))
     expect(await checkPatchLock(root)).toEqual([])
   })
 

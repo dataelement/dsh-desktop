@@ -1,6 +1,7 @@
 # Dependency patches preserve the upstream bundle's mixed indentation so that
-# patch-package can match and replay it exactly.
-patches/*.patch whitespace=-space-before-tab
+# patch-package can match and replay it exactly. A blank unified-diff context
+# line is a required single space, not trailing whitespace in maintained source.
+patches/*.patch whitespace=-space-before-tab,-blank-at-eol
 
 # Preserve pinned third-party inputs byte-for-byte, including upstream whitespace.
 packages/ppt-runtime/upstream/** -whitespace

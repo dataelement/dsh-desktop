@@ -46,7 +46,10 @@ try {
   `, resolveDir: root, loader: 'ts' }, outfile: entry, bundle: true, platform: 'node', format: 'cjs', external: ['electron'] })
   const environment = { ...process.env }
   delete environment.ELECTRON_RUN_AS_NODE
-  const child = spawn(createRequire(import.meta.url)('electron'), [entry], {
+  // Explicit software-rendering qualification for VMs without a usable GLES context.
+  // Renderer sandboxing remains enabled; this does not qualify the GPU path.
+  const flags = process.env.DSH_NAVIGATION_SOFTWARE_RENDERING === '1' ? ['--disable-gpu'] : []
+  const child = spawn(createRequire(import.meta.url)('electron'), [...flags, entry], {
     env: environment, stdio: 'inherit', signal: AbortSignal.timeout(30_000)
   })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })

@@ -30,6 +30,7 @@ export const WINDOWS_SERIAL_SUITES = [
   'test/pnpm-runner.test.js',
   'test/local-path-links.test.ts',
   'test/office-engine-resolution.test.ts',
+  'test/office-engine-asar.test.ts',
   'test/remove-tree.test.ts',
   'test/directory-picker.test.ts',
   'test/file-preview.test.ts',
@@ -45,7 +46,8 @@ export const WINDOWS_SERIAL_SUITES = [
   'test/mcp-startup-deadline.test.ts',
   'test/lan-mobile-tunnel.test.ts',
   'test/renderer-recovery-electron.test.ts',
-  'test/ptc-electron-helper.test.js'
+  'test/ptc-electron-helper.test.js',
+  'test/landlock-asar-layout.test.mjs'
 ]
 
 function resolveCliMode(argv = process.argv): string | undefined {
