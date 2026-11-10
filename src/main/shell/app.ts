@@ -45,7 +45,7 @@ import { installDesktopFileDrag } from './file-drag'
 import { runQuitSteps } from './quit-steps'
 import { SidebarBrowserGuests } from '../sidebar-browser'
 import { SIDEBAR_BROWSER_IPC } from '../../shared/sidebar-browser'
-import { officeLaunchPaths } from './office-launch'
+import { officeLaunchPaths, resolvePrimaryRuntime } from './office-launch'
 import { isSplashPageUrl } from './splash-page'
 import { isWebImportPageUrl, offerWebHomeImport, readWebImportAction, type WebImportChoice } from './web-import-offer'
 import { resolveDesktopPaths } from './paths'
@@ -537,14 +537,9 @@ async function main(): Promise<void> {
     Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
   }
   refreshDarwinMenu()
-  const development = !app.isPackaged
-  // Product packages place the primary runtime at Resources/office-runtime/primary-runtime.
-  const primaryRuntime = development
-    ? process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
-    : join(process.resourcesPath, 'office-runtime', 'primary-runtime')
-  if (primaryRuntime === undefined || primaryRuntime === '') {
-    throw new Error('dsh desktop: DSH_DESKTOP_PRIMARY_RUNTIME_DIR is required for an unpackaged launch')
-  }
+  const primaryRuntime = resolvePrimaryRuntime(
+    app.getAppPath(), process.resourcesPath, app.isPackaged, process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
+  )
   const preload = fileURLToPath(new URL('../preload/app.cjs', import.meta.url))
   const importPage = packagedPagePath('web-import.html')
   const splashPage = packagedPagePath('splash.html')
