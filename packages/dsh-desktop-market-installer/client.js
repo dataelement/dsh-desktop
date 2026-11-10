@@ -174,7 +174,8 @@ window.__ModuleLoader__.load({
           const result = await globalThis.dshDesktop.setBuiltInImageGenerationEnabled(true)
           if (!result.ok) { setError(result.reason === 'market-active' ? 'builtInImageConflict' : 'builtInImageFailed'); return }
           setState(previous => ({ ...previous, enabled: true }))
-          setRestart(true)
+          setRestart(result.restartRequired === true)
+          if (result.restartRequired === true) window.dispatchEvent(new CustomEvent('dsh-desktop-restart-required', { detail: { source: 'image', restartRequired: true } }))
         } catch { setError('builtInImageFailed') }
         finally { setBusy(false) }
       }

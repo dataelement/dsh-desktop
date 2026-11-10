@@ -260,13 +260,13 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('class="tunnel-progress" aria-hidden="true"')
     expect(desktop).toContain('id="tunnelProgressValue" class="loading-value">0%</span>')
     expect(desktop).toContain('id="tunnelProgressBar"')
-    expect(desktop).toContain('</div></div><div class="url-row">')
+    expect(desktop).toContain('id="urlRow" class="url-row"')
     expect(desktop).toContain('id="pinPanel" class="pin-panel')
     expect(desktop).toContain("Can't open? Try another link")
     expect(desktop).toContain('id="fallbackLink" class="fallback-link hide"')
     expect(desktop).toContain("fetch('/desktop/tunnel/fallback'")
     expect(desktop).toContain('async function switchFallback()')
-    expect(desktop).toContain("fetch('/desktop/pin/consent'")
+    expect(desktop).toContain("pinAction('/desktop/pin/consent'")
     expect(desktop).toContain('duration=enableTunnel?4500:800')
     expect(desktop).toContain('Math.min(99,(Date.now()-tunnelProgressStartedAt)/duration*100)')
     expect(desktop).toContain('setTunnelProgress(100)')
@@ -275,9 +275,9 @@ describe('LAN mobile page', () => {
     expect(desktop).not.toContain('animation:tunnelProgress')
     expect(desktop).not.toContain('<div class="spinner">')
     expect(desktop).toContain('id="qrCode"><svg></svg></div>')
-    expect(desktop).toContain("document.getElementById('qrCode').innerHTML=j.qrSvg")
+    expect(desktop).toContain("byId('qrCode').innerHTML=j.qrSvg")
     expect(desktop).not.toContain("document.getElementById('qrContainer').innerHTML=j.qrSvg")
-    expect(desktop).toContain('if(phoneConnected||modeSwitching)return')
+    expect(desktop).toContain('if(phoneConnected||modeSwitching||tunnelLoading||pinBusy)return')
     expect(desktop).toContain('if(selectedTunnelTab===enableTunnel&&tunnelActive===enableTunnel)return')
     expect(desktop).toContain('await finishTunnelProgress(completed,progressDuration)')
     expect(desktop).toContain('Phone connected')
@@ -292,7 +292,7 @@ describe('LAN mobile page', () => {
     expect(desktop).not.toContain('🌐')
     const modePanel = desktop.slice(
       desktop.indexOf('class="mode-panel"'),
-      desktop.indexOf('<div id="connection"')
+      desktop.indexOf('<div id="pinPanel"')
     )
     expect(modePanel.indexOf('class="mode-switch"')).toBeLessThan(
       modePanel.indexOf('class="hint" id="modeHint"')
@@ -353,7 +353,15 @@ describe('LAN mobile page', () => {
       'pinConsent',
       'pinActions',
       'connection',
-      'expires'
+      'expires',
+      'qrPanel',
+      'qrContainer',
+      'urlRow',
+      'retryTunnel',
+      'noLink',
+      'pinInstruction',
+      'pinPrivacy',
+      'pinReset'
     ]
     const elements = Object.fromEntries(
       ids.map((id) => [
@@ -364,6 +372,7 @@ describe('LAN mobile page', () => {
           disabled: false,
           hidden: false,
           checked: false,
+          setAttribute: (_name: string, _value: string) => undefined,
           textContent: '',
           innerHTML: '',
           offsetWidth: 152,
@@ -382,7 +391,8 @@ describe('LAN mobile page', () => {
         pairingUrl: 'https://example.trycloudflare.com/pair?token=test',
         qrSvg: '<svg id="tunnel"></svg>',
         expiresAt: Date.now() + 60_000,
-        pairingPin: '123456'
+        pairingPin: '123456',
+        pinRevealed: true
       },
       {
         ok: true,
@@ -430,7 +440,8 @@ describe('LAN mobile page', () => {
     const loadingNode = elements.qrLoading
 
     await api.switchMode(true)
-    expect(elements.pinPanel?.classList.contains('show')).toBe(true)
+    expect(elements.pinPanel?.hidden).toBe(false)
+    expect(elements.qrPanel?.hidden).toBe(true)
     expect(elements.pinValue?.textContent).toBe('123456')
     expect(elements.qrCode?.innerHTML).toBe('<svg id="tunnel"></svg>')
     expect(elements.qrLoading).toBe(loadingNode)
@@ -441,6 +452,8 @@ describe('LAN mobile page', () => {
 
     await api.switchMode(false)
     expect(elements.qrCode?.innerHTML).toBe('<svg id="lan"></svg>')
+    expect(elements.pinPanel?.hidden).toBe(true)
+    expect(elements.qrPanel?.hidden).toBe(false)
     expect(elements.qrLoading).toBe(loadingNode)
     expect(elements.qrLoading?.classList.contains('show')).toBe(false)
     expect(elements.tunnelLoadingText?.textContent).toBe('Switching to WiFi connection mode')
@@ -463,11 +476,11 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('移动设备与电脑需连接至同一 WiFi，同步实时性高')
     expect(desktop).toContain('正在创建全球网络链接')
     expect(desktop).toContain('扫码即可连接')
-    expect(desktop).toContain('生成长期有效的连接密码')
-    expect(desktop).toContain('id="pinActions" class="pin-actions" hidden')
-    expect(desktop).toContain('.pin-actions[hidden]{display:none}')
+    expect(desktop).toContain('生成长期密码')
+    expect(desktop).toContain('id="pinPanel" class="pin-panel" hidden')
+    expect(desktop).toContain('[hidden]{display:none!important}')
     expect(desktop).toContain(
-      '移动设备通过互联网（如 4G/5G 或其他WiFi网络等）均可远程操控，同步实时性中等'
+      '请确认移动设备已联网。打开相机扫描下方二维码，或在移动设备上打开链接。'
     )
     expect(desktop).toContain('断开连接')
     expect(desktop).toContain('现在可以关闭此窗口。')
@@ -494,13 +507,14 @@ describe('LAN mobile page', () => {
       tunnelActive: true,
       pairingPin: '123456',
       pinConsent: false,
+      pinRevealed: true,
       pinExpiresAt: Date.now() + 258_000
     })
-    expect(desktop).toMatch(/5 分钟内有效，过期后需重新扫码。 \(\d+s\)/)
-    expect(desktop).toContain('function renderPinHint()')
-    expect(desktop).toMatch(/renderPinHint\(\);if\(actions\)/)
-    expect(desktop).toMatch(/location\.reload\(\);renderPinHint\(\)/)
-    expect(desktop).not.toContain('if(hint)hint.textContent=pinConsent?T.pinHintDurable:T.pinHintTemp')
+    expect(desktop).toMatch(/id="pinHint" class="pin-hint">\d+ 秒后失效/)
+    expect(desktop).toContain('id="pinValue" class="pin-value">123456</div>')
+    expect(desktop).toContain('id="qrPanel" hidden')
+    expect(desktop).toContain('重新扫码')
+    expect(desktop).toContain('生成长期密码')
   })
 
   it('renders a compact management state when a phone is already connected', () => {
@@ -513,7 +527,6 @@ describe('LAN mobile page', () => {
     })
     expect(desktop).toContain('class="phone-connected manage-connected"')
     expect(desktop).toContain('Manage phone connection')
-    expect(desktop).toContain('Your phone is currently connected to DSH Desktop.')
     expect(desktop).toContain('.manage-connected .connection-hint,.manage-connected .done{display:none}')
     expect(desktop).toContain(
       'onclick="switchMode(false)" disabled>WiFi Connection Mode</button>'
@@ -545,11 +558,11 @@ describe('LAN mobile page', () => {
       tunnelProvider: 'cloudflare',
       tunnelError: 'Unable to create an internet tunnel. Cloudflare: reset'
     })
-    expect(wifi).toContain('id="tunnelError" class="tunnel-err"></div>')
+    expect(wifi).toContain('id="tunnelError" class="tunnel-err" role="status"></div>')
     expect(wifi).not.toContain('id="tunnelError" class="tunnel-err show"')
     expect(wifi).toContain('selectedTunnelTab=false')
     expect(internet).toContain(
-      'id="tunnelError" class="tunnel-err show">隧道建立失败：Unable to create an internet tunnel. Cloudflare: reset</div>'
+      'id="tunnelError" class="tunnel-err show" role="status">隧道建立失败：Unable to create an internet tunnel. Cloudflare: reset</div>'
     )
     expect(internet).toContain('selectedTunnelTab=true')
   })
@@ -596,7 +609,15 @@ describe('LAN mobile page', () => {
       'pinConsent',
       'pinActions',
       'connection',
-      'expires'
+      'expires',
+      'qrPanel',
+      'qrContainer',
+      'urlRow',
+      'retryTunnel',
+      'noLink',
+      'pinInstruction',
+      'pinPrivacy',
+      'pinReset'
     ]
     const elements = Object.fromEntries(
       ids.map((id) => [
@@ -607,6 +628,7 @@ describe('LAN mobile page', () => {
           disabled: false,
           hidden: false,
           checked: false,
+          setAttribute: (_name: string, _value: string) => undefined,
           textContent: '',
           innerHTML: '',
           offsetWidth: 152,
@@ -678,7 +700,7 @@ describe('LAN mobile page', () => {
     expect(elements.tunnelError?.classList.contains('show')).toBe(true)
     expect(elements.tunnelError?.textContent).toContain('隧道建立失败：')
     expect(elements.tunnelError?.textContent).toContain('Unable to create an internet tunnel')
-    expect(elements.modeHint?.textContent).toContain('4G/5G')
+    expect(elements.modeHint?.textContent).toContain('请确认移动设备已联网')
 
     await api.switchMode(false)
     expect(api.selectedTunnelTab()).toBe(false)
@@ -778,7 +800,7 @@ describe('desktop pairing page QR expiry self-healing', () => {
       tunnelUrl: undefined,
       tunnelError: undefined
     })
-    const countdown = /setInterval\(\(\)=>\{const n=[\s\S]*?\},1000\)/.exec(html)?.[0]
+    const countdown = /function updateCountdown\(\)\{[\s\S]*?\n  \}/.exec(html)?.[0]
     expect(countdown).toBeTruthy()
     expect(countdown).toContain('T.expired')
     expect(countdown).toContain('location.reload()')

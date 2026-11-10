@@ -111,6 +111,7 @@ function render(): void {
     isUpdateDismissed(currentStatus, dismissedVersion, dismissedTransientPhase)
   ) {
     host.style.display = 'none'
+    host.removeAttribute('data-dsh-update-corner-visible')
     content.replaceChildren()
     return
   }
@@ -119,6 +120,7 @@ function render(): void {
   const status = currentStatus
   const releaseNotes = popupReleaseNotes(status.releaseNotes, locale)
   const centered = detailOpen
+  host.toggleAttribute('data-dsh-update-corner-visible', !centered)
   host.style.left = centered ? '50%' : 'auto'
   host.style.top = centered ? '50%' : 'auto'
   host.style.right = centered ? 'auto' : '20px'

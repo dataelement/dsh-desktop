@@ -289,6 +289,8 @@ export function renderDesktopPairingPage(options: {
   connected: boolean
   tunnelActive?: boolean
   tunnelLoading?: boolean
+  internetSelected?: boolean
+  pinRevealed?: boolean
   tunnelProvider?: 'cloudflare' | 'pinggy'
   tunnelUrl?: string
   tunnelError?: string
@@ -302,93 +304,266 @@ export function renderDesktopPairingPage(options: {
   const text = {
     title: zh ? '连接移动设备' : 'Connect Mobile Device',
     heading: zh ? '连接移动设备' : 'Connect a mobile device',
-    hint: zh ? '扫码即可连接。' : 'Scan the QR code to connect.',
     lanHint: zh
       ? '扫码即可连接。移动设备与电脑需连接至同一 WiFi，同步实时性高。'
       : 'Scan to connect. Keep the phone and computer on the same WiFi.',
     tunnelHint: zh
-      ? '移动设备通过互联网（如 4G/5G 或其他WiFi网络等）均可远程操控，同步实时性中等'
-      : 'Control remotely over the internet, including 4G/5G or other WiFi networks, with moderate real-time responsiveness.',
+      ? '请确认移动设备已联网。打开相机扫描下方二维码，或在移动设备上打开链接。'
+      : 'Connect your phone to the internet, then scan the QR code or open the link on your phone.',
     tunnelLoading: zh ? '正在创建全球网络链接' : 'Creating a global network link',
     lanLoading: zh ? '正在切换至 WiFi 连接模式' : 'Switching to WiFi connection mode',
     modeLan: zh ? 'WiFi连接模式' : 'WiFi Connection Mode',
     modeTunnel: zh ? '互联网连接模式' : 'Internet Connection Mode',
     manageHeading: zh ? '管理手机连接' : 'Manage phone connection',
-    manageHint: zh ? '这台手机当前已连接到 DSH Desktop。' : 'Your phone is currently connected to DSH Desktop.',
     connected: zh ? '手机已连接' : 'Phone connected',
     closeHint: zh ? '连接会在后台保持，现在可以关闭此窗口。' : 'The connection stays active in the background. You can close this window now.',
     done: zh ? '完成' : 'Done',
     disconnect: zh ? '断开连接' : 'Disconnect',
     copy: zh ? '复制' : 'Copy',
     copied: zh ? '已复制' : 'Copied',
-    pinLabel: zh ? '连接密码' : 'Pairing password',
-    pinHintTemp: zh ? '5 分钟内有效，过期后需重新扫码。' : 'Valid for 5 minutes. Scan again after it expires.',
-    pinHintDurable: zh ? '长效密码保存在本机，可随时重置或取消。' : 'Kept on this computer. Reset or cancel anytime.',
-    pinConsent: zh ? '生成长期有效的连接密码' : 'Remember a durable pairing password',
+    enterPin: zh ? '扫码后，请在移动端输入下方密码完成连接。' : 'Enter this password on your phone to finish connecting.',
+    enterDurablePin: zh ? '请在移动端输入下方长期密码完成连接。' : 'Enter this long-term password on your phone to connect.',
+    rescan: zh ? '重新扫码' : 'Scan again',
+    retry: zh ? '重试互联网连接' : 'Retry internet connection',
+    noLink: zh ? '暂时无法生成连接链接，请检查网络后重试。' : 'No connection link is available. Check your network and try again.',
+    actionError: zh ? '操作未完成，请重试。' : 'Could not complete the action. Please try again.',
+    pinExpired: zh ? '密码已过期，请重新扫码。' : 'The password expired. Scan again.',
+    pinCountdown: zh ? ' 秒后失效' : 's until expiry',
+    pinConsent: zh ? '生成长期密码' : 'Generate long-term password',
     pinPrivacy: zh
       ? '长效密码只保存在本机，不上云、不写入二维码，可随时重置或取消。'
       : 'The durable password stays on this computer. It is not uploaded or added to the QR code.',
-    pinReset: zh ? '重置密码' : 'Reset password',
-    pinCancel: zh ? '取消长效密码' : 'Turn off durable password',
+    pinReset: zh ? '重置长期密码' : 'Reset long-term password',
+    pinCancel: zh ? '取消长期密码' : 'Cancel long-term password',
     pinClosed: zh ? '远程连接已断开，请重新开启。' : 'The remote connection dropped. Turn it back on.',
-    refresh: zh ? '二维码将在 ' : 'QR refreshes in ',
+    refresh: zh ? '' : 'QR refreshes in ',
     seconds: zh ? ' 秒后刷新' : 's',
     expired: zh ? '二维码已过期，正在自动刷新…' : 'QR expired. Refreshing automatically…',
     tunnelError: zh ? '隧道建立失败：' : 'Tunnel failed: ',
     fallbackLink: zh ? '扫码打不开？换一条线路' : "Can't open? Try another link",
     fallbackLoading: zh ? '正在切换备用线路' : 'Switching to a backup link'
   }
+  const internetSelected = options.internetSelected ?? Boolean(options.tunnelActive)
+  const showPin = Boolean(options.tunnelActive && options.pinRevealed)
+  const showQr = Boolean(options.pairingUrl && (!internetSelected || options.tunnelActive))
   const showFallback = Boolean(
     options.tunnelActive && options.tunnelProvider === 'cloudflare' && !options.connected
   )
-  const pinHintRemaining =
-    !options.pinConsent && options.pinExpiresAt
-      ? Math.max(0, Math.ceil((options.pinExpiresAt - Date.now()) / 1000))
-      : 0
+  const pinSeconds = Math.max(0, Math.ceil(((options.pinExpiresAt ?? 0) - Date.now()) / 1000))
   const initialPinHint = options.pinConsent
-    ? text.pinHintDurable
-    : text.pinHintTemp + (pinHintRemaining ? ` (${pinHintRemaining}s)` : '')
+    ? ''
+    : pinSeconds ? pinSeconds + text.pinCountdown : text.pinExpired
+  const hidden = (visible: boolean): string => visible ? '' : ' hidden'
   return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${text.title}</title><style>
-  :root{color-scheme:light;--bg:#fff;--surface:#fff;--panel:#f7f8fa;--ink:#18191c;--muted:#81858c;--line:#e5e7eb;--brand:#4d6bfe;--success-bg:#f2f8f4;--success-ink:#277347;--success-muted:#557565}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--surface:#1d1d20;--panel:#202023;--ink:#f5f5f6;--muted:#95979d;--line:#303034;--brand:#6f86ff;--success-bg:#17261d;--success-ink:#75c991;--success-muted:#8ab99a}}*{box-sizing:border-box}html,body{min-height:100%;background:var(--bg)}body{margin:0;color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:520px;margin:auto;padding:26px 32px 30px;text-align:center}.brand{display:flex;align-items:center;justify-content:center;gap:9px;font-weight:600;margin-bottom:14px}.brand img{width:39px;height:22px;object-fit:contain}.brand .dark-logo{display:none}@media(prefers-color-scheme:dark){.brand .light-logo{display:none}.brand .dark-logo{display:block}}h1{font-size:24px;line-height:1.25;font-weight:600;margin:0}p{margin:0;color:var(--muted)}
-  .mode-panel{max-width:410px;margin:18px auto 0;padding:5px 8px 10px;border:1px solid var(--line);border-radius:15px;background:var(--panel)}
+  :root{color-scheme:light;--bg:#fff;--surface:#fff;--panel:#f7f8fa;--ink:#18191c;--muted:#81858c;--line:#e5e7eb;--brand:#4d6bfe;--success-bg:#f2f8f4;--success-ink:#277347;--success-muted:#557565}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--surface:#1d1d20;--panel:#202023;--ink:#f5f5f6;--muted:#95979d;--line:#303034;--brand:#6f86ff;--success-bg:#17261d;--success-ink:#75c991;--success-muted:#8ab99a}}*{box-sizing:border-box}html,body{min-height:100%;background:var(--bg)}body{margin:0;color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:476px;margin:auto;padding:24px 24px 30px;text-align:center}.brand{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;font-weight:600;margin-bottom:8px}.brand img{width:28px;height:17px;object-fit:contain}.brand .dark-logo{display:none}@media(prefers-color-scheme:dark){.brand .light-logo{display:none}.brand .dark-logo{display:block}}h1{font-size:22px;line-height:1.25;font-weight:650;margin:0}p{margin:0;color:var(--muted)}[hidden]{display:none!important}button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .mode-panel{max-width:374px;margin:24px auto 0;padding:6px 8px 17px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+  body:not(.phone-connected) .mode-panel{min-height:416px}
   .mode-switch{display:grid;grid-template-columns:1fr 1fr;width:100%;padding:3px;border-radius:11px;gap:3px}
-  .mode-btn{min-width:0;height:34px;border:0;background:transparent;color:var(--muted);padding:0 10px;border-radius:9px;font-size:13px;font-weight:550;cursor:pointer;transition:background .15s,color .15s}
+  .mode-btn{min-width:0;min-height:36px;border:0;background:transparent;color:var(--muted);padding:4px 8px;border-radius:9px;font-size:12px;font-weight:550;cursor:pointer;transition:background .15s,color .15s}
   .mode-btn.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.08)}
   .mode-btn:disabled{cursor:not-allowed;opacity:.5}.mode-btn.active:disabled{opacity:.72}
-  .connection{display:none;flex-direction:column;align-items:center;margin:24px auto 0;max-width:390px;padding:22px;border-radius:14px;background:var(--success-bg);color:var(--success-ink)}.connection.show{display:flex}.connection-title{font-size:16px;font-weight:600}.connection-title:before{content:'✓';display:inline-grid;place-items:center;width:24px;height:24px;margin-right:9px;border-radius:50%;background:#35a867;color:white}.connection-hint{max-width:310px;margin-top:8px;color:var(--success-muted);font-size:13px}.connection-actions{display:flex;gap:8px;margin-top:18px}.connection-actions button{min-width:94px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);padding:8px 14px;cursor:pointer}.connection-actions .done{background:var(--ink);color:var(--bg);border-color:var(--ink)}.phone-connected .pairing-content{display:none}.manage-connected .connection-hint,.manage-connected .done{display:none}.manage-connected .connection-actions{margin-top:16px}
-  .pairing-content{margin-top:16px}.qr{display:inline-flex;background:#fff;padding:12px;border:1px solid var(--line);border-radius:16px;margin:0 0 10px;min-width:244px;min-height:244px;align-items:center;justify-content:center;position:relative}
-  .qr svg{width:220px;height:220px;display:block}
-  .qr-loading{position:absolute;inset:0;background:rgba(255,255,255,.94);border-radius:16px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:13px;color:#18191c;font-weight:550}
+  .connection{display:none;flex-direction:column;align-items:center;margin:14px auto 0;max-width:390px;padding:22px;border-radius:14px;background:var(--success-bg);color:var(--success-ink)}.connection.show{display:flex}.connection-title{font-size:16px;font-weight:600}.connection-title:before{content:'✓';display:inline-grid;place-items:center;width:24px;height:24px;margin-right:9px;border-radius:50%;background:#35a867;color:white}.connection-hint{max-width:310px;margin-top:8px;color:var(--success-muted);font-size:13px}.connection-actions{display:flex;gap:8px;margin-top:18px}.connection-actions button{min-width:94px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);padding:8px 14px;cursor:pointer}.connection-actions .done{background:var(--ink);color:var(--bg);border-color:var(--ink)}.phone-connected .pairing-content{display:none}.manage-connected .connection-hint,.manage-connected .done{display:none}.manage-connected .connection-actions{margin-top:16px}
+  .pairing-content{margin-top:14px;padding:0 8px}.qr{display:inline-flex;background:#fff;padding:4px;margin:0 auto;min-width:184px;min-height:184px;align-items:center;justify-content:center;position:relative}
+  .qr svg{width:184px;height:184px;display:block}
+  .qr-loading{position:absolute;inset:0;background:rgba(255,255,255,.94);border-radius:9px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:13px;color:#18191c;font-weight:550}
   .qr-loading.show{display:flex}
   .loading-copy{display:flex;width:176px;align-items:center;justify-content:space-between;gap:12px}.loading-copy span:first-child{text-align:left}.loading-value{min-width:32px;text-align:right;color:#62666d;font-variant-numeric:tabular-nums}.tunnel-progress{width:176px;height:5px;overflow:hidden;border-radius:999px;background:#e5e7eb}.tunnel-progress span{display:block;width:0;height:100%;border-radius:inherit;background:var(--brand);transition:width .08s linear}@media(prefers-reduced-motion:reduce){.tunnel-progress span{transition:none}}
-  .hint{min-height:38px;display:flex;align-items:center;justify-content:center;font-size:12.5px;line-height:1.55;max-width:370px;margin:7px auto 0;padding:0 5px}
-  .url-row{display:flex;align-items:center;gap:8px;margin:10px auto 0;max-width:410px}.url{min-width:0;flex:1;font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--panel);border-radius:9px;padding:9px 11px;text-align:left}.copy{position:relative;display:grid;place-items:center;width:28px;height:28px;flex:none;border:0;background:transparent;color:var(--muted);padding:0;cursor:pointer}.copy:hover{color:var(--ink)}.copy-icon{display:block}.copy-done{display:none;place-items:center;width:16px;height:16px;border-radius:50%;background:#35a867;color:#fff}.copy.copied .copy-icon{display:none}.copy.copied .copy-done{display:grid}.copy-done svg{display:block}.copy-tip{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);background:#fff;color:#18191c;border-radius:6px;padding:5px 8px;font-size:12px;line-height:1.2;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.12);opacity:0;pointer-events:none}.copy-tip:after{content:'';position:absolute;left:50%;top:100%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#fff}.copy:hover .copy-tip,.copy.copied .copy-tip{opacity:1}  .fallback-link{display:inline-block;margin:8px auto 0;border:0;background:transparent;color:var(--muted);font-size:12.5px;text-decoration:underline;text-underline-offset:2px;cursor:pointer}.fallback-link.hide{display:none}.expires{font-size:12px;margin-top:8px}
-  .pin-panel{display:none;max-width:410px;margin:16px auto 0;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.pin-panel.show{display:block}.pin-label{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}.pin-value{margin:8px 0 6px;font:40px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.18em}.pin-hint{color:var(--muted);font-size:12px}.pin-consent{display:flex;gap:8px;align-items:flex-start;margin-top:12px;text-align:left;font-size:13px}.pin-actions{display:flex;justify-content:center;gap:8px;margin-top:12px}.pin-actions[hidden]{display:none}.pin-actions button{border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);padding:7px 12px;cursor:pointer}
+  .hint{font-size:12px;line-height:1.55;max-width:318px;margin:0 auto 14px;padding:0 5px;color:var(--ink)}
+  .url-row{display:flex;align-items:center;gap:8px;margin:9px auto 0;max-width:330px}.url{min-width:0;flex:1;font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--panel);border-radius:9px;padding:7px 2px;text-align:left}.copy{position:relative;display:grid;place-items:center;width:28px;height:28px;flex:none;border:0;background:transparent;color:var(--muted);padding:0;cursor:pointer}.copy:hover{color:var(--ink)}.copy-icon{display:block}.copy-done{display:none;place-items:center;width:16px;height:16px;border-radius:50%;background:#35a867;color:#fff}.copy.copied .copy-icon{display:none}.copy.copied .copy-done{display:grid}.copy-done svg{display:block}.copy-tip{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);background:#fff;color:#18191c;border-radius:6px;padding:5px 8px;font-size:12px;line-height:1.2;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.12);opacity:0;pointer-events:none}.copy-tip:after{content:'';position:absolute;left:50%;top:100%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#fff}.copy:hover .copy-tip,.copy.copied .copy-tip{opacity:1}  .fallback-link{display:inline-block;margin:11px auto 0;border:0;background:transparent;color:var(--brand);font-size:12.5px;text-decoration:underline;text-underline-offset:2px;cursor:pointer}.fallback-link.hide{display:none}.expires{font-size:11px;margin:0 0 4px}
+  .pin-panel{display:flex;flex-direction:column;align-items:center;min-height:334px;padding:12px 0 0}.pin-hint{font-size:12px;min-height:18px;margin:24px 0 9px}.pin-hint[hidden]+.pin-value{margin-top:28px}
+  .pin-value{margin:0 auto 32px;font:600 clamp(30px,9vw,48px)/1.12 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;padding-left:.16em}
+  .pin-actions{display:grid;justify-content:center;gap:9px}.pin-actions button,.retry{min-width:150px;min-height:34px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);padding:6px 12px;cursor:pointer;font:inherit;font-size:12px}
+  .pin-actions button:hover:not(:disabled),.retry:hover:not(:disabled){border-color:var(--muted)}
+  .pin-actions button:disabled{opacity:.55;cursor:wait}.pin-foot{margin:13px auto 0;max-width:310px;font-size:11px}
+  .pin-reset{margin:12px auto 0;padding:4px 8px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11px;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+  .pin-foot,.pin-reset{margin-top:auto;padding-top:12px}
+  .retry{margin-top:10px}.action-error{margin:10px auto 0;color:var(--brand);font-size:12px}
   .tunnel-err{display:none;color:#e34d59;font-size:12px;margin:5px 7px 0}.tunnel-err.show{display:block}
   </style></head><body class="${options.connected ? 'phone-connected manage-connected' : ''}"><div class="wrap"><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>DSH Desktop</span></div><h1>${options.connected ? text.manageHeading : text.heading}</h1>
-  <div class="mode-panel"><div class="mode-switch"><button id="btnLan" class="mode-btn${!options.tunnelActive ? ' active' : ''}" onclick="switchMode(false)"${options.connected ? ' disabled' : ''}>${text.modeLan}</button><button id="btnTunnel" class="mode-btn${options.tunnelActive ? ' active' : ''}" onclick="switchMode(true)"${options.connected ? ' disabled' : ''}>${text.modeTunnel}</button></div><p class="hint" id="modeHint">${options.tunnelActive ? text.tunnelHint : text.lanHint}</p><div id="tunnelError" class="tunnel-err${options.tunnelActive && options.tunnelError ? ' show' : ''}">${options.tunnelActive && options.tunnelError ? text.tunnelError + options.tunnelError : ''}</div></div>
-  <div id="connection" class="connection${options.connected ? ' show' : ''}"><div class="connection-title">${text.connected}</div><p class="connection-hint">${text.closeHint}</p><div class="connection-actions"><button onclick="disconnectPhone()">${text.disconnect}</button><button class="done" onclick="window.close()">${text.done}</button></div></div>
-  <div class="pairing-content"><div id="qrContainer" class="qr"><div id="qrCode">${options.qrSvg}</div><div id="qrLoading" class="qr-loading${options.tunnelLoading ? ' show' : ''}"><div class="loading-copy"><span id="tunnelLoadingText">${text.tunnelLoading}</span><span id="tunnelProgressValue" class="loading-value">0%</span></div><div class="tunnel-progress" aria-hidden="true"><span id="tunnelProgressBar"></span></div></div></div><div class="url-row"><div class="url" id="url">${escapeHtml(options.pairingUrl)}</div><button type="button" id="copyBtn" class="copy" onclick="copyUrl()" aria-label="${text.copy}"><svg class="copy-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.25" y="5.25" width="7.5" height="7.5" rx="1.4" stroke="currentColor" stroke-width="1.3"/><path d="M3.75 10.25V3.75h6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="copy-done" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.4 6.2 4.7 8.5 9.6 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="copy-tip" id="copyTip">${text.copy}</span></button></div><button type="button" id="fallbackLink" class="fallback-link${showFallback ? '' : ' hide'}" onclick="switchFallback()">${text.fallbackLink}</button><p id="expires" class="expires"></p><div id="pinPanel" class="pin-panel${options.tunnelActive && options.pairingPin ? ' show' : ''}"><div class="pin-label">${text.pinLabel}</div><div id="pinValue" class="pin-value">${escapeHtml(options.pairingPin ?? '')}</div><p id="pinHint" class="pin-hint">${initialPinHint}</p><label class="pin-consent"><input id="pinConsent" type="checkbox"${options.pinConsent ? ' checked' : ''} onchange="setPinConsent(this.checked)"><span>${text.pinConsent}<br><small>${text.pinPrivacy}</small></span></label><div id="pinActions" class="pin-actions"${options.pinConsent ? '' : ' hidden'}><button type="button" onclick="resetPin()">${text.pinReset}</button><button type="button" onclick="setPinConsent(false)">${text.pinCancel}</button></div></div></div></div>
-  <script>let end=${options.expiresAt},pairingUrl=${JSON.stringify(options.pairingUrl)},T=${JSON.stringify(text)},tunnelActive=${Boolean(options.tunnelActive)},selectedTunnelTab=${Boolean(options.tunnelActive)},tunnelProvider=${JSON.stringify(options.tunnelProvider??null)},phoneConnected=${options.connected},modeSwitching=false,tunnelProgressTimer=null,tunnelProgressStartedAt=0,copyFeedbackTimer=null,pinConsent=${Boolean(options.pinConsent)},pinExpiresAt=${options.pinExpiresAt ?? 'null'},reopeningDeadPinggy=false;
+  <div class="mode-panel">
+    <div class="mode-switch" role="group">
+      <button id="btnLan" type="button" class="mode-btn${!internetSelected ? ' active' : ''}" aria-pressed="${!internetSelected}" onclick="switchMode(false)"${options.connected ? ' disabled' : ''}>${text.modeLan}</button>
+      <button id="btnTunnel" type="button" class="mode-btn${internetSelected ? ' active' : ''}" aria-pressed="${internetSelected}" onclick="switchMode(true)"${options.connected ? ' disabled' : ''}>${text.modeTunnel}</button>
+    </div>
+    <div id="connection" class="connection${options.connected ? ' show' : ''}"><div class="connection-title">${text.connected}</div><p class="connection-hint">${text.closeHint}</p><div class="connection-actions"><button onclick="disconnectPhone()">${text.disconnect}</button><button class="done" onclick="window.close()">${text.done}</button></div></div>
+    <div class="pairing-content">
+      <div id="qrPanel"${hidden(!showPin)}>
+        <p class="hint" id="modeHint">${internetSelected ? text.tunnelHint : text.lanHint}</p>
+        <p id="expires" class="expires"${hidden(showQr && !options.tunnelLoading)}></p>
+        <div id="qrContainer" class="qr"${hidden(showQr || Boolean(options.tunnelLoading))}>
+          <div id="qrCode"${hidden(showQr && !options.tunnelLoading)}>${options.qrSvg}</div>
+          <div id="qrLoading" class="qr-loading${options.tunnelLoading ? ' show' : ''}" role="status">
+            <div class="loading-copy"><span id="tunnelLoadingText">${text.tunnelLoading}</span><span id="tunnelProgressValue" class="loading-value">0%</span></div>
+            <div class="tunnel-progress" aria-hidden="true"><span id="tunnelProgressBar"></span></div>
+          </div>
+        </div>
+        <div id="urlRow" class="url-row"${hidden(showQr && !options.tunnelLoading)}><div class="url" id="url">${escapeHtml(options.pairingUrl)}</div><button type="button" id="copyBtn" class="copy" onclick="copyUrl()" aria-label="${text.copy}"><svg class="copy-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.25" y="5.25" width="7.5" height="7.5" rx="1.4" stroke="currentColor" stroke-width="1.3"/><path d="M3.75 10.25V3.75h6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="copy-done" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2.4 6.2 4.7 8.5 9.6 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="copy-tip" id="copyTip">${text.copy}</span></button></div>
+        <button type="button" id="fallbackLink" class="fallback-link${showFallback ? '' : ' hide'}" onclick="switchFallback()">${text.fallbackLink}</button>
+        <div id="tunnelError" class="tunnel-err${internetSelected && options.tunnelError ? ' show' : ''}" role="status">${internetSelected && options.tunnelError ? escapeHtml(text.tunnelError + options.tunnelError) : ''}</div>
+        <button type="button" id="retryTunnel" class="retry" onclick="switchMode(true)"${hidden(internetSelected && !options.tunnelActive && !options.tunnelLoading)}>${text.retry}</button>
+        <p id="noLink" class="hint"${hidden(!internetSelected && !showQr)}>${text.noLink}</p>
+      </div>
+      <div id="pinPanel" class="pin-panel"${hidden(showPin)}>
+        <p id="pinInstruction" class="hint">${options.pinConsent ? text.enterDurablePin : text.enterPin}</p>
+        <p id="pinHint" class="pin-hint"${hidden(!options.pinConsent)}>${initialPinHint}</p>
+        <div id="pinValue" class="pin-value">${showPin ? escapeHtml(options.pairingPin ?? '') : ''}</div>
+        <div id="pinActions" class="pin-actions">
+          <button id="rescan" type="button" onclick="rescan()">${text.rescan}</button>
+          <button id="pinConsent" type="button" onclick="setPinConsent(!pinConsent)">${options.pinConsent ? text.pinCancel : text.pinConsent}</button>
+        </div>
+        <p id="pinPrivacy" class="pin-foot"${hidden(!options.pinConsent)}>${text.pinPrivacy}</p>
+        <button id="pinReset" class="pin-reset" type="button" onclick="resetPin()"${hidden(Boolean(options.pinConsent))}>${text.pinReset}</button>
+      </div>
+    </div>
+    <p id="actionError" class="action-error" role="status" hidden></p>
+  </div></div>
+  <script>
+  let end=${options.expiresAt},pairingUrl=${JSON.stringify(options.pairingUrl)},T=${JSON.stringify(text)};
+  let tunnelActive=${Boolean(options.tunnelActive)},tunnelLoading=${Boolean(options.tunnelLoading)},selectedTunnelTab=${internetSelected},tunnelProvider=${JSON.stringify(options.tunnelProvider??null)};
+  let phoneConnected=${options.connected},modeSwitching=false,tunnelProgressTimer=null,tunnelProgressStartedAt=0,copyFeedbackTimer=null;
+  let pinConsent=${Boolean(options.pinConsent)},pinExpiresAt=${options.pinExpiresAt ?? 'null'},pinRevealed=${showPin},pinBusy=false,reopeningDeadPinggy=false;
+  let polling=false,mutation=0;
+  const byId=id=>document.getElementById(id);
   async function copyUrl(){try{await navigator.clipboard.writeText(pairingUrl)}catch{return}const btn=document.getElementById('copyBtn'),tip=document.getElementById('copyTip');btn.classList.add('copied');tip.textContent=T.copied;clearTimeout(copyFeedbackTimer);copyFeedbackTimer=setTimeout(()=>{btn.classList.remove('copied');tip.textContent=T.copy},1800)}
-  function syncFallbackLink(){const link=document.getElementById('fallbackLink');if(!link)return;link.classList.toggle('hide',!(tunnelActive&&tunnelProvider==='cloudflare'&&!phoneConnected&&!modeSwitching))}
-  function syncModeControls(connected){phoneConnected=connected;const disabled=connected||modeSwitching;document.getElementById('btnLan').disabled=disabled;document.getElementById('btnTunnel').disabled=disabled;syncFallbackLink()}
-  function syncModeSelection(active){document.getElementById('btnLan').classList.toggle('active',!active);document.getElementById('btnTunnel').classList.toggle('active',active)}
+  function syncFallbackLink(){const link=document.getElementById('fallbackLink');if(!link)return;link.classList.toggle('hide',!(tunnelActive&&tunnelProvider==='cloudflare'&&!phoneConnected&&!modeSwitching&&!tunnelLoading&&!pinRevealed))}
+  function syncModeControls(connected){phoneConnected=connected;const disabled=connected||modeSwitching||tunnelLoading||pinBusy;document.getElementById('btnLan').disabled=disabled;document.getElementById('btnTunnel').disabled=disabled;syncFallbackLink()}
+  function syncModeSelection(active){document.getElementById('btnLan').classList.toggle('active',!active);document.getElementById('btnTunnel').classList.toggle('active',active);byId('btnLan').setAttribute('aria-pressed',String(!active));byId('btnTunnel').setAttribute('aria-pressed',String(active))}
   function syncTunnelError(){const el=document.getElementById('tunnelError');el.classList.toggle('show',selectedTunnelTab&&!!el.textContent)}
   function setTunnelProgress(value){const progress=Math.max(0,Math.min(100,Math.round(value)));document.getElementById('tunnelProgressBar').style.width=progress+'%';document.getElementById('tunnelProgressValue').textContent=progress+'%'}
   function startTunnelProgress(enableTunnel){const loading=document.getElementById('qrLoading'),duration=enableTunnel?4500:800;clearInterval(tunnelProgressTimer);tunnelProgressStartedAt=Date.now();document.getElementById('tunnelLoadingText').textContent=enableTunnel?T.tunnelLoading:T.lanLoading;setTunnelProgress(0);loading.classList.add('show');tunnelProgressTimer=setInterval(()=>{setTunnelProgress(Math.min(99,(Date.now()-tunnelProgressStartedAt)/duration*100))},50);return duration}
   async function finishTunnelProgress(completed,duration){const loading=document.getElementById('qrLoading');if(completed){const remaining=Math.max(0,duration-(Date.now()-tunnelProgressStartedAt));if(remaining)await new Promise(resolve=>setTimeout(resolve,remaining));setTunnelProgress(100);await new Promise(resolve=>setTimeout(resolve,180))}clearInterval(tunnelProgressTimer);tunnelProgressTimer=null;loading.classList.remove('show');setTunnelProgress(0)}
-  async function switchMode(enableTunnel){if(phoneConnected||modeSwitching)return;if(selectedTunnelTab===enableTunnel&&tunnelActive===enableTunnel)return;const previous=tunnelActive;const previousProvider=tunnelProvider;let completed=false;modeSwitching=true;selectedTunnelTab=enableTunnel;syncModeControls(phoneConnected);syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;syncTunnelError();const progressDuration=startTunnelProgress(enableTunnel);try{const r=await fetch('/desktop/tunnel/toggle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({enable:enableTunnel})});const j=await r.json();if(j.ok){applyTunnelPayload(j);selectedTunnelTab=enableTunnel;syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;if(j.active)document.getElementById('tunnelError').textContent='';syncTunnelError();completed=true}else{throw new Error(j.error||'Tunnel failed')}}catch(e){tunnelActive=previous;tunnelProvider=previousProvider;syncModeSelection(selectedTunnelTab);document.getElementById('modeHint').textContent=selectedTunnelTab?T.tunnelHint:T.lanHint;document.getElementById('tunnelError').textContent=T.tunnelError+(e.message||e);syncTunnelError()}finally{await finishTunnelProgress(completed,progressDuration);modeSwitching=false;syncModeControls(phoneConnected)}}
-  async function switchFallback(){if(phoneConnected||modeSwitching||!tunnelActive||tunnelProvider!=='cloudflare')return;let completed=false;modeSwitching=true;syncModeControls(phoneConnected);const progressDuration=startTunnelProgress(true);document.getElementById('tunnelLoadingText').textContent=T.fallbackLoading;try{const r=await fetch('/desktop/tunnel/fallback',{method:'POST'});const j=await r.json();        if(j.ok){applyTunnelPayload(j);selectedTunnelTab=true;document.getElementById('tunnelError').textContent='';syncTunnelError();completed=true}else{throw new Error(j.error||'Tunnel failed')}}catch(e){document.getElementById('tunnelError').textContent=T.tunnelError+(e.message||e);syncTunnelError()}finally{await finishTunnelProgress(completed,progressDuration);modeSwitching=false;syncModeControls(phoneConnected)}}
-  function applyTunnelPayload(j){tunnelActive=!!j.active;tunnelProvider=j.provider||null;if(j.pairingUrl){pairingUrl=j.pairingUrl;document.getElementById('url').textContent=pairingUrl}if(j.qrSvg)document.getElementById('qrCode').innerHTML=j.qrSvg;if(j.expiresAt)end=j.expiresAt;syncPin(j);if(j.unexpectedlyClosed&&!j.active){document.getElementById('tunnelError').textContent=T.pinClosed;syncTunnelError();if(j.provider==='pinggy'&&selectedTunnelTab&&!phoneConnected&&!modeSwitching&&!reopeningDeadPinggy){reopeningDeadPinggy=true;void switchMode(true).finally(()=>{reopeningDeadPinggy=false})}}}
-  function renderPinHint(){const hint=document.getElementById('pinHint');if(!hint)return;if(pinConsent){hint.textContent=T.pinHintDurable;return}if(!pinExpiresAt){hint.textContent=T.pinHintTemp;return}const left=Math.max(0,Math.ceil((pinExpiresAt-Date.now())/1000));hint.textContent=T.pinHintTemp+(left?' ('+left+'s)':'')}
-  function syncPin(j){const panel=document.getElementById('pinPanel'),value=document.getElementById('pinValue'),box=document.getElementById('pinConsent'),actions=document.getElementById('pinActions');pinConsent=!!j.pinConsent;if('pinExpiresAt' in j)pinExpiresAt=j.pinExpiresAt||null;if(value)value.textContent=j.pairingPin||'';if(box)box.checked=pinConsent;renderPinHint();if(actions)actions.hidden=!pinConsent;if(panel)panel.classList.toggle('show',!!(tunnelActive&&j.pairingPin))}
-  async function setPinConsent(consent){const r=await fetch('/desktop/pin/consent',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({consent})});const j=await r.json();if(j.ok)applyTunnelPayload(j);else{document.getElementById('pinConsent').checked=pinConsent;document.getElementById('tunnelError').textContent=j.error||T.tunnelError;syncTunnelError()}}
-  async function resetPin(){const r=await fetch('/desktop/pin/reset',{method:'POST'});const j=await r.json();if(j.ok)applyTunnelPayload(j)}
-  async function poll(){const [status,tunnel]=await Promise.all([fetch('/desktop/status'),fetch('/desktop/tunnel/status')]);if(status.ok){const j=await status.json();const connected=!!j.connected;document.getElementById('connection').classList.toggle('show',connected);document.body.classList.toggle('phone-connected',connected);syncModeControls(connected)}if(tunnel.ok){const j=await tunnel.json();if(!modeSwitching)applyTunnelPayload(j)}}
-  async function disconnectPhone(){await fetch('/desktop/disconnect',{method:'POST'});location.reload()}
-  setInterval(()=>{const n=Math.max(0,Math.ceil((end-Date.now())/1000));const expires=document.getElementById('expires');if(expires)expires.textContent=pairingUrl?(n?T.refresh+n+T.seconds:T.expired):'';if(!n&&pairingUrl&&!phoneConnected&&!modeSwitching)location.reload();renderPinHint()},1000);
-  setInterval(poll,800);poll()</script></body></html>`
+  async function switchMode(enableTunnel){if(phoneConnected||modeSwitching||tunnelLoading||pinBusy)return;if(selectedTunnelTab===enableTunnel&&tunnelActive===enableTunnel)return;const previous=tunnelActive;const previousProvider=tunnelProvider;let completed=false;modeSwitching=true;mutation++;selectedTunnelTab=enableTunnel;syncModeControls(phoneConnected);syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;syncTunnelError();syncPairingView();const progressDuration=startTunnelProgress(enableTunnel);try{const r=await fetch('/desktop/tunnel/toggle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({enable:enableTunnel})});const j=await r.json();if(j.ok){applyTunnelPayload(j);selectedTunnelTab=enableTunnel;syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;if(j.active)document.getElementById('tunnelError').textContent='';syncTunnelError();completed=true}else{throw new Error(j.error||'Tunnel failed')}}catch(e){tunnelActive=previous;tunnelProvider=previousProvider;syncModeSelection(selectedTunnelTab);document.getElementById('modeHint').textContent=selectedTunnelTab?T.tunnelHint:T.lanHint;document.getElementById('tunnelError').textContent=T.tunnelError+(e.message||e);syncTunnelError()}finally{await finishTunnelProgress(completed,progressDuration);modeSwitching=false;syncPairingView();syncModeControls(phoneConnected)}}
+  async function switchFallback(){if(phoneConnected||modeSwitching||tunnelLoading||pinBusy||!tunnelActive||tunnelProvider!=='cloudflare')return;let completed=false;modeSwitching=true;mutation++;syncPairingView();syncModeControls(phoneConnected);const progressDuration=startTunnelProgress(true);document.getElementById('tunnelLoadingText').textContent=T.fallbackLoading;try{const r=await fetch('/desktop/tunnel/fallback',{method:'POST'});const j=await r.json();        if(j.ok){applyTunnelPayload(j);selectedTunnelTab=true;document.getElementById('tunnelError').textContent='';syncTunnelError();completed=true}else{throw new Error(j.error||'Tunnel failed')}}catch(e){document.getElementById('tunnelError').textContent=T.tunnelError+(e.message||e);syncTunnelError()}finally{await finishTunnelProgress(completed,progressDuration);modeSwitching=false;syncPairingView();syncModeControls(phoneConnected)}}
+  function syncPairingView(){
+    const loading=modeSwitching||tunnelLoading;
+    const showPin=selectedTunnelTab&&tunnelActive&&pinRevealed&&!loading;
+    const showCode=!!pairingUrl&&(!selectedTunnelTab||tunnelActive)&&!loading;
+    byId('qrPanel').hidden=showPin;
+    byId('pinPanel').hidden=!showPin;
+    byId('qrContainer').hidden=!showCode&&!loading;
+    byId('qrCode').hidden=!showCode;
+    byId('qrLoading').classList.toggle('show',loading);
+    byId('urlRow').hidden=!showCode;
+    byId('expires').hidden=!showCode;
+    byId('retryTunnel').hidden=!selectedTunnelTab||tunnelActive||loading;
+    byId('noLink').hidden=selectedTunnelTab||showCode||loading;
+    syncFallbackLink();
+  }
+  function applyTunnelPayload(j){
+    const wasLoading=tunnelLoading;
+    tunnelActive=!!j.active;
+    tunnelLoading=!!j.loading;
+    if(wasLoading&&!tunnelLoading&&!modeSwitching)void finishTunnelProgress(false,0);
+    tunnelProvider=j.provider||null;
+    if('pairingUrl' in j){
+      pairingUrl=j.pairingUrl||'';
+      byId('url').textContent=pairingUrl;
+    }
+    if(j.qrSvg)byId('qrCode').innerHTML=j.qrSvg;
+    if(j.expiresAt)end=j.expiresAt;
+    syncPin(j);
+    if(j.unexpectedlyClosed&&!j.active){
+      byId('tunnelError').textContent=T.pinClosed;
+      syncTunnelError();
+      if(j.provider==='pinggy'&&selectedTunnelTab&&!phoneConnected&&!modeSwitching&&!pinBusy&&!reopeningDeadPinggy){
+        reopeningDeadPinggy=true;
+        void switchMode(true).finally(()=>{reopeningDeadPinggy=false});
+      }
+    }else if(j.error&&selectedTunnelTab){
+      byId('tunnelError').textContent=T.tunnelError+j.error;
+      syncTunnelError();
+    }else if(j.active){
+      byId('tunnelError').textContent='';
+      syncTunnelError();
+    }
+    syncPairingView();
+    syncModeControls(phoneConnected);
+  }
+  function renderPinHint(){
+    const left=Math.max(0,Math.ceil(((pinExpiresAt||0)-Date.now())/1000));
+    byId('pinHint').textContent=left?left+T.pinCountdown:T.pinExpired;
+  }
+  function syncPin(j){
+    pinConsent=!!j.pinConsent;
+    pinRevealed=!!j.pinRevealed;
+    pinExpiresAt=j.pinExpiresAt||null;
+    byId('pinValue').textContent=pinRevealed?(j.pairingPin||''):'';
+    byId('pinInstruction').textContent=pinConsent?T.enterDurablePin:T.enterPin;
+    byId('pinHint').hidden=pinConsent;
+    byId('pinConsent').textContent=pinConsent?T.pinCancel:T.pinConsent;
+    byId('pinPrivacy').hidden=pinConsent;
+    byId('pinReset').hidden=!pinConsent;
+    renderPinHint();
+  }
+  function showActionError(message){
+    const error=byId('actionError');
+    error.textContent=message;
+    error.hidden=!message;
+  }
+  async function pinAction(path,body){
+    if(pinBusy||modeSwitching||phoneConnected)return;
+    pinBusy=true;
+    mutation++;
+    showActionError('');
+    const buttons=['rescan','pinConsent','pinReset'].map(byId);
+    for(const button of buttons)button.disabled=true;
+    syncModeControls(phoneConnected);
+    try{
+      const response=await fetch(path,{method:'POST',...(body?{headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});
+      const data=await response.json();
+      if(!response.ok||!data.ok)throw new Error(data.error||T.actionError);
+      applyTunnelPayload(data);
+    }catch(error){
+      showActionError(error.message||T.actionError);
+    }finally{
+      pinBusy=false;
+      for(const button of buttons)button.disabled=false;
+      syncModeControls(phoneConnected);
+    }
+  }
+  function setPinConsent(consent){return pinAction('/desktop/pin/consent',{consent})}
+  function resetPin(){return pinAction('/desktop/pin/reset')}
+  function rescan(){return pinAction('/desktop/rescan')}
+  async function poll(){
+    if(polling||modeSwitching||pinBusy)return;
+    polling=true;
+    const revision=mutation;
+    try{
+      const [status,tunnel]=await Promise.all([fetch('/desktop/status'),fetch('/desktop/tunnel/status')]);
+      if(status.ok){
+        const data=await status.json();
+        const connected=!!data.connected;
+        byId('connection').classList.toggle('show',connected);
+        document.body.classList.toggle('phone-connected',connected);
+        syncModeControls(connected);
+      }
+      if(tunnel.ok){
+        const data=await tunnel.json();
+        if(revision===mutation&&!modeSwitching&&!pinBusy)applyTunnelPayload(data);
+      }
+    }catch{
+      // Keep the last working display on a transient status failure.
+    }finally{polling=false}
+  }
+  async function disconnectPhone(){
+    try{
+      const response=await fetch('/desktop/disconnect',{method:'POST'});
+      if(!response.ok)throw new Error(T.actionError);
+      location.reload();
+    }catch{showActionError(T.actionError)}
+  }
+  function updateCountdown(){
+    const n=Math.max(0,Math.ceil((end-Date.now())/1000));
+    byId('expires').textContent=pairingUrl?(n?T.refresh+n+T.seconds:T.expired):'';
+    if(!n&&pairingUrl&&(!selectedTunnelTab||tunnelActive)&&!phoneConnected&&!modeSwitching&&!pinBusy&&!tunnelLoading&&!pinRevealed)location.reload();
+    if(pinRevealed&&!pinConsent)renderPinHint();
+  }
+  updateCountdown();
+  if(tunnelLoading)startTunnelProgress(true);
+  setInterval(updateCountdown,1000);
+  setInterval(poll,800);
+  void poll();
+  </script></body></html>`
 }
 
 export function renderPairingPinPage(locale: 'en' | 'zh'): string {

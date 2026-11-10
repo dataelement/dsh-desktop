@@ -1439,6 +1439,93 @@ describe('LAN vs tunnel pairing authorization', () => {
     expect(await tunnelStatus.text()).not.toContain('246810')
   })
 
+  it('reveals the desktop PIN only after a valid tunnel scan and re-arms the QR without replacing a long-term PIN', async () => {
+    const store = memoryPinStore()
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const { port } = await bridge.start()
+    armFakeTunnel(bridge)
+    const base = `http://127.0.0.1:${port}`
+    const desktopHeaders = { cookie: await authorizeDesktop(bridge) }
+    const phoneHeaders = {
+      host: 'active-mobile.trycloudflare.com',
+      'cf-connecting-ip': '203.0.113.40',
+      'cf-ray': 'test-ray'
+    }
+    const status = async () => await (await fetch(`${base}/desktop/tunnel/status`, {
+      headers: desktopHeaders
+    })).json() as { pinRevealed: boolean; pairingPin: string; pairingUrl: string }
+    const first = await status()
+    expect(first.pinRevealed).toBe(false)
+    const initialPage = await (await fetch(`${base}/desktop`, { headers: desktopHeaders })).text()
+    expect(initialPage).toContain('id="pinPanel" class="pin-panel" hidden')
+    expect(initialPage).not.toContain(`class="pin-value">${first.pairingPin}`)
+    expect(store.load()).toEqual({})
+    const rejected = await fetch(`${base}/pair?token=invalid`, { headers: phoneHeaders })
+    expect(rejected.status).toBe(401)
+    expect((await status()).pinRevealed).toBe(false)
+
+    const firstLink = new URL(first.pairingUrl)
+    const phonePage = await fetch(`${base}${firstLink.pathname}${firstLink.search}`, { headers: phoneHeaders })
+    expect(phonePage.status).toBe(200)
+    expect(phonePage.headers.get('set-cookie')).toBeNull()
+    const phoneHtml = await phonePage.text()
+    expect(phoneHtml).toContain('Enter pairing password')
+    expect(phoneHtml).not.toContain('id="pinValue"')
+    expect(await status()).toMatchObject({ pinRevealed: true, pairingPin: first.pairingPin })
+
+    const durable = await fetch(`${base}/desktop/pin/consent`, {
+      method: 'POST',
+      headers: { ...desktopHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ consent: true })
+    })
+    expect(durable.status).toBe(200)
+    const savedPin = store.load().pin
+    expect(savedPin).toMatch(/^\d{6}$/)
+    expect(await durable.json()).toMatchObject({ pinRevealed: true, pinConsent: true, pairingPin: savedPin })
+
+    const deniedRescan = await fetch(`${base}/desktop/rescan`, { method: 'POST', headers: phoneHeaders })
+    expect(deniedRescan.status).toBe(403)
+    const rescanned = await fetch(`${base}/desktop/rescan`, { method: 'POST', headers: desktopHeaders })
+    expect(rescanned.status).toBe(200)
+    const next = await status()
+    expect(next).toMatchObject({ pinRevealed: false, pairingPin: savedPin })
+    expect(next.pairingUrl).not.toBe(first.pairingUrl)
+    expect((await fetch(`${base}${firstLink.pathname}${firstLink.search}`, { headers: phoneHeaders })).status).toBe(401)
+  })
+
+  it('leaves an expired scanned PIN expired until the desktop re-arms the QR', async () => {
+    let now = Date.now()
+    const bridge = new LanMobileBridge({ harnessUrl: () => 'http://127.0.0.1:9999', now: () => now })
+    bridges.push(bridge)
+    const { port } = await bridge.start()
+    armFakeTunnel(bridge)
+    const base = `http://127.0.0.1:${port}`
+    const headers = { cookie: await authorizeDesktop(bridge) }
+    const status = async () => await (await fetch(`${base}/desktop/tunnel/status`, { headers })).json()
+    const first = await status() as { pairingUrl: string }
+    const link = new URL(first.pairingUrl)
+    const scan = await fetch(`${base}${link.pathname}${link.search}`, {
+      redirect: 'manual',
+      headers: { host: link.host, 'cf-connecting-ip': '203.0.113.41', 'cf-ray': 'test-ray' }
+    })
+    expect(scan.status).toBe(200)
+    expect(await status()).toMatchObject({ pinRevealed: true, pairingPin: expect.stringMatching(/^\d{6}$/) })
+    now += 5 * 60 * 1000 + 1
+    const expired = await status()
+    expect(expired).toMatchObject({ pinRevealed: true, pinExpiresAt: expect.any(Number) })
+    expect(expired).not.toHaveProperty('pairingPin')
+    const rescan = await fetch(`${base}/desktop/rescan`, { method: 'POST', headers })
+    expect(await rescan.json()).toMatchObject({
+      pinRevealed: false,
+      pairingPin: expect.stringMatching(/^\d{6}$/),
+      pinExpiresAt: now + 5 * 60 * 1000
+    })
+  })
+
   it('requires a PIN on the tunnel and ignores a sibling device on the same public IP', async () => {
     const store = memoryPinStore({ pin: '246810', pinConsent: true })
     const bridge = new LanMobileBridge({

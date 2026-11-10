@@ -3426,7 +3426,7 @@ function broadcastMobileStatus(connected: boolean): void {
   }
 }
 
-async function showMobilePairing(): Promise<void> {
+async function showMobilePairing(preferInternet = true): Promise<void> {
   if (runtime.snapshot().phase !== 'ready') {
     const options: MessageBoxOptions = {
       type: 'info',
@@ -3438,7 +3438,13 @@ async function showMobilePairing(): Promise<void> {
     return
   }
 
-  let snapshot = await mobileBridge.start()
+  if (mobileWindow && !mobileWindow.isDestroyed()) {
+    mobileWindow.show()
+    mobileWindow.focus()
+    return
+  }
+
+  const snapshot = await mobileBridge.start()
   if (!snapshot.desktopUrl) {
     await mobileBridge.stop()
     const options: MessageBoxOptions = {
@@ -3451,17 +3457,17 @@ async function showMobilePairing(): Promise<void> {
     return
   }
 
-  if (!snapshot.pairingUrl && !snapshot.tunnelActive && !snapshot.connected) {
-    snapshot = await mobileBridge.toggleTunnel(true)
+  if (mobileWindow && !mobileWindow.isDestroyed()) {
+    mobileWindow.show()
+    mobileWindow.focus()
+    return
   }
-
-  if (mobileWindow && !mobileWindow.isDestroyed()) mobileWindow.destroy()
   nativeTheme.themeSource = harnessThemePreference()
-  mobileWindow = new BrowserWindow({
-    width: 560,
-    height: 720,
-    minWidth: 420,
-    minHeight: 560,
+  const window = new BrowserWindow({
+    width: 500,
+    height: 640,
+    minWidth: 380,
+    minHeight: 540,
     title: harnessLocale() === 'zh' ? '连接移动设备' : 'Connect Mobile Device',
     icon: desktopIconPath(),
     parent: mainWindow,
@@ -3473,16 +3479,21 @@ async function showMobilePairing(): Promise<void> {
       webSecurity: true
     }
   })
-  secureWindow(mobileWindow)
-  mobileWindow.on('closed', () => {
-    mobileWindow = undefined
+  mobileWindow = window
+  secureWindow(window)
+  window.on('closed', () => {
+    if (mobileWindow === window) mobileWindow = undefined
   })
-  if (!snapshot.desktopUrl) return
   const desktopUrl = mobileBridge.createDesktopUrl()
   if (!desktopUrl) return
-  await mobileWindow.loadURL(desktopUrl)
-  mobileWindow.show()
-  mobileWindow.focus()
+  if (preferInternet && !snapshot.tunnelActive && !snapshot.connected) {
+    // Keep the window responsive while the default internet link is prepared.
+    void mobileBridge.toggleTunnel(true).catch(showUnexpectedError)
+  }
+  await window.loadURL(desktopUrl)
+  if (window.isDestroyed()) return
+  window.show()
+  window.focus()
 }
 
 async function bootstrap(): Promise<void> {
@@ -3595,7 +3606,7 @@ async function bootstrap(): Promise<void> {
     tunnelLog: (message) => console.warn(message),
     port: developmentConfig.mobilePort,
     onReconnectRequested: () => {
-      void showMobilePairing().catch(showUnexpectedError)
+      void showMobilePairing(false).catch(showUnexpectedError)
     },
     onConnectedChange: (connected) => broadcastMobileStatus(connected),
     pairingPinStore: createFilePairingPinStore(pairingPinStorePath(app.getPath('userData')))

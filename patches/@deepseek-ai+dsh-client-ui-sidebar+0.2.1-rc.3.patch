@@ -1,8 +1,16 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index c61f2f26c3..01879b9efe 100644
+index c61f2f2..9efdd95 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-@@ -382,6 +382,8 @@ window.__ModuleLoader__.load({
+@@ -81,6 +81,7 @@ window.__ModuleLoader__.load({
+ 					children: (0, react_jsx_runtime.jsx)("button", {
+ 						type: "button",
+ 						className: HeaderLeadingControls_module_css_default.iconButton,
++						"data-dsh-sidebar-new-session": "",
+ 						"aria-label": t("session.new.label"),
+ 						"aria-keyshortcuts": newShortcut?.aria,
+ 						onClick: () => {
+@@ -382,6 +383,8 @@ window.__ModuleLoader__.load({
  			});
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -11,7 +19,15 @@ index c61f2f26c3..01879b9efe 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -465,6 +467,7 @@ window.__ModuleLoader__.load({
+@@ -446,6 +449,7 @@ window.__ModuleLoader__.load({
+ 						children: (0, react_jsx_runtime.jsxs)("button", {
+ 							type: "button",
+ 							className: SidebarRoot_module_css_default.newSession,
++							"data-dsh-sidebar-new-session": "",
+ 							"aria-label": t("session.new.label"),
+ 							"aria-keyshortcuts": newShortcut?.aria,
+ 							onClick: openNewSession,
+@@ -465,6 +469,7 @@ window.__ModuleLoader__.load({
  							})]
  						})
  					}),
@@ -19,7 +35,7 @@ index c61f2f26c3..01879b9efe 100644
  					panels.length > 0 && (0, react_jsx_runtime.jsxs)("nav", {
  						className: SidebarRoot_module_css_default.panelList,
  						"aria-label": t("panels.label"),
-@@ -514,8 +517,9 @@ window.__ModuleLoader__.load({
+@@ -514,8 +519,9 @@ window.__ModuleLoader__.load({
  							className: SidebarRoot_module_css_default.footerActions,
  							children: renderSlot("sidebar.footer.action", { wide })
  						}), (0, react_jsx_runtime.jsx)("div", {
@@ -30,7 +46,7 @@ index c61f2f26c3..01879b9efe 100644
  						})]
  					})
  				]
-@@ -624,6 +628,10 @@ window.__ModuleLoader__.load({
+@@ -624,6 +630,10 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "root"
  					},
@@ -41,7 +57,7 @@ index c61f2f26c3..01879b9efe 100644
  					"sidebar.panellist": {
  						kind: "list",
  						scope: "root"
-@@ -640,6 +648,10 @@ window.__ModuleLoader__.load({
+@@ -640,6 +650,10 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "root"
  					},
@@ -53,7 +69,7 @@ index c61f2f26c3..01879b9efe 100644
  						kind: "list",
  						scope: "root"
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
-index 28d86cdf7c..61f66688f6 100644
+index 28d86cd..61f6668 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
 @@ -40,6 +40,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -103,7 +119,7 @@ index 28d86cdf7c..61f66688f6 100644
  //# sourceMappingURL=slots.d.ts.map
 \ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts
-index c7da079458..1539ef0e86 100644
+index c7da079..1539ef0 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/index.d.ts
 @@ -1,6 +1,6 @@
