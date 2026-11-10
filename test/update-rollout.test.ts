@@ -1,17 +1,25 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
-  skipped: vi.fn(), catalog: vi.fn(), send: vi.fn(), policy: vi.fn(), handlers: new Map<string, (...args: any[]) => void>(),
+  skipped: vi.fn(), catalog: vi.fn(), send: vi.fn(), policy: vi.fn(), netFetch: vi.fn(),
+  handlers: new Map<string, (...args: any[]) => void>(),
+  ipcHandlers: new Map<string, () => Promise<unknown>>(),
   updater: { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), downloadUpdate: vi.fn(), quitAndInstall: vi.fn(), on: vi.fn(), autoDownload: false, allowDowngrade: false, allowPrerelease: false }
 }))
 vi.mock('../src/main/update/version-catalog', async importOriginal => ({ ...await importOriginal<object>(), fetchAvailableReleases: mocks.catalog }))
 vi.mock('../src/main/update/skipped-version', async importOriginal => ({ ...await importOriginal<object>(), readSkippedVersion: mocks.skipped }))
 vi.mock('../src/main/desktop-service', () => ({ checkDesktopUpdate: mocks.policy }))
 vi.mock('electron-updater', () => ({ default: { autoUpdater: mocks.updater } }))
-vi.mock('electron', () => ({ app: { isPackaged: true, getVersion: () => '0.8.0', getPath: () => '/nonexistent-desktop-test', isReady: () => true }, BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: mocks.send } }] }, powerMonitor: { on: vi.fn(), removeListener: vi.fn() }, ipcMain: { handle: vi.fn() } }))
+vi.mock('electron', () => ({
+  app: { isPackaged: true, getVersion: () => '0.8.0', getPath: () => '/nonexistent-desktop-test', isReady: () => true },
+  BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: mocks.send } }] },
+  powerMonitor: { on: vi.fn(), removeListener: vi.fn() },
+  ipcMain: { handle: (channel: string, handler: () => Promise<unknown>) => { mocks.ipcHandlers.set(channel, handler) } },
+  net: { fetch: mocks.netFetch }
+}))
 vi.mock('../src/main/update/update-policy', async importOriginal => ({ ...await importOriginal<object>(), supportsAutoUpdates: () => true }))
 let manager: typeof import('../src/main/update/update-manager')
 beforeEach(async () => {
-  vi.resetModules(); vi.clearAllMocks(); mocks.handlers.clear()
+  vi.resetModules(); vi.clearAllMocks(); mocks.handlers.clear(); mocks.ipcHandlers.clear()
   mocks.updater.on.mockImplementation((event, callback) => { mocks.handlers.set(event, callback) })
   mocks.skipped.mockReturnValue(undefined)
   mocks.catalog.mockResolvedValue([{ version: '0.7.0', tag: 'v0.7.0', archiveUrl: 'https://dshdesktop.com/updates/archive/0.7.0/' }])
@@ -20,6 +28,16 @@ beforeEach(async () => {
   manager.startUpdateManager({ prepareToInstall: async () => {} })
 })
 afterEach(() => manager.stopUpdateManager())
+
+async function expectDesktopSessionRequest(request: unknown): Promise<void> {
+  expect(request).toEqual(expect.any(Function))
+  if (typeof request !== 'function') throw new Error('missing version index request')
+  const signal = new AbortController().signal
+  const response = { ok: true, status: 200, json: async () => ({ versions: [] }) }
+  mocks.netFetch.mockResolvedValue(response)
+  await expect(request('https://dshdesktop.com/updates/versions.json', { signal })).resolves.toBe(response)
+  expect(mocks.netFetch).toHaveBeenCalledWith('https://dshdesktop.com/updates/versions.json', { signal })
+}
 it('does not contact latest or download when no rule is selected, even for a manual check', async () => {
   mocks.policy.mockResolvedValue({ updateAvailable: false })
   await manager.checkForUpdates(true)
@@ -66,6 +84,25 @@ it('preserves explicitly selected history installs and validates version input',
   expect(mocks.updater.downloadUpdate).toHaveBeenCalledTimes(1)
   expect(mocks.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: 'https://dshdesktop.com/updates/archive/0.7.0/' })
   expect(mocks.updater.allowDowngrade).toBe(false)
+  expect(mocks.catalog).toHaveBeenCalledWith('0.8.0', expect.any(Function))
+  await expectDesktopSessionRequest(mocks.catalog.mock.calls.at(-1)?.[1])
+})
+
+it('lists versions through the same default-session request as a history install', async () => {
+  mocks.updater.checkForUpdates.mockImplementation(async () => {
+    mocks.handlers.get('update-available')!({ version: '0.7.0' })
+    return { updateInfo: { version: '0.7.0' } }
+  })
+  await manager.installSpecificVersion('0.7.0')
+  const installed = mocks.catalog.mock.calls.at(-1)?.[1]
+  manager.registerUpdateHandlers()
+  const listVersions = mocks.ipcHandlers.get('updates:list-versions')
+  if (listVersions === undefined) throw new Error('updates:list-versions was not registered')
+  await listVersions()
+  const listed = mocks.catalog.mock.calls.at(-1)?.[1]
+  expect(listed).toBe(installed)
+  expect(mocks.catalog).toHaveBeenCalledWith('0.8.0', listed)
+  await expectDesktopSessionRequest(listed)
 })
 
 

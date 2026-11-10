@@ -4,10 +4,11 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApplicationRollback } from '../src/main/update/application-rollback'
 
-const mocks = vi.hoisted(() => ({ root: '', catalog: vi.fn(), handlers: new Map<string, (info: { version: string }) => void>(),
+const mocks = vi.hoisted(() => ({ root: '', catalog: vi.fn(), netFetch: vi.fn(), handlers: new Map<string, (info: { version: string }) => void>(),
   updater: { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), downloadUpdate: vi.fn(), quitAndInstall: vi.fn(), on: vi.fn() } }))
 vi.mock('electron', () => ({ app: { isPackaged: true, getVersion: () => '0.13.0', getPath: () => mocks.root, isReady: () => true },
-  BrowserWindow: { getAllWindows: () => [] }, powerMonitor: { on: vi.fn(), removeListener: vi.fn() }, ipcMain: { handle: vi.fn() } }))
+  BrowserWindow: { getAllWindows: () => [] }, powerMonitor: { on: vi.fn(), removeListener: vi.fn() }, ipcMain: { handle: vi.fn() },
+  net: { fetch: mocks.netFetch } }))
 vi.mock('electron-updater', () => ({ default: { autoUpdater: mocks.updater } }))
 vi.mock('../src/main/desktop-service', () => ({ checkDesktopUpdate: vi.fn() }))
 vi.mock('../src/main/update/version-catalog', async original => ({ ...await original<object>(), fetchAvailableReleases: mocks.catalog }))
@@ -34,6 +35,16 @@ beforeEach(async () => {
 })
 afterEach(async () => { manager.stopUpdateManager(); await rm(mocks.root, { recursive: true, force: true }) })
 
+async function expectDesktopSessionRequest(request: unknown): Promise<void> {
+  expect(request).toEqual(expect.any(Function))
+  if (typeof request !== 'function') throw new Error('missing version index request')
+  const signal = new AbortController().signal
+  const response = { ok: true, status: 200, json: async () => ({ versions: [] }) }
+  mocks.netFetch.mockResolvedValue(response)
+  await expect(request('https://dshdesktop.com/updates/versions.json', { signal })).resolves.toBe(response)
+  expect(mocks.netFetch).toHaveBeenCalledWith('https://dshdesktop.com/updates/versions.json', { signal })
+}
+
 it('keeps recovery downgrade closed without a verified data compatibility policy', async () => {
   manager.startUpdateManager({ prepareToInstall: async () => {} })
   expect(await manager.getApplicationRollbackStatus()).toMatchObject({ available: false, reason: 'data-compatibility-unverified' })
@@ -43,6 +54,11 @@ it('keeps recovery downgrade closed without a verified data compatibility policy
 it('downloads only the actual pre-upgrade version and invokes the existing verified installer', async () => {
   manager.startUpdateManager({ prepareToInstall: async () => {}, rollbackCompatibility: async () => ({ compatible: true }) })
   await manager.rollbackApplication()
+  const requests = mocks.catalog.mock.calls.map(call => call[1])
+  expect(requests.length).toBeGreaterThan(0)
+  expect(new Set(requests).size).toBe(1)
+  expect(mocks.catalog).toHaveBeenCalledWith('0.13.0', requests[0])
+  await expectDesktopSessionRequest(requests[0])
   expect(mocks.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: 'https://dshdesktop.com/updates/archive/0.11.2/' })
   expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(false, true)
   expect(await manager.getApplicationRollbackStatus()).toMatchObject({ available: false, reason: 'rollback-installing' })
