@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { developmentEnvironment } from '../src/main/development-environment'
+import { developmentEnvironment, skipBlockingWindowsDevHmr } from '../src/main/development-environment'
 
 describe('development worktree isolation', () => {
   it('keeps defaults and ignores development overrides in production', () => {
@@ -22,6 +22,13 @@ describe('development worktree isolation', () => {
   it.each(['0', '1023', '65536', '-1', '12.5', 'invalid', ' 43132 '])('rejects invalid port %s', value => {
     expect(() => developmentEnvironment(true, 43129, { DSH_DEV_HARNESS_PORT: value })).toThrow('DSH_DEV_HARNESS_PORT')
     expect(() => developmentEnvironment(true, 43129, { DSH_DEV_MOBILE_PORT: value })).toThrow('DSH_DEV_MOBILE_PORT')
+  })
+
+  it('skips the blocking HMR service only for unpackaged Windows development', () => {
+    expect(skipBlockingWindowsDevHmr(true, 'win32')).toBe(false)
+    expect(skipBlockingWindowsDevHmr(false, 'darwin')).toBe(false)
+    expect(skipBlockingWindowsDevHmr(false, 'linux')).toBe(false)
+    expect(skipBlockingWindowsDevHmr(false, 'win32')).toBe(true)
   })
 
   it('rejects colliding service ports', () => {

@@ -408,7 +408,7 @@ function renderAbout(): void {
   title.textContent = 'DSH Desktop'
   card.appendChild(title)
   const version = element('p', 'about-line')
-  version.textContent = `v${info.desktopVersion} (${zh ? '内置' : 'bundled'} Harness ${info.harnessVersion} `
+  version.textContent = `v${info.desktopVersion} (${zh ? '内置' : 'bundled'} Harness ${info.harnessVersion}`
   const hint = button('', 'info')
   hint.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor"/><path d="M10 9v5M10 6v1" stroke="currentColor" stroke-width="1.5"/></svg>'
   hint.setAttribute('aria-label', zh ? 'Harness 版本说明' : 'About the Harness version')
@@ -614,7 +614,7 @@ const styles = `
   .dialog-close:focus, .dialog-close:focus-visible { outline:none; }
   .about-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-right:36px; }
   .about-line { display:flex; align-items:center; flex-wrap:wrap; gap:3px; }
-  .info { position:relative; background:transparent; padding:0 3px; color:inherit; min-height:24px; }
+  .info { position:relative; background:transparent; padding:0 0 0 3px; margin-right:-3px; color:inherit; min-height:24px; }
   .tooltip { display:none; position:absolute; right:0; bottom:100%; width:220px; padding:8px 12px; font-size:12px; line-height:18px; background:var(--dsw-alias-bg-layer-2,#f0f2f5); color:var(--dsw-alias-label-primary,#202124); border-radius:8px; box-shadow:0 3px 12px rgba(0,0,0,.12); }
   .info:hover .tooltip,.info:focus .tooltip { display:block; }
   .switcher { position:relative; }

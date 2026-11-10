@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { desktopBrandLogoPaths } from '../../src/main/shell/brand-logo'
 import { workspaceDirectoryPrompt } from '../../src/main/shell/directory-picker'
-import { desktopWindowChrome } from '../../src/main/shell/window-chrome'
+import { desktopWindowChrome, windowsChromeBackground, windowsTitleBarOverlay } from '../../src/main/shell/window-chrome'
+import { WINDOWS_TITLEBAR_HEIGHT } from '../../src/shared/desktop-menu'
 
 describe('desktop window chrome', () => {
   it('places the macOS traffic lights on the sidebar row', () => {
@@ -15,8 +16,24 @@ describe('desktop window chrome', () => {
       visualEffectState: 'active',
       backgroundColor: '#00000000'
     })
-    expect(desktopWindowChrome('win32')).toEqual({})
     expect(desktopWindowChrome('linux')).toEqual({})
+  })
+
+  it('hides the Windows frame so the page caption replaces File, Edit, View and Window', () => {
+    expect(desktopWindowChrome('win32', true)).toEqual({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: windowsTitleBarOverlay(true),
+      autoHideMenuBar: true,
+      backgroundColor: '#141416'
+    })
+    expect(windowsTitleBarOverlay(false)).toEqual({
+      color: '#00000000',
+      symbolColor: '#202124',
+      height: WINDOWS_TITLEBAR_HEIGHT
+    })
+    expect(windowsTitleBarOverlay(true).symbolColor).toBe('#f3f4f6')
+    expect(windowsChromeBackground(true)).toBe('#141416')
+    expect(windowsChromeBackground(false)).toBe('#ffffff')
   })
 })
 

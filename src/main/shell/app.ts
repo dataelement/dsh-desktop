@@ -29,17 +29,19 @@ import {
   type HarnessLocale
 } from '../application-locale'
 import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
-import { developmentEnvironment } from '../development-environment'
+import { developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
-import { desktopWindowChrome } from './window-chrome'
+import { type DesktopMenuCommand } from '../../shared/desktop-menu'
+import { parseWindowsMenuRequest, windowsMenuTemplate } from '../windows-menu'
+import { desktopWindowChrome, windowsChromeBackground, windowsTitleBarOverlay } from './window-chrome'
 import { buildWebImportViewModel } from '../web-import-view'
 import { DesktopBackendController } from './backend/backend-controller'
 import { DesktopBootSession, retainDesktopBoot } from './backend/boot-session'
 import { DesktopHostFatalError, DesktopHostProcess } from './backend/host-process'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './backend/login-shell-environment'
 import { attachDesktopStorage } from './desktop-storage-bridge'
-import { ENTERPRISE_URL, aboutUsesPage, buildDarwinDesktopMenu, externalUrlToOpen, insertFileMenu, shortcutFileMenuLabels } from './enterprise-menu'
+import { ENTERPRISE_URL, aboutUsesPage, buildDarwinDesktopMenu, buildWindowsApplicationMenu, externalUrlToOpen, insertFileMenu, shortcutFileMenuLabels } from './enterprise-menu'
 import { installDesktopShortcuts, type DesktopShortcutController } from './keyboard'
 import { installDesktopFileDrag } from './file-drag'
 import { runQuitSteps } from './quit-steps'
@@ -328,7 +330,8 @@ function createWindow(
     minWidth: 520,
     minHeight: 600,
     show: false,
-    ...desktopWindowChrome(process.platform),
+    title: app.getName(),
+    ...desktopWindowChrome(process.platform, nativeTheme.shouldUseDarkColors),
     webPreferences: {
       preload,
       nodeIntegration: false,
@@ -340,6 +343,11 @@ function createWindow(
       additionalArguments: [...extraArguments]
     }
   })
+  window.on('page-title-updated', event => {
+    event.preventDefault()
+    window.setTitle(app.getName())
+  })
+  if (process.platform === 'win32') window.setMenuBarVisibility(false)
   window.webContents.on('console-message', details => {
     if (details.level !== 'error') return
     rendererConsole.push(`${details.sourceId}:${String(details.lineNumber)} ${details.message}`)
@@ -509,7 +517,23 @@ async function main(): Promise<void> {
   const dshHome = harnessHome()
   const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   menuLocale = await savedDesktopMenuLocale(dshHome, safeMode, reportedLocale)
-  const refreshDarwinMenu = (): void => {
+  const refreshApplicationMenu = (): void => {
+    if (process.platform === 'win32') {
+      const template = buildWindowsApplicationMenu({
+        locale: menuLocale,
+        connectPhone: () => { void openMobilePairing().catch((error: unknown) => { console.error(error) }) },
+        restart: () => { void restartDesktop() },
+        ...(shouldStartInSafeMode(process.argv) || process.env.DSH_DESKTOP_SAFE_MODE === '1'
+          ? {}
+          : { restartSafeMode: () => { restartInSafeMode() } }),
+        showHarnessLog: () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
+        checkForUpdates: () => { void checkForUpdates(true).catch((error: unknown) => { console.error(error) }) },
+        quit: () => { app.quit() }
+      })
+      Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
+      if (desktopWindow !== undefined && !desktopWindow.isDestroyed()) desktopWindow.setMenuBarVisibility(false)
+      return
+    }
     if (process.platform !== 'darwin') return
     const template = insertFileMenu(buildDarwinDesktopMenu({
       locale: menuLocale,
@@ -536,7 +560,7 @@ async function main(): Promise<void> {
     }), shortcuts?.fileMenu(shortcutFileMenuLabels(menuLocale)))
     Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
   }
-  refreshDarwinMenu()
+  refreshApplicationMenu()
   const primaryRuntime = resolvePrimaryRuntime(
     app.getAppPath(), process.resourcesPath, app.isPackaged, process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
   )
@@ -609,10 +633,10 @@ async function main(): Promise<void> {
     () => mainWindow,
     app.getPath('userData'),
     process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux',
-    refreshDarwinMenu
+    refreshApplicationMenu
   )
   shortcuts.attach(window)
-  refreshDarwinMenu()
+  refreshApplicationMenu()
   app.on('will-quit', () => { shortcuts?.dispose() })
   app.on('window-all-closed', () => { app.quit() })
   if (!safeMode) {
@@ -633,7 +657,9 @@ async function main(): Promise<void> {
     if (imported !== 'not-offered') await showSplash(window, splashPage)
   }
   await migrateWebProfile(dshHome)
-  const productPatch = await writeDesktopProductPatch(dshHome, safeMode ? 'safe' : 'desktop')
+  const productPatch = await writeDesktopProductPatch(dshHome, safeMode ? 'safe' : 'desktop', {
+    skipBlockingHmr: skipBlockingWindowsDevHmr(app.isPackaged, process.platform)
+  })
   const paths = resolveDesktopPaths(dshHome)
   const projectDir = safeMode ? await ensureSafeModeProfile(dshHome, 'desktop') : paths.profile
   const desktopStorage = new DesktopStorageManager(projectDir, {
@@ -866,7 +892,7 @@ async function main(): Promise<void> {
     }
     reportedLocale = resolved
     menuLocale = resolved
-    refreshDarwinMenu()
+    refreshApplicationMenu()
     refreshWindowsTray()
     if (!window.isDestroyed()) {
       window.webContents.send('desktop:ui-locale', menuLocale)
@@ -1033,6 +1059,84 @@ async function main(): Promise<void> {
     assertMain(event)
     return { ok: await restartDesktop() }
   })
+  ipcMain.removeHandler('desktop-titlebar:popup-menu')
+  ipcMain.handle('desktop-titlebar:popup-menu', (event, name: unknown, x: unknown, y: unknown) => {
+    const owner = assertMain(event)
+    if (process.platform !== 'win32') throw new Error('The caption menu is only available on Windows.')
+    const request = parseWindowsMenuRequest(name, x, y)
+    const zoomFactor = owner.webContents.getZoomFactor()
+    const template = windowsMenuTemplate(request.name, menuLocale, zoomFactor, {
+      run: command => { void runWindowsCaptionCommand(owner, command).catch((error: unknown) => { console.error(error) }) },
+      sendEditingKey: key => { shortcuts?.sendEditingKey(key.keyCode, key.modifiers) }
+    })
+    return new Promise<void>(resolve => {
+      Menu.buildFromTemplate(template).popup({
+        window: owner,
+        x: Math.round(request.x * zoomFactor),
+        y: Math.round(request.y * zoomFactor),
+        callback: () => resolve()
+      })
+    })
+  })
+  ipcMain.removeHandler('desktop-titlebar:set-theme')
+  ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
+    const owner = assertMain(event)
+    if (typeof isDark !== 'boolean') throw new Error('The DSH Desktop titlebar theme must be a boolean.')
+    if (process.platform === 'win32') {
+      owner.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
+      owner.setBackgroundColor(windowsChromeBackground(isDark))
+    }
+    return { ok: true }
+  })
+  async function runWindowsCaptionCommand(owner: BrowserWindow, command: DesktopMenuCommand): Promise<void> {
+    const contents = owner.webContents
+    switch (command) {
+      case 'connect-phone':
+        await openMobilePairing()
+        return
+      case 'restart-harness':
+        await restartDesktop()
+        return
+      case 'safe-mode':
+        restartInSafeMode()
+        return
+      case 'show-harness-log':
+        shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
+        return
+      case 'check-for-updates':
+        await checkForUpdates(true)
+        return
+      case 'reload':
+        contents.reload()
+        return
+      case 'toggle-devtools':
+        contents.toggleDevTools()
+        return
+      case 'zoom-reset':
+        contents.setZoomLevel(0)
+        return
+      case 'zoom-in':
+        contents.setZoomLevel(Math.min(3, contents.getZoomLevel() + 0.5))
+        return
+      case 'zoom-out':
+        contents.setZoomLevel(Math.max(-3, contents.getZoomLevel() - 0.5))
+        return
+      case 'toggle-fullscreen':
+        owner.setFullScreen(!owner.isFullScreen())
+        return
+      case 'about':
+        await presentAbout(owner, menuLocale)
+        return
+      case 'explore-enterprise':
+        await shell.openExternal(ENTERPRISE_URL)
+        return
+      case 'quit':
+        app.quit()
+        return
+      default:
+        return
+    }
+  }
   let waitForSafeModeAction: ((value: { action: unknown; selection: unknown }) => void) | undefined
   if (safeMode) {
     ipcMain.handle(DESKTOP_IPC.safeModeAction, (event, action: unknown, selection: unknown) => {
