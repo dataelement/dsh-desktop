@@ -134,12 +134,26 @@ function desktopDevelopmentBuild(metadata: DesktopPackageMetadata = readDesktopP
   return metadata.dshDesktopChannel === 'development'
 }
 
+function hasEnterprisePlugin(): boolean {
+  try {
+    const req = createRequire(import.meta.url)
+    req.resolve('dsh-desktop-enterprise/package.json')
+    return true
+  } catch {
+    return false
+  }
+}
+
 function configureDesktopIdentity(): void {
   const metadata = readDesktopPackageMetadata()
   const isBisheng = Boolean(
     metadata.build?.appId?.includes('bisheng') ||
     metadata.build?.productName === 'BISHENG' ||
-    metadata.name === 'bisheng'
+    metadata.productName === 'BISHENG' ||
+    metadata.name === 'bisheng' ||
+    app.name.toLowerCase().includes('bisheng') ||
+    process.execPath.toLowerCase().includes('bisheng') ||
+    hasEnterprisePlugin()
   )
   const defaultProdName = isBisheng ? 'BISHENG' : 'DSH Desktop'
 
