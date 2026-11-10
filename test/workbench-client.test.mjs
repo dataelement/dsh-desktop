@@ -142,6 +142,7 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
     },
     useRef: initial => ({ current: initial }),
     useLayoutEffect: effect => { layoutEffects.push(effect) },
+    useCallback: callback => callback,
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   const sandbox = { window: { sessionStorage, localStorage: clientWindow.localStorage, __ModuleLoader__: { load({ factory }) {
@@ -163,7 +164,12 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
     showMarket: vi.fn(), open: vi.fn(), openNative: vi.fn(), run: vi.fn()
   }
   let activePanelId = null
-  const render = () => { stateIndex = 0; return renderSidebar({ service, wide: true, startSession: vi.fn(), usePanelInfo: selector => selector({ activePanelId }) }) }
+  service.ctx = { layout: { panelInfo: {
+    subscribe: () => () => {},
+    getSnapshot: () => ({ activePanelId })
+  } } }
+  // The real quickSwitcher slot only supplies wide/startSession, not usePanelInfo.
+  const render = () => { stateIndex = 0; return renderSidebar({ service, wide: true, startSession: vi.fn() }) }
   const find = (node, predicate) => {
     if (Array.isArray(node)) return node.flatMap(item => find(item, predicate))
     if (!node || typeof node !== 'object') return []
@@ -2310,7 +2316,7 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
   it('renders a persistent Workbench home area beside the current mode and switch button', () => {
-    expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession, usePanelInfo })')
+    expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession })')
     expect(fullSource).toContain("'data-dsh-workbench-switcher': ''")
     expect(fullSource).toContain("className: 'dshWbModeSwitch', 'aria-describedby': 'dsh-wb-current-mode-tooltip'")
     expect(fullSource).toContain("role: 'menu', 'aria-label': tr('选择会话模式')")

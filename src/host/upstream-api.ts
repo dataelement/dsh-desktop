@@ -1,7 +1,24 @@
 /** Version-sensitive Harness calls used by the desktop host. */
 import type { Context } from '@deepseek-ai/cordis'
+import { runProfile } from '@deepseek-ai/dsh/profile-boot'
+import { readInstallationPlugins } from './installation-plugins'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { SessionId, type SessionId as SessionIdentity } from '@deepseek-ai/dsh-session/types'
+
+/** Keep the patched 0.2.2-rc.1 resolved-profile extension at the upstream boundary. */
+export function runHostProfile(
+  runtimeDir: string,
+  options: Omit<Parameters<typeof runProfile>[0], 'resolvedProfile'>,
+  resolvedProfile: Omit<NonNullable<Parameters<typeof runProfile>[0]['resolvedProfile']>, 'installationPlugins'>
+): ReturnType<typeof runProfile> {
+  return runProfile({
+    ...options,
+    resolvedProfile: {
+      ...resolvedProfile,
+      installationPlugins: readInstallationPlugins(runtimeDir, options.profile === 'desktop-safe-mode')
+    }
+  })
+}
 
 /** The profile context methods this host uses for operation diagnostics. */
 export interface PluginOperationHost {

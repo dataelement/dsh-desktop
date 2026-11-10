@@ -1738,10 +1738,15 @@ window.__ModuleLoader__.load({
       if (!entry) return null
       return h('span', { className: 'dshWb dshWbSessionIcon', role: 'img', title: displayEntry(entry).title, 'aria-label': both(`属于${entry.title}`, `Belongs to ${displayEntry(entry).title}`) }, h(WorkbenchIcon, { entry, size }))
     }
-    function WorkbenchSidebarSwitcher({ service, wide, startSession, usePanelInfo }) {
+    function WorkbenchSidebarSwitcher({ service, wide, startSession }) {
       useHostLocale(service)
       const { state, catalog, ready, pending, marketOpen, switcherHint } = useWorkbench(service)
-      const activePanelId = usePanelInfo((info) => info.activePanelId)
+      const panelInfo = service.ctx.layout.panelInfo
+      const { activePanelId } = React.useSyncExternalStore(
+        React.useCallback(listener => panelInfo.subscribe(listener), [panelInfo]),
+        () => panelInfo.getSnapshot(),
+        () => panelInfo.getSnapshot()
+      )
       const marketSelected = activePanelId === PANEL
       const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [open, setOpen] = React.useState(false)

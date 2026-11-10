@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'
+import { Context } from '@deepseek-ai/cordis'
 import { TYPERT } from '@deepseek-ai/dsh-plugin-manager/typert'
 import remote from '@deepseek-ai/dsh-plugin-manager/remote'
 
@@ -35,7 +36,7 @@ async function fixture({ installed = false, backendSupported = true, target = 'd
   const manager = Object.assign(Object.create(PluginManager.prototype), {
     profile: { dir, name: 'web', installAnchor: resolve('node_modules/@deepseek-ai/dsh/package.json') },
     ownerContext: { get: name => name === 'profileBundlePackageBackend' ? backend : name === 'hmr' ? {} : undefined, emit: vi.fn(), parallel: vi.fn(async () => {}) },
-    abort: new AbortController(), installs: new Map(), installedFrom: new Map(),
+    abort: new AbortController(), installs: new Map(), installedFrom: new Map(), packageOperations: new Set(),
     managementBundles: new Set(), ownerEntryId: 'include:manager',
     bundleRows: vi.fn(() => []),
     readRestoredFiles: async () => initial,
@@ -48,9 +49,131 @@ async function fixture({ installed = false, backendSupported = true, target = 'd
   return { dir, manager, backend, rollback, initial, manifestPath }
 }
 
+function deferred() {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+
+async function withRealDisposer(f) {
+  const ctx = new Context()
+  let manager
+  const fork = ctx.plugin(scope => {
+    const owning = scope.extend({ profileContext: { ...f.manager.profile, startedBundles: [] } })
+    manager = new PluginManager(owning, { fallbackRegistries: [] })
+  })
+  await fork
+  // Keep fixture file/activation adapters, but use constructor-owned lifecycle state/effect.
+  const { abort, packageOperations, ...adapters } = f.manager
+  Object.assign(manager, adapters)
+  return { manager, dispose: () => fork.dispose() }
+}
+
 const verified = { enabled: true, expectedName: 'demo-plugin', expectedVersion: '2.0.0', npmIntegrity: 'sha512-example' }
 
 describe('Plugin Manager verified install boundary', () => {
+  it('advertises the verified boundary without claiming backend support', async () => {
+    const { manager, backend } = await fixture({ backendSupported: false })
+    expect(manager.verifiedInstallContract).toBe(1)
+    expect(() => { manager.verifiedInstallContract = 2 }).toThrow(TypeError)
+    expect(backend.supportsVerifiedInstall).toBe(false)
+  })
+
+  it.each(['request', 'dispose'])('tracks backend work and rolls back after %s cancellation', async origin => {
+    const { manager, backend, rollback } = await fixture()
+    const install = backend.install.getMockImplementation()
+    let started
+    const ready = new Promise(resolve => { started = resolve })
+    let release
+    const gate = new Promise(resolve => { release = resolve })
+    backend.install.mockImplementation(async request => {
+      const mutation = await install(request)
+      started(request)
+      await gate
+      return mutation
+    })
+    const pending = manager.installBundle('demo-plugin@2.0.0', { ...verified, requestId: 'cancel-test' })
+    const request = await ready
+    expect(manager.packageOperations.size).toBe(1)
+    let cancelled
+    if (origin === 'request') cancelled = manager.cancelInstall('cancel-test')
+    else manager.abort.abort()
+    expect(request.signal.aborted).toBe(true)
+    release()
+    expect(await pending).toMatchObject({ application: 'cancelled' })
+    if (cancelled) expect(await cancelled).toEqual({ status: 'cancelled' })
+    expect(rollback).toHaveBeenCalledOnce()
+    expect(manager.packageOperations.size).toBe(0)
+    expect(manager.selectBundle).not.toHaveBeenCalled()
+    expect(manager.publishAndReload).not.toHaveBeenCalled()
+  })
+
+  it('real disposal waits until rollback and manifest restoration settle', async () => {
+    const f = await fixture()
+    const { manager, dispose } = await withRealDisposer(f)
+    const backendStarted = deferred()
+    const returnMutation = deferred()
+    const rollbackStarted = deferred()
+    const finishRollback = deferred()
+    const restoreStarted = deferred()
+    const finishRestore = deferred()
+    const install = f.backend.install.getMockImplementation()
+    f.backend.install.mockImplementation(async request => {
+      const mutation = await install(request)
+      backendStarted.resolve(request)
+      await returnMutation.promise
+      return mutation
+    })
+    f.rollback.mockImplementation(async () => {
+      rollbackStarted.resolve()
+      await finishRollback.promise
+    })
+    manager.restoreFiles.mockImplementation(async text => {
+      restoreStarted.resolve()
+      await finishRestore.promise
+      await writeFile(f.manifestPath, text)
+    })
+    const pending = manager.installBundle('demo-plugin@2.0.0', verified)
+    const request = await backendStarted.promise
+    let disposed = false
+    const disposal = dispose().then(() => { disposed = true })
+    await vi.waitFor(() => expect(request.signal.aborted).toBe(true))
+    returnMutation.resolve()
+    await rollbackStarted.promise
+    await Promise.resolve()
+    expect(disposed).toBe(false)
+    expect(manager.packageOperations.size).toBe(1)
+    finishRollback.resolve()
+    await restoreStarted.promise
+    expect(disposed).toBe(false)
+    expect(manager.packageOperations.size).toBe(1)
+    finishRestore.resolve()
+    expect(await pending).toMatchObject({ application: 'cancelled' })
+    await disposal
+    expect(disposed).toBe(true)
+    expect(await readFile(f.manifestPath, 'utf8')).toBe(f.initial)
+    expect(manager.packageOperations.size).toBe(0)
+  })
+
+  it('does not deadlock when publish/reload disposes its own manager', async () => {
+    const f = await fixture()
+    const { manager, dispose } = await withRealDisposer(f)
+    manager.publishAndReload.mockImplementation(async () => {
+      expect(manager.packageOperations.size).toBe(0)
+      await dispose()
+      return { warnings: [] }
+    })
+    expect(await manager.installBundle('demo-plugin@2.0.0', verified)).toMatchObject({ application: 'applied' })
+    expect(manager.publishAndReload).toHaveBeenCalledOnce()
+  })
+
+  it('releases task tracking after a backend failure without a pnpm fallback', async () => {
+    const { manager, backend } = await fixture()
+    backend.install.mockRejectedValue(new Error('backend unavailable'))
+    expect(await manager.installBundle('demo-plugin@2.0.0', verified)).toMatchObject({ application: 'failed' })
+    expect(manager.packageOperations.size).toBe(0)
+    expect(manager.runPnpm).not.toHaveBeenCalled()
+  })
   it('owns defensive process-local application state across management entry points', async () => {
     const { manager } = await fixture()
     expect(manager.listApplications()).toEqual([])

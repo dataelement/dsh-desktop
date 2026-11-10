@@ -2,13 +2,12 @@ import { randomUUID } from 'node:crypto'
 import type { PluginOperationRunId } from '@deepseek-ai/dsh-plugin-manager/diagnostic'
 import { localDragResource } from './file-drag'
 import { installOperationDiagnostics } from './operation-diagnostics'
-import { pluginOperationHost } from './upstream-api'
+import { pluginOperationHost, runHostProfile } from './upstream-api'
 import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerOfficeEngineResolution } from '../../build/office-engine-resolution.mjs'
 import { inspect } from 'node:util'
 import { StartupError, loadLayeredEnv, loadProfileDirectory, reportSkippedBundles } from '@deepseek-ai/dsh-app-boot'
-import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
@@ -42,14 +41,13 @@ async function main(): Promise<void> {
       PATH: `${process.argv[6] ?? ''}${delimiter}${process.env.PATH ?? ''}`
     }
   }
-  const application = runProfile({
+  const application = runHostProfile(runtimeDir, {
     environment: loadLayeredEnv('dsh'),
     profile: profileName(),
-    resolvedProfile: { profile, installAnchor },
     patchFiles: productPatchFiles(),
     args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
     ...(packageManager === undefined ? {} : { packageManager })
-  })
+  }, { profile, installAnchor })
   let stopping: Promise<void> | undefined
   const dragReads = new Map<number, AbortController>()
   const dragTasks = new Set<Promise<void>>()

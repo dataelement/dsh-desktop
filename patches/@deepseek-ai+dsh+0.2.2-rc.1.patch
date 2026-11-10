@@ -1,22 +1,30 @@
-diff --git a/node_modules/@deepseek-ai/dsh/lib/bin.js b/node_modules/@deepseek-ai/dsh/lib/bin.js
-index b9a2b8d..7ab323e 100755
---- a/node_modules/@deepseek-ai/dsh/lib/bin.js
-+++ b/node_modules/@deepseek-ai/dsh/lib/bin.js
-@@ -227,7 +227,8 @@ async function runCli(options = {}) {
- 					version,
- 					profile: invocation.profile
- 				});
--				process.exit(1);
-+				process.exitCode = 1;
-+				throw error;
- 			}
- 			break;
- 		}
+diff --git a/node_modules/@deepseek-ai/dsh/lib/profile-boot-e2mS45fC.js b/node_modules/@deepseek-ai/dsh/lib/profile-boot-e2mS45fC.js
+--- a/node_modules/@deepseek-ai/dsh/lib/profile-boot-e2mS45fC.js
++++ b/node_modules/@deepseek-ai/dsh/lib/profile-boot-e2mS45fC.js
+@@ -241,6 +241,7 @@
+ 		profile,
+ 		resolution: await createRuntimeResolution({
+ 			installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
++			installationPlugins: resolvedProfile?.installationPlugins,
+ 			profile
+ 		}),
+ 		overlays: patchFiles.flatMap((file) => loadOverlayPatches(NAME, resolve(file)))
+diff --git a/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts b/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts
+--- a/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts
++++ b/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts
+@@ -65,6 +65,8 @@
+     profile: Profile;
+     /** Absolute package.json path of the application's dsh installation. */
+     installAnchor: string;
++    /** Explicit host plugins resolved from the owning application manifest. */
++    installationPlugins?: { anchor: string; names: readonly string[] };
+ }
+ /** Options for {@link runProfile}. */
+ export interface RunProfileOptions {
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
-index f41b2d4..f004613 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -111,6 +111,21 @@
+@@ -111,6 +111,20 @@
      "@deepseek-ai/dsh-personalized-recommendations": "0.2.2-rc.1",
      "@deepseek-ai/dsh-experimental-forge-bundle": "0.2.2-rc.1"
    },
@@ -32,9 +40,21 @@ index f41b2d4..f004613 100644
 +    "react-dom": "18.3.1",
 +    "dsh-desktop-onboarding": "0.1.0",
 +    "dsh-desktop-workbenches": "0.1.0",
-+    "dsh-desktop-office": "0.1.0",
-+    "dsh-desktop-enterprise": "0.1.0"
++    "dsh-desktop-office": "0.1.0"
 +  },
    "devDependencies": {
      "@deepseek-ai/dsh-skill-badge": "0.2.2-rc.1",
      "@deepseek-ai/dsh-webhook-github": "0.2.2-rc.1",
+diff --git a/node_modules/@deepseek-ai/dsh/lib/bin.js b/node_modules/@deepseek-ai/dsh/lib/bin.js
+--- a/node_modules/@deepseek-ai/dsh/lib/bin.js
++++ b/node_modules/@deepseek-ai/dsh/lib/bin.js
+@@ -227,7 +227,8 @@
+ 					version,
+ 					profile: invocation.profile
+ 				});
+-				process.exit(1);
++				process.exitCode = 1;
++				throw error;
+ 			}
+ 			break;
+ 		}

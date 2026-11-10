@@ -98,7 +98,7 @@ describe('Office engine resolution', () => {
   it('registers the packaged engine in the desktop host before plugins load', async () => {
     const source = await readFile(join(process.cwd(), 'src/host/index.ts'), 'utf8')
     const registration = source.indexOf("registerOfficeEngineResolution(join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))")
-    const profile = source.indexOf('runProfile(')
+    const profile = source.indexOf('runHostProfile(')
     expect(registration).toBeGreaterThan(-1)
     expect(profile).toBeGreaterThan(registration)
   })

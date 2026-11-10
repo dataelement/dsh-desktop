@@ -7,7 +7,7 @@
       "path": "src/main/shell/app.ts",
       "upstream": ["apps/desktop/src/main.ts"],
       "divergences": [
-        "数据目录是 userData/harness，不用 ~/.dsh",
+        "数据目录是 userData/harness，不用 ~/.dsh；产品名与正式/开发数据目录只读显式 dshDesktopIdentity 元数据，不按品牌或执行路径推断",
         "不接入官方强制更新、欢迎窗、托盘和官方更新；启动页用现有鲸鱼页 splash.html",
         "最小壳只接启动、协议、窗口安全和后端生命周期",
         "启动前复制 profiles/web，关闭产品分析、官方账号界面和官方品牌，侧边栏品牌改挂 dsh-desktop-client-ui，普通 profile 再挂 dsh-desktop-workbenches、dsh-desktop-market-installer、dsh-desktop-office 和 dsh-ppt-composer；Safe Mode 不挂工作台、市场、Office 和 PPT，且不把账号会话接到用量页或充值页",
@@ -90,7 +90,8 @@
         "启动后订阅插件操作事件，经 IPC 交给壳",
         "响应壳的 file-drag-resource，用会话文件系统授权本地文件",
         "DSH_DESKTOP_PATCH_FILE 指向的补丁会附加到 runProfile",
-        "不注册旧壳的 @deepseek-ai host fallback；缺少宿主 peer 保留原始模块错误"
+        "不注册旧壳的 @deepseek-ai host fallback；缺少宿主 peer 保留原始模块错误",
+        "runHostProfile 适配层读取当前安装目录显式 dshDesktopHostPlugins 声明，统一后端、客户端及 preset 解析归属；Safe Mode 忽略声明并保留核心安装锚点"
       ]
     },
     {

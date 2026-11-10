@@ -2,6 +2,8 @@
 
 This guide covers local development, validation, patch maintenance, and target-native packaging. For the runtime design, see [Architecture](architecture.md). For formal releases, see the [release runbook](release-runbook.md).
 
+Downstream product names and persistent-data directories use explicit [Desktop identity metadata](desktop-product-identity.md), not package-name or executable-path detection.
+
 ## Prerequisites
 
 - Node.js 22 or later

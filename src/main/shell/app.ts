@@ -29,6 +29,7 @@ import {
 } from '../application-locale'
 import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
 import { developmentEnvironment } from '../development-environment'
+import { resolveDesktopIdentity } from './product-identity'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
 import { desktopWindowChrome } from './window-chrome'
@@ -111,71 +112,19 @@ protocol.registerSchemesAsPrivileged([{
   }
 }])
 
-interface DesktopPackageMetadata {
-  name?: string
-  productName?: string
-  dshDesktopChannel?: string
-  build?: {
-    productName?: string
-    appId?: string
-  }
-}
-
-function readDesktopPackageMetadata(): DesktopPackageMetadata {
+function readDesktopPackageMetadata(): unknown {
   try {
-    return JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as DesktopPackageMetadata
-  } catch {
-    return {}
-  }
-}
-
-function desktopDevelopmentBuild(metadata: DesktopPackageMetadata = readDesktopPackageMetadata()): boolean {
-  if (!app.isPackaged) return true
-  return metadata.dshDesktopChannel === 'development'
-}
-
-function hasEnterprisePlugin(): boolean {
-  try {
-    const req = createRequire(import.meta.url)
-    req.resolve('dsh-desktop-enterprise/package.json')
-    return true
-  } catch {
-    return false
+    return JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8'))
+  } catch (error) {
+    // Identity must never silently fall back to a different data directory.
+    throw new Error('Unable to read Desktop product identity metadata.', { cause: error })
   }
 }
 
 function configureDesktopIdentity(): void {
-  const metadata = readDesktopPackageMetadata()
-  const isBisheng = Boolean(
-    metadata.build?.appId?.includes('bisheng') ||
-    metadata.build?.productName === 'BISHENG' ||
-    metadata.productName === 'BISHENG' ||
-    metadata.name === 'bisheng' ||
-    app.name.toLowerCase().includes('bisheng') ||
-    process.execPath.toLowerCase().includes('bisheng') ||
-    hasEnterprisePlugin()
-  )
-  const defaultProdName = isBisheng ? 'BISHENG' : 'DSH Desktop'
-
-  const development = desktopDevelopmentBuild(metadata)
-  const environment = developmentEnvironment(development, 43129)
-  if (development) {
-    app.setName(`${defaultProdName} Dev`)
-    const devDir = isBisheng
-      ? (process.env.BISHENG_DEV_USER_DATA || join(app.getPath('appData'), 'bisheng-dev'))
-      : join(app.getPath('appData'), environment.profile)
-    app.setPath('userData', devDir)
-    return
-  }
-  if (!isBisheng) {
-    app.setName('DSH Desktop')
-    // Keep the historical lowercase directory. Deriving it from the product name
-    // would hide the existing sessions on an ordinary upgrade.
-    app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
-    return
-  }
-  app.setName('BISHENG')
-  app.setPath('userData', join(app.getPath('appData'), 'bisheng'))
+  const identity = resolveDesktopIdentity(readDesktopPackageMetadata(), app.isPackaged, app.getPath('appData'))
+  app.setName(identity.name)
+  app.setPath('userData', identity.userData)
 }
 
 configureDesktopIdentity()
@@ -486,6 +435,10 @@ async function savedDesktopMenuLocale(
 }
 
 async function main(): Promise<void> {
+  const platform = process.platform
+  if (platform !== 'darwin' && platform !== 'win32') {
+    throw new Error('DSH Desktop supports only macOS and Windows.')
+  }
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return
@@ -677,7 +630,7 @@ async function main(): Promise<void> {
   const platformView = new DesktopPlatformView(
     preload,
     () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh_CN' : 'en_US',
-    process.platform,
+    platform,
     app.getVersion(),
     () => false
   )

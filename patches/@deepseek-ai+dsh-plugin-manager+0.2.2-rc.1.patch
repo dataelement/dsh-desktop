@@ -60,7 +60,13 @@ index ea6b83f..7d43c86 100644
  	], {
  		cwd: dir,
  		env: {
-@@ -2133,6 +2140,7 @@ let PluginManager = (() => {
+@@ -1964,3 +1971,5 @@ let PluginManager = (() => {
++		/** Versioned verified-install boundary, independent of the configured package backend. */
++		get verifiedInstallContract() { return 1; }
+ 		ownerEntryId;
+ 		packageOperations = /* @__PURE__ */ new Set();
+ 		profile;
+@@ -2133,6 +2142,7 @@ let PluginManager = (() => {
  			const selected = bundleSelection(manifest);
  			const recorded = manifest.dependencies ?? {};
  			const dependencies = Object.keys(recorded);
@@ -68,7 +74,7 @@ index ea6b83f..7d43c86 100644
  			const installation = JSON.parse(readFileSync(this.profile.installAnchor, "utf8"));
  			const catalog = new Map(OFFICIAL_ON_DEMAND_CATALOG.map((entry) => [entry.packageName, entry]));
  			const names = [...new Set([
-@@ -2146,7 +2154,7 @@ let PluginManager = (() => {
+@@ -2146,7 +2156,7 @@ let PluginManager = (() => {
  			for (const name of names) {
  				const installed = dependencies.includes(name);
  				const optional = OPTIONAL_BUNDLES.includes(name);
@@ -77,7 +83,7 @@ index ea6b83f..7d43c86 100644
  				const shipped = Object.hasOwn(installation.dependencies ?? {}, name);
  				const offered = catalog.get(name);
  				const official = optional || offered !== void 0;
-@@ -2220,7 +2228,7 @@ let PluginManager = (() => {
+@@ -2220,7 +2230,7 @@ let PluginManager = (() => {
  						listing = { listedByDefault };
  					}
  					const compatibility = evaluatePluginCompatibility(info, exemptions);
@@ -86,7 +92,7 @@ index ea6b83f..7d43c86 100644
  					const dir = resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
  					const meta = offered?.meta ?? readPluginMeta(info.name ?? name, pathToFileURL(join(dir, "package.json")).href);
  					let platformError;
-@@ -2687,7 +2695,8 @@ let PluginManager = (() => {
+@@ -2687,7 +2697,8 @@ let PluginManager = (() => {
  		*/
  		setBundleEnabled(name, enabled) {
  			return this.change((result) => this.configure(async () => {
@@ -96,7 +102,7 @@ index ea6b83f..7d43c86 100644
  				Object.assign(result, enabled ? await this.publishAndReload(this.bundleRows(name).map((row) => row.id)) : await this.reload());
  			}), {
  				stage: "enable",
-@@ -2726,24 +2735,61 @@ let PluginManager = (() => {
+@@ -2726,24 +2737,66 @@ let PluginManager = (() => {
  				});
  			};
  			const result = this.change(async (result) => {
@@ -131,6 +137,10 @@ index ea6b83f..7d43c86 100644
  					result.approvedBuilds = options.approvedBuilds;
  				}
  				const files = await this.readRestoredFiles();
++				// Wait through rollback/restoration, but release before reload can dispose this manager.
++				let finishTransaction;
++				const transaction = new Promise((resolve) => { finishTransaction = resolve; });
++				this.packageOperations.add(transaction);
 +				let mutation;
 +				let used = null;
  				let name;
@@ -149,9 +159,10 @@ index ea6b83f..7d43c86 100644
 +							expectedName: expectedName ?? parsed.name,
 +							expectedVersion: options?.expectedVersion,
 +							npmIntegrity: options?.npmIntegrity,
-+							signal: control.abort.signal,
++							signal: AbortSignal.any([this.abort.signal, control.abort.signal]),
 +							onOutput: (text, stream) => this.emitPackageOutput(requestId, text, stream, ["pnpm", "add", parsed.spec])
 +						});
++
 +					}
 +					if (verified && mutation === void 0) throw new Error("Package backend declined verified install");
 +					if (mutation === void 0) {
@@ -163,7 +174,7 @@ index ea6b83f..7d43c86 100644
  						timeoutMs: this.githubConnectionTimeoutMs,
  						outputBytes: this.outputBytes,
  						signal,
-@@ -2772,7 +2818,7 @@ let PluginManager = (() => {
+@@ -2772,7 +2825,7 @@ let PluginManager = (() => {
  						});
  						throw new Error(connectionFailure.output);
  					}
@@ -172,7 +183,7 @@ index ea6b83f..7d43c86 100644
  						timeoutMs: this.gitTransportTimeoutMs,
  						signal,
  						...env
-@@ -2786,8 +2832,6 @@ let PluginManager = (() => {
+@@ -2786,8 +2839,6 @@ let PluginManager = (() => {
  					}
  					if (stopped()) throw new InstallCancelledError();
  					const plan = registryPlan(options?.registry, await this.registries());
@@ -181,7 +192,7 @@ index ea6b83f..7d43c86 100644
  					for (const [index, registry] of plan.entries()) {
  						if (index > 0) await this.restoreFiles(files);
  						if (stopped()) throw new InstallCancelledError();
-@@ -2818,10 +2862,17 @@ let PluginManager = (() => {
+@@ -2818,10 +2869,17 @@ let PluginManager = (() => {
  					}
  					/* v8 ignore next -- the plan is never empty, so a run always settled */
  					if (run === void 0) throw new Error("no registry was asked");
@@ -200,7 +211,7 @@ index ea6b83f..7d43c86 100644
  							result.pendingBuilds = await recordPendingBuilds(this.profile.dir, run.output);
  						} catch (error) {
  							this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
-@@ -2829,23 +2880,29 @@ let PluginManager = (() => {
+@@ -2829,23 +2887,32 @@ let PluginManager = (() => {
  						throw new Error(run.output);
  					}
  					const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -231,8 +242,11 @@ index ea6b83f..7d43c86 100644
 +					await mutation?.rollback?.();
  					await this.restoreFiles(files);
  					throw error;
++				} finally {
++					finishTransaction();
++					this.packageOperations.delete(transaction);
  				}
-@@ -2909,20 +2966,22 @@ let PluginManager = (() => {
+@@ -2909,20 +2976,22 @@ let PluginManager = (() => {
  					if (bundle === void 0 || !bundle.removable) throw new ManagementFailure("not-removable");
  					if (this.ownerContext.get("hmr") === void 0 && (this.profile.startedBundles.includes(name) || bundle.error === void 0 && this.bundleRows(name).some((row) => [...this.ctx.loader.entries()].some((entry) => entry.options.id === row.id && entry.fiber !== void 0)))) throw new ManagementFailure("stop-profile");
  					const contributions = bundle.error === void 0 ? this.bundleRows(name) : [];
@@ -261,7 +275,7 @@ index ea6b83f..7d43c86 100644
  				this.installedFrom.delete(name);
  				Object.assign(result, await this.configure(() => this.publishAndReload()));
  			}, {
-@@ -2968,6 +3027,45 @@ let PluginManager = (() => {
+@@ -2968,6 +3037,45 @@ let PluginManager = (() => {
  				overrides: [...new Set(patches.flatMap((item) => item.insert === void 0 && typeof item.id === "string" && !declared.has(item.id) ? [item.id] : []))]
  			};
  		}
@@ -307,7 +321,7 @@ index ea6b83f..7d43c86 100644
  		/** Run one pnpm command in the profile, streaming its output as install-log chunks. */
  		async runPnpm(args, signal, requestId) {
  			const jobId = randomUUID();
-@@ -3045,7 +3143,7 @@ let PluginManager = (() => {
+@@ -3045,7 +3153,7 @@ let PluginManager = (() => {
  			for (const [path, content] of files) if (content === void 0) await rm(path, { force: true });
  			else await writeFileAtomic(path, content, { mode: 384 });
  		}
@@ -316,7 +330,7 @@ index ea6b83f..7d43c86 100644
  			const manifest = readProfileManifest("dsh", this.profile.dir);
  			const previous = bundleSelection(manifest);
  			if (enabled || !previous.includes(name)) {
-@@ -3054,13 +3152,14 @@ let PluginManager = (() => {
+@@ -3054,13 +3162,14 @@ let PluginManager = (() => {
  				if (enabled) {
  					assertBundlePlatform(metadata.dsh?.bundle?.platforms, process.platform);
  					const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir));
@@ -332,7 +346,7 @@ index ea6b83f..7d43c86 100644
  			const bundles = enabled ? [...previous, ...previous.includes(name) ? [] : [name]] : previous.filter((item) => item !== name);
  			if (JSON.stringify(previous) === JSON.stringify(bundles)) return;
  			manifest.dsh = {
-@@ -3139,6 +3238,7 @@ let PluginManager = (() => {
+@@ -3139,6 +3248,7 @@ let PluginManager = (() => {
  				restartReason: restart
  			};
  		}
@@ -340,7 +354,7 @@ index ea6b83f..7d43c86 100644
  		async change(operation, request, reason, identity) {
  			const id = randomUUID();
  			const target = identity === void 0 ? this.operationTarget(reason, request.target) : identity.target;
-@@ -3182,6 +3282,11 @@ let PluginManager = (() => {
+@@ -3182,6 +3292,11 @@ let PluginManager = (() => {
  					}
  					if (result.application !== "restart-required") delete result.restartReason;
  					result.changed = before !== this.diskState();
@@ -470,7 +484,13 @@ index a896260..824df5a 100644
  export interface Config {
      /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
      pnpmCommand?: string;
-@@ -126,6 +140,8 @@ export declare class PluginManager extends TypertRemoteService {
+@@ -64,3 +78,5 @@ export declare class PluginManager extends TypertRemoteService {
++    /** Verified identity/version/replacement contract v1; backend support is checked per installation. */
++    readonly verifiedInstallContract: 1;
+     private readonly packageOperations;
+     private readonly profile;
+     private readonly outputBytes;
+@@ -126,6 +142,8 @@ export declare class PluginManager extends TypertRemoteService {
       * display metadata, activation selections, whether the installation offers the bundle, and removal availability.
       */
      listBundles(): Promise<BundleInfo[]>;
