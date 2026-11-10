@@ -33,7 +33,7 @@ async function fixture(document = { querySelector: () => null }) {
   let exports
   vm.runInNewContext(source, {
     window: { localStorage: storage, sessionStorage: storage, __ModuleLoader__: { load({ factory }) {
-      exports = factory(name => name === 'react' ? React : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Switch: () => null })
+      exports = factory(name => name === 'react' ? React : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Button: ({ children, icon, variant, ...props }) => React.createElement('button', props, icon, children), IconDownloadOutlineRegular: () => null, Menu: ({ anchor }) => anchor, Switch: () => null })
     } } }, document, console, setTimeout, clearTimeout, AbortController
   })
   const request = (path, options) => {
@@ -42,7 +42,7 @@ async function fixture(document = { querySelector: () => null }) {
     return route.fetch(new Request(new URL(path, 'http://localhost'), options))
   }
   const makeController = async packageName => {
-    const ctx = { fiber: { entry: { options: { name: packageName } } },
+    const ctx = { locale: { bind: () => key => key }, fiber: { entry: { options: { name: packageName } } },
       sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
       workspaces: { list: { getSnapshot: () => ({ items: [] }) } },
       layout: { beginNavigation: () => new AbortController().signal, selectPanel() {} }
