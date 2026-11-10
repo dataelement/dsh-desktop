@@ -111,28 +111,57 @@ protocol.registerSchemesAsPrivileged([{
   }
 }])
 
-function desktopDevelopmentBuild(): boolean {
-  if (!app.isPackaged) return true
-  try {
-    const metadata = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as { dshDesktopChannel?: unknown }
-    return metadata.dshDesktopChannel === 'development'
-  } catch {
-    return false
+interface DesktopPackageMetadata {
+  name?: string
+  productName?: string
+  dshDesktopChannel?: string
+  build?: {
+    productName?: string
+    appId?: string
   }
 }
 
+function readDesktopPackageMetadata(): DesktopPackageMetadata {
+  try {
+    return JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as DesktopPackageMetadata
+  } catch {
+    return {}
+  }
+}
+
+function desktopDevelopmentBuild(metadata: DesktopPackageMetadata = readDesktopPackageMetadata()): boolean {
+  if (!app.isPackaged) return true
+  return metadata.dshDesktopChannel === 'development'
+}
+
 function configureDesktopIdentity(): void {
-  const development = desktopDevelopmentBuild()
+  const metadata = readDesktopPackageMetadata()
+  const isBisheng = Boolean(
+    metadata.build?.appId?.includes('bisheng') ||
+    metadata.build?.productName === 'BISHENG' ||
+    metadata.name === 'bisheng'
+  )
+  const defaultProdName = isBisheng ? 'BISHENG' : 'DSH Desktop'
+
+  const development = desktopDevelopmentBuild(metadata)
   const environment = developmentEnvironment(development, 43129)
   if (development) {
-    app.setName('DSH Desktop Dev')
-    app.setPath('userData', join(app.getPath('appData'), environment.profile))
+    app.setName(`${defaultProdName} Dev`)
+    const devDir = isBisheng
+      ? (process.env.BISHENG_DEV_USER_DATA || join(app.getPath('appData'), 'bisheng-dev'))
+      : join(app.getPath('appData'), environment.profile)
+    app.setPath('userData', devDir)
     return
   }
-  app.setName('DSH Desktop')
-  // Keep the historical lowercase directory. Deriving it from the product name
-  // would hide the existing sessions on an ordinary upgrade.
-  app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
+  if (!isBisheng) {
+    app.setName('DSH Desktop')
+    // Keep the historical lowercase directory. Deriving it from the product name
+    // would hide the existing sessions on an ordinary upgrade.
+    app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
+    return
+  }
+  app.setName('BISHENG')
+  app.setPath('userData', join(app.getPath('appData'), 'bisheng'))
 }
 
 configureDesktopIdentity()
@@ -347,8 +376,8 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
   }
   const result = await dialog.showMessageBox(window, {
     type: 'info',
-    title: 'DSH Desktop',
-    message: locale === 'zh' ? '关于 DSH Desktop' : 'About DSH Desktop',
+    title: app.name,
+    message: locale === 'zh' ? `关于 ${app.name}` : `About ${app.name}`,
     detail: aboutDetail(desktopVersion, harnessVersion, locale),
     buttons: [locale === 'zh' ? '检查更新' : 'Check for Updates', locale === 'zh' ? '关闭' : 'Close'],
     defaultId: 1,
@@ -551,7 +580,7 @@ async function main(): Promise<void> {
     }
     windowsTray.setToolTip(app.name)
     windowsTray.setContextMenu(Menu.buildFromTemplate([
-      { label: menuLocale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: showMainWindow },
+      { label: menuLocale === 'zh' ? `显示 ${app.name}` : `Show ${app.name}`, click: showMainWindow },
       { type: 'separator' },
       { label: menuLocale === 'zh' ? '退出' : 'Exit', click: () => { app.quit() } }
     ]))
@@ -634,7 +663,7 @@ async function main(): Promise<void> {
   const platformView = new DesktopPlatformView(
     preload,
     () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh_CN' : 'en_US',
-    process.platform === 'win32' ? 'win32' : 'darwin',
+    process.platform,
     app.getVersion(),
     () => false
   )
