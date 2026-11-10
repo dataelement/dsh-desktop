@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
@@ -677,7 +678,7 @@ async function main(): Promise<void> {
   const platformView = new DesktopPlatformView(
     preload,
     () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh_CN' : 'en_US',
-    process.platform,
+    process.platform === 'win32' ? 'win32' : 'darwin',
     app.getVersion(),
     () => false
   )
