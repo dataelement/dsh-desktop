@@ -192,6 +192,19 @@ describe('one-time profile migration to generations', () => {
     expect(existsSync(link)).toBe(true)
   })
 
+  it('marks a fresh profile before the first local package installation', async () => {
+    const home = await preUpgradeProfile({})
+    await rm(join(home, 'profiles', 'web'), { recursive: true, force: true })
+    expect(await migrateProfileToGenerations(deps(home))).toEqual({ outcome: 'no-op' })
+    expect(isProfileMigrated(home)).toBe(true)
+    // Future installs must not be mistaken for legacy registry dependencies.
+    await writeFile(join(home, 'profiles', 'web', 'package.json'), JSON.stringify({
+      dependencies: { 'local-only-workbench': '1.0.0' }
+    }))
+    expect(await migrateProfileToGenerations(deps(home))).toEqual({ outcome: 'no-op' })
+    expect(await readDesired(home)).toEqual([])
+  })
+
   it('is a no-op and self-marks when there are no community plugins', async () => {
     const home = await preUpgradeProfile({})
     const migrated = await migrateProfileToGenerations(deps(home))
