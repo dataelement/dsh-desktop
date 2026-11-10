@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index c980fe2..9031a65 100644
+index c980fe2..35cb4d8 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -1097,6 +1097,7 @@ window.__ModuleLoader__.load({
@@ -305,7 +305,41 @@ index c980fe2..9031a65 100644
  								onReveal: node.id === revealSessionId && group.key === revealGroup ? () => {
  									onSessionRevealed(node.id);
  								} : void 0,
-@@ -3499,7 +3641,7 @@ window.__ModuleLoader__.load({
+@@ -3474,6 +3616,15 @@ window.__ModuleLoader__.load({
+ 				}, group.key);
+ 			};
+ 			const groupRows = rootGroups.map((group) => renderGroup(group, 0));
++			const recentItems = deriveFlat(list, ungroupedSessionIds, rowState, statuses).map((node) => ({
++				id: node.id, updatedAt: node.updatedAt, pinned: node.pinned, blank: node.blank,
++				render: (active) => (0, react_jsx_runtime.jsx)(SessionNodeItem, {
++					node, currentId: active ? current : void 0, now, onOpen: open,
++					onRenameRequest: onSessionRenameRequest, renderSlot,
++					unread: unreadSessionIds.includes(node.id), onUnreadChange,
++					onReveal: node.id === revealSessionId ? () => onSessionRevealed(node.id) : void 0, t
++				}, node.id)
++			}));
+ 			return (0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.HoverCardGroup, {
+ 				className: clsx(WorkspaceBrowser_module_css_default.treeBody, WorkspaceBrowser_module_css_default.wide),
+ 				children: [
+@@ -3488,18 +3639,20 @@ window.__ModuleLoader__.load({
+ 						rowKeys,
+ 						ready: list.phase === "ready" && workspaceReady && !nativeDragActive,
+ 						resetKey: JSON.stringify([animationResetKey, watermarkMotionKey]),
+-						children: [groups.length === 0 && (0, react_jsx_runtime.jsx)(EmptySessions, {
+-							rowState,
+-							onLeaveArchivedOnly,
+-							t
+-						}), groupRows]
++						children: renderSlot("sidebar.workspaces.collection", {
++							mode: "projects", query: "", archivedOnly: rowState.archivedFilter === "only",
++							projects: (active) => rootGroups.filter((group) => group.workspaceId !== void 0).map((group) => renderGroup(group, 0, active)),
++							items: recentItems
++						}, { fallback: [groups.length === 0 && (0, react_jsx_runtime.jsx)(EmptySessions, {
++							rowState, onLeaveArchivedOnly, t
++						}), groupRows] })
+ 					}),
+ 					(0, react_jsx_runtime.jsx)("span", { className: WorkspaceBrowser_module_css_default.fade })
+ 				]
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
@@ -314,7 +348,7 @@ index c980fe2..9031a65 100644
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, rowState, statuses), [
-@@ -3546,6 +3688,8 @@ window.__ModuleLoader__.load({
+@@ -3546,6 +3699,8 @@ window.__ModuleLoader__.load({
  							openSessionMenu,
  							useContextMenu,
  							useContextMenuTarget,
@@ -323,7 +357,7 @@ index c980fe2..9031a65 100644
  							onReveal: node.id === revealSessionId ? () => {
  								onSessionRevealed(node.id);
  							} : void 0,
-@@ -3591,9 +3735,8 @@ window.__ModuleLoader__.load({
+@@ -3591,9 +3746,8 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Flat search body: local metadata matches plus the current Host result page. */
@@ -334,15 +368,33 @@ index c980fe2..9031a65 100644
  			const statuses = useSessionStatus((s) => s);
  			const currentRemote = remote.query === query ? remote : {
  				query,
-@@ -3627,6 +3770,7 @@ window.__ModuleLoader__.load({
- 								currentId,
- 								onOpen: open,
- 								onUnarchive,
-+								renderSlot,
- 								useSessionAccess,
- 								t
- 							}, result.id))
-@@ -3660,19 +3804,27 @@ window.__ModuleLoader__.load({
+@@ -3622,14 +3776,17 @@ window.__ModuleLoader__.load({
+ 							className: WorkspaceBrowser_module_css_default.searchTree,
+ 							role: "tree",
+ 							"aria-label": t("search.results.aria"),
+-							children: results.items.map((result) => (0, react_jsx_runtime.jsx)(SearchResultItem, {
+-								result,
+-								currentId,
+-								onOpen: open,
+-								onUnarchive,
+-								useSessionAccess,
+-								t
+-							}, result.id))
++							children: renderSlot("sidebar.workspaces.collection", {
++								mode: "search", query, archivedOnly: archivedFilter === "only", searchPending: pending, projects: () => [],
++								items: results.items.map((result) => ({
++									id: result.id, updatedAt: list.byId[result.id]?.updatedAt ?? 0,
++									render: (active) => (0, react_jsx_runtime.jsx)(SearchResultItem, {
++										result, currentId: active ? currentId : void 0, onOpen: open, onUnarchive, renderSlot, useSessionAccess, t
++									}, result.id)
++								}))
++							}, { fallback: [...results.items.map((result) => (0, react_jsx_runtime.jsx)(SearchResultItem, {
++								result, currentId, onOpen: open, onUnarchive, renderSlot, useSessionAccess, t
++							}, result.id))] })
+ 						}),
+ 						pending && (0, react_jsx_runtime.jsx)("div", {
+ 							role: "status",
+@@ -3660,19 +3817,27 @@ window.__ModuleLoader__.load({
  		* @param props - composed slot props (shell owner share + store + injected actions).
  		* @returns the region element tree.
  		*/
@@ -374,7 +426,7 @@ index c980fe2..9031a65 100644
  			const workspacePhase = useWorkspaces((state) => state.phase);
  			const workspaceStreamState = useWorkspaces((state) => state.state);
  			const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
-@@ -3683,6 +3835,11 @@ window.__ModuleLoader__.load({
+@@ -3683,6 +3848,11 @@ window.__ModuleLoader__.load({
  			const archivedFilter = useStore((s) => s.archivedFilter ?? "default");
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
@@ -386,7 +438,16 @@ index c980fe2..9031a65 100644
  			const guardedOpen = (sessionId) => {
  				if (archivedSessionIds.includes(sessionId)) {
  					notifyArchivedNotOpenable();
-@@ -4084,7 +4241,7 @@ window.__ModuleLoader__.load({
+@@ -3946,7 +4116,7 @@ window.__ModuleLoader__.load({
+ 						children: [
+ 							wide && (0, react_jsx_runtime.jsx)("span", {
+ 								className: clsx(WorkspaceBrowser_module_css_default.sectionLabel, WorkspaceBrowser_module_css_default.wide, searchExpanded && WorkspaceBrowser_module_css_default.sectionLabelHidden),
+-								children: groupBy === "flat" ? t("section.sessions") : t("section.workspaces")
++								children: renderSlot("sidebar.workspaces.title", { flat: groupBy === "flat" }, { fallback: groupBy === "flat" ? t("section.sessions") : t("section.workspaces") })
+ 							}),
+ 							wide && (0, react_jsx_runtime.jsx)("div", {
+ 								className: clsx(WorkspaceBrowser_module_css_default.searchSlot, searchExpanded && WorkspaceBrowser_module_css_default.searchSlotExpanded),
+@@ -4084,7 +4254,7 @@ window.__ModuleLoader__.load({
  						children: wide && (normalizedQuery !== "" ? (0, react_jsx_runtime.jsx)(SearchResults, {
  							usePanelInfo,
  							useSessionAccess,
@@ -395,7 +456,7 @@ index c980fe2..9031a65 100644
  							useSessionStatus,
  							open: openSearchResult,
  							onUnarchive: onSessionUnarchive,
-@@ -4101,6 +4258,8 @@ window.__ModuleLoader__.load({
+@@ -4101,6 +4271,8 @@ window.__ModuleLoader__.load({
  							list,
  							sessionIds: orderedFlatSessionIds,
  							rowState,
@@ -404,7 +465,7 @@ index c980fe2..9031a65 100644
  							onLeaveArchivedOnly: leaveArchivedOnly,
  							workspaceReady,
  							animationResetKey: `${groupBy}/${orderBy}/${archivedFilter}`,
-@@ -4139,6 +4298,8 @@ window.__ModuleLoader__.load({
+@@ -4139,6 +4311,8 @@ window.__ModuleLoader__.load({
  							setGroupExpanded: actions.setGroupExpanded,
  							setSessionOrder: saveSessionOrder,
  							rowState,
@@ -413,7 +474,7 @@ index c980fe2..9031a65 100644
  							onLeaveArchivedOnly: leaveArchivedOnly,
  							startSession,
  							open: guardedOpen,
-@@ -4865,6 +5026,7 @@ window.__ModuleLoader__.load({
+@@ -4865,6 +5039,7 @@ window.__ModuleLoader__.load({
  			"status.compact.planReview": "计划待审",
  			"status.compact.answer": "待回答",
  			"status.completed": "已完成",
@@ -421,7 +482,7 @@ index c980fe2..9031a65 100644
  			"hover.created": "创建于 {time}",
  			"hover.copied": "已复制",
  			"date.ymd": "{y}年{m}月{d}日",
-@@ -4987,6 +5149,7 @@ window.__ModuleLoader__.load({
+@@ -4987,6 +5162,7 @@ window.__ModuleLoader__.load({
  			"status.compact.planReview": "Plan review",
  			"status.compact.answer": "Answer",
  			"status.completed": "Completed",
@@ -429,7 +490,7 @@ index c980fe2..9031a65 100644
  			"hover.created": "Created {time}",
  			"hover.copied": "Copied",
  			"date.ymd": "{y}-{m}-{d}",
-@@ -5996,14 +6159,17 @@ window.__ModuleLoader__.load({
+@@ -5996,14 +6172,17 @@ window.__ModuleLoader__.load({
  				settleWorkspaceAction: () => {
  					workspaceActionRequest.set(null);
  				},
@@ -449,7 +510,7 @@ index c980fe2..9031a65 100644
  						}
  					}, point);
  				},
-@@ -6021,7 +6187,7 @@ window.__ModuleLoader__.load({
+@@ -6021,7 +6200,7 @@ window.__ModuleLoader__.load({
  					await workspaces.rename(workspaceId, title);
  				},
  				deleteWorkspace: async (workspaceId) => {
@@ -458,7 +519,7 @@ index c980fe2..9031a65 100644
  				},
  				insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
  					await workspaces.insertBefore(workspaceId, beforeWorkspaceId);
-@@ -6039,6 +6205,8 @@ window.__ModuleLoader__.load({
+@@ -6039,6 +6218,8 @@ window.__ModuleLoader__.load({
  					contextMenuTarget: ctx.contextMenus.active,
  					directoryFlow: browserFlowSource,
  					hostInfo,
@@ -467,11 +528,39 @@ index c980fe2..9031a65 100644
  					workspaceShortcuts: shortcutControls.state,
  					shortcuts: ctx.shortcuts.catalog
  				}
+@@ -6050,6 +6231,8 @@ window.__ModuleLoader__.load({
+ 			ctx.slots.inject("sidebar.workspaces", () => ctx.slots.register({
+ 				name: "sidebar.workspaces",
+ 				children: {
++					"sidebar.workspaces.title": { kind: "single", scope: "root" },
++					"sidebar.workspaces.collection": { kind: "single", scope: "root" },
+ 					"sidebar.workspaces.directoryFlow": {
+ 						kind: "single",
+ 						scope: "root"
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
-index 3420290..50838b9 100644
+index 3420290..166178d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
-@@ -270,6 +270,8 @@ export type WorkspaceBrowserInjected = {
+@@ -125,7 +125,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             owner: DirectoryFlowOwnerProps;
+         };
+         /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
+-        'sidebar.workspaces.directoryFlow': {
++        'sidebar.workspaces.title': { kind: 'single'; scope: 'root'; owner: { flat: boolean } };
++        'sidebar.workspaces.collection': {
++            kind: 'single'; scope: 'root';
++            owner: {
++                mode: 'projects' | 'flat' | 'search'; query: string; archivedOnly: boolean;
++                searchPending?: boolean;
++                projects: (active: boolean) => import('react').ReactNode;
++                items: ReadonlyArray<{ id: string; updatedAt: number; pinned?: boolean; blank?: boolean; render: (active: boolean) => import('react').ReactNode }>;
++            };
++        };
++        'sidebar.workspaces.title' | 'sidebar.workspaces.collection' | 'sidebar.workspaces.directoryFlow': {
+             kind: 'single';
+             scope: 'root';
+             owner: DirectoryFlowOwnerProps;
+@@ -270,6 +280,8 @@ export type WorkspaceBrowserInjected = {
           * saw. Select the field the surface needs (`info => info.home`).
           */
          hostInfo: HostObservable<RemoteHostFacts>;
@@ -480,7 +569,7 @@ index 3420290..50838b9 100644
          workspaceShortcuts: HostObservable<WorkspaceShortcutState>;
          shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>;
      };
-@@ -299,13 +301,15 @@ export type WorkspaceBrowserInjected = {
+@@ -299,13 +311,15 @@ export type WorkspaceBrowserInjected = {
      }>;
      /** Maximum number of merged rows rendered for one search. */
      searchResultLimit: number;
