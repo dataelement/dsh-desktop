@@ -122,6 +122,11 @@ function readDesktopPackageMetadata(): unknown {
   }
 }
 
+function desktopDevelopmentBuild(metadata: unknown = readDesktopPackageMetadata()): boolean {
+  if (!app.isPackaged) return true
+  return typeof metadata === 'object' && metadata !== null && (metadata as Record<string, unknown>).dshDesktopChannel === 'development'
+}
+
 function configureDesktopIdentity(): void {
   const identity = resolveDesktopIdentity(readDesktopPackageMetadata(), app.isPackaged, app.getPath('appData'))
   app.setName(identity.name)
