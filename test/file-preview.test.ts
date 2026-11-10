@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import vm from 'node:vm'
+import { describe, expect, it, vi } from 'vitest'
 import { patchPath, projectRoot } from './patch-path'
 
 async function packageClient(name: string, file = 'lib/client.js'): Promise<string> {
@@ -220,7 +221,44 @@ describe('uploaded file preview', () => {
     expect(preview).toContain('renderSlot("sidebar.right.tab.document.unpreviewable", fileOwner)')
     expect(desktop).toContain("ctx.slots.inject('sidebar.right.tab.document.unpreviewable'")
     expect(desktop).toContain("'data-textpreview-open-local': true")
-    expect(desktop).toContain("ctx.remote.session.openWorkspacePath({ path })")
+    type Element = { props: Record<string, unknown>; children: Element[] }
+    let plugin: { apply(ctx: unknown): void } | undefined
+    let localOpen: { inject(): { openWorkspacePath(request: unknown): Promise<unknown> }; component(props: unknown): Element } | undefined
+    const openWorkspacePath = vi.fn(async (_request: unknown) => ({ ok: true }))
+    vm.runInNewContext(desktop, {
+      document: { documentElement: { dataset: { platform: 'darwin' } } },
+      window: { clearTimeout() {}, setTimeout: () => 0, __ModuleLoader__: { load({ factory }: { factory(require: (name: string) => unknown): typeof plugin }) {
+        plugin = factory(name => name === 'react' ? {
+          createElement: (_type: unknown, props: unknown, ...children: unknown[]) => ({ props, children }),
+          useState: (initial: unknown) => [initial, () => {}],
+          useRef: (current: unknown) => ({ current }), useEffect() {}
+        } : {})
+      } } }
+    })
+    if (!plugin) throw new Error('Desktop client factory was not loaded')
+    plugin.apply({
+      effect() {}, locale: { bind: () => (key: string) => key }, remote: { session: { openWorkspacePath } },
+      slots: {
+        inject(name: string, callback: () => unknown) { if (name === 'sidebar.right.tab.document.unpreviewable') callback() },
+        register(config: { inject: NonNullable<typeof localOpen>['inject'] }, component: NonNullable<typeof localOpen>['component']) {
+          localOpen = { inject: config.inject, component }
+        }
+      }
+    })
+    if (!localOpen) throw new Error('Local-open slot was not registered')
+    const injected = localOpen.inject()
+    const file = localOpen.component({ ...injected, absolutePath: '/workspace/report.docx', t: (key: string) => key })
+    const fileButton = file.children[0]
+    expect(fileButton?.props['data-textpreview-open-local']).toBe(true)
+    ;(fileButton?.props.onClick as () => void)()
+    await Promise.resolve()
+    expect(openWorkspacePath).toHaveBeenCalledExactlyOnceWith({ path: '/workspace/report.docx' })
+    // Archives use the same callback but reveal the authorized path instead of
+    // starting an extractor that can appear to do nothing in the preview pane.
+    const archive = localOpen.component({ ...injected, absolutePath: '/workspace/report.zip', t: (key: string) => key })
+    ;(archive.children[0]?.props.onClick as () => void)()
+    await Promise.resolve()
+    expect(openWorkspacePath).toHaveBeenLastCalledWith({ path: '/workspace/report.zip', action: 'reveal' })
     expect(desktop).toContain('Open with local app')
     expect(desktop).toContain('用本地应用打开')
   })

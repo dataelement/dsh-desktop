@@ -6,9 +6,15 @@ async function load(bridge: unknown) {
   const registrations = new Map<string, (props: unknown) => unknown>()
   const effects: Array<() => unknown> = []
   let definition: { factory: (require: (name: string) => unknown) => { apply: (ctx: unknown) => void } } | undefined
+  const styles: Array<{ tagName: string; id: string; dataset: Record<string, string>; textContent: string; remove: () => void }> = []
+  const document = {
+    getElementById: (id: string) => styles.find(style => style.id === id) ?? null,
+    createElement: (tag: string) => ({ tagName: tag.toUpperCase(), id: '', dataset: {}, textContent: '', remove: vi.fn() }),
+    head: { appendChild: (style: typeof styles[number]) => { styles.push(style); return style } }
+  }
   vm.runInNewContext(await readFile(new URL('../packages/dsh-desktop-client-ui/client.js', import.meta.url), 'utf8'), {
     window: { dshDesktop: bridge, __ModuleLoader__: { load: (value: typeof definition) => { definition = value } } },
-    document: { getElementById: () => true }, console
+    document, console
   })
   const plugin = definition!.factory(name => name === 'react' ? {
     createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({ type, props, children }),

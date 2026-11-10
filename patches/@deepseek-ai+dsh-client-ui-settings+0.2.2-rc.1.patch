@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
-index 3253a36065..e6c4d0ca06 100644
+index 9467eac..5b3eea6 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings/lib/types/client/contract/slots.d.ts
 @@ -39,6 +39,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -20,3 +20,30 @@ index 3253a36065..e6c4d0ca06 100644
          /**
           * Optional actions rendered in the content-column header before Close.
           * Registrants own visibility, behavior, copy, and failure presentation;
+@@ -160,13 +171,16 @@ export interface SettingsHeaderOwnerProps {
+ /**
+  * Owner share of a settings section entry. The shell owns modal visibility
+  * and navigation; a section's data arrives through its own inject faces and
+- * stores. `close` is the one shell affordance a section receives, for flows
++ * stores. `close` leaves settings; optional `focusShell` returns keyboard focus
++ * to shell chrome. `close` supports flows
+  * that leave settings altogether (starting a session from a section) — the
+  * onboarding coordinator's `openSection`/`complete` precedent, inverted.
+  */
+ export interface SettingsSectionOwnerProps {
+     /** Close the settings panel (the shell owns the open state). */
+     close: () => void;
++    /** Return focus to the selected nav row (previous) or Close button (next); absent in older shells. */
++    focusShell?: (direction: 'previous' | 'next') => void;
+ }
+ /** Icon presentation supplied by the settings navigation row. */
+ export interface SettingsSectionIconOwnerProps {
+@@ -199,6 +213,8 @@ export interface SettingsLauncherOwnerProps {
+     };
+     /** Open the settings panel. */
+     openSettings: () => void;
++    /** Open one currently registered settings.section id; unknown ids are ignored. */
++    openSettingsSection: (id: string) => void;
+     /** @param id - registered onboarding editor to open explicitly. */
+     openOnboarding: (id: string) => void;
+ }
