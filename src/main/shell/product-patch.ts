@@ -1,5 +1,17 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+
+function hasEnterprisePlugin(): boolean {
+  try {
+    require.resolve('dsh-desktop-enterprise/package.json')
+    return true
+  } catch {
+    return false
+  }
+}
 
 /**
  * Desktop profile overlay. Analytics and the official account page stay off.
@@ -21,6 +33,10 @@ const DESKTOP_PRODUCT_PATCH_BASE = `- id: desktop-product-telemetry
 - insert:
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
+`
+
+const DESKTOP_ENTERPRISE_ROW = `    - id: dsh-desktop-enterprise
+      name: dsh-desktop-enterprise
 `
 
 const DESKTOP_WORKBENCH_ROW = `    - id: dsh-desktop-workbenches
@@ -49,14 +65,19 @@ const DESKTOP_PPT_ROW = `    - id: dsh-ppt-composer
 
 export const DESKTOP_SAFE_PRODUCT_PATCH = DESKTOP_PRODUCT_PATCH_BASE
 
-export const DESKTOP_PRODUCT_PATCH = `${DESKTOP_PRODUCT_PATCH_BASE}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_PPT_ROW}`
+export function buildDesktopProductPatch(): string {
+  const enterprise = hasEnterprisePlugin() ? DESKTOP_ENTERPRISE_ROW : ''
+  return `${DESKTOP_PRODUCT_PATCH_BASE}${enterprise}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_PPT_ROW}`
+}
+
+export const DESKTOP_PRODUCT_PATCH = buildDesktopProductPatch()
 
 export type DesktopProductPatchMode = 'desktop' | 'safe'
 
 export async function writeDesktopProductPatch(dshHome: string, mode: DesktopProductPatchMode = 'desktop'): Promise<string> {
   await mkdir(dshHome, { recursive: true })
   const path = join(dshHome, 'desktop-product.patch.yml')
-  const text = mode === 'safe' ? DESKTOP_SAFE_PRODUCT_PATCH : DESKTOP_PRODUCT_PATCH
+  const text = mode === 'safe' ? DESKTOP_SAFE_PRODUCT_PATCH : buildDesktopProductPatch()
   await writeFile(path, text)
   return path
 }
