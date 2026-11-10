@@ -1003,7 +1003,7 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
           .dshWorkContent[data-reveal-controls=true]:not([hidden]) [data-dsh-hero-controls]{clip-path:inset(-8px -8px -8px -8px);transition:clip-path 180ms cubic-bezier(.23,1,.32,1)}
           @starting-style{.dshWorkContent[data-reveal-controls=true]:not([hidden]) [data-dsh-hero-controls]{clip-path:inset(-8px 100% -8px -8px)}}
           @media(prefers-reduced-motion:reduce){.dshWorkContent[data-reveal-controls=true] [data-dsh-hero-controls]{transition:none;clip-path:none}}
-          
+
           /* Suppress stock gear icon when community plugins use custom icons */
           [data-dsh-market-nav-icon] span[class*="navIcon"],
           [data-dsh-market-nav-icon] svg,
