@@ -221,6 +221,7 @@ window.__ModuleLoader__.load({
         const style = document.createElement('style')
         style.id = id
         style.textContent = `
+          [data-dsh-sidebar-brand-identity] { display:none !important; }
           [data-dsh-enterprise-entry] {
             display:flex; align-items:center; gap:4px; min-height:36px; padding:0 12px;
             border-radius:8px; color:var(--dsw-alias-label-secondary); font-size:13px;
