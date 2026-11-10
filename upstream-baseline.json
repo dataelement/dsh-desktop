@@ -19,7 +19,8 @@
         "侧边栏浏览器沿用现有客人策略，不另写一份官方 browser-guests",
         "文件拖放只接受 Host 授权过的会话文件；渲染进程不能提交本机路径",
         "Host 离开就绪后清掉启动注入和认证 Cookie；boot 只返回仍处于就绪的那一次，失败的刷新不交回上一次",
-        "启动 Host 前读取 POSIX 登录 shell 环境；Windows 使用继承的注册表环境，不读 PowerShell profile"
+        "启动 Host 前读取 POSIX 登录 shell 环境；Windows 使用继承的注册表环境，不读 PowerShell profile",
+        "账号视图接收真实运行平台；Linux 不冒充 macOS，也不启用未支持的上游账号页面协议"
       ]
     },
     {
@@ -74,7 +75,7 @@
     {
       "path": "src/main/shell/window/platform-view.ts",
       "upstream": ["apps/desktop/src/platform-view.ts"],
-      "divergences": []
+      "divergences": ["Linux 和其它未支持平台在创建分区、窗口或凭据请求前明确拒绝账号视图"]
     },
     {
       "path": "src/main/shell/window/ipc.ts",
@@ -106,7 +107,7 @@
     {
       "path": "src/main/shell/keyboard.ts",
       "upstream": ["apps/desktop/src/keyboard.ts"],
-      "divergences": ["侧边栏浏览器客人可以接收快捷键", "没有强制更新遮罩，所以不按遮罩挡住按键"]
+      "divergences": ["侧边栏浏览器客人可以接收快捷键", "没有强制更新遮罩，所以不按遮罩挡住按键", "Linux 使用已有 desktop:linux 协议分派原生桌面快捷键"]
     },
     {
       "path": "src/host/file-drag.ts",

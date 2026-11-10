@@ -673,7 +673,7 @@ async function main(): Promise<void> {
   const platformView = new DesktopPlatformView(
     preload,
     () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh_CN' : 'en_US',
-    process.platform === 'win32' ? 'win32' : 'darwin',
+    process.platform,
     app.getVersion(),
     () => false
   )

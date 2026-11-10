@@ -16,6 +16,7 @@ describe('desktop window chrome', () => {
       backgroundColor: '#00000000'
     })
     expect(desktopWindowChrome('win32')).toEqual({})
+    expect(desktopWindowChrome('linux')).toEqual({})
   })
 })
 
