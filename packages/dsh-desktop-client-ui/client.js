@@ -1574,9 +1574,34 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
           : React.createElement('path', { d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-7.91 7.91a2.12 2.12 0 0 1-3-3l7.91-7.91a6 6 0 0 1 7.94-7.94z' }))
       return React.createElement('div', { 'data-dsh-desktop-utilities': true, 'data-wide': wide },
         typeof bridge?.openRepairAgent === 'function' && React.createElement(Tooltip, { label: t('description'), side: 'top', align: 'end', portal: true, maxWidth: 280, delayMs: 0, focusDelayMs: 0 },
-          React.createElement('button', { type: 'button', disabled: busy, 'aria-label': t('open'), 'aria-description': t('description'), 'data-dsh-repair-entry': true, onClick: () => { void open(() => bridge.openRepairAgent()) } }, icon(false))),
-        typeof bridge?.openMobilePairing === 'function' && wide && React.createElement('button', { type: 'button', disabled: busy, 'aria-label': t('phone'), 'data-dsh-mobile-entry': true, onClick: () => { void open(() => bridge.openMobilePairing()) } }, icon(true)),
-        error && React.createElement('span', { role: 'alert' }, t('failed')))
+          React.createElement(Button, { type: 'button', variant: 'ghost', size: 'sm', className: 'dshDesktopUtilityButton', disabled: busy, 'aria-busy': busy, 'aria-label': t('open'), 'aria-description': t('description'), 'data-dsh-repair-entry': true, onClick: () => { void open(() => bridge.openRepairAgent()) } }, icon(false))),
+        typeof bridge?.openMobilePairing === 'function' && wide && React.createElement(Tooltip, { label: t('phone'), side: 'top', align: 'end', portal: true },
+          React.createElement(Button, { type: 'button', variant: 'ghost', size: 'sm', className: 'dshDesktopUtilityButton', disabled: busy, 'aria-busy': busy, 'aria-label': t('phone'), 'data-dsh-mobile-entry': true, onClick: () => { void open(() => bridge.openMobilePairing()) } }, icon(true))),
+        error && React.createElement('span', { role: 'alert', className: 'dshDesktopUtilityError' }, t('failed')))
+    }
+    function applyUtilityStyles(ctx) {
+      ctx.effect(() => {
+        const id = 'dsh-desktop-utilities-style'
+        if (document.getElementById(id)) return
+        const style = document.createElement('style')
+        style.id = id
+        style.dataset.pluginCss = 'dsh-desktop-utilities'
+        style.textContent = `
+          [data-dsh-sidebar-root] [data-dsh-sidebar-settings]{display:flex;align-items:center;gap:4px;min-width:0}
+          [data-dsh-sidebar-root] [data-dsh-sidebar-settings-content]{flex:1;min-width:0}
+          [data-dsh-sidebar-root] [data-dsh-sidebar-settings-actions]{display:flex;align-items:center;flex:none}
+          [data-dsh-desktop-utilities]{display:flex;align-items:center;gap:4px;flex:none;position:relative}
+          [data-dsh-desktop-utilities] .dshDesktopUtilityButton{flex:0 0 28px;width:28px;min-width:28px;padding:0}
+          [data-dsh-desktop-utilities] .dshDesktopUtilityButton svg{display:block;flex:none;pointer-events:none}
+          [data-dsh-desktop-utilities] .dshDesktopUtilityError{position:absolute;bottom:calc(100% + 6px);right:0;min-width:160px;max-width:240px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:1.5;z-index:1}
+          [data-dsh-sidebar-root][data-dsh-sidebar-wide=false] [data-dsh-sidebar-settings]{flex-direction:column;gap:4px}
+          [data-dsh-sidebar-root][data-dsh-sidebar-wide=false] [data-dsh-sidebar-settings-content]{flex:none;width:100%}
+          [data-dsh-sidebar-root][data-dsh-sidebar-wide=false] [data-dsh-sidebar-settings-actions]{justify-content:center}
+          [data-dsh-sidebar-root][data-dsh-sidebar-wide=false] [data-dsh-desktop-utilities]{flex-direction:column}
+        `
+        document.head.appendChild(style)
+        return () => style.remove()
+      }, 'desktop: utility buttons and account row layout')
     }
     function applyRepair(ctx) {
       ctx.effect(() => ctx.locale.register(REPAIR_NS, {
@@ -1585,6 +1610,7 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
       }))
       const bridge = window.dshDesktop
       if (typeof bridge?.getRepairDraft === 'function') ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({ name: 'conversation.input.dock', id: 'desktop-repair-draft' }, RepairDraft))
+      if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') applyUtilityStyles(ctx)
       if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilities))
     }
 
