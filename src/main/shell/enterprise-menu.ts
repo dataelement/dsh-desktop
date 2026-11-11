@@ -78,6 +78,7 @@ export function externalUrlToOpen(url: string): string | undefined {
  * The next item checks for an update. Download starts only after consent.
  * Enterprise opens the product site.
  * Restart starts the current Host again. Safe Mode relaunches into the core profile when that action is supplied.
+ * The next item reveals harness.log. It stays after Restart when Safe Mode is already active.
  * Phone pairing stays out of this menu.
  * Windows keeps a hidden copy of this command set so accelerators survive; the visible
  * caption is the in-page 应用 / 编辑 menu.
@@ -90,6 +91,7 @@ export function buildDarwinDesktopMenu(options: {
   checkForUpdates: () => void
   restart?: () => void
   restartSafeMode?: () => void
+  showHarnessLog: () => void
   hide: () => void
   hideOthers: () => void
   unhideAll: () => void
@@ -110,6 +112,7 @@ export function buildDarwinDesktopMenu(options: {
         ...(options.restartSafeMode === undefined
           ? []
           : [{ label: safeModeMenuLabel(options.locale), click: options.restartSafeMode }]),
+        { label: text.log, click: options.showHarnessLog },
         { type: 'separator' },
         {
           label: text.hide.replace('{app}', options.appName),

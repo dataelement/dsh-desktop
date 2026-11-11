@@ -59,6 +59,24 @@ describe('desktop backend controller', () => {
     expect(states.at(-1)?.phase).toBe('error')
   })
 
+  it('publishes a startup failure and rejects start with that same error', async () => {
+    const failure = new Error('prepare failed')
+    const states: DesktopBackendState[] = []
+    const controller = new DesktopBackendController(() => new FakeHost(), state => { states.push(state) })
+    await expect(controller.start(async () => { throw failure })).rejects.toBe(failure)
+    expect(states.at(-1)).toEqual({ phase: 'error', message: 'prepare failed', failure })
+  })
+
+  it('publishes a host start failure and rejects start with that same error', async () => {
+    const failure = new Error('host failed')
+    const host = new FakeHost()
+    host.rejectWith(failure)
+    const states: DesktopBackendState[] = []
+    const controller = new DesktopBackendController(() => host, state => { states.push(state) })
+    await expect(controller.start(async () => {})).rejects.toBe(failure)
+    expect(states.at(-1)).toEqual({ phase: 'error', message: 'host failed', failure })
+  })
+
   it('rejects start after close', async () => {
     const controller = new DesktopBackendController(() => new FakeHost(), () => {})
     await controller.close()
@@ -71,13 +89,19 @@ class FakeHost implements DesktopBackendHost {
   stopped = 0
   private releaseStart: () => void = () => {}
   private gate: Promise<void> = Promise.resolve()
+  private startFailure?: Error
 
   hold(): void {
     this.gate = new Promise(resolve => { this.releaseStart = resolve })
   }
 
+  rejectWith(failure: Error): void {
+    this.startFailure = failure
+  }
+
   start(): Promise<void> {
     this.started += 1
+    if (this.startFailure !== undefined) return Promise.reject(this.startFailure)
     return this.gate
   }
 

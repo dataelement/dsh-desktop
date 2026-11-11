@@ -1,4 +1,5 @@
 import { desktopResourceUrl, resolveDesktopResourceName } from '../desktop-protocol'
+import { extractPluginFailureReferences } from '../recovery/harness-log'
 import type { PluginRecoveryLocale, PluginRecoveryViewModel } from '../plugin-recovery-view'
 
 const RECOVERY_PAGE = 'plugin-recovery.html'
@@ -6,9 +7,32 @@ const PACKAGE_BOUNDARY = '[^A-Za-z0-9._@/-]'
 
 export type StartupRecoveryAction = 'auto-process' | 'quit' | 'show-log' | 'rollback' | 'agent'
 
-/** Installed third-party packages named by the failure, without matching a shorter name inside a longer one. */
-export function startupRecoveryTargets(message: string, installed: readonly string[]): string[] {
+/**
+ * Installed third-party packages named by this failure.
+ * An explicit loader reference in the short message or Host diagnostic wins.
+ * When one exists but none of those packages are installed, other names in the
+ * text are not added. Whole-token matching stays on the short message, and
+ * only when the text has no explicit reference.
+ */
+export function startupRecoveryTargets(
+  message: string,
+  installed: readonly string[],
+  diagnostic = ''
+): string[] {
+  const explicit = explicitRecoveryReferences(message, diagnostic)
+  if (explicit.length > 0) {
+    const allowed = new Set(installed)
+    return [...new Set(explicit.filter(name => allowed.has(name)))]
+  }
   return installed.filter(name => mentionsPackage(message, name))
+}
+
+/** Adapt bare Host text to the log extractor, which only reads `[stderr] ` lines. */
+function explicitRecoveryReferences(message: string, diagnostic: string): string[] {
+  const text = [message, diagnostic].filter(part => part.length > 0).join('\n')
+  if (text.length === 0) return []
+  const lines = text.split(/\r?\n/).map(line => line.startsWith('[stderr] ') ? line : `[stderr] ${line}`)
+  return extractPluginFailureReferences(lines)
 }
 
 export function isStartupRecoveryPageUrl(rawUrl: string): boolean {
