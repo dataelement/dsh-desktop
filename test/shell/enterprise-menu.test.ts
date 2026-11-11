@@ -27,6 +27,7 @@ describe('enterprise entry', () => {
     const checkForUpdates = vi.fn()
     const restart = vi.fn()
     const restartSafeMode = vi.fn()
+    const showHarnessLog = vi.fn()
     const hide = vi.fn()
     const hideOthers = vi.fn()
     const unhideAll = vi.fn()
@@ -39,6 +40,7 @@ describe('enterprise entry', () => {
       checkForUpdates,
       restart,
       restartSafeMode,
+      showHarnessLog,
       hide,
       hideOthers,
       unhideAll,
@@ -52,20 +54,23 @@ describe('enterprise entry', () => {
     expect(submenu[3]?.label).toBe(locale.startsWith('zh') ? '重启' : 'Restart')
     expect(submenu[3]?.accelerator).toBe('CmdOrCtrl+Shift+R')
     expect(submenu[4]?.label).toBe(locale.startsWith('zh') ? '以安全模式重启…' : 'Restart as Safe Mode…')
+    expect(submenu[5]?.label).toBe(locale.startsWith('zh') ? '显示 Harness 日志' : 'Show Harness Log')
     submenu[0]?.click?.()
     submenu[1]?.click?.()
     submenu[2]?.click?.()
     submenu[3]?.click?.()
     submenu[4]?.click?.()
+    submenu[5]?.click?.()
     expect(showAbout).toHaveBeenCalledOnce()
     expect(checkForUpdates).toHaveBeenCalledOnce()
     expect(openEnterprise).toHaveBeenCalledOnce()
     expect(restart).toHaveBeenCalledOnce()
     expect(restartSafeMode).toHaveBeenCalledOnce()
-    submenu[6]?.click?.()
+    expect(showHarnessLog).toHaveBeenCalledOnce()
     submenu[7]?.click?.()
     submenu[8]?.click?.()
-    submenu[10]?.click?.()
+    submenu[9]?.click?.()
+    submenu[11]?.click?.()
     expect(hide).toHaveBeenCalledOnce()
     expect(hideOthers).toHaveBeenCalledOnce()
     expect(unhideAll).toHaveBeenCalledOnce()
@@ -82,12 +87,17 @@ describe('enterprise entry', () => {
       openEnterprise,
       showAbout,
       checkForUpdates,
+      restart,
+      showHarnessLog,
       hide,
       hideOthers,
       unhideAll,
       quit
     })
-    expect((withoutSafeMode[0]?.submenu ?? []).some(item => item.label === safeModeMenuLabel(locale))).toBe(false)
+    const safeModeOmitted = withoutSafeMode[0]?.submenu ?? []
+    expect(safeModeOmitted.some(item => item.label === safeModeMenuLabel(locale))).toBe(false)
+    expect(safeModeOmitted[3]?.label).toBe(locale.startsWith('zh') ? '重启' : 'Restart')
+    expect(safeModeOmitted[4]?.label).toBe(locale.startsWith('zh') ? '显示 Harness 日志' : 'Show Harness Log')
   })
 
   it('places the file menu after the application menu', () => {
