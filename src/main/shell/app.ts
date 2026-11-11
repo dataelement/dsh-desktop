@@ -76,7 +76,7 @@ import {
   snapshotPluginRemovalLedger
 } from '../profile/plugin-removal'
 import { electronNodeExecutable } from './backend/electron-node-executable'
-import { installedPluginVersion, pnpmEntryPath, upgradeTargets } from './plugin-maintenance'
+import { installedPluginVersion, pluginPnpmRunnerPath, pnpmEntryPath, upgradeTargets } from './plugin-maintenance'
 import { applyRepairNavigation, safeModeRepairPrompt, sidebarRepairPrompt } from './repair-session'
 import { runSafeModeManager } from './safe-mode-manager'
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME, assertDesktopSender } from './window/ipc'
@@ -1306,6 +1306,8 @@ async function main(): Promise<void> {
         profile: DESKTOP_PROFILE,
         nodeExecutablePath: electronNodeExecutable(process.execPath),
         pnpmEntryPath: pnpm,
+        pnpmRunnerPath: pluginPnpmRunnerPath(app.getAppPath()),
+        hideConsoleBootstrapPath: packagedPagePath('windows-hide-console-import.mjs'),
         note: line => { console.info(line) }
       })
       if (!result.ok) failed.push(target.name)
