@@ -37,6 +37,6 @@ export declare function OfficePptStandardInputAccessory(props: PropsRuntime<'con
 export declare function OfficePptHeroActions(props: PropsRuntime<'conversation.hero.actions'> & InjectFace<OfficePptHeroInjected> & PropsLocale<'dsh-ppt'>): import("react").JSX.Element;
 /** Standard Composer chooser rendered in normal flow below the resident input card. */
 export declare function OfficePptStandardComposerDock(props: PropsRuntime<'conversation.composer.dock'> & InjectFace<OfficePptHeroInjected> & PropsLocale<'dsh-ppt'>): import("react").JSX.Element | null;
-/** PPT mode control beside the blank-session agent preset. */
-export declare function OfficePptStandardModeAction(props: PropsRuntime<'conversation.hero.modeActions'> & InjectFace<OfficePptHeroInjected> & PropsLocale<'dsh-ppt'>): import("react").JSX.Element | null;
+/** PPT mode control in the native session-scoped hero options. */
+export declare function OfficePptStandardModeAction(props: PropsRuntime<'conversation.hero.options'> & InjectFace<OfficePptHeroInjected> & PropsLocale<'dsh-ppt'>): import("react").JSX.Element | null;
 export {};

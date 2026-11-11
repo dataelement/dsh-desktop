@@ -45,7 +45,7 @@ async function probe(appRoot, resources) {
     }
     const client = await require('node:fs/promises').readFile(host.resolve('dsh-desktop-office/client'), 'utf8')
     assert(client.includes('window.__ModuleLoader__.load'))
-    assert(client.includes('conversation.hero.modeActions'))
+    assert(client.includes('conversation.hero.options'))
     for (const name of ['office', 'office-docx', 'office-pptx', 'office-xlsx', 'office-render', 'office-recalculate', 'office-export-pdf']) {
       assert(skills.some(skill => skill.name === name), `Missing packaged Office skill ${name}`)
       const skill = await ctx.skills.get(name)
