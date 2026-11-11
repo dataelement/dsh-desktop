@@ -1,4 +1,5 @@
 import type { PluginStartupFailure } from './plugin-startup-failure'
+import type { DesktopLocale } from './desktop-locale'
 
 export type RuntimePhase =
   | 'idle'
@@ -40,7 +41,7 @@ export interface UpdateStatus {
   source?: 'startup' | 'runtime' | 'manual'
   /** Changes only when the user explicitly requests another presentation. */
   presentationId?: number
-  locale?: 'en' | 'zh'
+  locale?: DesktopLocale
   /** Plain text only; render without interpreting HTML from update metadata. */
   releaseNotes?: string
   /** Set while an explicitly chosen older version is being installed. */

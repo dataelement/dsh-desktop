@@ -61,6 +61,22 @@ it('opens the native popup under the pressed button and labels it in the page la
   menu.dispose()
 })
 
+it('updates Windows caption labels across all eight UI languages', async () => {
+  document.body.innerHTML = '<div data-shell-overlay></div>'
+  const menu = mountWindowsMenuBar({ document, ipcRenderer: { invoke: vi.fn(async () => undefined) } })
+  for (const [locale, application, edit] of [
+    ['en', 'Application', 'Edit'], ['zh', '应用', '编辑'], ['ja', 'アプリケーション', '編集'],
+    ['es', 'Aplicación', 'Editar'], ['fr', 'Application', 'Édition'], ['de', 'Anwendung', 'Bearbeiten'],
+    ['ru', 'Приложение', 'Правка'], ['pt', 'Aplicativo', 'Editar']
+  ]) {
+    document.documentElement.lang = locale ?? ''
+    await flush()
+    expect(button('application')?.textContent).toBe(application)
+    expect(button('edit')?.textContent).toBe(edit)
+  }
+  menu.dispose()
+})
+
 it('mounts only once per document', () => {
   document.body.append(document.createElement('div'))
   document.body.lastElementChild?.setAttribute('data-shell-overlay', '')

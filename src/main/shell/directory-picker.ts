@@ -1,6 +1,7 @@
 import type { HarnessLocale } from '../application-locale'
+import { nativeLocaleMessages } from './native-locale-messages'
 
-/** Heading of the workspace folder panel. The panel controls come from the app itself. */
+/** Heading of the native workspace panel; macOS controls use the startup AppleLanguages domain. */
 export function workspaceDirectoryPrompt(locale: HarnessLocale): string {
-  return locale === 'zh' ? '选择工作区目录' : 'Select Workspace Directory'
+  return nativeLocaleMessages[locale].directory
 }

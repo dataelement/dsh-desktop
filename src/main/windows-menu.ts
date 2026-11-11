@@ -1,3 +1,4 @@
+import { desktopMenuMessages } from './shell/menu-messages'
 import type { MenuItemConstructorOptions } from 'electron'
 import { formatZoomPercentage, type DesktopMenuCommand } from '../shared/desktop-menu'
 
@@ -40,75 +41,72 @@ export function parseWindowsMenuRequest(name: unknown, x: unknown, y: unknown): 
  */
 export function windowsMenuTemplate(
   name: WindowsMenuName,
-  locale: 'zh' | 'en',
+  locale: string,
   zoomFactor: number,
   actions: WindowsMenuActions
 ): MenuItemConstructorOptions[] {
-  const zh = locale === 'zh'
+  const text = desktopMenuMessages(locale)
   const command = (
     id: DesktopMenuCommand,
-    zhLabel: string,
-    enLabel: string,
+    label: string,
     accelerator?: string
   ): MenuItemConstructorOptions => ({
-    label: zh ? zhLabel : enLabel,
+    label,
     ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
     click: () => actions.run(id)
   })
   const editing = (
-    zhLabel: string,
-    enLabel: string,
+    label: string,
     key: EditingKey,
     accelerator?: string
   ): MenuItemConstructorOptions => ({
-    label: zh ? zhLabel : enLabel,
+    label,
     ...(accelerator === undefined ? {} : { accelerator, registerAccelerator: false }),
     click: () => actions.sendEditingKey(key)
   })
 
   if (name === 'edit') {
     return [
-      editing('撤销', 'Undo', { keyCode: 'Z', modifiers: ['control'] }, 'Ctrl+Z'),
-      editing('重做', 'Redo', { keyCode: 'Y', modifiers: ['control'] }, 'Ctrl+Y'),
+      editing(text.undo, { keyCode: 'Z', modifiers: ['control'] }, 'Ctrl+Z'),
+      editing(text.redo, { keyCode: 'Y', modifiers: ['control'] }, 'Ctrl+Y'),
       { type: 'separator' },
-      editing('剪切', 'Cut', { keyCode: 'X', modifiers: ['control'] }, 'Ctrl+X'),
-      editing('复制', 'Copy', { keyCode: 'C', modifiers: ['control'] }, 'Ctrl+C'),
-      editing('粘贴', 'Paste', { keyCode: 'V', modifiers: ['control'] }, 'Ctrl+V'),
-      editing('删除', 'Delete', { keyCode: 'Delete', modifiers: [] }),
+      editing(text.cut, { keyCode: 'X', modifiers: ['control'] }, 'Ctrl+X'),
+      editing(text.copyAction, { keyCode: 'C', modifiers: ['control'] }, 'Ctrl+C'),
+      editing(text.paste, { keyCode: 'V', modifiers: ['control'] }, 'Ctrl+V'),
+      editing(text.delete, { keyCode: 'Delete', modifiers: [] }),
       { type: 'separator' },
-      editing('全选', 'Select All', { keyCode: 'A', modifiers: ['control'] }, 'Ctrl+A')
+      editing(text.selectAll, { keyCode: 'A', modifiers: ['control'] }, 'Ctrl+A')
     ]
   }
 
   return [
-    command('connect-phone', '连接手机…', 'Connect Phone…', 'Ctrl+Shift+M'),
-    command('restart-harness', '重启', 'Restart', 'Ctrl+Shift+R'),
-    command('safe-mode', '以安全模式重启…', 'Restart as Safe Mode…'),
-    command('show-harness-log', '显示 Harness 日志', 'Show Harness Log'),
+    command('connect-phone', text.phone, 'Ctrl+Shift+M'),
+    command('restart-harness', text.restart, 'Ctrl+Shift+R'),
+    command('safe-mode', text.safeMode),
+    command('show-harness-log', text.log),
     { type: 'separator' },
     {
-      label: zh ? '视图' : 'View',
+      label: text.view,
       submenu: [
-        command('reload', '重新加载', 'Reload', 'Ctrl+R'),
-        command('toggle-devtools', '开发者工具', 'Developer Tools', 'Ctrl+Shift+I'),
+        command('reload', text.reload, 'Ctrl+R'),
+        command('toggle-devtools', text.devtools, 'Ctrl+Shift+I'),
         { type: 'separator' },
-        command('zoom-in', '放大', 'Zoom In', 'Ctrl+='),
-        command('zoom-out', '缩小', 'Zoom Out', 'Ctrl+-'),
+        command('zoom-in', text.zoomIn, 'Ctrl+='),
+        command('zoom-out', text.zoomOut, 'Ctrl+-'),
         command(
           'zoom-reset',
-          `实际大小（当前 ${formatZoomPercentage(zoomFactor)}）`,
-          `Actual Size (now ${formatZoomPercentage(zoomFactor)})`,
+          text.zoomCurrent.replace('{zoom}', formatZoomPercentage(zoomFactor)),
           'Ctrl+0'
         ),
         { type: 'separator' },
-        command('toggle-fullscreen', '切换全屏', 'Toggle Full Screen', 'F11')
+        command('toggle-fullscreen', text.fullscreen, 'F11')
       ]
     },
     { type: 'separator' },
-    command('check-for-updates', '检查更新…', 'Check for Updates…', 'Ctrl+U'),
-    command('about', '关于 DSH Desktop', 'About DSH Desktop'),
-    command('explore-enterprise', '了解企业版', 'Explore Enterprise'),
+    command('check-for-updates', text.update, 'Ctrl+U'),
+    command('about', text.about),
+    command('explore-enterprise', text.enterprise),
     { type: 'separator' },
-    command('quit', '退出', 'Exit')
+    command('quit', text.exit)
   ]
 }

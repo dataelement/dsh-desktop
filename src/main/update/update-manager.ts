@@ -1,3 +1,4 @@
+import type { DesktopLocale } from '../../shared/desktop-locale'
 import { encodePopupNotesMetadata } from '../../shared/update-release-notes'
 import { join } from 'node:path'
 import { ApplicationRollback, type ApplicationRollbackStatus } from './application-rollback'
@@ -55,7 +56,7 @@ let installing = false
 let downloading = false
 let started = false
 let handlersRegistered = false
-let updateLocale: (() => 'en' | 'zh') | undefined
+let updateLocale: (() => DesktopLocale) | undefined
 let skippedVersion: string | undefined
 let skipLoaded = false
 let manualCheck = false
@@ -131,7 +132,7 @@ export function getUpdateStatus(): UpdateStatus {
   return { ...status, locale: updateLocale?.() }
 }
 
-export function registerUpdateHandlers(options: { locale?: () => 'en' | 'zh' } = {}): void {
+export function registerUpdateHandlers(options: { locale?: () => DesktopLocale } = {}): void {
   updateLocale = options.locale ?? updateLocale
   if (handlersRegistered) return
   handlersRegistered = true

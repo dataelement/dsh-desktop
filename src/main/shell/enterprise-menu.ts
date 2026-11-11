@@ -1,3 +1,5 @@
+import { desktopMenuMessages } from './menu-messages'
+
 export const ENTERPRISE_URL = 'https://dshdesktop.com/zh/enterprise/'
 
 export interface DesktopMenuItem {
@@ -12,69 +14,34 @@ export interface DesktopMenuItem {
 }
 
 export function enterpriseMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '了解企业版' : 'Explore Enterprise'
+  return desktopMenuMessages(locale).enterprise
 }
 
 export function updateMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '检查更新…' : 'Check for Updates…'
+  return desktopMenuMessages(locale).update
 }
 
 export function aboutMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '关于 DSH Desktop' : 'About DSH Desktop'
+  return desktopMenuMessages(locale).about
 }
 
 export function safeModeMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '以安全模式重启…' : 'Restart as Safe Mode…'
+  return desktopMenuMessages(locale).safeMode
 }
 
 export function restartMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '重启' : 'Restart'
+  return desktopMenuMessages(locale).restart
 }
 
 export function shortcutFileMenuLabels(locale: string): { fileMenu: string, closePage: string } {
-  return locale.toLowerCase().startsWith('zh')
-    ? { fileMenu: '文件', closePage: '关闭页面或窗口' }
-    : { fileMenu: 'File', closePage: 'Close Page or Window' }
+  const { fileMenu, closePage } = desktopMenuMessages(locale)
+  return { fileMenu, closePage }
 }
 
-/** Edit and Window titles. Role actions stay; their visible text follows the Desktop language. */
-export function standardMenuLabels(locale: string): {
-  edit: string
-  undo: string
-  redo: string
-  cut: string
-  copy: string
-  paste: string
-  selectAll: string
-  window: string
-  minimize: string
-  close: string
-} {
-  return locale.toLowerCase().startsWith('zh')
-    ? {
-      edit: '编辑',
-      undo: '撤销',
-      redo: '重做',
-      cut: '剪切',
-      copy: '拷贝',
-      paste: '粘贴',
-      selectAll: '全选',
-      window: '窗口',
-      minimize: '最小化',
-      close: '关闭'
-    }
-    : {
-      edit: 'Edit',
-      undo: 'Undo',
-      redo: 'Redo',
-      cut: 'Cut',
-      copy: 'Copy',
-      paste: 'Paste',
-      selectAll: 'Select All',
-      window: 'Window',
-      minimize: 'Minimize',
-      close: 'Close'
-    }
+/** Role actions remain native; their labels follow the Desktop language. */
+export function standardMenuLabels(locale: string) {
+  const { edit, undo, redo, cut, copy, paste, selectAll, window, minimize, close } = desktopMenuMessages(locale)
+  return { edit, undo, redo, cut, copy, paste, selectAll, window, minimize, close }
 }
 
 /** Keep About first. The file menu follows the application menu when shortcuts are installed. */
@@ -128,7 +95,7 @@ export function buildDarwinDesktopMenu(options: {
   unhideAll: () => void
   quit: () => void
 }): DesktopMenuItem[] {
-  const chinese = options.locale.toLowerCase().startsWith('zh')
+  const text = desktopMenuMessages(options.locale)
   const standard = standardMenuLabels(options.locale)
   return [
     {
@@ -145,15 +112,15 @@ export function buildDarwinDesktopMenu(options: {
           : [{ label: safeModeMenuLabel(options.locale), click: options.restartSafeMode }]),
         { type: 'separator' },
         {
-          label: chinese ? `隐藏 ${options.appName}` : `Hide ${options.appName}`,
+          label: text.hide.replace('{app}', options.appName),
           accelerator: 'Command+H',
           click: options.hide
         },
-        { label: chinese ? '隐藏其他' : 'Hide Others', accelerator: 'Command+Alt+H', click: options.hideOthers },
-        { label: chinese ? '全部显示' : 'Show All', click: options.unhideAll },
+        { label: text.hideOthers, accelerator: 'Command+Alt+H', click: options.hideOthers },
+        { label: text.showAll, click: options.unhideAll },
         { type: 'separator' },
         {
-          label: chinese ? `退出 ${options.appName}` : `Quit ${options.appName}`,
+          label: text.quitApp.replace('{app}', options.appName),
           accelerator: 'Command+Q',
           click: options.quit
         }
@@ -195,15 +162,14 @@ export function buildWindowsApplicationMenu(options: {
   checkForUpdates: () => void
   quit: () => void
 }): DesktopMenuItem[] {
-  const chinese = options.locale.toLowerCase().startsWith('zh')
+  const text = desktopMenuMessages(options.locale)
   const standard = standardMenuLabels(options.locale)
-  const viewLabel = (zh: string, en: string): string => chinese ? zh : en
   return [
     {
-      label: chinese ? '应用' : 'Application',
+      label: text.application,
       submenu: [
         {
-          label: chinese ? '连接手机…' : 'Connect Phone…',
+          label: text.phone,
           accelerator: 'CmdOrCtrl+Shift+M',
           click: options.connectPhone
         },
@@ -216,13 +182,13 @@ export function buildWindowsApplicationMenu(options: {
           ? []
           : [{ label: safeModeMenuLabel(options.locale), click: options.restartSafeMode }]),
         {
-          label: chinese ? '显示 Harness 日志' : 'Show Harness Log',
+          label: text.log,
           click: options.showHarnessLog
         },
         { type: 'separator' },
         { label: updateMenuLabel(options.locale), accelerator: 'CmdOrCtrl+U', click: options.checkForUpdates },
         { type: 'separator' },
-        { role: 'quit', label: chinese ? '退出' : 'Exit', click: options.quit }
+        { role: 'quit', label: text.exit, click: options.quit }
       ]
     },
     {
@@ -238,16 +204,16 @@ export function buildWindowsApplicationMenu(options: {
       ]
     },
     {
-      label: viewLabel('视图', 'View'),
+      label: text.view,
       submenu: [
-        { role: 'reload', label: viewLabel('重新加载', 'Reload') },
-        { role: 'toggleDevTools', label: viewLabel('开发者工具', 'Developer Tools') },
+        { role: 'reload', label: text.reload },
+        { role: 'toggleDevTools', label: text.devtools },
         { type: 'separator' },
-        { role: 'resetZoom', label: viewLabel('实际大小', 'Actual Size') },
-        { role: 'zoomIn', label: viewLabel('放大', 'Zoom In') },
-        { role: 'zoomOut', label: viewLabel('缩小', 'Zoom Out') },
+        { role: 'resetZoom', label: text.actualSize },
+        { role: 'zoomIn', label: text.zoomIn },
+        { role: 'zoomOut', label: text.zoomOut },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: viewLabel('切换全屏', 'Toggle Full Screen') }
+        { role: 'togglefullscreen', label: text.fullscreen }
       ]
     },
     {

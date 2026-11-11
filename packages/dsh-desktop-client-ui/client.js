@@ -37,11 +37,9 @@ window.__ModuleLoader__.load({
       return React.createElement(FishLogo, props)
     }
 
-    function OpenUnpreviewableFile({ absolutePath, openWorkspacePath }) {
+    function OpenUnpreviewableFile({ absolutePath, openWorkspacePath, t }) {
       const [error, setError] = React.useState('')
-      const label = document.documentElement.lang?.toLowerCase().startsWith('zh')
-        ? '用本地应用打开'
-        : 'Open with local app'
+      const label = t('openLocal')
       return React.createElement(
         React.Fragment,
         null,
@@ -59,13 +57,10 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState, deleteSession }) {
+    function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState, deleteSession, t }) {
       const [, setMenuOpen] = useMenuOpenState()
-      const chinese = document.documentElement.lang?.toLowerCase().startsWith('zh')
-      const label = chinese ? '永久删除会话' : 'Delete session permanently'
-      const warning = chinese
-        ? `确定删除“${displayTitle || sessionId}”？工作区文件会保留。此操作无法撤销。`
-        : `Delete “${displayTitle || sessionId}”? Workspace files are kept. This can’t be undone.`
+      const label = t('deleteSession')
+      const warning = t('deleteWarning', { title: displayTitle || sessionId })
       return React.createElement(MenuItemButton, {
         danger: true,
         onSelect: () => {
@@ -78,11 +73,10 @@ window.__ModuleLoader__.load({
       }, label)
     }
 
-    function OpenSessionFolderMenuItem({ sessionId, useMenuOpenState, openInFinder }) {
+    function OpenSessionFolderMenuItem({ sessionId, useMenuOpenState, openInFinder, t }) {
       const [, setMenuOpen] = useMenuOpenState()
       if (typeof window.dshDesktop?.openInFinder !== 'function') return null
-      const chinese = document.documentElement.lang?.toLowerCase().startsWith('zh')
-      const label = chinese ? '在文件管理器中打开' : 'Open in file manager'
+      const label = t('openFolder')
       return React.createElement(MenuItemButton, {
         onSelect: () => {
           setMenuOpen(false)
@@ -93,15 +87,98 @@ window.__ModuleLoader__.load({
       }, label)
     }
 
-    function UnreadSessionMenuItem({ sessionId, unread, onUnreadChange, useMenuOpenState }) {
+    function UnreadSessionMenuItem({ sessionId, unread, onUnreadChange, useMenuOpenState, t }) {
       const [, setMenuOpen] = useMenuOpenState()
-      const chinese = document.documentElement.lang?.toLowerCase().startsWith('zh')
       return React.createElement(MenuItemButton, {
         onSelect: () => {
           setMenuOpen(false)
           onUnreadChange(sessionId, !unread)
         }
-      }, unread ? (chinese ? '标为已读' : 'Mark as read') : (chinese ? '标为未读' : 'Mark as unread'))
+      }, t(unread ? 'markRead' : 'markUnread'))
+    }
+
+    const ACTIONS_NS = 'dsh-desktop-actions'
+    const actionMessages = {
+      zh: {
+        openLocal: '用本地应用打开',
+        deleteSession: '永久删除会话',
+        deleteWarning: '确定删除“{title}”？工作区文件会保留。此操作无法撤销。',
+        openFolder: '在文件管理器中打开',
+        markRead: '标为已读',
+        markUnread: '标为未读',
+        workspaceUnavailable: '工作区导航不可用',
+        directoryUnavailable: '会话工作区目录不可用'
+      },
+      en: {
+        openLocal: 'Open with local app',
+        deleteSession: 'Delete session permanently',
+        deleteWarning: 'Delete “{title}”? Workspace files are kept. This can’t be undone.',
+        openFolder: 'Open in file manager',
+        markRead: 'Mark as read',
+        markUnread: 'Mark as unread',
+        workspaceUnavailable: 'Workspace navigation is unavailable',
+        directoryUnavailable: 'Session workspace directory is unavailable'
+      },
+      ja: {
+        openLocal: 'ローカルアプリで開く',
+        deleteSession: 'セッションを完全に削除',
+        deleteWarning: '「{title}」を削除しますか？ワークスペースのファイルは保持されます。この操作は取り消せません。',
+        openFolder: 'ファイルマネージャーで開く',
+        markRead: '既読にする',
+        markUnread: '未読にする',
+        workspaceUnavailable: 'ワークスペースのナビゲーションを利用できません',
+        directoryUnavailable: 'セッションのワークスペースディレクトリを利用できません'
+      },
+      es: {
+        openLocal: 'Abrir con una aplicación local',
+        deleteSession: 'Eliminar sesión permanentemente',
+        deleteWarning: '¿Eliminar «{title}»? Se conservan los archivos del espacio de trabajo. No se puede deshacer.',
+        openFolder: 'Abrir en el administrador de archivos',
+        markRead: 'Marcar como leído',
+        markUnread: 'Marcar como no leído',
+        workspaceUnavailable: 'La navegación del espacio de trabajo no está disponible',
+        directoryUnavailable: 'El directorio de la sesión no está disponible'
+      },
+      fr: {
+        openLocal: 'Ouvrir avec une application locale',
+        deleteSession: 'Supprimer définitivement la session',
+        deleteWarning: 'Supprimer « {title} » ? Les fichiers de l’espace de travail sont conservés. Cette action est irréversible.',
+        openFolder: 'Ouvrir dans le gestionnaire de fichiers',
+        markRead: 'Marquer comme lu',
+        markUnread: 'Marquer comme non lu',
+        workspaceUnavailable: 'La navigation de l’espace de travail est indisponible',
+        directoryUnavailable: 'Le dossier de la session est indisponible'
+      },
+      de: {
+        openLocal: 'Mit lokaler Anwendung öffnen',
+        deleteSession: 'Sitzung endgültig löschen',
+        deleteWarning: '„{title}“ löschen? Die Arbeitsbereichsdateien bleiben erhalten. Dies kann nicht rückgängig gemacht werden.',
+        openFolder: 'Im Dateimanager öffnen',
+        markRead: 'Als gelesen markieren',
+        markUnread: 'Als ungelesen markieren',
+        workspaceUnavailable: 'Arbeitsbereichsnavigation ist nicht verfügbar',
+        directoryUnavailable: 'Das Arbeitsbereichsverzeichnis der Sitzung ist nicht verfügbar'
+      },
+      ru: {
+        openLocal: 'Открыть в локальном приложении',
+        deleteSession: 'Удалить сеанс навсегда',
+        deleteWarning: 'Удалить «{title}»? Файлы рабочей области сохранятся. Это действие нельзя отменить.',
+        openFolder: 'Открыть в файловом менеджере',
+        markRead: 'Отметить как прочитанное',
+        markUnread: 'Отметить как непрочитанное',
+        workspaceUnavailable: 'Навигация по рабочей области недоступна',
+        directoryUnavailable: 'Каталог рабочей области сеанса недоступен'
+      },
+      pt: {
+        openLocal: 'Abrir com aplicativo local',
+        deleteSession: 'Excluir sessão permanentemente',
+        deleteWarning: 'Excluir “{title}”? Os arquivos do espaço de trabalho serão mantidos. Não é possível desfazer.',
+        openFolder: 'Abrir no gerenciador de arquivos',
+        markRead: 'Marcar como lida',
+        markUnread: 'Marcar como não lida',
+        workspaceUnavailable: 'A navegação do espaço de trabalho está indisponível',
+        directoryUnavailable: 'O diretório da sessão está indisponível'
+      }
     }
 
     const ENTERPRISE_NS = 'dsh-desktop-enterprise-entry'
@@ -112,7 +189,68 @@ window.__ModuleLoader__.load({
       }, t('learnMore'), React.createElement('span', { 'aria-hidden': true }, ' ↗'))
     }
 
-    const REPAIR_NS = 'desktop.repair'
+    const REPAIR_NS = 'dsh-desktop-repair'
+    function DesktopUtilityActions({ t, wide }) {
+      const [busy, setBusy] = React.useState(false)
+      // Internal messages are translated at render time; external diagnostics
+      // remain verbatim instead of becoming a stale translated state string.
+      const [error, setError] = React.useState(null)
+      const [connected, setConnected] = React.useState(false)
+      const mounted = React.useRef(true)
+      React.useEffect(() => {
+        mounted.current = true
+        const bridge = window.dshDesktop
+        const unsubscribe = bridge?.onMobileStatus?.(status => {
+          if (mounted.current) setConnected(status.connected === true)
+        })
+        void bridge?.getMobileStatus?.().then(status => {
+          if (mounted.current) setConnected(status.connected === true)
+        }).catch(() => { if (mounted.current) setError({ key: 'phoneFailed' }) })
+        return () => { mounted.current = false; unsubscribe?.() }
+      }, [t])
+      const bridge = window.dshDesktop
+      if (!bridge) return null
+      const open = async (operation) => {
+        if (busy) return
+        setBusy(true); setError(null)
+        try {
+          const result = await operation()
+          if (mounted.current && result?.ok === false) {
+            setError(typeof result.error === 'string' && result.error !== ''
+              ? { diagnostic: result.error }
+              : { key: 'failed' })
+          }
+        } catch (reason) {
+          if (mounted.current) setError({ diagnostic: reason instanceof Error ? reason.message : String(reason) })
+        } finally { if (mounted.current) setBusy(false) }
+      }
+      const icon = (kind) => React.createElement('svg', {
+        width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true
+      }, kind === 'phone'
+        ? React.createElement(React.Fragment, null,
+          React.createElement('rect', { x: 7, y: 2.75, width: 10, height: 18.5, rx: 2.25 }),
+          React.createElement('path', { d: 'M10.2 5.5h3.6M10.5 18.35h3' }))
+        : React.createElement('path', { d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-7.91 7.91a2.12 2.12 0 0 1-3-3l7.91-7.91a6 6 0 0 1 7.94-7.94z' }))
+      return React.createElement('div', { 'data-dsh-desktop-utilities': true, 'data-wide': wide },
+        typeof bridge.openRepairAgent === 'function' && React.createElement(Tooltip, {
+          label: t(busy ? 'opening' : 'description'), side: 'top', align: 'end',
+          portal: true, maxWidth: 280, delayMs: 0, focusDelayMs: 0
+        }, React.createElement('button', {
+          type: 'button', disabled: busy,
+          'aria-label': t(busy ? 'opening' : 'open'), 'aria-description': t('description'), 'data-dsh-repair-entry': true,
+          onClick: () => { void open(() => bridge.openRepairAgent()) }
+        }, icon('repair'))),
+        typeof bridge.openMobilePairing === 'function' && (wide || connected) && React.createElement('button', {
+          type: 'button', disabled: busy, title: t(connected ? 'phoneManage' : 'phone'),
+          'aria-label': t(connected ? 'phoneManage' : 'phone'), 'data-dsh-mobile-entry': true,
+          onClick: () => { void open(() => bridge.openMobilePairing()) }
+        }, icon('phone'), connected && React.createElement('span', { 'data-connected': true, 'aria-hidden': true })),
+        error && React.createElement('span', { role: 'alert', 'data-dsh-utility-error': true }, error.key ? t(error.key) : error.diagnostic))
+    }
+
+    // The session-scope slot supplies Harness's public editor actions. Capture the
+    // revision before IPC so an async suggestion can never overwrite a user's edit.
     function RepairDraft({ session, input, inputActions }) {
       const currentInput = React.useRef(input)
       currentInput.current = input
@@ -134,51 +272,39 @@ window.__ModuleLoader__.load({
       }, [session.sessionId, inputActions])
       return null
     }
-    function DesktopUtilities({ wide, t }) {
-      const [busy, setBusy] = React.useState(false)
-      const [error, setError] = React.useState(false)
-      const alive = React.useRef(true)
-      React.useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
-      const bridge = window.dshDesktop
-      const open = async operation => {
-        if (busy) return
-        setBusy(true); setError(false)
-        try {
-          const result = await operation()
-          if (result?.ok === false) throw new Error('Desktop operation failed')
-        } catch { if (alive.current) setError(true) }
-        finally { if (alive.current) setBusy(false) }
-      }
-      const icon = phone => React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
-        phone ? React.createElement('rect', { x: 7, y: 3, width: 10, height: 18, rx: 2 })
-          : React.createElement('path', { d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-7.91 7.91a2.12 2.12 0 0 1-3-3l7.91-7.91a6 6 0 0 1 7.94-7.94z' }))
-      return React.createElement('div', { 'data-dsh-desktop-utilities': true, 'data-wide': wide },
-        typeof bridge?.openRepairAgent === 'function' && React.createElement(Tooltip, { label: t('description'), side: 'top', align: 'end', portal: true, maxWidth: 280, delayMs: 0, focusDelayMs: 0 },
-          React.createElement('button', { type: 'button', disabled: busy, 'aria-label': t('open'), 'aria-description': t('description'), 'data-dsh-repair-entry': true, onClick: () => { void open(() => bridge.openRepairAgent()) } }, icon(false))),
-        typeof bridge?.openMobilePairing === 'function' && wide && React.createElement('button', { type: 'button', disabled: busy, 'aria-label': t('phone'), 'data-dsh-mobile-entry': true, onClick: () => { void open(() => bridge.openMobilePairing()) } }, icon(true)),
-        error && React.createElement('span', { role: 'alert' }, t('failed')))
-    }
     function applyRepair(ctx) {
       ctx.effect(() => ctx.locale.register(REPAIR_NS, {
-        zh: { open: '进入维修模式', description: '维修 Agent：协助排查和修复问题。', phone: '连接手机', failed: '无法打开，请重试。' },
-        en: { open: 'Enter repair mode', description: 'Repair Agent helps diagnose and resolve problems.', phone: 'Connect phone', failed: 'Could not open. Try again.' }
+        zh: { open: '进入维修模式', description: '维修 Agent：协助排查和修复问题。点击进入修复模式，描述问题后发送。', opening: '正在打开维修…', failed: '无法打开维修会话，请重试', phone: '连接手机', phoneManage: '管理手机连接', phoneFailed: '无法读取手机连接状态' },
+        en: { open: 'Enter repair mode', description: 'Repair Agent helps diagnose and resolve problems. Click to enter repair mode, describe the issue, and send when ready.', opening: 'Opening repair…', failed: 'Could not open repair. Please retry.', phone: 'Connect phone', phoneManage: 'Manage phone connection', phoneFailed: 'Could not read phone connection status.' },
+        ja: {"open": "修復モードに入る", "description": "修復 Agent が問題の診断と解決を支援します。修復モードに入り、問題を説明して送信してください。", "opening": "修復を開いています…", "failed": "修復を開けません。もう一度お試しください。", "phone": "スマートフォンを接続", "phoneManage": "スマートフォン接続を管理", "phoneFailed": "接続状態を取得できません。"},
+        es: {"open": "Entrar en modo de reparación", "description": "El agente de reparación ayuda a diagnosticar y resolver problemas. Entre, describa el problema y envíelo cuando esté listo.", "opening": "Abriendo reparación…", "failed": "No se pudo abrir la reparación. Inténtelo de nuevo.", "phone": "Conectar teléfono", "phoneManage": "Administrar conexión del teléfono", "phoneFailed": "No se pudo consultar el estado de conexión."},
+        fr: {"open": "Passer en mode réparation", "description": "L’agent de réparation aide à diagnostiquer et résoudre les problèmes. Entrez, décrivez le problème et envoyez-le.", "opening": "Ouverture de la réparation…", "failed": "Impossible d’ouvrir la réparation. Réessayez.", "phone": "Connecter un téléphone", "phoneManage": "Gérer la connexion du téléphone", "phoneFailed": "Impossible de lire l’état de connexion."},
+        de: {"open": "Reparaturmodus öffnen", "description": "Der Reparatur-Agent hilft bei Diagnose und Fehlerbehebung. Öffnen Sie den Modus, beschreiben Sie das Problem und senden Sie es ab.", "opening": "Reparatur wird geöffnet…", "failed": "Reparatur konnte nicht geöffnet werden. Bitte erneut versuchen.", "phone": "Telefon verbinden", "phoneManage": "Telefonverbindung verwalten", "phoneFailed": "Verbindungsstatus konnte nicht gelesen werden."},
+        ru: {"open": "Открыть режим восстановления", "description": "Агент восстановления помогает выявлять и устранять проблемы. Откройте режим, опишите проблему и отправьте сообщение.", "opening": "Открытие восстановления…", "failed": "Не удалось открыть восстановление. Повторите попытку.", "phone": "Подключить телефон", "phoneManage": "Управлять подключением телефона", "phoneFailed": "Не удалось получить состояние подключения."},
+        pt: {"open": "Entrar no modo de reparo", "description": "O agente de reparo ajuda a diagnosticar e resolver problemas. Entre no modo, descreva o problema e envie quando estiver pronto.", "opening": "Abrindo reparo…", "failed": "Não foi possível abrir o reparo. Tente novamente.", "phone": "Conectar telefone", "phoneManage": "Gerenciar conexão do telefone", "phoneFailed": "Não foi possível consultar o estado da conexão."}
       }))
       const bridge = window.dshDesktop
       if (typeof bridge?.getRepairDraft === 'function') ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({ name: 'conversation.input.dock', id: 'desktop-repair-draft' }, RepairDraft))
-      if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilities))
+      if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilityActions))
     }
 
     const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace']
     function apply(ctx) {
       applyRepair(ctx)
+      ctx.effect(() => ctx.locale.register(ACTIONS_NS, actionMessages))
+      const actionText = ctx.locale.bind(ACTIONS_NS)
       ctx.effect(() => ctx.locale.register(ENTERPRISE_NS, {
-        zh: { learnMore: '了解企业版' }, en: { learnMore: 'Explore Enterprise' }
+        zh: { learnMore: '了解企业版' }, en: { learnMore: 'Explore Enterprise' },
+        ja: { learnMore: 'エンタープライズ版について' }, es: { learnMore: 'Conocer la edición empresarial' },
+        fr: { learnMore: 'Découvrir la version entreprise' }, de: { learnMore: 'Enterprise-Version entdecken' },
+        ru: { learnMore: 'Корпоративная версия' }, pt: { learnMore: 'Conhecer a versão empresarial' }
       }))
       const enterpriseText = ctx.locale.bind(ENTERPRISE_NS)
       ctx.slots.inject('settings.sidebar.footer', () => ctx.slots.register({
         name: 'settings.sidebar.footer', id: 'desktop-enterprise-entry', locale: ENTERPRISE_NS,
         inject: () => ({ t: enterpriseText })
       }, EnterpriseEntry))
+
       ctx.effect(() => {
         const id = 'dsh-desktop-preset-toolbar-style'
         if (document.getElementById(id)) return
@@ -276,8 +402,9 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('sidebar.right.tab.document.unpreviewable', () =>
         ctx.slots.register({
           name: 'sidebar.right.tab.document.unpreviewable',
-          id: 'desktop-open-local',
+          id: 'desktop-open-local', locale: ACTIONS_NS,
           inject: () => ({
+            t: actionText,
             openWorkspacePath: (path) => ctx.remote.session.openWorkspacePath({ path })
           })
         }, OpenUnpreviewableFile)
@@ -285,12 +412,13 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
-          id: 'desktop-delete-session',
+          id: 'desktop-delete-session', locale: ACTIONS_NS,
           order: 900,
           inject: () => ({
+            t: actionText,
             deleteSession: (sessionId) => {
               const workspace = ctx.get('uiWorkspace')
-              if (!workspace) throw new Error('Workspace navigation is unavailable')
+              if (!workspace) throw new Error(actionText('workspaceUnavailable'))
               return workspace.deleteSession(sessionId)
             }
           })
@@ -299,12 +427,13 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
-          id: 'desktop-open-session-folder',
+          id: 'desktop-open-session-folder', locale: ACTIONS_NS,
           order: 800,
           inject: () => ({
+            t: actionText,
             openInFinder: (sessionId) => {
               const cwd = ctx.get('sessions').list.getSnapshot().byId[sessionId]?.cwd
-              if (!cwd) throw new Error('Session workspace directory is unavailable')
+              if (!cwd) throw new Error(actionText('directoryUnavailable'))
               return window.dshDesktop.openInFinder(cwd)
             }
           })
@@ -313,7 +442,8 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
-          id: 'desktop-unread-session',
+          id: 'desktop-unread-session', locale: ACTIONS_NS,
+          inject: () => ({ t: actionText }),
           order: 350
         }, UnreadSessionMenuItem)
       )
