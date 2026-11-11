@@ -255,10 +255,12 @@ describe('uploaded file preview', () => {
     expect(openWorkspacePath).toHaveBeenCalledExactlyOnceWith({ path: '/workspace/report.docx' })
     // Archives use the same callback but reveal the authorized path instead of
     // starting an extractor that can appear to do nothing in the preview pane.
-    const archive = localOpen.component({ ...injected, absolutePath: '/workspace/report.zip', t: (key: string) => key })
-    ;(archive.children[0]?.props.onClick as () => void)()
-    await Promise.resolve()
-    expect(openWorkspacePath).toHaveBeenLastCalledWith({ path: '/workspace/report.zip', action: 'reveal' })
+    for (const absolutePath of ['/workspace/report.zip', 'C:\\workspace\\REPORT.7Z', '/workspace/report.tar.gz']) {
+      const archive = localOpen.component({ ...injected, absolutePath, t: (key: string) => key })
+      ;(archive.children[0]?.props.onClick as () => void)()
+      await Promise.resolve()
+      expect(openWorkspacePath).toHaveBeenLastCalledWith({ path: absolutePath, action: 'reveal' })
+    }
     expect(desktop).toContain('Open with local app')
     expect(desktop).toContain('用本地应用打开')
   })

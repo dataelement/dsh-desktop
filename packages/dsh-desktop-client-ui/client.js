@@ -48,7 +48,11 @@ window.__ModuleLoader__.load({
           'data-textpreview-open-local': true,
           onClick: () => {
             setError('')
-            void openWorkspacePath(absolutePath).catch((reason) => {
+            // Archive utilities may extract and close without a visible window.
+            const request = /\.(zip|7z|rar|tar|gz|tgz|bz2)$/i.test(absolutePath)
+              ? { path: absolutePath, action: 'reveal' }
+              : { path: absolutePath }
+            void openWorkspacePath(request).catch((reason) => {
               setError(reason instanceof Error ? reason.message : String(reason))
             })
           }
@@ -405,7 +409,7 @@ window.__ModuleLoader__.load({
           id: 'desktop-open-local', locale: ACTIONS_NS,
           inject: () => ({
             t: actionText,
-            openWorkspacePath: (path) => ctx.remote.session.openWorkspacePath({ path })
+            openWorkspacePath: (request) => ctx.remote.session.openWorkspacePath(request)
           })
         }, OpenUnpreviewableFile)
       )
