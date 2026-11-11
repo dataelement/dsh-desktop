@@ -16,7 +16,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 index f41b2d4..f004613 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -111,6 +111,20 @@
+@@ -111,6 +111,21 @@
      "@deepseek-ai/dsh-personalized-recommendations": "0.2.2-rc.1",
      "@deepseek-ai/dsh-experimental-forge-bundle": "0.2.2-rc.1"
    },
@@ -32,7 +32,8 @@ index f41b2d4..f004613 100644
 +    "react-dom": "18.3.1",
 +    "dsh-desktop-onboarding": "0.1.0",
 +    "dsh-desktop-workbenches": "0.1.0",
-+    "dsh-desktop-office": "0.1.0"
++    "dsh-desktop-office": "0.1.0",
++    "dsh-desktop-enterprise": "0.1.0"
 +  },
    "devDependencies": {
      "@deepseek-ai/dsh-skill-badge": "0.2.2-rc.1",

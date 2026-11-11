@@ -75,6 +75,7 @@ describe('plugin-recovery', () => {
     )
 
     await expect(listInstalledProfilePlugins(testDir)).resolves.toEqual([
+      'dshmarket',
       'dsh-image-generation',
       'plugin-a',
       '@example/plugin-b'
@@ -324,7 +325,7 @@ describe('plugin-recovery', () => {
     await writeFile(pkgPath, JSON.stringify(manifest))
 
     expect(isThirdPartyPackageName('@deepseek-ai/dsh-client-ui-directory-picker-native')).toBe(false)
-    expect(isThirdPartyPackageName('dshmarket')).toBe(false)
+    expect(isThirdPartyPackageName('dshmarket')).toBe(true)
     expect(isThirdPartyPackageName('@linxin666/dsh-web-ui-all')).toBe(true)
     await expect(
       uninstallPluginFromProfile(testDir, '@deepseek-ai/dsh-client-ui-directory-picker-native')
@@ -785,12 +786,14 @@ describe('plugin-recovery', () => {
     expect(updated.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
-      'dshmarket',
       'dsh-existing-plugin'
     ])
   })
 
   it('leaves clean profile manifests unmodified when pruning missing bundles', async () => {
+    const market = join(testDir, 'profiles', 'web', 'node_modules', 'dshmarket')
+    await mkdir(market, { recursive: true })
+    await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.16.0' }))
     const pkgPath = profilePackageJsonPath(testDir)
     await writeFile(
       pkgPath,
@@ -828,10 +831,10 @@ describe('plugin-recovery', () => {
       })
     )
 
-    expect(await pruneUnresolvableProfileBundles(testDir)).toEqual(['dsh-uninstalled'])
+    expect(await pruneUnresolvableProfileBundles(testDir)).toEqual(['dshmarket', 'dsh-uninstalled'])
     const updated = JSON.parse(await readFile(pkgPath, 'utf8'))
     // Core bundles and host packages are never candidates, installed or not.
-    expect(updated.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'dshmarket'])
+    expect(updated.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base'])
     expect(await pruneUnresolvableProfileBundles(testDir)).toEqual([])
   })
 

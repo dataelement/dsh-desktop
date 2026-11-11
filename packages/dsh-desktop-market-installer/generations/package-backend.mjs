@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readFile } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { mkdir, open, readFile, readlink, realpath } from 'node:fs/promises'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { forgetPlugin, recordPluginSwitch, validatePluginSwitch } from '../plugin-state.mjs'
 import { DEFAULT_NPM_REGISTRY } from '../market-registry.mjs'
 import { installGeneration, verifyGenerationPeers } from './installer.mjs'
 import {
-  SHARED_TREE_ONLY,
   listGenerations,
   readDesired,
   withRegistryLock,
@@ -15,7 +14,8 @@ import {
   REAL_DIRECTORY_IN_PLACE,
   projectGenerations,
   publishGenerationManifest,
-  publishInstalledGeneration
+  publishInstalledGeneration,
+  windowsJunctionTargets
 } from './projection.mjs'
 
 function profileDirectory(dshHome, profile) {
@@ -48,6 +48,49 @@ function replaceDesiredGeneration(desired, generations, pluginName, generationId
   ]
 }
 
+/** Caller holds the registry lock; no Profile or desired state is changed here. */
+export async function assertNoPendingGenerationUpdates(dshHome, profile, requestedName) {
+  const [desired, generations] = await Promise.all([readDesired(dshHome), listGenerations(dshHome)])
+  const byId = new Map(generations.map(generation => [generation.id, generation]))
+  const others = desired.map(id => {
+    const generation = byId.get(id)
+    if (!generation) throw new Error(`Desired generation is missing or unreadable: ${id}`)
+    return generation
+  }).filter(generation => generation.pluginName !== requestedName)
+  if (others.length === 0) return
+  const directory = profileDirectory(dshHome, profile)
+  let manifest
+  try {
+    manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
+  } catch (error) {
+    throw new Error('Cannot check pending generation updates. Restart before changing another package.', { cause: error })
+  }
+  const projection = manifest?.dsh?.desktop?.generationProjection
+  for (const generation of others) {
+    let selected = projection?.version === 1 &&
+      projection.plugins?.[generation.pluginName]?.generationId === generation.id
+    let cause
+    if (selected) {
+      const path = join(directory, 'node_modules', generation.pluginName)
+      try {
+        const linked = await readlink(path)
+        const target = join(await realpath(generation.directory), 'node_modules', generation.pluginName)
+        selected = process.platform === 'win32'
+          ? windowsJunctionTargets(path, linked, target)
+          : resolve(dirname(path), linked) === target || resolve(dirname(path), linked) === resolve(generation.directory, 'node_modules', generation.pluginName)
+      } catch (error) {
+        cause = error
+        // A damaged installed package with no old entry is still manageable.
+        // A real directory or a link to another generation is a pending switch.
+        if (error?.code !== 'ENOENT') selected = false
+      }
+    }
+    if (!selected) {
+      throw new Error(`Pending generation update for ${generation.pluginName}. Restart before changing another package, or replace/remove that pending package first.`, { cause })
+    }
+  }
+}
+
 async function createOperationLog(dshHome, profile) {
   const directory = join(dshHome, 'profiles', profile, '.plugin-manager', 'logs', randomUUID())
   await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -78,9 +121,8 @@ async function createOperationLog(dshHome, profile) {
  * Staging and promotion happen before publication; the returned rollback remains
  * live only until Plugin Manager has validated the bundle and begins enablement.
  *
- * Packages that are not the generation registry's — the market, which lives in
- * the shared tree, and plugins pnpm still owns in the Profile — resolve
- * `undefined`, and Plugin Manager runs its ordinary pnpm path for them.
+ * Removal of plugins pnpm still owns in the Profile resolves `undefined`,
+ * and Plugin Manager runs its ordinary pnpm path for them.
  * Enable switches from every surface land in the shared package switch
  * (plugin-state.mjs), which launch reconciliation never rewrites.
  */
@@ -148,15 +190,14 @@ export function createGenerationPackageBackend(options) {
           sourceDirectory = path
           sourceSpec = request.spec
         }
-        if (expectedPluginName !== undefined && SHARED_TREE_ONLY.has(expectedPluginName)) {
-          await finishLog()
-          return undefined
-        }
 
         const result = await withRegistryLock(dshHome, async () => {
           request.signal?.throwIfAborted()
           const beforeDesired = await readDesired(dshHome)
           const beforeGenerations = await listGenerations(dshHome)
+          if (expectedPluginName !== undefined) {
+            await assertNoPendingGenerationUpdates(dshHome, profile, expectedPluginName)
+          }
           const install = await installGeneration({
             dshHome,
             profile,
@@ -185,6 +226,9 @@ export function createGenerationPackageBackend(options) {
           }
           request.signal?.throwIfAborted()
           const generation = install.generation
+          // Git/tarball identities are only known after staging. Check again using
+          // the actual name before publication, even if the caller supplied one.
+          await assertNoPendingGenerationUpdates(dshHome, profile, generation.pluginName)
           const peers = await verifyGenerationPeers(dshHome, generation, { dshEntryPath })
           if (!peers.ok) {
             return { ok: false, detail: `generation peer validation failed: ${peers.problems.join('; ')}` }
@@ -199,25 +243,24 @@ export function createGenerationPackageBackend(options) {
             generation.id
           )
           await writeDesired(dshHome, nextDesired)
-          let deferredSwitch = false
+          // Existing generations may still be executing (including the caller).
+          // Publish updates only at cold start, without touching an in-use junction.
+          let deferredSwitch = replacedGeneration && options.deferUpdates !== false
           try {
-            await publishInstalledGeneration(dshHome, generation.pluginName, profile, {
+            if (!deferredSwitch) await publishInstalledGeneration(dshHome, generation.pluginName, profile, {
               syncBundles: false
             })
           } catch (error) {
-            if (error?.code !== REAL_DIRECTORY_IN_PLACE) {
+            if (error?.code !== REAL_DIRECTORY_IN_PLACE || options.deferUpdates === false) {
               await writeDesired(dshHome, beforeDesired)
+              if (error?.code === REAL_DIRECTORY_IN_PLACE && error instanceof Error) {
+                error.message += ' Use the standard plugin manager to stage this update for restart.'
+              }
               throw error
             }
-            // A pnpm-owned copy is loaded from that directory; it cannot be
-            // replaced while Harness runs. Launch projection swaps it for the
-            // generation link, so this install completes on restart.
-            try {
-              await publishGenerationManifest(dshHome, profile, { syncBundles: false })
-            } catch (manifestError) {
-              await writeDesired(dshHome, beforeDesired)
-              throw manifestError
-            }
+            // Plugin Manager validates bundleDirectory rather than the Profile
+            // path, which still exposes the old package here. Keep its manifest
+            // consistent with those running bytes until cold-start projection.
             deferredSwitch = true
             void emit(`generation-install: ${generation.pluginName} replaces a Profile-owned copy on restart\n`)
           }
@@ -239,8 +282,15 @@ export function createGenerationPackageBackend(options) {
                 ...previousIds
               ]
               await writeDesired(dshHome, restored)
+              if (!deferredSwitch) {
+                try {
+                  await assertNoPendingGenerationUpdates(dshHome, profile, generation.pluginName)
+                } catch (error) {
+                  throw new Error('Rollback restored desired state but Profile cleanup is incomplete. Restart to finish cleanup without applying another pending update live.', { cause: error })
+                }
+              }
               try {
-                await projectGenerations(dshHome, profile)
+                if (!deferredSwitch) await projectGenerations(dshHome, profile)
               } catch (error) {
                 await writeDesired(dshHome, currentDesired)
                 throw error
@@ -251,7 +301,9 @@ export function createGenerationPackageBackend(options) {
           return {
             ok: true,
             bundle: generation.pluginName,
+            bundleDirectory: join(generation.directory, 'node_modules', generation.pluginName),
             replaced: replacedGeneration || deferredSwitch,
+            restartRequired: deferredSwitch,
             rollback,
             commit: () => { committed = true }
           }
@@ -276,7 +328,9 @@ export function createGenerationPackageBackend(options) {
             logPath: log.path
           },
           bundle: result.bundle,
+          bundleDirectory: result.bundleDirectory,
           replaced: result.replaced,
+          restartRequired: result.restartRequired,
           rollback: result.rollback,
           commit: result.commit
         }
@@ -307,12 +361,12 @@ export function createGenerationPackageBackend(options) {
           request.signal?.throwIfAborted()
           const beforeDesired = await readDesired(dshHome)
           const generations = await listGenerations(dshHome)
+          await assertNoPendingGenerationUpdates(dshHome, profile, request.name)
           const removedIds = new Set(
             generations.filter(item => item.pluginName === request.name).map(item => item.id)
           )
           const nextDesired = beforeDesired.filter(id => !removedIds.has(id))
-          // Not an enabled generation: pnpm owns this package (or the market
-          // does, in the shared tree), so Plugin Manager removes it with pnpm.
+          // Not an enabled generation: let Plugin Manager remove it with pnpm.
           if (nextDesired.length === beforeDesired.length) return false
           await writeDesired(dshHome, nextDesired)
           try {

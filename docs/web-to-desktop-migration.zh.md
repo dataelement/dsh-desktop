@@ -92,7 +92,7 @@ $DSH_HOME/
 | `profiles/web/package.json`、`cordis.patch.yml`、`.npmrc` | |
 | 每个社区插件的 `profiles/web/node_modules/<name>/package.json` | |
 
-社区插件判定与 generation 迁移相同：`package.json` 的 `dependencies` ∪ `dsh.profile.bundles`，排除 `dshmarket`、`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`。本地 / `file:` / `git:` 规格额外复制该插件目录，供 `sourceDirectory` 使用。
+社区插件判定与 generation 迁移相同：`package.json` 的 `dependencies` ∪ `dsh.profile.bundles`，仅排除 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`。`dshmarket` 是推荐的普通可选插件，参与预览、导入和 generation 迁移；迁移不补装市场，也不将已有市场 generation 拆回共享目录。本地 / `file:` / `git:` 规格额外复制该插件目录，供 `sourceDirectory` 使用。
 
 ### 4.3 明确不承诺
 

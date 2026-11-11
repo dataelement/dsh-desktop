@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
+const { packagedLayout } = require('./packaged-layout.cjs')
 const os = require('node:os')
 const { createRequire } = require('node:module')
 const { execFile, spawn } = require('node:child_process')
@@ -65,19 +66,27 @@ async function verifyTerminal(appRoot) {
   })
 }
 
-async function verifyHarness(appRoot, resources, executable) {
-  const home = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-packaged-harness-')))
+async function prepareHarnessProbeProfile(home) {
   const profile = path.join(home, 'harness', 'profiles', 'desktop-safe-mode')
   await fsp.mkdir(profile, { recursive: true })
   await fsp.writeFile(path.join(profile, 'package.json'), JSON.stringify({ name: 'packaged-recovery-probe', private: true,
     dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }))
   await fsp.writeFile(path.join(profile, 'cordis.yml'), '[]\n')
   await fsp.writeFile(path.join(profile, 'cordis.patch.yml'), '[]\n')
+  // Match the product telemetry opt-out without adding optional Desktop plugins.
+  const patchFile = path.join(home, 'harness', 'desktop-product.patch.yml')
+  await fsp.writeFile(patchFile, '- id: desktop-product-telemetry\n  disabled: true\n- id: product-analytics\n  disabled: true\n')
+  return { profile, patchFile }
+}
+
+async function verifyHarness(appRoot, resources, executable) {
+  const home = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-packaged-harness-')))
+  const { profile, patchFile } = await prepareHarnessProbeProfile(home)
   const hostEntry = path.join(appRoot, 'out', 'main', 'host.js')
   const child = spawn(executable, ['--expose-internals', hostEntry, appRoot, profile, path.join(resources, 'office-runtime', 'primary-runtime')], {
     cwd: profile, windowsHide: true,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DSH_HOME: path.join(home, 'harness'),
-      DSH_DESKTOP_PROFILE: 'desktop-safe-mode', DEEPSEEK_BASE_URL: 'https://api.deepseek.com/anthropic' },
+      DSH_DESKTOP_PROFILE: 'desktop-safe-mode', DSH_DESKTOP_PATCH_FILE: patchFile, DEEPSEEK_BASE_URL: 'https://api.deepseek.com/anthropic' },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc']
   })
   let output = ''
@@ -144,12 +153,7 @@ async function verifyRuntime(appRoot, resources, executable) {
 }
 
 async function verifyPackagedHarness(context) {
-  const product = context.packager.appInfo.productFilename
-  const contents = path.join(context.appOutDir, `${product}.app`, 'Contents')
-  const resources = context.electronPlatformName === 'darwin' ? path.join(contents, 'Resources') : path.join(context.appOutDir, 'resources')
-  const executable = context.electronPlatformName === 'darwin'
-    ? path.join(contents, 'Frameworks', `${product} Helper.app`, 'Contents', 'MacOS', `${product} Helper`)
-    : path.join(context.appOutDir, `${product}.exe`)
+  const { resources, executable } = packagedLayout(context)
   try {
     const { stdout, stderr } = await promisify(execFile)(executable, [__filename, '--verify-runtime', path.join(resources, 'app.asar'), resources, executable], {
       cwd: context.appOutDir, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
@@ -163,7 +167,7 @@ async function verifyPackagedHarness(context) {
     throw error
   }
 }
-module.exports = { verifyDependencyClosure, verifyTerminal, verifyHarness, verifyPackagedHarness }
+module.exports = { prepareHarnessProbeProfile, verifyDependencyClosure, verifyTerminal, verifyHarness, verifyPackagedHarness }
 if (require.main === module && process.argv[2] === '--verify-runtime') {
   const [appRoot, resources, ...executableParts] = process.argv.slice(3)
   const executable = executableParts.length ? executableParts.join(' ') : process.execPath

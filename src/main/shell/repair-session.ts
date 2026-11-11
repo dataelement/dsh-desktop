@@ -2,6 +2,7 @@ import { RepairDrafts } from '../repair-drafts'
 import { rememberRepairReturnNavigation } from '../repair-navigation'
 
 export const REPAIR_SESSION_KEY = 'dsh.sessions.current'
+export const REPAIR_NAVIGATION_KEY = 'dsh.desktop.repair-navigation.v1'
 
 const SIDEBAR_PROMPT = {
   zh: '请协助排查使用中的问题，先询问我遇到的问题和复现步骤，再结合已有诊断信息分析。',
@@ -39,4 +40,6 @@ export function applyRepairNavigation(options: {
   }
   options.storage.setItem(REPAIR_SESSION_KEY, JSON.stringify({ sessionId: options.sessionId }))
   options.drafts.set(options.sessionId, options.prompt)
+  // Workbench restoration runs after the native session has been restored.
+  options.storage.setItem(REPAIR_NAVIGATION_KEY, JSON.stringify({ sessionId: options.sessionId, createdAt: Date.now() }))
 }

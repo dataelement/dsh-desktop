@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import type { PluginHealthReport } from '../recovery/plugin-market-check'
 import { profilePackageJsonPath } from '../recovery/plugin-recovery'
 
@@ -10,6 +11,12 @@ export function pnpmEntryPath(appPath: string, exists: (path: string) => boolean
     if (exists(candidate)) return candidate
   }
   return undefined
+}
+
+/** Resolve from the running installation, never from the managed Profile. */
+export function pluginPnpmRunnerPath(appPath: string): string {
+  const require = createRequire(join(appPath, 'package.json'))
+  return join(require.resolve('dsh-desktop-market-installer/package.json'), '..', 'pnpm-runner.mjs')
 }
 
 export function upgradeTargets(

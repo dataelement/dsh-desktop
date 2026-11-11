@@ -74,7 +74,7 @@ export function installDesktopShortcuts(
   let revision: ShortcutRevision | undefined
   let closeBinding: NormalizedBinding | null = null
   let editingInput: ShortcutContents | undefined
-  const scopedDesktop = platform === 'windows' || platform === 'macos'
+  const scopedDesktop = platform === 'windows' || platform === 'macos' || platform === 'linux'
   const disposers = new Set<() => void>()
   const closeAccelerator = (): string | undefined => presentBinding(closeBinding, platform).aria
     ?.replace('Meta+', 'Command+').replace(/Arrow(Up|Down|Left|Right)$/u, '$1')

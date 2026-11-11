@@ -1,3 +1,16 @@
+diff --git a/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js b/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js
+--- a/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js
++++ b/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js
+@@ -1483,7 +1483,8 @@ const ENGINE_PREFIX = "@deepseek-ai/libreoffice-kit";
+ * @returns true when at least one resolution directory holds the package.
+ */
+ function installedPackageExists(name) {
+-	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) !== void 0);
++	// Electron ASAR returns null for missing entries; Node returns undefined.
++	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) != null);
+ }
+ /**
+ * Return the optional package target for the current process ABI.
 diff --git a/node_modules/@deepseek-ai/libreoffice-kit/lib/index.js b/node_modules/@deepseek-ai/libreoffice-kit/lib/index.js
 index aac18a0..2fb9f70 100644
 --- a/node_modules/@deepseek-ai/libreoffice-kit/lib/index.js
@@ -39,7 +52,17 @@ index aac18a0..2fb9f70 100644
  			}
  			child.stdin.end("DONE\n");
  			if ((await response()).kind !== "done") throw new Error("LibreOffice native renderer did not finish.");
-@@ -2029,7 +2048,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+@@ -1481,7 +1500,8 @@ const ENGINE_PREFIX = "@deepseek-ai/libreoffice-kit";
+ * @returns true when at least one resolution directory holds the package.
+ */
+ function installedPackageExists(name) {
+-	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) !== void 0);
++	// Electron ASAR returns null for missing entries; Node returns undefined.
++	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) != null);
+ }
+ /**
+ * Return the optional package target for the current process ABI.
+@@ -2029,7 +2049,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
  			}
  		}
  	}
@@ -48,7 +71,7 @@ index aac18a0..2fb9f70 100644
  		await acquire(signal);
  		const deadline = new AbortController();
  		const stopped = AbortSignal.any([signal, deadline.signal]);
-@@ -2060,7 +2079,13 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+@@ -2060,7 +2080,13 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
  				fontCache: [...shared.fontCache.values()]
  			}, stopped, (entries) => mergeCache(fonts.generation, entries));
  			let images;
@@ -63,7 +86,7 @@ index aac18a0..2fb9f70 100644
  			else if ("fonts" in result) {
  				const profile = join(scratch, "profile");
  				images = await renderImagesWithNative({
-@@ -2074,6 +2099,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+@@ -2074,6 +2100,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
  					substitutions: result.substitutions,
  					missingFonts: result.missingFonts,
  					operation: request,
@@ -71,7 +94,7 @@ index aac18a0..2fb9f70 100644
  					signal: stopped
  				});
  			} else throw new ConversionError("failed", "Image worker did not return its manifest.");
-@@ -2114,8 +2140,9 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+@@ -2114,8 +2141,9 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
  	const converter = {
  		backend: engine.backend,
  		render: (request, signal) => submit(request, "render", signal),

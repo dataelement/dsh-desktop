@@ -18,9 +18,6 @@ beforeEach(async () => {
   vi.clearAllMocks()
   mocks.handlers.clear()
   mocks.root = await mkdtemp(join(tmpdir(), 'dsh-rollback-manager-'))
-  await new ApplicationRollback(join(mocks.root, 'application-rollback.json'), {
-    version: '0.11.2', platform: process.platform, arch: process.arch, packaged: true
-  }).recordUpgrade('0.13.0')
   mocks.updater.on.mockImplementation((event: string, callback: (info: { version: string }) => void) => mocks.handlers.set(event, callback))
   mocks.catalog.mockResolvedValue([{ version: '0.11.2' }, { version: '0.12.1' }])
   mocks.updater.checkForUpdates.mockImplementation(async () => {
@@ -31,9 +28,30 @@ beforeEach(async () => {
     mocks.handlers.get('update-downloaded')?.({ version: '0.11.2' })
     return []
   })
-  manager = await import('../src/main/update/update-manager')
+  await usePlatform('darwin')
 })
-afterEach(async () => { manager.stopUpdateManager(); await rm(mocks.root, { recursive: true, force: true }) })
+
+async function usePlatform(platform: NodeJS.Platform) {
+  // The original recovery assertions require a supported installation, not the test host's OS.
+  vi.stubGlobal('process', Object.create(process, {
+    platform: { value: platform },
+    arch: { value: 'x64' }
+  }))
+  await new ApplicationRollback(join(mocks.root, 'application-rollback.json'), {
+    version: '0.11.2', platform, arch: 'x64', packaged: true
+  }).recordUpgrade('0.13.0')
+  vi.resetModules()
+  manager = await import('../src/main/update/update-manager')
+}
+
+afterEach(async () => {
+  try {
+    manager.stopUpdateManager()
+    await rm(mocks.root, { recursive: true, force: true })
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
 
 async function expectDesktopSessionRequest(request: unknown): Promise<void> {
   expect(request).toEqual(expect.any(Function))
@@ -51,7 +69,8 @@ it('keeps recovery downgrade closed without a verified data compatibility policy
   await expect(manager.rollbackApplication()).rejects.toThrow('data-compatibility-unverified')
   expect(mocks.updater.downloadUpdate).not.toHaveBeenCalled()
 })
-it('downloads only the actual pre-upgrade version and invokes the existing verified installer', async () => {
+it.each(['darwin', 'win32'] as const)('downloads only the actual pre-upgrade version and invokes the existing verified installer on %s', async platform => {
+  await usePlatform(platform)
   manager.startUpdateManager({ prepareToInstall: async () => {}, rollbackCompatibility: async () => ({ compatible: true }) })
   await manager.rollbackApplication()
   const requests = mocks.catalog.mock.calls.map(call => call[1])
@@ -63,6 +82,20 @@ it('downloads only the actual pre-upgrade version and invokes the existing verif
   expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(false, true)
   expect(await manager.getApplicationRollbackStatus()).toMatchObject({ available: false, reason: 'rollback-installing' })
 })
+it('keeps Linux recovery unsupported even with a compatible previous installation', async () => {
+  await usePlatform('linux')
+  const prepare = vi.fn(async () => {})
+  manager.startUpdateManager({ prepareToInstall: prepare, rollbackCompatibility: async () => ({ compatible: true }) })
+  expect(manager.getUpdateStatus()).toMatchObject({ phase: 'unsupported' })
+  expect(await manager.getApplicationRollbackStatus()).toEqual({ available: false, reason: 'unsupported-installation' })
+  await expect(manager.rollbackApplication()).rejects.toThrow('unsupported-installation')
+  expect(mocks.catalog).not.toHaveBeenCalled()
+  expect(mocks.updater.checkForUpdates).not.toHaveBeenCalled()
+  expect(mocks.updater.downloadUpdate).not.toHaveBeenCalled()
+  expect(prepare).not.toHaveBeenCalled()
+  expect(mocks.updater.quitAndInstall).not.toHaveBeenCalled()
+})
+
 it('blocks missing exact archive rather than selecting a nearby release', async () => {
   manager.startUpdateManager({ prepareToInstall: async () => {}, rollbackCompatibility: async () => ({ compatible: true }) })
   mocks.catalog.mockResolvedValue([{ version: '0.12.1' }])

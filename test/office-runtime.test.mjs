@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { officeTarget, downloadAsset, unpackWheel, prepareOfficeRuntime } from '../scripts/office-runtime/prepare.mjs'
+import { officeTarget, officeRuntimeIdentity, downloadAsset, unpackWheel, prepareOfficeRuntime } from '../scripts/office-runtime/prepare.mjs'
 import { officeCliAttempts, officeCliCommand, officeCliTimedOut, officeCliTimeoutMs, runOfficeCli } from '../scripts/office-runtime/prepare-templates.mjs'
 import { zipSync, unzipSync, strToU8 } from 'fflate'
 import { electronExecutable } from '../scripts/verify/electron-node-loader.mjs'
@@ -73,10 +73,31 @@ describe('Office runtime assembly', () => {
   }, 190_000)
 
   it('selects all supported native targets and rejects cross-platform substitutions', () => {
+    expect(officeTarget('linux', 'x64')).toBe('linux-x64')
+    expect(officeRuntimeIdentity('linux-x64')).toEqual({ platform: 'linux', arch: 'x64' })
+    expect(officeRuntimeIdentity('mac-arm64')).toEqual({ platform: 'darwin', arch: 'arm64' })
+    expect(officeRuntimeIdentity('win-x64')).toEqual({ platform: 'win32', arch: 'x64' })
+    expect(() => officeRuntimeIdentity('linux-arm64')).toThrow('unknown target')
+    expect(() => officeTarget('linux', 'arm64')).toThrow('unsupported native target')
     expect(officeTarget('win32', 'x64')).toBe('win-x64')
     expect(officeTarget('darwin', 'arm64')).toBe('mac-arm64')
     expect(officeTarget('darwin', 'x64')).toBe('mac-x64')
     expect(() => officeTarget('win32', 'arm64')).toThrow('unsupported native target')
+  })
+
+  it('locks Linux CPython and native wheels compatible with glibc 2.28', async () => {
+    const lock = JSON.parse(await readFile(join(root, 'scripts/office-runtime/lock.json'), 'utf8'))
+    const linux = lock.targets['linux-x64']
+    expect(linux.pythonTarget).toBe('x86_64-unknown-linux-gnu')
+    expect(linux.pythonSha256).toMatch(/^[a-f0-9]{64}$/)
+    expect(linux.wheels).toHaveLength(4)
+    for (const wheel of linux.wheels) {
+      const url = new URL(wheel.url)
+      expect(url.hostname).toBe('files.pythonhosted.org')
+      expect(url.pathname).toContain('-cp312-cp312-manylinux')
+      expect(url.pathname).toMatch(/manylinux_2_(?:17|24|27|28)_x86_64/)
+      expect(wheel.sha256).toMatch(/^[a-f0-9]{64}$/)
+    }
   })
 
   it('rejects corrupt cached input and removes stale payload when preparation fails', async () => {
