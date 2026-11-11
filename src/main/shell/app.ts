@@ -7,6 +7,7 @@ import { DesktopStorageManager } from '../profile/desktop-storage'
 import { prepareGenerationsForLaunch } from '../profile/generation-launch'
 import { FATAL_REPORT_NAME, recordFatalFailure, redactFatalText } from '../recovery/fatal-entry'
 import { migrateWebProfile } from '../profile/profile-rename'
+import { initializeDesktopUpdateService } from '../desktop-service'
 import { appBundlePathFromExecutable, quarantineAppBundleLaunchAgents } from '../desktop-service/launch-agent-audit'
 import { DESKTOP_SCHEME, installDesktopProtocol } from '../desktop-protocol'
 import { normalRelaunchArguments, relaunchArguments, shouldStartInSafeMode } from '../safe-mode'
@@ -481,6 +482,10 @@ async function main(): Promise<void> {
       console.warn('[native-locale] unable to calibrate language; continuing', error)
     }
   }
+  // User data is already selected. A locale relaunch returns above, so this
+  // process does not create the service and then exit. Development packages
+  // stay without an update service; only the official package asks the policy.
+  if (app.isPackaged && !desktopDevelopmentBuild()) initializeDesktopUpdateService()
   // Only the final GUI process starts shell discovery and the Host.
   const loginShellAbort = new AbortController()
   const loginShell = readDesktopLoginShellEnvironment(

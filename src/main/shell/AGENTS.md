@@ -2,7 +2,7 @@
 
 继承 `src/main/AGENTS.md`。这里是按官方 Desktop 移植的 Electron 主进程，也是正式包入口。`npm run build` 打进 `out/main/index.js`，应用身份是 `io.dsh.desktop` / `DSH Desktop`。正式包的用户数据目录固定为 `dsh-desktop`；未打包启动和带 `dshDesktopChannel=development` 的开发包使用 `dsh-desktop-dev`。
 
-- 不导入官方强制更新。产品更新使用 `update/update-manager`：安装包里才会自动检查，下载要等用户同意，可以跳过一个版本，也可以从更新卡片安装历史版本。致命失败交给 `recovery/fatal-entry`，不导入官方恢复对话框。
+- 不导入官方强制更新。产品更新使用 `update/update-manager`：安装包里才会自动检查，下载要等用户同意，可以跳过一个版本，也可以从更新卡片安装历史版本。正式包在单实例锁成功且语言校准结束后、注册更新处理程序之前调用 `initializeDesktopUpdateService`，只创建更新策略服务，不附带故障诊断。开发通道不调用它。致命失败交给 `recovery/fatal-entry`，不导入官方恢复对话框。
 - `DSH_HOME` 由组装处传入，取 `userData/harness`。正式包的 `userData` 是 `dsh-desktop`，所以现有会话在 `dsh-desktop/harness`。不调用会落到 `~/.dsh` 的默认解析。
 - 对版本敏感的上游类型和调用集中到 `upstream-api.ts`。该文件还没有；新增这类调用时先建它，不要散落到各个模块。
 - 窗口保持 `contextIsolation`、sandbox、`webSecurity`，`nodeIntegration` 关闭。

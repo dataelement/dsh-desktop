@@ -144,6 +144,8 @@ describe('enterprise entry', () => {
     expect(source.includes('externalUrlToOpen(')).toBe(true)
     expect(source.includes('registerUpdateHandlers(')).toBe(true)
     expect(source.includes('startUpdateManager(')).toBe(true)
+    expect(source.includes('if (app.isPackaged && !desktopDevelopmentBuild()) initializeDesktopUpdateService()')).toBe(true)
+    expect(source.includes('initializeDesktopService(')).toBe(false)
     expect(source.includes('checkForUpdates(true)')).toBe(true)
     expect(source.includes('desktop:show-about')).toBe(true)
     expect(source.includes('presentAbout(target, menuLocale)')).toBe(true)
