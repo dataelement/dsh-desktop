@@ -1,4 +1,4 @@
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -22,8 +22,13 @@ describe('plugin maintenance', () => {
     await writeFile(join(installer, 'package.json'), JSON.stringify({
       name: 'dsh-desktop-market-installer', exports: { './package.json': './package.json' }
     }))
+    const runner = join(installer, 'pnpm-runner.mjs')
+    await writeFile(runner, 'export const installation = "selected"')
     try {
-      expect(pluginPnpmRunnerPath(app)).toBe(join(await realpath(installer), 'pnpm-runner.mjs'))
+      const resolved = pluginPnpmRunnerPath(app)
+      // Windows module resolution can retain an 8.3 temp path while realpath expands it.
+      expect(await realpath(resolved)).toBe(await realpath(runner))
+      expect(await readFile(resolved, 'utf8')).toBe('export const installation = "selected"')
     } finally {
       await rm(app, { recursive: true, force: true })
     }
