@@ -1,0 +1,91 @@
+diff --git a/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js b/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
+index 47fb6e3ac2..6625530961 100644
+--- a/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
+@@ -224,6 +224,7 @@ var SystemPrompt = class extends Service {
+ 		this.ctx.emit("system-prompt/change");
+ 	});
+ 	toolOrder;
++	preparations = new WeakMap();
+ 	constructor(ctx, config) {
+ 		super(ctx, "systemPrompt");
+ 		this.toolOrder = validateToolOrder(config.toolOrder);
+@@ -346,6 +347,15 @@ var SystemPrompt = class extends Service {
+ 			contexts
+ 		};
+ 	}
++	/** Await scope-filtered preparation before any registry or tool snapshot. Handles are single-use and bound to this exact context. */
++	async prepare(context = {}) {
++		context.signal?.throwIfAborted();
++		await this.ctx.serial(scopeTarget(this, context.scope), "system-prompt/prepare", context);
++		context.signal?.throwIfAborted();
++		const handle = Object.freeze({});
++		this.preparations.set(handle, { context, fields: Object.entries(context) });
++		return handle;
++	}
+ 	/**
+ 	* Assemble global and scoped providers, detach tool parameters, apply
+ 	* canonical ordering, then run the presentation waterfall. Scoped sections
+@@ -355,7 +365,12 @@ var SystemPrompt = class extends Service {
+ 	* @param context - the optional scope, step tool set, and plugin-defined assembly fields.
+ 	* @returns the post-waterfall assembly with ordered tool declarations and any complete prompt enforced.
+ 	*/
+-	async assemble(context = {}) {
++	async assemble(context = {}, prepared) {
++		const handle = prepared ?? await this.prepare(context);
++		const admission = this.preparations.get(handle);
++		this.preparations.delete(handle);
++		if (admission?.context !== context || admission.fields.some(([key, value]) => context[key] !== value)) throw new Error("Prompt preparation handle is expired or belongs to another assembly context");
++		context.signal?.throwIfAborted();
+ 		const scope = context.scope;
+ 		const scopeLayers = this.layers.chainLayers(scope);
+ 		const runtimeContextSuppressed = !this.layers.global.runtimeContextSuppressors.isEmpty() || scopeLayers.some((layer) => !layer.runtimeContextSuppressors.isEmpty());
+diff --git a/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts
+index e42f2dd74c..e63b7db35d 100644
+--- a/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts
+@@ -12,6 +12,8 @@ declare module '@deepseek-ai/cordis' {
+         systemPrompt: SystemPrompt;
+     }
+     interface Events {
++        /** Awaited before provider collection and before AgentLoop resolves its step tool set. Scope-filtered; failure rejects admission. */
++        'system-prompt/prepare'(this: Scoped<SystemPrompt>, context: AssembleContext): Promise<void>;
+         /**
+          * Presentation waterfall over assembled sections, contexts, and variables.
+          * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): scoped listeners
+@@ -239,11 +241,15 @@ export declare function joinContextSections(sections: readonly ContextSnapshotSe
+  * @returns one entry per contributing context that rendered to non-empty text.
+  */
+ export declare function renderContextSections(assembly: PromptAssembly): ContextSnapshotSection[];
++declare const preparedPromptBrand: unique symbol;
++/** Opaque, single-use proof of completed preparation for the same context object. Never retain across steps. */
++export interface PreparedPrompt { readonly [preparedPromptBrand]: true }
+ /** Registry service for the prompt inputs assembled before each model step. */
+ export declare class SystemPrompt extends Service {
+     static Config: z<Config>;
+     private readonly layers;
+     private readonly toolOrder;
++    private readonly preparations;
+     constructor(ctx: Context, config: Config);
+     /**
+      * Register an ordered prompt section in the calling context's scope. A scoped
+@@ -308,6 +314,8 @@ export declare class SystemPrompt extends Service {
+      * @returns the accepted assembly with current runtime-context provider text.
+      */
+     refreshContext(assembly: PromptAssembly, context?: AssembleContext): PromptAssembly;
++    /** Await all scoped preparation listeners before reading providers. Use the same context object when passing its handle to assemble. */
++    prepare(context?: AssembleContext): Promise<PreparedPrompt>;
+     /**
+      * Assemble global and scoped providers, detach tool parameters, apply
+      * canonical ordering, then run the presentation waterfall. Scoped sections
+@@ -317,7 +325,8 @@ export declare class SystemPrompt extends Service {
+      * @param context - the optional scope, step tool set, and plugin-defined assembly fields.
+      * @returns the post-waterfall assembly with ordered tool declarations and any complete prompt enforced.
+      */
+-    assemble(context?: AssembleContext): Promise<PromptAssembly>;
++    /** An optional single-use handle skips duplicate preparation after step tool resolution. Existing callers still prepare automatically. */
++    assemble(context?: AssembleContext, prepared?: PreparedPrompt): Promise<PromptAssembly>;
+ }
+ export default SystemPrompt;
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file

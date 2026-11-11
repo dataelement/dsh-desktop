@@ -1,8 +1,70 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 0998875..f129ab0 100644
+index 09988756ce..c063304e8c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-@@ -20060,7 +20060,7 @@ window.__ModuleLoader__.load({
+@@ -15906,7 +15906,8 @@ window.__ModuleLoader__.load({
+ 			*/
+ 			sinkSerialized(attempt, draft, mode) {
+ 				this.notifySubmission(attempt.submission);
+-				const { occurrences, quotes, attachmentIds } = attempt;
++				const { quotes, attachmentIds } = attempt;
++				const occurrences = Object.freeze(attempt.occurrences.map((reference) => Object.freeze({ ...reference })));
+ 				const inputTriggers = this.deps.inputTriggers?.();
+ 				const prompt = serializeDraftPrompt(snapshotDraft(draft, occurrences, void 0, quotes), async (source, ref) => {
+ 					if (inputTriggers === void 0) throw new Error(`no serializer for reference source "${source}"`);
+@@ -15914,9 +15915,15 @@ window.__ModuleLoader__.load({
+ 				});
+ 				const send = (text) => {
+ 					if (this.dead(attempt)) return;
+-					this.settleSink(attempt, this.deps.defaultSink(text, attachmentIds, mode, attempt.signal, () => {
+-						this.acceptSink(attempt);
+-					}));
++					this.settleSink(attempt, (async () => {
++						attempt.signal.throwIfAborted();
++						await this.deps.beforeSubmit?.(occurrences, attempt.signal);
++						attempt.signal.throwIfAborted();
++						if (this.dead(attempt)) return { kind: "error" };
++						return this.deps.defaultSink(text, attachmentIds, mode, attempt.signal, () => {
++							this.acceptSink(attempt);
++						});
++					})());
+ 				};
+ 				if (!(prompt instanceof Promise)) {
+ 					send(prompt);
+@@ -16009,8 +16016,15 @@ window.__ModuleLoader__.load({
+ 			* for correction.
+ 			*/
+ 			beginSubmit(attempt, claim, args) {
++				const references = Object.freeze(attempt.occurrences.map((reference) => Object.freeze({ ...reference })));
++				const command = Object.freeze({ name: claim.name, args });
+ 				const attachmentIds = claim.attachments === true ? attempt.attachmentIds : [];
+ 				Promise.resolve().then(async () => {
++					if (this.dead(attempt)) return void 0;
++					attempt.signal.throwIfAborted();
++					await this.deps.beforeSubmit?.(references, attempt.signal, command);
++					attempt.signal.throwIfAborted();
++					if (this.dead(attempt)) return void 0;
+ 					const attachments = attachmentIds.length > 0 ? await this.deps.commandAttachments.serialize(attachmentIds) : [];
+ 					if (this.dead(attempt)) return void 0;
+ 					return claim.submit(args, this.deps.actx, attachments);
+@@ -16174,6 +16188,16 @@ window.__ModuleLoader__.load({
+ 					inputTriggers: () => this.controller(actx),
+ 					popup: () => this.popup(actx),
+ 					inbox: session.projections.faceOf("inbox"),
++					beforeSubmit: async (references, signal, command) => {
++						signal.throwIfAborted();
++						if (this.sessions().binding(binding.sessionId) !== binding) throw new Error("Session binding changed during input admission");
++						await actx.serial(actx, "conversation/input-before-submit", Object.freeze({
++							sessionId: binding.sessionId, references, signal,
++							...command === void 0 ? {} : { command }
++						}));
++						signal.throwIfAborted();
++						if (this.sessions().binding(binding.sessionId) !== binding) throw new Error("Session binding changed during input admission");
++					},
+ 					defaultSink: (text, attachmentIds, mode, signal, accept) => this.sink(session, text, attachmentIds, mode, signal, accept),
+ 					quoteRemoveLabel: () => this.t("quote.remove"),
+ 					quoteInsertionAllowed: () => {
+@@ -20060,7 +20084,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$4;
@@ -11,7 +73,7 @@ index 0998875..f129ab0 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -20082,6 +20082,7 @@ window.__ModuleLoader__.load({
+@@ -20082,6 +20106,7 @@ window.__ModuleLoader__.load({
  			"headerLeading": "wSkVaW_headerLeading",
  			"headerUtilities": "wSkVaW_headerUtilities",
  			"heroOptions": "wSkVaW_heroOptions",
@@ -19,7 +81,7 @@ index 0998875..f129ab0 100644
  			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow",
  			"root": "wSkVaW_root",
  			"scrollBody": "wSkVaW_scrollBody",
-@@ -20453,7 +20454,7 @@ window.__ModuleLoader__.load({
+@@ -20453,7 +20478,7 @@ window.__ModuleLoader__.load({
  							}, { fallback: (0, react_jsx_runtime.jsx)(HeroFish, { hovering }) })
  						}), (0, react_jsx_runtime.jsxs)("span", {
  							className: HeroShell_module_css_default.titleGroup,
@@ -28,7 +90,7 @@ index 0998875..f129ab0 100644
  								className: HeroShell_module_css_default.previewBadge,
  								children: t("hero.preview")
  							})]
-@@ -20550,12 +20551,17 @@ window.__ModuleLoader__.load({
+@@ -20550,12 +20575,17 @@ window.__ModuleLoader__.load({
  					sessionId === void 0 ? null : (0, react_jsx_runtime.jsx)("div", {
  						className: ConversationRoot_module_css_default.heroOptions,
  						children: renderSlot("conversation.hero.options", {})
@@ -46,7 +108,7 @@ index 0998875..f129ab0 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -20577,7 +20583,8 @@ window.__ModuleLoader__.load({
+@@ -20577,7 +20607,8 @@ window.__ModuleLoader__.load({
  					}),
  					hero && heroWorkspaceRow,
  					zone !== void 0 && renderSlot("conversation.input.dock", zone),
@@ -56,7 +118,7 @@ index 0998875..f129ab0 100644
  				]
  			});
  			const composer = renderSlotChain("conversation.composer", {
-@@ -20621,7 +20628,8 @@ window.__ModuleLoader__.load({
+@@ -20621,7 +20652,8 @@ window.__ModuleLoader__.load({
  		* @returns the Conversation subtree.
  		*/
  		function ConversationPanel({ renderSlot }) {
@@ -66,7 +128,7 @@ index 0998875..f129ab0 100644
  		}
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationHeader.js
-@@ -21704,7 +21712,7 @@ window.__ModuleLoader__.load({
+@@ -21704,7 +21736,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$1;
@@ -75,7 +137,7 @@ index 0998875..f129ab0 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -21727,6 +21735,7 @@ window.__ModuleLoader__.load({
+@@ -21727,6 +21759,7 @@ window.__ModuleLoader__.load({
  			"pending": "uV2eYG_pending",
  			"placeholder": "uV2eYG_placeholder",
  			"primary": "uV2eYG_primary",
@@ -83,7 +145,7 @@ index 0998875..f129ab0 100644
  			"retry": "uV2eYG_retry",
  			"root": "uV2eYG_root",
  			"row": "uV2eYG_row",
-@@ -21754,7 +21763,7 @@ window.__ModuleLoader__.load({
+@@ -21754,7 +21787,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -92,7 +154,7 @@ index 0998875..f129ab0 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -22027,10 +22036,6 @@ window.__ModuleLoader__.load({
+@@ -22027,10 +22060,6 @@ window.__ModuleLoader__.load({
  								"data-composer-overlay": true,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -103,7 +165,7 @@ index 0998875..f129ab0 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -22042,12 +22047,19 @@ window.__ModuleLoader__.load({
+@@ -22042,12 +22071,19 @@ window.__ModuleLoader__.load({
  								onRetryFile: (id) => {
  									retryFileUpload?.(id);
  								},
@@ -123,7 +185,7 @@ index 0998875..f129ab0 100644
  							(0, react_jsx_runtime.jsx)(DraftEditor, {
  								classNames: InputBar_module_css_default,
  								editor,
-@@ -22062,6 +22074,8 @@ window.__ModuleLoader__.load({
+@@ -22062,6 +22098,8 @@ window.__ModuleLoader__.load({
  								onWorkspaceKeyDown,
  								hint,
  								showPlaceholder: draft === "" && attachments.length === 0 && !claimActive
@@ -132,7 +194,7 @@ index 0998875..f129ab0 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								ref: rowRef,
-@@ -22215,8 +22229,7 @@ window.__ModuleLoader__.load({
+@@ -22215,8 +22253,7 @@ window.__ModuleLoader__.load({
  					}),
  					(0, react_jsx_runtime.jsxs)("div", {
  						className: InputBar_module_css_default.dock,
@@ -142,7 +204,7 @@ index 0998875..f129ab0 100644
  							useProjection,
  							t
  						})]
-@@ -22817,6 +22830,7 @@ window.__ModuleLoader__.load({
+@@ -22817,6 +22854,7 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -150,7 +212,7 @@ index 0998875..f129ab0 100644
  					"conversation.hero.brand.mark": {
  						kind: "single",
  						scope: "root"
-@@ -22832,6 +22846,14 @@ window.__ModuleLoader__.load({
+@@ -22832,6 +22870,14 @@ window.__ModuleLoader__.load({
  					"conversation.hero.options": {
  						kind: "list",
  						scope: "session"
@@ -165,7 +227,7 @@ index 0998875..f129ab0 100644
  					}
  				},
  				slots: {
-@@ -22967,6 +22989,10 @@ window.__ModuleLoader__.load({
+@@ -22967,6 +23013,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -176,7 +238,7 @@ index 0998875..f129ab0 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -23003,6 +23029,7 @@ window.__ModuleLoader__.load({
+@@ -23003,6 +23053,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
  						retryFileUpload: void 0,
@@ -184,7 +246,7 @@ index 0998875..f129ab0 100644
  						toggleCommandMenu: void 0,
  						stop: void 0,
  						hooks: {
-@@ -23071,6 +23098,11 @@ window.__ModuleLoader__.load({
+@@ -23071,6 +23122,11 @@ window.__ModuleLoader__.load({
  						retryFileUpload: (id) => {
  							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
  						},
@@ -196,7 +258,7 @@ index 0998875..f129ab0 100644
  						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
-@@ -23103,10 +23135,7 @@ window.__ModuleLoader__.load({
+@@ -23103,10 +23159,7 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",
@@ -208,6 +270,42 @@ index 0998875..f129ab0 100644
  				}, ConversationPanel);
  				yield registerConversationRoot();
  				yield registerConversationContent();
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
+index 27c65c1815..069de2c063 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
+@@ -49,6 +49,8 @@ export interface SessionInputDeps {
+      * shrinks before the message's echo renders.
+      */
+     defaultSink(text: string, attachmentIds: readonly DraftAttachmentId[], mode: InputSubmitMode, signal: AbortSignal, accept: () => void): Promise<SubmitOutcome>;
++    /** Await Session-owned permission checks before ordinary or claimed-command dispatch. Rejection retains the draft. */
++    beforeSubmit?(references: readonly import('../contract/draft-editor.ts').Occurrence[], signal: AbortSignal, command?: Readonly<{ name: string; args: string }>): Promise<void>;
+     /** Live Session and composer-block policy for transcript insertion. */
+     quoteInsertionAllowed?: () => boolean;
+     /** Current localized quote removal copy. */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/index.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/index.d.ts
+index 27bee1f236..3817f654a5 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/index.d.ts
+@@ -47,7 +47,18 @@ export type { ComposerAttachment, ComposerAttachmentsOwnerProps, ComposerAttachm
+ export type { BeginCommandRequest, CommandClaim, ConsumeTokenRequest, DraftAttachmentId, DraftInitializationOptions, DraftInitializationResult, InputActions, InputState, InsertReferenceRequest, InsertTextRequest, PickOutcome, SessionInput, SessionInputResolver, SubmitAttachment, SubmitOutcome, } from './contract/input.ts';
+ export type { ArbitrateKey, ArbitrateOutcome, DraftInput, DraftQuote, DraftReference, DraftSnapshot, ReferenceInsert, TokenSpan } from './contract/draft-editor.ts';
+ export type { ComposerBlock, ComposerBlocks } from './contract/composer-blocks.ts';
++/** Immutable submit-time scope, addressed to exactly one retained Session binding. */
++export interface InputBeforeSubmitRequest {
++    readonly sessionId: import('@deepseek-ai/dsh-session/types').SessionId;
++    readonly references: readonly Readonly<import('./contract/draft-editor.ts').Occurrence>[];
++    readonly signal: AbortSignal;
++    readonly command?: Readonly<{ name: string; args: string }>;
++}
+ declare module '@deepseek-ai/cordis' {
++    interface Events {
++        /** Awaited in the Session scope; rejection blocks both message and command dispatch without clearing input. */
++        'conversation/input-before-submit'(request: InputBeforeSubmitRequest): Promise<void>;
++    }
+     interface Context {
+         /** Scope-addressed Conversation actions and per-Session input registry. */
+         conversation: import('./service.ts').IConversation;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 index 95cc9e9..a1bf775 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { Context } from '@deepseek-ai/cordis'
 import { mountRootInclude } from '@deepseek-ai/dsh-app-boot'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -19,7 +20,10 @@ describe('Safe Mode resolves plugins from the installation', () => {
       create: vi.fn(async () => 'include'),
       resolve: vi.fn(() => ({}))
     }
-    const ctx = { loader, get: (name: string) => name === 'loader' ? loader : undefined }
+    // A real Context supplies root ownership and effect lifetime; only the loader
+    // importer is isolated here so the original resolution assertions stay exact.
+    const ctx = new Context()
+    ctx.provide('loader', loader as never)
     return { ctx, loader, internalImport, configImport }
   }
 

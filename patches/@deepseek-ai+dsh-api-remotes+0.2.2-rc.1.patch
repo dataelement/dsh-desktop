@@ -1,8 +1,16 @@
 diff --git a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js b/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
-index efa7b72..459eb9d 100644
+index efa7b72..fdebf90 100644
 --- a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
-@@ -20335,6 +20335,14 @@ window.__ModuleLoader__.load({
+@@ -15539,6 +15539,7 @@ window.__ModuleLoader__.load({
+ 		let _deepseek_ai_dsh_plugin_manager_pluginManager_listBundles_result$schema$value;
+ 		const _deepseek_ai_dsh_plugin_manager_pluginManager_listBundles_result$schema = () => _deepseek_ai_dsh_plugin_manager_pluginManager_listBundles_result$schema$value ??= zod.z.array(zod.z.object({
+ 			"name": zod.z.string(),
++			"managedSource": zod.z.boolean().optional(),
+ 			"official": zod.z.boolean().describe("Project-maintained shipped optional bundle or on-demand catalog entry, independent of installation and selection."),
+ 			"availability": zod.z.union([
+ 				zod.z.literal("profile"),
+@@ -20335,6 +20336,14 @@ window.__ModuleLoader__.load({
  			})).readonly(),
  			"hasMore": zod.z.boolean().readonly()
  		});
@@ -17,7 +25,15 @@ index efa7b72..459eb9d 100644
  		let _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value;
  		const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = () => _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value ??= zod.z.object({
  			"address": zod.z.union([zod.z.object({
-@@ -22356,6 +22364,35 @@ window.__ModuleLoader__.load({
+@@ -21755,6 +21764,7 @@ window.__ModuleLoader__.load({
+ 		const _deepseek_ai_dsh_api_session_controller_skills_list_result$schema = () => _deepseek_ai_dsh_api_session_controller_skills_list_result$schema$value ??= zod.z.object({ "skills": zod.z.array(zod.z.object({
+ 			"path": zod.z.string().readonly().optional().describe("Absolute SKILL.md path when supplied by a filesystem provider."),
+ 			"name": zod.z.string().readonly().describe("Kebab-case identifier referenced as `/name`."),
++			"displayName": zod.z.string().readonly().optional().describe("Optional human-facing label; invocation always uses name."),
+ 			"description": zod.z.string().readonly().describe("Short routing description."),
+ 			"whenToUse": zod.z.string().readonly().optional().describe("Optional extra routing guidance."),
+ 			"modelInvocable": zod.z.boolean().readonly().describe("Whether the same skill is also advertised to the model.")
+@@ -22356,6 +22366,35 @@ window.__ModuleLoader__.load({
  						"column": 10
  					}
  				},
@@ -53,3 +69,14 @@ index efa7b72..459eb9d 100644
  				"session/create": {
  					service: "sessionController",
  					description: "Create one ordinary Session for a new conversation, reusing the named blank Session while it is reusable.",
+@@ -24644,6 +24683,10 @@ window.__ModuleLoader__.load({
+ 											"type": "string",
+ 											"description": "Kebab-case identifier referenced as `/name`."
+ 										},
++										"displayName": {
++											"type": "string",
++											"description": "Optional human-facing label; invocation always uses name."
++										},
+ 										"description": {
+ 											"type": "string",
+ 											"description": "Short routing description."
