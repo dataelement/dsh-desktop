@@ -111,6 +111,14 @@ export function buildJsignArgs({
   name = 'DSH Desktop',
   url = 'https://www.dshdesktop.com'
 }) {
+  if (typeof name !== 'string' || name.trim() !== name || !/^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$/u.test(name)) {
+    throw new Error('Invalid signing product name')
+  }
+  if (typeof url !== 'string') throw new Error('Invalid signing product URL')
+  const source = new URL(url)
+  if (source.protocol !== 'https:' || source.username || source.password || source.search || source.hash || /\s/.test(url)) {
+    throw new Error('Signing product URL must be credential-free HTTPS')
+  }
   return [
     '-jar',
     jsignJar,
@@ -225,6 +233,8 @@ async function main() {
       jsignJar: jsignJar ?? 'jsign.jar',
       pinFile: pinFile ?? 'pin.txt',
       tsaUrl: process.env.TSA_URL,
+      name: process.env.JSIGN_NAME,
+      url: process.env.JSIGN_URL,
       dryRun
     })
   }

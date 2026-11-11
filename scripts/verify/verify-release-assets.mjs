@@ -3,20 +3,22 @@ import { createReadStream } from 'node:fs'
 import { open, readFile, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseArgs } from 'node:util'
 import { parse } from 'yaml'
 
-const REQUIRED_ASSETS = [
-  'dsh-desktop-mac-arm64.dmg',
-  'dsh-desktop-mac-arm64.zip',
-  'dsh-desktop-mac-arm64.zip.blockmap',
-  'dsh-desktop-mac-x64.dmg',
-  'dsh-desktop-mac-x64.zip',
-  'dsh-desktop-mac-x64.zip.blockmap',
-  'dsh-desktop-windows-x64-setup.exe',
-  'dsh-desktop-windows-x64-setup.exe.blockmap',
-  'latest-mac.yml',
-  'latest.yml'
-]
+export function releaseAssetNames(artifactPrefix = 'dsh-desktop') {
+  if (typeof artifactPrefix !== 'string' || artifactPrefix.length > 64 ||
+      artifactPrefix.trim() !== artifactPrefix || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(artifactPrefix) ||
+      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(artifactPrefix)) {
+    throw new Error('Invalid portable release artifact prefix')
+  }
+  return [
+    ...['arm64', 'x64'].flatMap(arch => ['dmg', 'zip', 'zip.blockmap'].map(ext => artifactPrefix + '-mac-' + arch + '.' + ext)),
+    artifactPrefix + '-windows-x64-setup.exe',
+    artifactPrefix + '-windows-x64-setup.exe.blockmap',
+    'latest-mac.yml', 'latest.yml'
+  ]
+}
 
 // A complete DSH Desktop runtime is substantially larger than these floors.
 // These catch truncated/corrupt artifacts without pinning normal release sizes.
@@ -95,10 +97,11 @@ async function assertUpdateEntry(root, metadataName, version, assetName) {
 }
 
 export async function verifyReleaseAssets(releaseDir, version, options = {}) {
+  const requiredAssets = releaseAssetNames(options.artifactPrefix)
   const root = resolve(releaseDir)
   const minimumBytes = { ...DEFAULT_MINIMUM_BYTES, ...options.minimumBytes }
 
-  for (const name of REQUIRED_ASSETS) {
+  for (const name of requiredAssets) {
     const kind = assetKind(name)
     const file = join(root, name)
     const fileStat = await stat(file).catch(() => undefined)
@@ -109,17 +112,18 @@ export async function verifyReleaseAssets(releaseDir, version, options = {}) {
     await assertFileHeader(file, kind, fileStat.size)
   }
 
-  await assertUpdateEntry(root, 'latest.yml', version, 'dsh-desktop-windows-x64-setup.exe')
-  await assertUpdateEntry(root, 'latest-mac.yml', version, 'dsh-desktop-mac-arm64.zip')
-  await assertUpdateEntry(root, 'latest-mac.yml', version, 'dsh-desktop-mac-x64.zip')
+  await assertUpdateEntry(root, 'latest.yml', version, requiredAssets[6])
+  await assertUpdateEntry(root, 'latest-mac.yml', version, requiredAssets[1])
+  await assertUpdateEntry(root, 'latest-mac.yml', version, requiredAssets[4])
 }
 
 async function main() {
-  const [releaseDir, version] = process.argv.slice(2)
-  if (!releaseDir || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version ?? '')) {
-    throw new Error('Usage: node scripts/verify/verify-release-assets.mjs <release-dir> <semver>')
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: { 'artifact-prefix': { type: 'string' } } })
+  const [releaseDir, version] = positionals
+  if (positionals.length !== 2 || !releaseDir || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version ?? '')) {
+    throw new Error('Usage: node scripts/verify/verify-release-assets.mjs <release-dir> <semver> [--artifact-prefix dsh-desktop]')
   }
-  await verifyReleaseAssets(releaseDir, version)
+  await verifyReleaseAssets(releaseDir, version, { artifactPrefix: values['artifact-prefix'] })
   console.log(`Verified release assets for ${version}.`)
 }
 

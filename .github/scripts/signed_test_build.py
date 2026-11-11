@@ -15,6 +15,20 @@ from urllib.parse import quote
 from feishu_release_notes import send_feishu_notification
 from test_change_summary import summarize_changes, UNAVAILABLE as SUMMARY_FALLBACK
 
+def artifact_prefix(value: str) -> str:
+    if (not isinstance(value, str) or len(value) > 64
+            or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value)
+            or re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", value)):
+        raise ValueError("Invalid portable release artifact prefix")
+    return value
+
+
+def product_name(value: str) -> str:
+    if not isinstance(value, str) or value.strip() != value or not re.fullmatch(r"[^\W_][\w .-]{0,79}", value):
+        raise ValueError("Invalid release product name")
+    return value
+
+
 INSTALLERS = {
     "macos": [
         ("macOS Apple Silicon", "dsh-desktop-mac-arm64.dmg"),
@@ -24,9 +38,10 @@ INSTALLERS = {
 }
 
 
-def installer_paths(directory: Path, target: str) -> list[tuple[str, Path]]:
+def installer_paths(directory: Path, target: str, prefix: str = "dsh-desktop") -> list[tuple[str, Path]]:
+    prefix = artifact_prefix(prefix)
     platforms = ["macos", "windows"] if target == "all" else [target]
-    installers = [(label, directory / name) for platform in platforms for label, name in INSTALLERS[platform]]
+    installers = [(label, directory / (prefix + name[len("dsh-desktop"):])) for platform in platforms for label, name in INSTALLERS[platform]]
     for _, file in installers:
         if not file.is_file() or file.stat().st_size == 0:
             raise ValueError(f"Missing or empty signed installer: {file.name}")
@@ -134,7 +149,8 @@ TEST_SUGGESTIONS = """\
 """
 
 
-def build_notification(version: str, installers: list[tuple[str, Path]], repo_id: str, prefix: str, run_url: str, changes: str = "") -> str:
+def build_notification(version: str, installers: list[tuple[str, Path]], repo_id: str, prefix: str, run_url: str, changes: str = "", product: str = "DSH Desktop") -> str:
+    product = product_name(product)
     links = "\n".join(f"- [{label}]({download_url(repo_id, prefix, file.name)})" for label, file in installers)
     if len(changes) > 9000:
         changes = changes[:8500].rsplit("\n", 1)[0] + "\n\n变更较多，已截断展示。"
@@ -142,7 +158,7 @@ def build_notification(version: str, installers: list[tuple[str, Path]], repo_id
     if changes:
         details += f"\n\n[完整提测说明]({download_url(repo_id, prefix, 'test-changes.md')})"
     return (
-        f"**DSH Desktop {version} 测试打包完成**\n\n"
+        f"**{product} {version} 测试打包完成**\n\n"
         f"**下载地址**\n{links}"
         + details
         + f"\n\n{TEST_SUGGESTIONS}"
@@ -156,6 +172,8 @@ def main() -> None:
     parser.add_argument("--target", choices=["all", "macos", "windows"], required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--artifact-prefix", type=artifact_prefix, default="dsh-desktop")
+    parser.add_argument("--product-name", type=product_name, default="DSH Desktop")
     args = parser.parse_args()
     prefix = test_prefix(args.version, args.run_id)
     repo_id = os.environ["MODELSCOPE_REPO_ID"]
@@ -163,11 +181,11 @@ def main() -> None:
     webhook = os.environ["FEISHU_RELEASE_WEBHOOK"]
     if not token or not webhook:
         raise ValueError("ModelScope token and Feishu webhook are required for signed test builds")
-    installers = installer_paths(args.directory, args.target)
+    installers = installer_paths(args.directory, args.target, args.artifact_prefix)
     repository_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
     changes = build_test_changes(repository_url)
     changes_file = args.directory / "test-changes.md"
-    changes_file.write_text(f"# DSH Desktop {args.version} 提测说明\n\n{changes}\n", encoding="utf-8")
+    changes_file.write_text(f"# {args.product_name} {args.version} 提测说明\n\n{changes}\n", encoding="utf-8")
     # Import the SDK only for uploads; the notification and selection logic is independently testable.
     from modelscope.hub.api import HubApi
 
@@ -184,7 +202,7 @@ def main() -> None:
         verify_download(url, file.stat().st_size)
         print(f"Verified signed test installer: {file.name}")
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{args.run_id}"
-    notes = build_notification(args.version, installers, repo_id, prefix, run_url, summarize_test_changes(changes))
+    notes = build_notification(args.version, installers, repo_id, prefix, run_url, summarize_test_changes(changes), args.product_name)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as stream:

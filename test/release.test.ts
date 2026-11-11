@@ -27,8 +27,15 @@ interface ProductManifest {
   }
 }
 
-const productManifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as ProductManifest
+const productManifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as ProductManifest & {
+  build: { artifactName: string; nsis: { artifactName: string } }
+}
 const explicitProduct = productManifest.dshDesktopIdentity !== undefined
+const releasePrefix = artifactPrefix(productManifest.build.artifactName, productManifest.build.nsis.artifactName)
+const developmentManifest = createRequire(import.meta.url)('../electron-builder.dev.cjs') as {
+  productName: string; artifactName: string; nsis: { artifactName: string }
+}
+const developmentPrefix = artifactPrefix(developmentManifest.artifactName, developmentManifest.nsis.artifactName)
 
 function assertProductIdentity(manifest: ProductManifest, development: { appId: string; productName: string }): void {
   // Pass an empty environment so developer Profile overrides cannot mask packaging errors.
@@ -437,8 +444,8 @@ describe('GitHub release contract', () => {
       'latest-mac-x64.yml',
       'latest-mac.yml',
       'latest.yml',
-      'dsh-desktop-mac-${{ matrix.arch }}.zip.blockmap',
-      'dsh-desktop-windows-x64-setup.exe.blockmap'
+      releasePrefix + '-mac-${{ matrix.arch }}.zip.blockmap',
+      releasePrefix + '-windows-x64-setup.exe.blockmap'
     ]) {
       expect(workflow).toContain(asset)
     }
@@ -550,7 +557,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('$executable = Join-Path $isolatedApp $sourceExecutable.Name')
     expect(workflow).toContain('-WorkingDirectory $isolatedApp')
     expect(workflow).toContain('Packaged koffi native binding failed (exit code $koffiExitCode).')
-    expect(workflow).toContain("'dist-dev\\win-unpacked\\DSH Desktop Dev.exe'")
+    expect(workflow).toContain("'dist-dev\\win-unpacked\\" + developmentManifest.productName + ".exe'")
     expect(workflow).toContain('if (-not [string]::IsNullOrEmpty($log))')
     expect(workflow).toContain("dsh web: (http://127\\.0\\.0\\.1:\\d+/\\?token=[^\\s]+)")
     expect(workflow).toContain('-SessionVariable harnessSession')
@@ -570,9 +577,9 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('mode:')
     expect(workflow).toContain('--prerelease')
     expect(workflow).toContain('name: windows-x64-dev')
-    expect(workflow).toContain('dist-dev/dsh-desktop-dev-windows-x64-setup.exe')
-    expect(workflow).toContain('dsh-desktop-mac-${{ matrix.arch }}.dmg')
-    expect(workflow).toContain('dsh-desktop-windows-x64-setup.exe')
+    expect(workflow).toContain('dist-dev/' + developmentPrefix + '-windows-x64-setup.exe')
+    expect(workflow).toContain(releasePrefix + '-mac-${{ matrix.arch }}.dmg')
+    expect(workflow).toContain(releasePrefix + '-windows-x64-setup.exe')
     expect(
       workflow.match(
         /npm version --no-git-tag-version --allow-same-version "\$\{\{ github\.ref_name \}\}"/g

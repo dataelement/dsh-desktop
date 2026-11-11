@@ -117,7 +117,7 @@ index 2b158ec..1aa3c75 100644
  			* synchronous-addressability guarantee as {@link ClientSessions.create}:
  			* on resolution the child is catalogued and may be explicitly retained).
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
-index 1ed54d7..647d20a 100644
+index 1ed54d7..29e6d63 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 @@ -2,13 +2,13 @@ import { hostname } from "node:os";
@@ -462,7 +462,7 @@ index 1ed54d7..647d20a 100644
  //#region lib/types/control.js
  /** Live Session projection state with reconnect baselines. */
  /** Owns the Host-wide Session control stream. */
-@@ -3111,6 +3297,7 @@ let SessionSkillCatalog = (() => {
+@@ -3111,10 +3297,12 @@ let SessionSkillCatalog = (() => {
  				const scope = live ?? lease?.key;
  				try {
  					return { skills: (await skillRegistry.list({
@@ -470,7 +470,12 @@ index 1ed54d7..647d20a 100644
  						cwd,
  						scope
  					})).filter(isUserInvocable).map((skill) => ({
-@@ -3236,6 +3423,171 @@ const SessionMediaReferences = {
+ 						name: skill.name,
++						...skill.displayName === void 0 ? {} : { displayName: skill.displayName },
+ 						...skill.path === void 0 ? {} : { path: skill.path },
+ 						description: skill.description,
+ 						...skill.whenToUse === void 0 ? {} : { whenToUse: skill.whenToUse },
+@@ -3236,6 +3424,171 @@ const SessionMediaReferences = {
  		}), "session-controller: /api/file");
  	}
  };
@@ -642,7 +647,7 @@ index 1ed54d7..647d20a 100644
  //#endregion
  //#region lib/types/archived-session-gate.js
  /**
-@@ -3424,6 +3776,7 @@ let SessionController = (() => {
+@@ -3424,6 +3777,7 @@ let SessionController = (() => {
  	let _openWorkspacePath_decorators;
  	let _workspacePathApplications_decorators;
  	let _rename_decorators;
@@ -650,7 +655,7 @@ index 1ed54d7..647d20a 100644
  	let _fork_decorators;
  	let _prompt_decorators;
  	let _attachment_decorators;
-@@ -3452,6 +3805,7 @@ let SessionController = (() => {
+@@ -3452,6 +3806,7 @@ let SessionController = (() => {
  			_openWorkspacePath_decorators = [Remote("openWorkspacePath")];
  			_workspacePathApplications_decorators = [Remote("workspacePathApplications")];
  			_rename_decorators = [Remote("rename")];
@@ -658,7 +663,7 @@ index 1ed54d7..647d20a 100644
  			_fork_decorators = [Remote("fork")];
  			_prompt_decorators = [Remote("prompt")];
  			_attachment_decorators = [Remote("attachment")];
-@@ -3577,6 +3931,17 @@ let SessionController = (() => {
+@@ -3577,6 +3932,17 @@ let SessionController = (() => {
  				},
  				metadata: _metadata
  			}, null, _instanceExtraInitializers);
@@ -676,7 +681,7 @@ index 1ed54d7..647d20a 100644
  			__esDecorate(this, null, _fork_decorators, {
  				kind: "method",
  				name: "fork",
-@@ -3820,10 +4185,12 @@ let SessionController = (() => {
+@@ -3820,10 +4186,12 @@ let SessionController = (() => {
  			await this.listState.initialize();
  			ctx.plugin(SessionFileReferences);
  			ctx.plugin(SessionMediaReferences);
@@ -690,7 +695,7 @@ index 1ed54d7..647d20a 100644
  			});
  			ctx.on("session/disposed", (session) => {
  				ctx.emit("api-session/removed", session.id);
-@@ -3942,7 +4309,7 @@ let SessionController = (() => {
+@@ -3942,7 +4310,7 @@ let SessionController = (() => {
  				model: model.id,
  				...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: ReasoningEffortId(model.reasoning.defaultEffort) }
  			};
@@ -699,7 +704,7 @@ index 1ed54d7..647d20a 100644
  		}
  		/**
  		* Describe every currently routable model for Host-generation selectors.
-@@ -4026,6 +4393,10 @@ let SessionController = (() => {
+@@ -4026,6 +4394,10 @@ let SessionController = (() => {
  		rename(request) {
  			return this.commands.rename(request);
  		}
@@ -711,7 +716,7 @@ index 1ed54d7..647d20a 100644
  		* Fork one cold-readable exact event prefix into a new Session. An omitted
  		* boundary selects the latest completed-turn prefix; an open cut receives
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
-index 83a5cda..9361d36 100644
+index 83a5cda..ad24b53 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
 @@ -339,6 +339,14 @@ const _deepseek_ai_dsh_api_session_controller_session_events_result$schema = ()
@@ -729,7 +734,15 @@ index 83a5cda..9361d36 100644
  let _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value
  const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = () => (_deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value ??= z.object({
    'address': z.union([z.object({
-@@ -1984,6 +1992,31 @@ const $remote = createTypertRemoteInfo({
+@@ -1625,6 +1633,7 @@ const _deepseek_ai_dsh_api_session_controller_skills_list_result$schema = () =>
+   'skills': z.array(z.object({
+   'path': z.string().readonly().optional().describe('Absolute SKILL.md path when supplied by a filesystem provider.'),
+   'name': z.string().readonly().describe('Kebab-case identifier referenced as `/name`.'),
++  'displayName': z.string().readonly().optional().describe('Optional human-facing label; invocation always uses name.'),
+   'description': z.string().readonly().describe('Short routing description.'),
+   'whenToUse': z.string().readonly().optional().describe('Optional extra routing guidance.'),
+   'modelInvocable': z.boolean().readonly().describe('Whether the same skill is also advertised to the model.'),
+@@ -1984,6 +1993,31 @@ const $remote = createTypertRemoteInfo({
        },
        sourceLocation: {"file":"packages/api/session-controller/src/index.ts","line":628,"column":10},
      },
@@ -761,7 +774,16 @@ index 83a5cda..9361d36 100644
      'session/create': {
        service: 'sessionController',
        description: 'Create one ordinary Session for a new conversation, reusing the named blank Session while it is reusable.',
-@@ -2776,6 +2809,13 @@ export const TYPERT = {
+@@ -2669,7 +2703,7 @@ const $remote = createTypertRemoteInfo({
+         typeSymbol: '@deepseek-ai/dsh-api-session-controller/types#SkillListValue',
+         create: _deepseek_ai_dsh_api_session_controller_skills_list_result$schema,
+         description: 'user-invocable skill metadata without loading skill bodies.',
+-        jsonSchema: {"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string","description":"Absolute SKILL.md path when supplied by a filesystem provider."},"name":{"type":"string","description":"Kebab-case identifier referenced as `/name`."},"description":{"type":"string","description":"Short routing description."},"whenToUse":{"type":"string","description":"Optional extra routing guidance."},"modelInvocable":{"type":"boolean","description":"Whether the same skill is also advertised to the model."}},"required":["name","description","modelInvocable"],"additionalProperties":true}}},"required":["skills"],"additionalProperties":true},
++        jsonSchema: {"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string","description":"Absolute SKILL.md path when supplied by a filesystem provider."},"name":{"type":"string","description":"Kebab-case identifier referenced as `/name`."},"displayName":{"type":"string","description":"Optional human-facing label; invocation always uses name."},"description":{"type":"string","description":"Short routing description."},"whenToUse":{"type":"string","description":"Optional extra routing guidance."},"modelInvocable":{"type":"boolean","description":"Whether the same skill is also advertised to the model."}},"required":["name","description","modelInvocable"],"additionalProperties":true}}},"required":["skills"],"additionalProperties":true},
+       },
+       sourceLocation: {"file":"packages/api/session-controller/src/skill-catalog.ts","line":36,"column":9},
+     },
+@@ -2776,6 +2810,13 @@ export const TYPERT = {
              "summary": "Rename one Session after explicitly resuming it.",
              "jsDoc": "/**\n * Rename one Session after explicitly resuming it.\n * @param request - Session identity and proposed title.\n * @returns the accepted title and durable event sequence.\n */"
            },
@@ -775,7 +797,7 @@ index 83a5cda..9361d36 100644
            {
              "kind": "method",
              "name": "fork",
-@@ -3599,6 +3639,14 @@ export const TYPERT = {
+@@ -3599,6 +3640,14 @@ export const TYPERT = {
              "name": "SessionCreateValue",
              "declaration": "export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}"
            },
@@ -790,6 +812,15 @@ index 83a5cda..9361d36 100644
            {
              "name": "SessionEvent",
              "declaration": "export type SessionEvent<T extends SessionEventType = SessionEventType> = { [K in SessionEventType]: { type: K; seq: SessionSeq; time: number; data: SessionEventMap[K]; ignorable?: true; } & (K extends SurfaceEventType ? SurfaceIntent<K> : { surfaceOp?: never; sourceEventSeqs?: never; }) }[T];"
+@@ -4795,7 +4844,7 @@ export const TYPERT = {
+           },
+           {
+             "name": "SkillEntry",
+-            "declaration": "export interface SkillEntry {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n}"
++            "declaration": "export interface SkillEntry {\n    readonly path?: string;\n    readonly name: string;\n    readonly displayName?: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n}"
+           },
+           {
+             "name": "SkillListRequest",
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.d.ts b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.d.ts
 index 11f61a6..c7474e2 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.d.ts
@@ -820,7 +851,7 @@ index 11f61a6..c7474e2 100644
      'session/events': (request: SessionPageRequest, signal?: AbortSignal) => Promise<RemoteResult<SessionEventsPage>>
      'session/follow': (request: SessionFollowRequest, signal?: AbortSignal) => RemoteStreamHandle<SessionFollowFrame, never>
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js
-index 36805d2..614ffa7 100644
+index 36805d2..8aeedd8 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js
 @@ -339,6 +339,14 @@ const _deepseek_ai_dsh_api_session_controller_session_events_result$schema = ()
@@ -838,7 +869,15 @@ index 36805d2..614ffa7 100644
  let _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value
  const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = () => (_deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value ??= z.object({
    'address': z.union([z.object({
-@@ -1984,6 +1992,31 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
+@@ -1625,6 +1633,7 @@ const _deepseek_ai_dsh_api_session_controller_skills_list_result$schema = () =>
+   'skills': z.array(z.object({
+   'path': z.string().readonly().optional().describe('Absolute SKILL.md path when supplied by a filesystem provider.'),
+   'name': z.string().readonly().describe('Kebab-case identifier referenced as `/name`.'),
++  'displayName': z.string().readonly().optional().describe('Optional human-facing label; invocation always uses name.'),
+   'description': z.string().readonly().describe('Short routing description.'),
+   'whenToUse': z.string().readonly().optional().describe('Optional extra routing guidance.'),
+   'modelInvocable': z.boolean().readonly().describe('Whether the same skill is also advertised to the model.'),
+@@ -1984,6 +1993,31 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
        },
        sourceLocation: {"file":"packages/api/session-controller/src/index.ts","line":628,"column":10},
      },
@@ -870,6 +909,15 @@ index 36805d2..614ffa7 100644
      'session/create': {
        service: 'sessionController',
        description: 'Create one ordinary Session for a new conversation, reusing the named blank Session while it is reusable.',
+@@ -2669,7 +2703,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
+         typeSymbol: '@deepseek-ai/dsh-api-session-controller/types#SkillListValue',
+         create: _deepseek_ai_dsh_api_session_controller_skills_list_result$schema,
+         description: 'user-invocable skill metadata without loading skill bodies.',
+-        jsonSchema: {"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string","description":"Absolute SKILL.md path when supplied by a filesystem provider."},"name":{"type":"string","description":"Kebab-case identifier referenced as `/name`."},"description":{"type":"string","description":"Short routing description."},"whenToUse":{"type":"string","description":"Optional extra routing guidance."},"modelInvocable":{"type":"boolean","description":"Whether the same skill is also advertised to the model."}},"required":["name","description","modelInvocable"],"additionalProperties":true}}},"required":["skills"],"additionalProperties":true},
++        jsonSchema: {"type":"object","properties":{"skills":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string","description":"Absolute SKILL.md path when supplied by a filesystem provider."},"name":{"type":"string","description":"Kebab-case identifier referenced as `/name`."},"displayName":{"type":"string","description":"Optional human-facing label; invocation always uses name."},"description":{"type":"string","description":"Short routing description."},"whenToUse":{"type":"string","description":"Optional extra routing guidance."},"modelInvocable":{"type":"boolean","description":"Whether the same skill is also advertised to the model."}},"required":["name","description","modelInvocable"],"additionalProperties":true}}},"required":["skills"],"additionalProperties":true},
+       },
+       sourceLocation: {"file":"packages/api/session-controller/src/skill-catalog.ts","line":36,"column":9},
+     },
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/agent.d.ts b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/agent.d.ts
 index 4e23fa7..6cbdb89 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/agent.d.ts
@@ -1284,11 +1332,32 @@ index 8762773..45610bf 100644
          /**
           * Fork one cold-readable exact event prefix into a new Session. An omitted
           * boundary selects the latest completed-turn prefix; an open cut receives
+diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/skill-catalog.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/skill-catalog.js
+index df09478..f5bbc31 100644
+--- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/skill-catalog.js
++++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/skill-catalog.js
+@@ -163,6 +163,7 @@ let SessionSkillCatalog = (() => {
+                     return {
+                         skills: skills.map(skill => ({
+                             name: skill.name,
++                            ...skill.displayName === undefined ? {} : { displayName: skill.displayName },
+                             ...skill.path === undefined ? {} : { path: skill.path },
+                             description: skill.description,
+                             ...skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse },
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/types.d.ts b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/types.d.ts
-index c568b35..85ef54f 100644
+index c568b35..2c3946e 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/types.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/types.d.ts
-@@ -296,6 +296,14 @@ export interface SessionRenameValue {
+@@ -232,6 +232,8 @@ export interface SkillEntry {
+     readonly path?: string;
+     /** Kebab-case identifier referenced as `/name`. */
+     readonly name: string;
++    /** Optional human-facing label; invocation always uses name. */
++    readonly displayName?: string;
+     /** Short routing description. */
+     readonly description: string;
+     /** Optional extra routing guidance. */
+@@ -296,6 +298,14 @@ export interface SessionRenameValue {
      readonly title: string;
      readonly seq: number;
  }

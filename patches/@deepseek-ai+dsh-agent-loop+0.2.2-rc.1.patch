@@ -1,0 +1,26 @@
+diff --git a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
+index 453ceff9d6..42ab9d39cc 100644
+--- a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
+@@ -670,17 +670,16 @@ var ReactLoopAgent = class {
+ 		const claimed = this.inbox.claim(target, position.turn);
+ 		const selection = this.model.current();
+ 		if (selection === void 0) throw new Error(`agent "${this.id}" has no provider/model: set AgentOptions.provider and AgentOptions.model or record a model selection`);
++		const assemblyContext = { ...assembleContextFor(this, signal), modelSelection: selection };
++		const prepared = await this.loopCtx.systemPrompt.prepare(assemblyContext);
+ 		const toolSet = await this.loopCtx.tools.resolve({
+ 			agent: this,
+ 			modelSelection: selection,
+ 			signal
+ 		});
+ 		try {
+-			const assembly = await this.loopCtx.systemPrompt.assemble({
+-				...assembleContextFor(this, signal),
+-				modelSelection: selection,
+-				toolSet
+-			});
++			assemblyContext.toolSet = toolSet;
++			const assembly = await this.loopCtx.systemPrompt.assemble(assemblyContext, prepared);
+ 			signal.throwIfAborted();
+ 			const decision = await this.dispatch.waterfall("agent/pre-step", {
+ 				messages: claimed,

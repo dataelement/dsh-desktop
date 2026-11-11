@@ -1,0 +1,18 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-skill/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-skill/lib/client.js
+index 50bd020..8653ce8 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-skill/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-skill/lib/client.js
+@@ -496,9 +496,10 @@ window.__ModuleLoader__.load({
+ 					if (sessions.subagentAddress(session.sessionId) !== void 0) return [];
+ 					const skills = await fetchCatalog(session.sessionId).promise;
+ 					if (signal.aborted) return [];
+-					return (0, _deepseek_ai_dsh_client_ui_primitives.rankByName)(skills, query).map((skill) => ({
+-						name: skill.name,
+-						description: skill.modelInvocable ? skill.description : `${t("menu.userOnly")} · ${skill.description}`
++					return (0, _deepseek_ai_dsh_client_ui_primitives.rankByName)(skills.map((skill) => ({ ...skill, name: skill.displayName || skill.name, invocationName: skill.name })), query).map((skill) => ({
++						name: skill.invocationName,
++						...skill.displayName ? { label: skill.displayName, hideAlias: true } : {},
++						description: skill.displayName || skill.modelInvocable ? skill.description : `${t("menu.userOnly")} · ${skill.description}`
+ 					}));
+ 				},
+ 				warm(session) {
