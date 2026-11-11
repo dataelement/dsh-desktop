@@ -9,7 +9,8 @@ const en = {
   trayShow: 'Show DSH Desktop',
   appInstallFailed: 'Application installation did not finish.',
   repairNotReady: 'The repair core is not ready yet.',
-  mobileWindowTitle: 'Connect Mobile Device'
+  mobileWindowTitle: 'Connect Mobile Device',
+  harnessStopFailed: 'Harness did not stop. Please try again.'
 } as const
 export type DesktopDailyMessageKey = keyof typeof en
 const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = {
@@ -23,7 +24,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     trayShow: '显示 DSH Desktop',
     appInstallFailed: '应用安装未完成。',
     repairNotReady: '维修核心服务尚未就绪。',
-    mobileWindowTitle: '连接移动设备'
+    mobileWindowTitle: '连接移动设备',
+    harnessStopFailed: 'Harness 没有停下来，请再试一次。'
   },
   ja: {
     mobileStarting: 'Harness はまだ起動中です。',
@@ -34,7 +36,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     trayShow: 'DSH Desktop を表示',
     appInstallFailed: 'アプリのインストールが完了しませんでした。',
     repairNotReady: '修復サービスの準備がまだできていません。',
-    mobileWindowTitle: 'モバイル端末を接続'
+    mobileWindowTitle: 'モバイル端末を接続',
+    harnessStopFailed: 'Harness を停止できませんでした。再試行してください。'
   },
   es: {
     mobileStarting: 'Harness se está iniciando.',
@@ -45,7 +48,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     trayShow: 'Mostrar DSH Desktop',
     appInstallFailed: 'La instalación de la aplicación no se completó.',
     repairNotReady: 'El servicio de reparación aún no está listo.',
-    mobileWindowTitle: 'Conectar dispositivo móvil'
+    mobileWindowTitle: 'Conectar dispositivo móvil',
+    harnessStopFailed: 'Harness no se detuvo. Inténtalo de nuevo.'
   },
   fr: {
     mobileStarting: 'Harness est en cours de démarrage.',
@@ -56,7 +60,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     trayShow: 'Afficher DSH Desktop',
     appInstallFailed: 'L’installation de l’application ne s’est pas terminée.',
     repairNotReady: 'Le service de réparation n’est pas encore prêt.',
-    mobileWindowTitle: 'Connecter un appareil mobile'
+    mobileWindowTitle: 'Connecter un appareil mobile',
+    harnessStopFailed: 'Harness ne s’est pas arrêté. Réessayez.'
   },
   de: {
     mobileStarting: 'Harness wird noch gestartet.',
@@ -67,7 +72,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     trayShow: 'DSH Desktop anzeigen',
     appInstallFailed: 'Die Installation der Anwendung wurde nicht abgeschlossen.',
     repairNotReady: 'Der Reparaturdienst ist noch nicht bereit.',
-    mobileWindowTitle: 'Mobilgerät verbinden'
+    mobileWindowTitle: 'Mobilgerät verbinden',
+    harnessStopFailed: 'Harness wurde nicht beendet. Bitte erneut versuchen.'
   },
   ru: {
     mobileStarting: 'Harness ещё запускается.',
@@ -78,7 +84,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     trayShow: 'Показать DSH Desktop',
     appInstallFailed: 'Установка приложения не завершена.',
     repairNotReady: 'Служба восстановления ещё не готова.',
-    mobileWindowTitle: 'Подключить мобильное устройство'
+    mobileWindowTitle: 'Подключить мобильное устройство',
+    harnessStopFailed: 'Harness не остановился. Повторите попытку.'
   },
   pt: {
     mobileStarting: 'O Harness ainda está iniciando.',
@@ -89,7 +96,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     trayShow: 'Mostrar DSH Desktop',
     appInstallFailed: 'A instalação do aplicativo não foi concluída.',
     repairNotReady: 'O serviço de reparo ainda não está pronto.',
-    mobileWindowTitle: 'Conectar dispositivo móvel'
+    mobileWindowTitle: 'Conectar dispositivo móvel',
+    harnessStopFailed: 'O Harness não parou. Tente novamente.'
   }
 }
 

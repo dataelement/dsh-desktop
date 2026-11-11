@@ -17,7 +17,7 @@ it.each(locales)('localizes the daily mobile startup feedback in %s without open
   expect(native.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
     message: desktopDailyText(locale, 'mobileStarting'), detail: desktopDailyText(locale, 'mobileWait')
   }))
-  for (const key of ['trayShow', 'appInstallFailed', 'repairNotReady', 'repairOpenFailed', 'mobileWindowTitle'] as const) {
+  for (const key of ['trayShow', 'appInstallFailed', 'repairNotReady', 'repairOpenFailed', 'mobileWindowTitle', 'harnessStopFailed'] as const) {
     expect(desktopDailyText(locale, key)).toBeTruthy()
   }
 })

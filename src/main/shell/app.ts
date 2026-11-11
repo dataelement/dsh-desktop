@@ -50,6 +50,7 @@ import { SidebarBrowserGuests } from '../sidebar-browser'
 import { SIDEBAR_BROWSER_IPC } from '../../shared/sidebar-browser'
 import { officeLaunchPaths } from './office-launch'
 import { isSplashPageUrl } from './splash-page'
+import { HarnessRestartSessions, resumeHarnessRestart, runHarnessRestart, type HarnessRestartSteps } from './harness-restart'
 import { isWebImportPageUrl, offerWebHomeImport, readWebImportAction, type WebImportChoice } from './web-import-offer'
 import { resolveDesktopPaths } from './paths'
 import { writeDesktopProductPatch } from './product-patch'
@@ -737,6 +738,7 @@ async function main(): Promise<void> {
   let hostEnvironment: NodeJS.ProcessEnv = process.env
   const pendingHostFailures: unknown[] = []
   let drainingHostFailures = false
+  const harnessRestarts = new HarnessRestartSessions()
   async function drainHostFailures(): Promise<void> {
     drainingHostFailures = true
     try {
@@ -758,7 +760,15 @@ async function main(): Promise<void> {
               await backend.start(async () => {})
             } catch (error: unknown) {
               console.error(error)
+              return
             }
+            const current = harnessRestarts.current()
+            if (current === undefined) return
+            await resumeHarnessRestart(harnessRestartSteps(current.id))
+          },
+          finishRestart: () => {
+            const current = harnessRestarts.current()
+            if (current !== undefined) harnessRestarts.end(current.id)
           },
           presentPluginRecovery: async current => {
             if (startupRecoveryOpen) return true
@@ -1051,23 +1061,71 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['app'])
     return bootSession.readBoot()
   })
-  let restartingHarness = false
   restartDesktop = async () => {
-    if (restartingHarness || quitting) return false
-    restartingHarness = true
+    if (quitting || window.isDestroyed()) return false
+    let currentUrl = ''
+    try { currentUrl = window.webContents.getURL() } catch { return false }
+    const session = harnessRestarts.begin(currentUrl)
+    if (session === undefined) return false
     try {
-      await backend.stop()
-      await backend.start(async () => {})
-      setImmediate(() => {
-        if (!window.isDestroyed()) void loadDesktopPage(window, window.webContents.getURL()).catch((error: unknown) => { console.error(error) })
-      })
-      return true
+      return await runHarnessRestart(harnessRestartSteps(session.id))
     } catch (error: unknown) {
       console.error(error)
+      if (harnessRestarts.isCurrent(session.id)) harnessRestarts.end(session.id)
       return false
-    } finally {
-      restartingHarness = false
     }
+  }
+  function harnessRestartSteps(sessionId: number): HarnessRestartSteps {
+    return {
+      sessionId,
+      isCurrent: id => harnessRestarts.isCurrent(id),
+      end: id => harnessRestarts.end(id),
+      cancelled: () => quitting || window.isDestroyed() || window.webContents.isDestroyed(),
+      blocked: () => stability.blocksNavigation(),
+      showWaiting: showHarnessRestartWaiting,
+      stop: () => backend.stop(),
+      start: async () => {
+        try {
+          await backend.start(async () => {})
+        } catch (error: unknown) {
+          console.error(error)
+          throw error
+        }
+      },
+      resume: async id => {
+        if (!harnessRestarts.isCurrent(id)) return false
+        const url = harnessRestarts.resumeUrl(id)
+        if (url === undefined) return false
+        return loadDesktopPage(window, url)
+      },
+      recoverDocument: () => {
+        if (!quitting && !stability.blocksNavigation()) stability.processRecovery.start('window')
+      },
+      reportStopFailure: reportHarnessStopFailure
+    }
+  }
+  async function showHarnessRestartWaiting(): Promise<boolean> {
+    if (window.isDestroyed()) return false
+    if (isSplashPageUrl(window.webContents.getURL(), splashPage)) {
+      window.show()
+      return true
+    }
+    const loaded = await loadDesktopPage(window, pathToFileURL(splashPage).href)
+    if (!window.isDestroyed()) window.show()
+    return loaded
+  }
+  async function reportHarnessStopFailure(error: unknown): Promise<void> {
+    console.error(error)
+    const box = {
+      type: 'error' as const,
+      message: desktopDailyText(menuLocale, 'harnessStopFailed'),
+      buttons: [updateText(menuLocale, 'ok')],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    }
+    const shown = window.isDestroyed() ? dialog.showMessageBox(box) : dialog.showMessageBox(window, box)
+    await shown.catch((failure: unknown) => { console.error(failure) })
   }
   ipcMain.handle(DESKTOP_IPC.restartHarness, async event => {
     assertMain(event)

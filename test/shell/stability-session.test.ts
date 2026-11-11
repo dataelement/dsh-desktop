@@ -150,25 +150,30 @@ describe('desktop stability session', () => {
     const restarted: string[] = []
     const presented: unknown[] = []
     const fatals: unknown[] = []
+    const finished: string[] = []
     await handleDesktopHostFailure(new Error('host failed'), {
       quitting: () => false,
       safeMode: false,
       recoverConfiguration: async () => 'retry',
       restartHost: async () => { restarted.push('restart') },
       presentPluginRecovery: async failure => { presented.push(failure); return true },
-      reportFatal: async failure => { fatals.push(failure) }
+      reportFatal: async failure => { fatals.push(failure) },
+      finishRestart: () => { finished.push('retry') }
     })
     expect(restarted).toEqual(['restart'])
     expect(presented).toEqual([])
+    expect(finished).toEqual([])
     await handleDesktopHostFailure(new Error('still failed'), {
       quitting: () => false,
       safeMode: true,
       recoverConfiguration: async () => 'continue',
       restartHost: async () => undefined,
       presentPluginRecovery: async failure => { presented.push(failure); return true },
-      reportFatal: async failure => { fatals.push(failure) }
+      reportFatal: async failure => { fatals.push(failure); finished.push('fatal') },
+      finishRestart: () => { finished.push('safe') }
     })
     expect(presented).toEqual([])
+    expect(finished).toEqual(['safe', 'fatal'])
     expect(fatals.map(failure => failure instanceof Error ? failure.message : '')).toEqual(['still failed'])
     const normal = new Error('plugin')
     await handleDesktopHostFailure(normal, {
@@ -176,9 +181,11 @@ describe('desktop stability session', () => {
       safeMode: false,
       recoverConfiguration: async () => 'continue',
       restartHost: async () => undefined,
-      presentPluginRecovery: async () => false,
-      reportFatal: async failure => { fatals.push(failure) }
+      presentPluginRecovery: async () => { finished.push('plugin'); return false },
+      reportFatal: async failure => { fatals.push(failure) },
+      finishRestart: () => { finished.push('plugin-page') }
     })
+    expect(finished).toEqual(['safe', 'fatal', 'plugin-page', 'plugin'])
     expect(fatals[1]).toBe(normal)
   })
 })
