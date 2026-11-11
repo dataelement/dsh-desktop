@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 type TestDom = { window: Window & typeof globalThis }
 const { JSDOM } = createRequire(import.meta.url)('jsdom') as { JSDOM: new (html: string) => TestDom }
 import type { UpdateStatus } from '../src/shared/contracts'
+import { updateText } from '../src/shared/desktop-update-messages'
 
 const ipc = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, payload: unknown) => void>(),
@@ -62,6 +63,48 @@ afterEach(() => {
 const status = (phase: UpdateStatus['phase'], extra: Partial<UpdateStatus> = {}): UpdateStatus => ({ phase, currentVersion: '1.0.0', manual: true, presentationId: 7, ...extra })
 
 describe('desktop update presentation at the IPC boundary', () => {
+  it('redraws an open update and About panel when the live language changes to a non-legacy locale', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.emit(status('available', { locale: 'en', availableVersion: '1.1.0', presentationId: 8 }))
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'ja')
+    expect(ui.shadow.querySelector('.title')?.textContent).toContain('新しいバージョン')
+    expect(ui.shadow.querySelector('.primary')?.textContent).toBe('更新')
+    ui.showAbout()
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'fr')
+    expect(ui.aboutShadow.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('À propos de DSH Desktop')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toBe('Changer de version')
+    expect(ui.aboutShadow.querySelector('.tooltip')?.textContent).toBe('Harness est mis à jour avec DSH Desktop.')
+  })
+  it('translates a missing Harness version at render time when About changes language', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ipc.handlers.get('desktop:show-about')?.({}, { desktopVersion: '1.0.0', locale: 'en' })
+    expect(ui.aboutShadow.querySelector('.about-line')?.textContent).toContain(`Harness ${updateText('en', 'unknown')}`)
+    for (const locale of ['ja', 'zh', 'fr'] as const) {
+      ipc.handlers.get('desktop:ui-locale')?.({}, locale)
+      expect(ui.aboutShadow.querySelector('.about-line')?.textContent).toContain(`Harness ${updateText(locale, 'unknown')}`)
+      expect(ui.aboutShadow.querySelector('.about-line')?.textContent).not.toContain('Harness Unknown')
+      expect(ui.aboutShadow.querySelector('.about-line')?.textContent).not.toContain('undefined')
+    }
+  })
+
+  it('retranslates a generic non-Error action failure without retaining the original language', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ipc.invoke.mockImplementation(async channel => {
+      if (channel === 'updates:download') throw { reason: 'non-Error rejection' }
+      return undefined
+    })
+    ui.emit(status('available', { locale: 'zh', availableVersion: '1.1.0', presentationId: 8 }))
+    ui.shadow.querySelector<HTMLButtonElement>('.primary')?.click()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(ui.shadow.querySelector('.description')?.textContent).toBe(updateText('zh', 'actionFailed'))
+    for (const locale of ['ja', 'en', 'fr'] as const) {
+      ipc.handlers.get('desktop:ui-locale')?.({}, locale)
+      expect(ui.shadow.querySelector('.description')?.textContent).toBe(updateText(locale, 'actionFailed'))
+      expect(ui.shadow.textContent).not.toContain('dsh-desktop:update-action-failed')
+    }
+  })
+
   it.each(['zh', 'en'] as const)('renders safe Markdown notes in %s with a keyboard-scrollable region', async locale => {
     const ui = await mount(Promise.resolve(status('idle', { manual: false })))
     ui.emit(status('checking', { locale, presentationId: 8 }))

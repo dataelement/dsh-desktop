@@ -19,18 +19,20 @@ import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../recovery/safe-mode-
 import { checkForUpdates, getUpdateStatus, registerUpdateHandlers, startUpdateManager } from '../update/update-manager'
 import { aboutDetail, bundledHarnessVersion } from '../version-info'
 import {
-  chosenHarnessLocale,
-  explicitHarnessLocale,
-  localePreferenceFromProfilePatch,
-  localePreferenceFromSettings,
   resolveHarnessLocale,
-  selectHarnessLocale,
   type HarnessLocale
 } from '../application-locale'
 import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
 import { developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
+import { clearNativeLocaleAttempt, confirmNativeLocaleRestart, NativeDirectoryPicker, nativeLocaleRelaunchArguments, shouldCalibrateNativeLocale } from './native-locale'
+import { nativeLocaleMessages } from './native-locale-messages'
+import { savedDesktopLocaleValue } from './desktop-locale-preference'
+import { desktopLocale as matchDesktopLocale, desktopLanguageState, effectiveNativeLocale, legacyLocale } from '../../shared/desktop-locale'
+import { updateText } from '../../shared/desktop-update-messages'
+import { desktopDailyText } from '../../shared/desktop-daily-messages'
+import { desktopMenuMessages } from './menu-messages'
 import { type DesktopMenuCommand } from '../../shared/desktop-menu'
 import { parseWindowsMenuRequest, windowsMenuTemplate } from '../windows-menu'
 import { desktopWindowChrome, windowsChromeBackground, windowsTitleBarOverlay } from './window-chrome'
@@ -257,13 +259,13 @@ function officeEnvironment(primaryRuntime: string): Record<string, string> {
 }
 
 function restartInSafeMode(): void {
-  app.relaunch({ args: relaunchArguments(process.argv) })
+  app.relaunch({ args: relaunchArguments(clearNativeLocaleAttempt(process.argv)) })
   app.quit()
 }
 
 function exitSafeMode(): void {
   delete process.env.DSH_DESKTOP_SAFE_MODE
-  app.relaunch({ args: normalRelaunchArguments(process.argv) })
+  app.relaunch({ args: normalRelaunchArguments(clearNativeLocaleAttempt(process.argv)) })
   app.quit()
 }
 
@@ -348,7 +350,7 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
   if (aboutUsesPage(window.webContents.getURL(), SCHEME)) {
     window.webContents.send('desktop:show-about', {
       desktopVersion,
-      harnessVersion: harnessVersion ?? (locale === 'zh' ? '未知' : 'Unknown'),
+      harnessVersion,
       locale
     })
     return
@@ -356,9 +358,9 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
   const result = await dialog.showMessageBox(window, {
     type: 'info',
     title: 'DSH Desktop',
-    message: locale === 'zh' ? '关于 DSH Desktop' : 'About DSH Desktop',
+    message: updateText(locale, 'about'),
     detail: aboutDetail(desktopVersion, harnessVersion, locale),
-    buttons: [locale === 'zh' ? '检查更新' : 'Check for Updates', locale === 'zh' ? '关闭' : 'Close'],
+    buttons: [updateText(locale, 'checkForUpdates'), updateText(locale, 'close')],
     defaultId: 1,
     cancelId: 1,
     noLink: true
@@ -433,21 +435,18 @@ function askWebImport(
 async function savedDesktopMenuLocale(
   dshHome: string,
   safeMode: boolean,
-  reported: HarnessLocale | undefined
+  reported: string | undefined
 ): Promise<HarnessLocale> {
-  const profileName = safeMode ? SAFE_MODE_PROFILE : 'desktop'
-  const profilePreference = await readFile(join(dshHome, 'profiles', profileName, 'cordis.patch.yml'), 'utf8')
-    .then(localePreferenceFromProfilePatch)
-    .catch(() => undefined)
-  const settingsPreference = await readFile(join(dshHome, 'settings.yaml'), 'utf8')
-    .then(localePreferenceFromSettings)
-    .catch(() => undefined)
-  return selectHarnessLocale({
-    reported,
-    profilePreference,
-    settingsPreference,
-    preferredSystemLanguages: app.getPreferredSystemLanguages()
+  if (reported !== undefined) return matchDesktopLocale(reported) ?? 'en'
+  const preference = await savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop').catch(error => {
+    console.warn('[desktop-locale] unable to read saved language', error)
+    return undefined
   })
+  // Unknown explicit languages use English copy, not an older saved choice.
+  if (typeof preference === 'string' && preference.trim() !== '' && preference !== 'auto') {
+    return matchDesktopLocale(preference) ?? 'en'
+  }
+  return resolveHarnessLocale(undefined, app.getPreferredSystemLanguages())
 }
 
 async function main(): Promise<void> {
@@ -455,7 +454,33 @@ async function main(): Promise<void> {
     app.quit()
     return
   }
-  // Overlap the GUI-session read with Electron startup and the splash. Windows keeps the registry environment.
+  await app.whenReady()
+  // Cocoa has already consumed its argument domain. A saved choice therefore
+  // needs one fresh process on a Dock/Finder launch, not a late --lang switch.
+  const startupSafeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
+  const nativeLocaleValue = app.getLocale()
+  const nativeLocale = matchDesktopLocale(nativeLocaleValue)
+  if (process.platform === 'darwin') {
+    try {
+      // Use Electron's resolved locale, not merely the Cocoa preference array.
+      const preference = effectiveNativeLocale(
+        await savedDesktopLocaleValue(harnessHome(), startupSafeMode ? SAFE_MODE_PROFILE : 'desktop'),
+        app.getPreferredSystemLanguages()
+      )
+      if (shouldCalibrateNativeLocale({ platform: process.platform, preference, actual: nativeLocaleValue, argv: process.argv }) && preference !== undefined) {
+        app.relaunch({ args: nativeLocaleRelaunchArguments(process.argv, preference) })
+        app.quit()
+        return
+      }
+      if (preference !== undefined && preference !== nativeLocale) {
+        console.warn('[native-locale] language calibration did not take effect; continuing with the current native language')
+      }
+    } catch (error) {
+      // Language presentation is optional; preserve the normal boot and recovery path.
+      console.warn('[native-locale] unable to calibrate language; continuing', error)
+    }
+  }
+  // Only the final GUI process starts shell discovery and the Host.
   const loginShellAbort = new AbortController()
   const loginShell = readDesktopLoginShellEnvironment(
     process.env,
@@ -463,9 +488,8 @@ async function main(): Promise<void> {
     { signal: loginShellAbort.signal }
   )
   app.on('will-quit', () => { loginShellAbort.abort() })
-  await app.whenReady()
   let desktopWindow: BrowserWindow | undefined
-  let reportedLocale: HarnessLocale | undefined
+  let reportedLocale: string | undefined
   let menuLocale: HarnessLocale = 'en'
   let restartDesktop = async (): Promise<boolean> => false
   registerUpdateHandlers({ locale: () => menuLocale })
@@ -537,13 +561,13 @@ async function main(): Promise<void> {
     platform: process.platform,
     userData: app.getPath('userData'),
     quitting: () => quitting,
-    locale: () => menuLocale,
+    locale: () => legacyLocale(menuLocale),
     note: line => { console.error(line) },
     stopHost: () => stopRecoveredHost(),
     releasePage: () => releaseRecoveredPage(),
     showMessageBox: options => window.isDestroyed() ? dialog.showMessageBox(options) : dialog.showMessageBox(window, options),
     flushDiagnostics: async () => { await activeOperationJournal?.drain(500) },
-    relaunch: () => { app.relaunch() },
+    relaunch: () => { app.relaunch({ args: clearNativeLocaleAttempt(process.argv).slice(1) }) },
     quit: () => { app.quit() },
     probePage: async () => {
       const contents = window.webContents
@@ -575,9 +599,9 @@ async function main(): Promise<void> {
     }
     windowsTray.setToolTip(app.name)
     windowsTray.setContextMenu(Menu.buildFromTemplate([
-      { label: menuLocale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: showMainWindow },
+      { label: desktopDailyText(menuLocale, 'trayShow'), click: showMainWindow },
       { type: 'separator' },
-      { label: menuLocale === 'zh' ? '退出' : 'Exit', click: () => { app.quit() } }
+      { label: desktopMenuMessages(menuLocale).exit, click: () => { app.quit() } }
     ]))
   }
   refreshWindowsTray()
@@ -675,7 +699,7 @@ async function main(): Promise<void> {
     const plugins = startupRecoveryTargets(message, await listInstalledProfilePlugins(dshHome, DESKTOP_PROFILE))
     if (plugins.length === 0 || owner.isDestroyed()) return false
     await persistCrashReport(error, 'host')
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const operationLines = await readRecentPluginOperations(pluginOperationDirectory(app.getPath('userData')), 12)
       .catch(() => [])
     owner.show()
@@ -693,7 +717,7 @@ async function main(): Promise<void> {
       },
       nextAction: () => new Promise(resolve => { acceptRecoveryNavigation = resolve }),
       relaunch: () => {
-        app.relaunch({ args: normalRelaunchArguments(process.argv) })
+        app.relaunch({ args: normalRelaunchArguments(clearNativeLocaleAttempt(process.argv)) })
         app.quit()
       },
       quit: () => { app.quit() },
@@ -823,35 +847,33 @@ async function main(): Promise<void> {
   }
   const iconPath = existsSync(packagedPagePath('app-icon.png')) ? packagedPagePath('app-icon.png') : undefined
   const brandLogos = desktopBrandLogoPaths([runtimeDir, primaryRuntime])
-  async function explicitDesktopLocale(): Promise<HarnessLocale | undefined> {
-    const profileName = safeMode ? SAFE_MODE_PROFILE : 'desktop'
-    const profilePreference = await readFile(join(dshHome, 'profiles', profileName, 'cordis.patch.yml'), 'utf8')
-      .then(localePreferenceFromProfilePatch)
-      .catch(() => undefined)
-    const settingsPreference = await readFile(join(dshHome, 'settings.yaml'), 'utf8')
-      .then(localePreferenceFromSettings)
-      .catch(() => undefined)
-    return chosenHarnessLocale([reportedLocale, profilePreference, settingsPreference])
-  }
-  async function desktopLocale(): Promise<HarnessLocale> {
-    return await explicitDesktopLocale()
-      ?? resolveHarnessLocale(undefined, app.getPreferredSystemLanguages())
+  async function explicitDesktopLocale(): Promise<string | undefined> {
+    if (reportedLocale !== undefined) return reportedLocale
+    return savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop').catch(error => {
+      console.warn('[desktop-locale] unable to read language preference', error)
+      return undefined
+    })
   }
   ipcMain.handle(DESKTOP_IPC.localeBootstrap, async event => {
     assertMain(event)
     return {
       languages: [...app.getPreferredSystemLanguages()],
-      preference: await explicitDesktopLocale() ?? null
+      preference: await savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop').catch(error => {
+        console.warn('[desktop-locale] unable to read language preference', error)
+        return undefined
+      }) ?? null
     }
   })
+  const directoryPicker = new NativeDirectoryPicker()
   ipcMain.on(DESKTOP_IPC.localeChanged, (event, locale: unknown) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return
-    const resolved = explicitHarnessLocale(locale)
-    if (resolved === undefined || resolved === menuLocale) {
-      if (resolved !== undefined) reportedLocale = resolved
-      return
-    }
-    reportedLocale = resolved
+    const state = desktopLanguageState(locale)
+    if (state === undefined) return
+    const changed = state.active !== reportedLocale
+    reportedLocale = state.active
+    if (changed) directoryPicker.languageChanged()
+    const resolved = state.display
+    if (resolved === menuLocale) return
     menuLocale = resolved
     refreshApplicationMenu()
     refreshWindowsTray()
@@ -862,20 +884,53 @@ async function main(): Promise<void> {
   })
   ipcMain.handle(DESKTOP_IPC.directoryPick, async event => {
     assertMain(event)
-    const locale = await desktopLocale()
-    const prompt = workspaceDirectoryPrompt(locale)
-    const result = await dialog.showOpenDialog(window, {
-      title: prompt,
-      message: prompt,
-      properties: ['openDirectory', 'createDirectory']
+    const active = await explicitDesktopLocale()
+    const target = effectiveNativeLocale(active, app.getPreferredSystemLanguages())
+    const locale = target ?? 'en'
+    return directoryPicker.pick({
+      locale, target: target ?? active,
+      nativeLocale, native: process.platform === 'darwin',
+      confirmRestart: () => confirmNativeLocaleRestart({
+        locale,
+        confirm: async prompt => {
+          const choice = await dialog.showMessageBox(window, {
+            type: 'info', ...prompt, defaultId: 0, cancelId: 0, noLink: true
+          })
+          return choice.response === 1
+        },
+        savedLocale: async () => effectiveNativeLocale(
+          await savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop'),
+          app.getPreferredSystemLanguages()
+        ),
+        notSaved: async () => {
+          await dialog.showMessageBox(window, {
+            type: 'warning',
+            message: nativeLocaleMessages[locale].notSaved,
+            buttons: [nativeLocaleMessages[locale].close]
+          })
+        },
+        restart: () => {
+          app.relaunch({ args: nativeLocaleRelaunchArguments(process.argv, locale) })
+          app.quit()
+        }
+      }),
+      open: async panelLocale => {
+        // Unknown actual native languages use system-provided text rather than
+        // claiming an English title matches controls in another language.
+        const prompt = panelLocale === undefined ? undefined : workspaceDirectoryPrompt(panelLocale)
+        const result = await dialog.showOpenDialog(window, {
+          ...(prompt === undefined ? {} : { title: prompt, message: prompt }),
+          properties: ['openDirectory', 'createDirectory']
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      }
     })
-    return result.canceled ? null : result.filePaths[0] ?? null
   })
   let mobileWindow: BrowserWindow | undefined
   const mobileBridge = safeMode ? undefined : new LanMobileBridge({
     harnessUrl: () => loopbackHarnessOrigin(hostUrl()),
     harnessCookie: () => hostSessionCookie(hostCookie()),
-    locale: () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+    locale: () => legacyLocale(menuLocale),
     ...(iconPath === undefined ? {} : { appIconPath: iconPath }),
     ...(brandLogos === undefined ? {} : { brandLogoPaths: brandLogos }),
     cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
@@ -911,7 +966,7 @@ async function main(): Promise<void> {
       bridge: mobileBridge,
       parent: window.isDestroyed() ? undefined : window,
       ...(mobileWindow === undefined ? {} : { current: mobileWindow }),
-      locale: app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+      locale: menuLocale,
       ...(iconPath === undefined ? {} : { iconPath }),
       hostReady: hostUrl() !== undefined
     })
@@ -941,7 +996,7 @@ async function main(): Promise<void> {
     workspaceDirectory: dshHome,
     harnessLogPath: join(app.getPath('logs'), 'harness.log'),
     ...(existsSync(presetsDirectory) ? { shippedPresetsDirectory: presetsDirectory } : {}),
-    locale: () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+    locale: () => legacyLocale(menuLocale),
     appVersion: () => app.getVersion()
   })
   let repairOpening: Promise<{ ok: boolean; error?: string }> | undefined
@@ -950,9 +1005,9 @@ async function main(): Promise<void> {
     return repairOpening
   }
   async function openRepairAgentNow(prompt: string, fresh: boolean): Promise<{ ok: boolean; error?: string }> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = menuLocale
     if (hostUrl() === undefined) {
-      return { ok: false, error: locale === 'zh' ? '维修核心服务尚未就绪。' : 'The repair core is not ready yet.' }
+      return { ok: false, error: desktopDailyText(locale, 'repairNotReady') }
     }
     const previous = safeMode ? undefined : await repairSessions.load('normal')
     const session = await repairAgent.initSession({ fresh })
@@ -960,9 +1015,7 @@ async function main(): Promise<void> {
       const detail = (session.error ?? '').split('\n').map(line => line.trim()).filter(line => line.length > 0).slice(0, 2).join(' ').slice(0, 240)
       return {
         ok: false,
-        error: locale === 'zh'
-          ? `无法打开智能修复 Agent 会话${detail.length > 0 ? `：${detail}` : '。'}`
-          : `The repair agent session could not be opened${detail.length > 0 ? `: ${detail}` : '.'}`
+        error: `${desktopDailyText(locale, 'repairOpenFailed')}${detail.length > 0 ? `: ${detail}` : '.'}`
       }
     }
     try {
@@ -983,7 +1036,7 @@ async function main(): Promise<void> {
   }
   ipcMain.handle(DESKTOP_IPC.repairOpen, event => {
     assertMain(event)
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     return openRepairAgent(sidebarRepairPrompt(locale), true)
   })
   ipcMain.handle(DESKTOP_IPC.repairDraftGet, (event, sessionId: unknown) => {
@@ -1171,11 +1224,10 @@ async function main(): Promise<void> {
       },
       installFailed: async () => {
         quitting = false
-        const chinese = app.getLocale().toLowerCase().startsWith('zh')
         await dialog.showMessageBox({
           type: 'error',
-          message: chinese ? '应用安装未完成。' : 'Application installation did not finish.',
-          buttons: [chinese ? '知道了' : 'OK']
+          message: desktopDailyText(menuLocale, 'appInstallFailed'),
+          buttons: [updateText(menuLocale, 'ok')]
         })
       }
     })
@@ -1215,7 +1267,7 @@ async function main(): Promise<void> {
   let desktopHealthLoaded = false
   async function loadDesktopHealthReports(): Promise<readonly PluginHealthReport[]> {
     if (desktopHealthLoaded) return desktopHealthReports
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const runtimeVersion = bundledHarnessVersion(app.getAppPath()) ?? app.getVersion()
     const names = await listInstalledProfilePlugins(dshHome, DESKTOP_PROFILE)
     desktopHealthReports = await Promise.all(names.map(async name => evaluatePluginMarketCompatibility({
@@ -1234,7 +1286,7 @@ async function main(): Promise<void> {
     return { ok: true, notice: success }
   }
   async function confirmMaintenance(message: string, confirmLabel: string): Promise<boolean> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const result = await dialog.showMessageBox(window, {
       type: 'warning',
       message,
@@ -1246,7 +1298,7 @@ async function main(): Promise<void> {
     return result.response === 1
   }
   async function upgradeDesktopPlugins(plugins: readonly string[]): Promise<{ ok: boolean; notice: string }> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const targets = upgradeTargets(plugins, await loadDesktopHealthReports())
     if (targets.length === 0) {
       return {
@@ -1286,7 +1338,7 @@ async function main(): Promise<void> {
     }
   }
   async function changeBackup(removalId: string, kind: 'restore' | 'delete'): Promise<{ ok: boolean; notice: string }> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const backup = await resolvePluginRemovalBackup(dshHome, removalId)
     if (backup === undefined) {
       return { ok: false, notice: locale === 'zh' ? '这份恢复备份已不存在。' : 'This recovery backup no longer exists.' }
@@ -1351,7 +1403,7 @@ async function main(): Promise<void> {
         ? '已打开 Profile 恢复材料目录。'
         : 'Opened the Profile recovery material folder.'),
       openBackup: async removalId => {
-        const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+        const locale = legacyLocale(menuLocale)
         const backup = await resolvePluginRemovalBackup(dshHome, removalId)
         if (backup === undefined) {
           return { ok: false, notice: locale === 'zh' ? '这份恢复备份已不存在。' : 'This recovery backup no longer exists.' }

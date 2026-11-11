@@ -80,7 +80,7 @@ describe('application locale', () => {
       profilePreference: 'ja',
       settingsPreference: 'en',
       preferredSystemLanguages: ['zh-CN']
-    })).toBe('en')
+    })).toBe('ja')
     expect(selectHarnessLocale({
       profilePreference: localePreferenceFromProfilePatch(chineseTagChoice),
       preferredSystemLanguages: ['en-US']
