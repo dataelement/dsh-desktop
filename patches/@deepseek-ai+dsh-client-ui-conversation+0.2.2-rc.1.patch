@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 0998875..c8ecf89 100644
+index 0998875..f129ab0 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -20060,7 +20060,7 @@ window.__ModuleLoader__.load({
@@ -19,6 +19,15 @@ index 0998875..c8ecf89 100644
  			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow",
  			"root": "wSkVaW_root",
  			"scrollBody": "wSkVaW_scrollBody",
+@@ -20453,7 +20454,7 @@ window.__ModuleLoader__.load({
+ 							}, { fallback: (0, react_jsx_runtime.jsx)(HeroFish, { hovering }) })
+ 						}), (0, react_jsx_runtime.jsxs)("span", {
+ 							className: HeroShell_module_css_default.titleGroup,
+-							children: [(0, react_jsx_runtime.jsx)("span", { children: t("hero.headline") }), (0, react_jsx_runtime.jsx)("span", {
++							children: [(0, react_jsx_runtime.jsx)("span", { children: renderSlot("conversation.hero.brand.title", {}, { fallback: t("hero.headline") }) }), (0, react_jsx_runtime.jsx)("span", {
+ 								className: HeroShell_module_css_default.previewBadge,
+ 								children: t("hero.preview")
+ 							})]
 @@ -20550,12 +20551,17 @@ window.__ModuleLoader__.load({
  					sessionId === void 0 ? null : (0, react_jsx_runtime.jsx)("div", {
  						className: ConversationRoot_module_css_default.heroOptions,
@@ -133,7 +142,15 @@ index 0998875..c8ecf89 100644
  							useProjection,
  							t
  						})]
-@@ -22832,6 +22845,14 @@ window.__ModuleLoader__.load({
+@@ -22817,6 +22830,7 @@ window.__ModuleLoader__.load({
+ 						kind: "list",
+ 						scope: "session"
+ 					},
++					"conversation.hero.brand.title": { kind: "single", scope: "root" },
+ 					"conversation.hero.brand.mark": {
+ 						kind: "single",
+ 						scope: "root"
+@@ -22832,6 +22846,14 @@ window.__ModuleLoader__.load({
  					"conversation.hero.options": {
  						kind: "list",
  						scope: "session"
@@ -148,7 +165,7 @@ index 0998875..c8ecf89 100644
  					}
  				},
  				slots: {
-@@ -22967,6 +22988,10 @@ window.__ModuleLoader__.load({
+@@ -22967,6 +22989,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -159,7 +176,7 @@ index 0998875..c8ecf89 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -23003,6 +23028,7 @@ window.__ModuleLoader__.load({
+@@ -23003,6 +23029,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
  						retryFileUpload: void 0,
@@ -167,7 +184,7 @@ index 0998875..c8ecf89 100644
  						toggleCommandMenu: void 0,
  						stop: void 0,
  						hooks: {
-@@ -23071,6 +23097,11 @@ window.__ModuleLoader__.load({
+@@ -23071,6 +23098,11 @@ window.__ModuleLoader__.load({
  						retryFileUpload: (id) => {
  							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
  						},
@@ -179,7 +196,7 @@ index 0998875..c8ecf89 100644
  						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
-@@ -23103,10 +23134,7 @@ window.__ModuleLoader__.load({
+@@ -23103,10 +23135,7 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",
@@ -192,7 +209,7 @@ index 0998875..c8ecf89 100644
  				yield registerConversationRoot();
  				yield registerConversationContent();
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 95cc9e9..1c57e48 100644
+index 95cc9e9..a1bf775 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -83,6 +83,8 @@ export interface ComposerAttachmentsOwnerProps {
@@ -217,7 +234,16 @@ index 95cc9e9..1c57e48 100644
          /** Conversation shell beneath its root-scoped main-panel entry. */
          'main.conversation': {
              kind: 'single';
-@@ -318,6 +326,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -306,6 +314,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             scope: 'root';
+             owner: EmptyWorkspaceOwnerProps;
+         };
++        /** Optional product headline. The owner preserves its localized default when empty. */
++        'conversation.hero.brand.title': { kind: 'single'; scope: 'root' };
+         /** Brand mark shown before the blank-session headline. */
+         'conversation.hero.brand.mark': {
+             kind: 'single';
+@@ -318,6 +328,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              scope: 'session-maybe';
              owner: HeroAgentPresetOwnerProps;
          };
@@ -236,7 +262,7 @@ index 95cc9e9..1c57e48 100644
          /** Compact options right-aligned in the New Session row after the workspace and preset controls; rendered only with a Session. */
          'conversation.hero.options': {
              kind: 'list';
-@@ -340,6 +360,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -340,6 +362,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              kind: 'list';
              scope: 'session';
          };
@@ -249,7 +275,7 @@ index 95cc9e9..1c57e48 100644
          /**
           * Ambient entries below the composer card; fixed overlays must portal to the document body
           * because the docked composer contains them.
-@@ -347,6 +373,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -347,6 +375,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
          'conversation.composer.dock': {
              kind: 'list';
              scope: 'session';
@@ -257,7 +283,15 @@ index 95cc9e9..1c57e48 100644
          };
          /**
           * Compact controls at the left of the composer tool row; fixed overlays must portal to the
-@@ -629,8 +656,10 @@ export interface ComposerBarOwnerProps {
+@@ -444,6 +473,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+                     kind: 'list';
+                     scope: 'session';
+                 };
++                'conversation.hero.brand.title': { kind: 'single'; scope: 'root' };
+                 'conversation.hero.brand.mark': {
+                     kind: 'single';
+                     scope: 'root';
+@@ -629,8 +659,10 @@ export interface ComposerBarOwnerProps {
      /** Open the Workspace picker from the inert composer surface. */
      onRequestWorkspace?: () => void;
      placeholder?: string;
@@ -269,7 +303,7 @@ index 95cc9e9..1c57e48 100644
  }
  /** Package-private operations injected into the resident composer bar. */
  export interface ComposerBarInjected {
-@@ -647,6 +676,7 @@ export interface ComposerBarInjected {
+@@ -647,6 +679,7 @@ export interface ComposerBarInjected {
      resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined;
      /** Restart one failed file upload; absent without a session. */
      retryFileUpload: ((id: DraftAttachmentId) => void) | undefined;
@@ -277,7 +311,7 @@ index 95cc9e9..1c57e48 100644
      toggleCommandMenu: ((selection: EditSelection) => void) | undefined;
      stop: (() => void) | undefined;
      hooks: {
-@@ -675,7 +705,7 @@ export interface InputActivityOwnerProps extends InputControlOwnerProps {
+@@ -675,7 +708,7 @@ export interface InputActivityOwnerProps extends InputControlOwnerProps {
      onActiveChange: (active: boolean) => void;
  }
  /** Full props of the resident composer bar. */
@@ -287,7 +321,7 @@ index 95cc9e9..1c57e48 100644
  export interface ComposerChainProps {
      /** Current Session identity used by temporary business-owned entries. */
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
-index 046ea88..1b46f8d 100644
+index 046ea88..aed438a 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
 @@ -5,5 +5,5 @@ import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-
@@ -297,6 +331,7 @@ index 046ea88..1b46f8d 100644
 -export declare function ConversationPanel({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlots<'main.conversation'>): import("react").ReactNode;
 +export declare function ConversationPanel({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlots<'main.conversation' | 'desktop.workbench.frame'>): import("react").ReactNode;
  //# sourceMappingURL=ConversationPanel.d.ts.map
+\ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts
 index bd93dea..1da5fbb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts

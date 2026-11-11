@@ -8,7 +8,11 @@ async function load(bridge: unknown) {
   let definition: { factory: (require: (name: string) => unknown) => { apply: (ctx: unknown) => void } } | undefined
   vm.runInNewContext(await readFile(new URL('../packages/dsh-desktop-client-ui/client.js', import.meta.url), 'utf8'), {
     window: { dshDesktop: bridge, __ModuleLoader__: { load: (value: typeof definition) => { definition = value } } },
-    document: { getElementById: () => true }, console
+    document: {
+      getElementById: () => null,
+      createElement: () => ({ id: '', dataset: {}, textContent: '', remove: vi.fn() }),
+      head: { appendChild: vi.fn() }
+    }, console
   })
   const plugin = definition!.factory(name => name === 'react' ? {
     createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({ type, props, children }),
