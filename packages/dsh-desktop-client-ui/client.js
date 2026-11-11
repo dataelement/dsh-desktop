@@ -48,7 +48,11 @@ window.__ModuleLoader__.load({
           'data-textpreview-open-local': true,
           onClick: () => {
             setError('')
-            void openWorkspacePath(absolutePath).catch((reason) => {
+            // Archive utilities may extract and close without a visible window.
+            const request = /\.(zip|7z|rar|tar|gz|tgz|bz2)$/i.test(absolutePath)
+              ? { path: absolutePath, action: 'reveal' }
+              : { path: absolutePath }
+            void openWorkspacePath(request).catch((reason) => {
               setError(reason instanceof Error ? reason.message : String(reason))
             })
           }
@@ -257,27 +261,40 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         const bridge = window.dshDesktop
         if (typeof bridge?.getRepairDraft !== 'function') return
-        let live = true
-        const sessionId = session.sessionId
+        let alive = true
         const span = inputActions.captureInsertion()
         const empty = input.draft === '' && input.attachmentIds.length === 0 && input.phase === 'plain'
-        void bridge.getRepairDraft(sessionId).then(async draft => {
-          if (!live || typeof draft?.token !== 'string') return
+        void bridge.getRepairDraft(session.sessionId).then(async draft => {
+          if (!alive || typeof draft?.token !== 'string') return
           const current = currentInput.current
-          if (empty && current.draft === '' && current.attachmentIds.length === 0 && current.phase === 'plain' && typeof draft.text === 'string' && draft.text !== '') {
+          if (empty && current.draft === '' && current.attachmentIds.length === 0 && current.phase === 'plain' && typeof draft.text === 'string' && draft.text) {
             if (inputActions.insertText(draft.text, span)) inputActions.persistDraft()
           }
-          // Preserved user input consumes the initial suggestion too; clearing it
-          // later must not unexpectedly restore a repair prompt.
-          await bridge.acknowledgeRepairDraft(sessionId, draft.token)
-        }).catch(reason => { console.warn('[repair] unable to initialize draft', reason) })
-        return () => { live = false }
+          await bridge.acknowledgeRepairDraft(session.sessionId, draft.token)
+        }).catch(error => { console.warn('[desktop-repair] draft initialization failed', error) })
+        return () => { alive = false }
       }, [session.sessionId, inputActions])
       return null
+    }
+    function applyRepair(ctx) {
+      ctx.effect(() => ctx.locale.register(REPAIR_NS, {
+        zh: { open: '进入维修模式', description: '维修 Agent：协助排查和修复问题。点击进入修复模式，描述问题后发送。', opening: '正在打开维修…', failed: '无法打开维修会话，请重试', phone: '连接手机', phoneManage: '管理手机连接', phoneFailed: '无法读取手机连接状态' },
+        en: { open: 'Enter repair mode', description: 'Repair Agent helps diagnose and resolve problems. Click to enter repair mode, describe the issue, and send when ready.', opening: 'Opening repair…', failed: 'Could not open repair. Please retry.', phone: 'Connect phone', phoneManage: 'Manage phone connection', phoneFailed: 'Could not read phone connection status.' },
+        ja: {"open": "修復モードに入る", "description": "修復 Agent が問題の診断と解決を支援します。修復モードに入り、問題を説明して送信してください。", "opening": "修復を開いています…", "failed": "修復を開けません。もう一度お試しください。", "phone": "スマートフォンを接続", "phoneManage": "スマートフォン接続を管理", "phoneFailed": "接続状態を取得できません。"},
+        es: {"open": "Entrar en modo de reparación", "description": "El agente de reparación ayuda a diagnosticar y resolver problemas. Entre, describa el problema y envíelo cuando esté listo.", "opening": "Abriendo reparación…", "failed": "No se pudo abrir la reparación. Inténtelo de nuevo.", "phone": "Conectar teléfono", "phoneManage": "Administrar conexión del teléfono", "phoneFailed": "No se pudo consultar el estado de conexión."},
+        fr: {"open": "Passer en mode réparation", "description": "L’agent de réparation aide à diagnostiquer et résoudre les problèmes. Entrez, décrivez le problème et envoyez-le.", "opening": "Ouverture de la réparation…", "failed": "Impossible d’ouvrir la réparation. Réessayez.", "phone": "Connecter un téléphone", "phoneManage": "Gérer la connexion du téléphone", "phoneFailed": "Impossible de lire l’état de connexion."},
+        de: {"open": "Reparaturmodus öffnen", "description": "Der Reparatur-Agent hilft bei Diagnose und Fehlerbehebung. Öffnen Sie den Modus, beschreiben Sie das Problem und senden Sie es ab.", "opening": "Reparatur wird geöffnet…", "failed": "Reparatur konnte nicht geöffnet werden. Bitte erneut versuchen.", "phone": "Telefon verbinden", "phoneManage": "Telefonverbindung verwalten", "phoneFailed": "Verbindungsstatus konnte nicht gelesen werden."},
+        ru: {"open": "Открыть режим восстановления", "description": "Агент восстановления помогает выявлять и устранять проблемы. Откройте режим, опишите проблему и отправьте сообщение.", "opening": "Открытие восстановления…", "failed": "Не удалось открыть восстановление. Повторите попытку.", "phone": "Подключить телефон", "phoneManage": "Управлять подключением телефона", "phoneFailed": "Не удалось получить состояние подключения."},
+        pt: {"open": "Entrar no modo de reparo", "description": "O agente de reparo ajuda a diagnosticar e resolver problemas. Entre no modo, descreva o problema e envie quando estiver pronto.", "opening": "Abrindo reparo…", "failed": "Não foi possível abrir o reparo. Tente novamente.", "phone": "Conectar telefone", "phoneManage": "Gerenciar conexão do telefone", "phoneFailed": "Não foi possível consultar o estado da conexão."}
+      }))
+      const bridge = window.dshDesktop
+      if (typeof bridge?.getRepairDraft === 'function') ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({ name: 'conversation.input.dock', id: 'desktop-repair-draft' }, RepairDraft))
+      if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilityActions))
     }
 
     const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace']
     function apply(ctx) {
+      applyRepair(ctx)
       ctx.effect(() => ctx.locale.register(ACTIONS_NS, actionMessages))
       const actionText = ctx.locale.bind(ACTIONS_NS)
       ctx.effect(() => ctx.locale.register(ENTERPRISE_NS, {
@@ -291,30 +308,21 @@ window.__ModuleLoader__.load({
         name: 'settings.sidebar.footer', id: 'desktop-enterprise-entry', locale: ENTERPRISE_NS,
         inject: () => ({ t: enterpriseText })
       }, EnterpriseEntry))
-      ctx.effect(() => ctx.locale.register(REPAIR_NS, {
-        zh: { open: '进入维修模式', description: '维修 Agent：协助排查和修复问题。点击进入修复模式，描述问题后发送。', opening: '正在打开维修…', failed: '无法打开维修会话，请重试', phone: '连接手机', phoneManage: '管理手机连接', phoneFailed: '无法读取手机连接状态' },
-        en: { open: 'Enter repair mode', description: 'Repair Agent helps diagnose and resolve problems. Click to enter repair mode, describe the issue, and send when ready.', opening: 'Opening repair…', failed: 'Could not open repair. Please retry.', phone: 'Connect phone', phoneManage: 'Manage phone connection', phoneFailed: 'Could not read phone connection status.' },
-        ja: {"open": "修復モードに入る", "description": "修復 Agent が問題の診断と解決を支援します。修復モードに入り、問題を説明して送信してください。", "opening": "修復を開いています…", "failed": "修復を開けません。もう一度お試しください。", "phone": "スマートフォンを接続", "phoneManage": "スマートフォン接続を管理", "phoneFailed": "接続状態を取得できません。"},
-        es: {"open": "Entrar en modo de reparación", "description": "El agente de reparación ayuda a diagnosticar y resolver problemas. Entre, describa el problema y envíelo cuando esté listo.", "opening": "Abriendo reparación…", "failed": "No se pudo abrir la reparación. Inténtelo de nuevo.", "phone": "Conectar teléfono", "phoneManage": "Administrar conexión del teléfono", "phoneFailed": "No se pudo consultar el estado de conexión."},
-        fr: {"open": "Passer en mode réparation", "description": "L’agent de réparation aide à diagnostiquer et résoudre les problèmes. Entrez, décrivez le problème et envoyez-le.", "opening": "Ouverture de la réparation…", "failed": "Impossible d’ouvrir la réparation. Réessayez.", "phone": "Connecter un téléphone", "phoneManage": "Gérer la connexion du téléphone", "phoneFailed": "Impossible de lire l’état de connexion."},
-        de: {"open": "Reparaturmodus öffnen", "description": "Der Reparatur-Agent hilft bei Diagnose und Fehlerbehebung. Öffnen Sie den Modus, beschreiben Sie das Problem und senden Sie es ab.", "opening": "Reparatur wird geöffnet…", "failed": "Reparatur konnte nicht geöffnet werden. Bitte erneut versuchen.", "phone": "Telefon verbinden", "phoneManage": "Telefonverbindung verwalten", "phoneFailed": "Verbindungsstatus konnte nicht gelesen werden."},
-        ru: {"open": "Открыть режим восстановления", "description": "Агент восстановления помогает выявлять и устранять проблемы. Откройте режим, опишите проблему и отправьте сообщение.", "opening": "Открытие восстановления…", "failed": "Не удалось открыть восстановление. Повторите попытку.", "phone": "Подключить телефон", "phoneManage": "Управлять подключением телефона", "phoneFailed": "Не удалось получить состояние подключения."},
-        pt: {"open": "Entrar no modo de reparo", "description": "O agente de reparo ajuda a diagnosticar e resolver problemas. Entre no modo, descreva o problema e envie quando estiver pronto.", "opening": "Abrindo reparo…", "failed": "Não foi possível abrir o reparo. Tente novamente.", "phone": "Conectar telefone", "phoneManage": "Gerenciar conexão do telefone", "phoneFailed": "Não foi possível consultar o estado da conexão."}
-      }))
-      const repairText = ctx.locale.bind(REPAIR_NS)
-      ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({
-        name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS,
-        inject: () => ({ t: repairText })
-      }, DesktopUtilityActions))
-      ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-        name: 'conversation.input.dock', id: 'desktop-repair-draft'
-      }, RepairDraft))
+
       ctx.effect(() => {
         const id = 'dsh-desktop-preset-toolbar-style'
         if (document.getElementById(id)) return
         const style = document.createElement('style')
         style.id = id
         style.textContent = `
+          [data-dsh-sidebar-brand-identity] { display:none !important; }
+          /* Third-party plugins (dshmarket, dsh-better-sidebar) draw custom icons via ::before on settings nav rows,
+             expecting direct > svg to hide the fallback gear. In 0.2.2-rc.1, navIcon wraps the fallback in a span,
+             so ensure the fallback gear container is hidden when custom nav marker is present. */
+          [data-dsh-market-nav-icon] span[class*="navIcon"],
+          [data-dsh-market-nav-icon] svg,
+          [data-dsh-better-sidebar-settings-nav] span[class*="navIcon"],
+          [data-dsh-better-sidebar-settings-nav] svg { display:none !important; }
           [data-dsh-enterprise-entry] {
             display:flex; align-items:center; gap:4px; min-height:36px; padding:0 12px;
             border-radius:8px; color:var(--dsw-alias-label-secondary); font-size:13px;
@@ -323,24 +331,41 @@ window.__ModuleLoader__.load({
           [data-dsh-enterprise-entry]:hover { color:var(--dsw-alias-label-primary); background:var(--dsw-alias-interactive-bg-hover); }
           [data-dsh-enterprise-entry]:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:1px; }
           :root { --dsh-page-title-top-spacing:56px; }
-          [data-dsh-sidebar-settings] { display:flex; align-items:center; }
-          [data-dsh-sidebar-settings-content] { flex:1; min-width:0; }
-          [data-dsh-sidebar-settings-actions] { flex:none; display:flex; align-items:center; }
-          [data-dsh-desktop-utilities] { display:flex; align-items:center; flex:none; position:relative; }
-          [data-dsh-desktop-utilities][data-wide=false] { flex-direction:column; }
-          [data-dsh-desktop-utilities] button {
-            appearance:none; display:inline-flex; align-items:center; justify-content:center;
-            width:32px; height:36px; padding:0; position:relative; border:0; border-radius:8px;
-            color:var(--dsw-alias-label-secondary); background:transparent; cursor:pointer;
+          /* Keep Desktop actions beside Settings, without relocating other slot contributions. */
+          [data-dsh-sidebar-settings]:has([data-dsh-desktop-utilities]) {
+            display:flex; flex-direction:row; align-items:center; gap:4px;
           }
-          [data-dsh-desktop-utilities] button > svg { display:block; flex:none; }
-          [data-dsh-desktop-utilities] button:hover { background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); }
-          [data-dsh-desktop-utilities] button:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:1px; }
+          [data-dsh-sidebar-settings]:has([data-dsh-desktop-utilities]) > [data-dsh-sidebar-settings-content] {
+            flex:1; min-width:0;
+          }
+          [data-dsh-sidebar-settings]:has([data-dsh-desktop-utilities]) > [data-dsh-sidebar-settings-actions] {
+            flex:none;
+          }
+          [data-dsh-sidebar-settings]:has([data-dsh-desktop-utilities][data-wide="false"]) {
+            flex-direction:column;
+          }
+          /* Utilities own their button layout; leave other contributions unconstrained. */
+          [data-dsh-desktop-utilities] {
+            display:flex; align-items:center; flex-wrap:wrap; gap:4px; padding:4px;
+          }
+          [data-dsh-desktop-utilities][data-wide="false"] { justify-content:center; }
+          [data-dsh-desktop-utilities] button {
+            box-sizing:border-box; appearance:none; -webkit-appearance:none;
+            display:inline-flex; align-items:center; justify-content:center; flex:none;
+            width:32px; height:32px; padding:0; border:0; border-radius:8px;
+            background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; cursor:pointer;
+          }
+          [data-dsh-desktop-utilities] button:hover:not(:disabled) {
+            background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary);
+          }
+          [data-dsh-desktop-utilities] button:focus-visible {
+            outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:2px;
+          }
           [data-dsh-desktop-utilities] button:disabled { opacity:.5; cursor:wait; }
-          [data-dsh-desktop-utilities] [data-connected] { position:absolute; top:7px; right:5px; width:6px; height:6px; border-radius:50%; background:var(--dsw-alias-state-success-primary); }
-          [data-dsh-utility-error] { position:absolute; right:0; bottom:100%; width:200px; padding:8px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-state-error-primary); border-radius:8px; }
-          [data-dsh-sidebar-root][data-dsh-sidebar-wide=false] [data-dsh-sidebar-settings] { flex-direction:column; }
-
+          [data-dsh-desktop-utilities] [role=alert] {
+            flex-basis:100%; min-width:0; overflow-wrap:anywhere; font-size:12px;
+            color:var(--dsw-alias-label-primary);
+          }
           /* Top-level page titles align with the sidebar brand row. Keep
              conversation chrome and detail/dialog headers in their own layout. */
           [data-plugin-panel] > header[data-window-drag] {
@@ -384,7 +409,7 @@ window.__ModuleLoader__.load({
           id: 'desktop-open-local', locale: ACTIONS_NS,
           inject: () => ({
             t: actionText,
-            openWorkspacePath: (path) => ctx.remote.session.openWorkspacePath({ path })
+            openWorkspacePath: (request) => ctx.remote.session.openWorkspacePath(request)
           })
         }, OpenUnpreviewableFile)
       )

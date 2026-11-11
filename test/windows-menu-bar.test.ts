@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { readFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mountWindowsMenuBar } from '../src/preload/windows-menu-bar'
 
@@ -16,9 +15,7 @@ const button = (name: string): HTMLButtonElement | null =>
   host()?.shadowRoot?.querySelector<HTMLButtonElement>(`button[data-menu="${name}"]`) ?? null
 
 it('marks the Windows caption from the shell preload before the page paints', async () => {
-  // jsdom is a Vite client environment, so `new URL(..., import.meta.url)` is
-  // rewritten to http://localhost and fs.readFile rejects the scheme.
-  const preload = await readFile(join(dirname(fileURLToPath(import.meta.url)), '../src/preload/app.ts'), 'utf8')
+  const preload = await readFile(resolve(import.meta.dirname, '../src/preload/app.ts'), 'utf8')
   expect(preload).toContain('markWindowsTitlebar(document)')
   expect(preload).toContain('mountWindowsTitlebarLayout(')
 })

@@ -3,7 +3,7 @@ import { registerHooks } from 'node:module'
 import { basename, dirname, join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const ENGINE_PACKAGE = /^@deepseek-ai\/libreoffice-kit-(?:darwin|win32|linux)-/u
+const ENGINE_PACKAGE = /^@deepseek-ai\/libreoffice-kit-(?:(?:darwin|win32|linux)-|wasm(?:\/|$))/u
 
 /**
  * The application root that owns `dshEntryPath`
@@ -19,7 +19,8 @@ export function packagedArchiveRoot(dshEntryPath) {
  * Resolve the LibreOfficeKit engine package from app.asar.unpacked.
  *
  * Packages load through app.asar, but the engine's executable and resources
- * are spawned by the operating system, which cannot read the archive.
+ * are spawned by the operating system, which cannot read the archive. Linux's
+ * WASM fallback also reads engine assets from physical paths in its worker.
  * libreoffice-kit locates them from the engine package's resolved path, so the
  * engine package itself must resolve to its unpacked, physical directory.
  * Adapted from deepseek-harness apps/desktop-host/src/office-engine.ts.

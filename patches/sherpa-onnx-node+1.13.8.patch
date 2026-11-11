@@ -1,0 +1,44 @@
+diff --git a/node_modules/sherpa-onnx-node/addon.js b/node_modules/sherpa-onnx-node/addon.js
+--- a/node_modules/sherpa-onnx-node/addon.js
++++ b/node_modules/sherpa-onnx-node/addon.js
+@@ -18,6 +18,7 @@
+ ];
+ 
+ let addon = addonStaticImport;
++let loadError;
+ 
+ if (!addon) {
+   for (const p of possible_paths) {
+@@ -25,8 +26,8 @@
+       addon = require(p);
+       break;
+     } catch (error) {
+-      // do nothing; try the next option
+-      ;
++      // Keep searching, but do not hide ABI/dlopen failures behind a missing path.
++      if (!loadError || loadError.code === 'MODULE_NOT_FOUND') loadError = error;
+     }
+   }
+ }
+@@ -34,6 +35,12 @@
+ module.exports = addon;
+ 
+ if (!addon) {
++  if (loadError && loadError.code !== 'MODULE_NOT_FOUND') {
++    throw new Error(
++        `Could not load sherpa-onnx native addon for ${platform_arch}: ${loadError.message}`,
++        {cause: loadError});
++  }
++
+   let addon_path =
+       `${process.env.PWD}/node_modules/sherpa-onnx-${platform_arch}`;
+   const pnpmIndex = __dirname.indexOf(`node_modules${path.sep}.pnpm`);
+@@ -70,7 +77,7 @@
+     msg += ':$LD_LIBRARY_PATH\n';
+   }
+ 
+-  throw new Error(msg)
++  throw new Error(msg, {cause: loadError})
+ }
+ 
+ /**

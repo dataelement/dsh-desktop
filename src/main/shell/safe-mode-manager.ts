@@ -94,7 +94,15 @@ export async function runSafeModeManager(options: SafeModeManagerOptions): Promi
       continue
     }
     if (action.type === 'recovery-open' || action.type === 'backup-open' || action.type === 'backup-restore' || action.type === 'backup-delete' || action.type === 'upgrade') {
-      const result = await runMaintenance(options, action)
+      // Maintenance failures must not take down the running recovery Host.
+      const result = await runMaintenance(options, action).catch((error: unknown) => {
+        console.error(`[safe-mode] ${action.type} failed`, error)
+        const detail = error instanceof Error ? error.message : String(error)
+        return {
+          ok: false,
+          notice: options.locale === 'zh' ? `操作失败：${detail}` : `Operation failed: ${detail}`
+        }
+      })
       if (options.isQuitting()) return
       notice = result.notice
       noticeTone = result.ok ? 'success' : 'error'

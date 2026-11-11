@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
@@ -48,7 +49,7 @@ import { installDesktopFileDrag } from './file-drag'
 import { runQuitSteps } from './quit-steps'
 import { SidebarBrowserGuests } from '../sidebar-browser'
 import { SIDEBAR_BROWSER_IPC } from '../../shared/sidebar-browser'
-import { officeLaunchPaths } from './office-launch'
+import { officeLaunchPaths, resolvePrimaryRuntime } from './office-launch'
 import { isSplashPageUrl } from './splash-page'
 import { isWebImportPageUrl, offerWebHomeImport, readWebImportAction, type WebImportChoice } from './web-import-offer'
 import { resolveDesktopPaths } from './paths'
@@ -77,7 +78,7 @@ import {
   snapshotPluginRemovalLedger
 } from '../profile/plugin-removal'
 import { electronNodeExecutable } from './backend/electron-node-executable'
-import { installedPluginVersion, pnpmEntryPath, upgradeTargets } from './plugin-maintenance'
+import { installedPluginVersion, pluginPnpmRunnerPath, pnpmEntryPath, upgradeTargets } from './plugin-maintenance'
 import { applyRepairNavigation, safeModeRepairPrompt, sidebarRepairPrompt } from './repair-session'
 import { runSafeModeManager } from './safe-mode-manager'
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME, assertDesktopSender } from './window/ipc'
@@ -115,28 +116,71 @@ protocol.registerSchemesAsPrivileged([{
   }
 }])
 
-function desktopDevelopmentBuild(): boolean {
-  if (!app.isPackaged) return true
+interface DesktopPackageMetadata {
+  name?: string
+  productName?: string
+  dshDesktopChannel?: string
+  build?: {
+    productName?: string
+    appId?: string
+  }
+}
+
+function readDesktopPackageMetadata(): DesktopPackageMetadata {
   try {
-    const metadata = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as { dshDesktopChannel?: unknown }
-    return metadata.dshDesktopChannel === 'development'
+    return JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as DesktopPackageMetadata
+  } catch {
+    return {}
+  }
+}
+
+function desktopDevelopmentBuild(metadata: DesktopPackageMetadata = readDesktopPackageMetadata()): boolean {
+  if (!app.isPackaged) return true
+  return metadata.dshDesktopChannel === 'development'
+}
+
+function hasEnterprisePlugin(): boolean {
+  try {
+    const req = createRequire(import.meta.url)
+    req.resolve('dsh-desktop-enterprise/package.json')
+    return true
   } catch {
     return false
   }
 }
 
 function configureDesktopIdentity(): void {
-  const development = desktopDevelopmentBuild()
+  const metadata = readDesktopPackageMetadata()
+  const isBisheng = Boolean(
+    metadata.build?.appId?.includes('bisheng') ||
+    metadata.build?.productName === 'BISHENG' ||
+    metadata.productName === 'BISHENG' ||
+    metadata.name === 'bisheng' ||
+    app.name.toLowerCase().includes('bisheng') ||
+    process.execPath.toLowerCase().includes('bisheng') ||
+    hasEnterprisePlugin()
+  )
+  const defaultProdName = isBisheng ? 'BISHENG' : 'DSH Desktop'
+
+  const development = desktopDevelopmentBuild(metadata)
   const environment = developmentEnvironment(development, 43129)
   if (development) {
-    app.setName('DSH Desktop Dev')
-    app.setPath('userData', join(app.getPath('appData'), environment.profile))
+    app.setName(`${defaultProdName} Dev`)
+    const devDir = isBisheng
+      ? (process.env.BISHENG_DEV_USER_DATA || join(app.getPath('appData'), 'bisheng-dev'))
+      : join(app.getPath('appData'), environment.profile)
+    app.setPath('userData', devDir)
     return
   }
-  app.setName('DSH Desktop')
-  // Keep the historical lowercase directory. Deriving it from the product name
-  // would hide the existing sessions on an ordinary upgrade.
-  app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
+  if (!isBisheng) {
+    app.setName('DSH Desktop')
+    // Keep the historical lowercase directory. Deriving it from the product name
+    // would hide the existing sessions on an ordinary upgrade.
+    app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
+    return
+  }
+  app.setName('BISHENG')
+  app.setPath('userData', join(app.getPath('appData'), 'bisheng'))
 }
 
 configureDesktopIdentity()
@@ -357,8 +401,8 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
   }
   const result = await dialog.showMessageBox(window, {
     type: 'info',
-    title: 'DSH Desktop',
-    message: updateText(locale, 'about'),
+    title: app.name,
+    message: updateText(locale, 'about').replace('DSH Desktop', app.name),
     detail: aboutDetail(desktopVersion, harnessVersion, locale),
     buttons: [updateText(locale, 'checkForUpdates'), updateText(locale, 'close')],
     defaultId: 1,
@@ -541,14 +585,9 @@ async function main(): Promise<void> {
     Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
   }
   refreshApplicationMenu()
-  const development = !app.isPackaged
-  // Product packages place the primary runtime at Resources/office-runtime/primary-runtime.
-  const primaryRuntime = development
-    ? process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
-    : join(process.resourcesPath, 'office-runtime', 'primary-runtime')
-  if (primaryRuntime === undefined || primaryRuntime === '') {
-    throw new Error('dsh desktop: DSH_DESKTOP_PRIMARY_RUNTIME_DIR is required for an unpackaged launch')
-  }
+  const primaryRuntime = resolvePrimaryRuntime(
+    app.getAppPath(), process.resourcesPath, app.isPackaged, process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
+  )
   const preload = fileURLToPath(new URL('../preload/app.cjs', import.meta.url))
   const importPage = packagedPagePath('web-import.html')
   const splashPage = packagedPagePath('splash.html')
@@ -599,7 +638,7 @@ async function main(): Promise<void> {
     }
     windowsTray.setToolTip(app.name)
     windowsTray.setContextMenu(Menu.buildFromTemplate([
-      { label: desktopDailyText(menuLocale, 'trayShow'), click: showMainWindow },
+      { label: desktopDailyText(menuLocale, 'trayShow').replace('DSH Desktop', app.name), click: showMainWindow },
       { type: 'separator' },
       { label: desktopMenuMessages(menuLocale).exit, click: () => { app.quit() } }
     ]))
@@ -684,7 +723,7 @@ async function main(): Promise<void> {
   const platformView = new DesktopPlatformView(
     preload,
     () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh_CN' : 'en_US',
-    process.platform === 'win32' ? 'win32' : 'darwin',
+    process.platform,
     app.getVersion(),
     () => false
   )
@@ -936,7 +975,7 @@ async function main(): Promise<void> {
     cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
     forceCloudflareFailure: process.env.DSH_TUNNEL_FORCE_PINGGY === '1',
     tunnelLog: message => { console.warn(message) },
-    port: desktopMobilePort(app.isPackaged),
+    port: desktopMobilePort(app.isPackaged && !desktopDevelopmentBuild()),
     onReconnectRequested: () => {
       void openMobilePairing().catch((error: unknown) => { console.error(error) })
     },
@@ -1319,6 +1358,8 @@ async function main(): Promise<void> {
         profile: DESKTOP_PROFILE,
         nodeExecutablePath: electronNodeExecutable(process.execPath),
         pnpmEntryPath: pnpm,
+        pnpmRunnerPath: pluginPnpmRunnerPath(app.getAppPath()),
+        hideConsoleBootstrapPath: packagedPagePath('windows-hide-console-import.mjs'),
         note: line => { console.info(line) }
       })
       if (!result.ok) failed.push(target.name)

@@ -28,7 +28,7 @@ afterEach(async () => {
 })
 
 describe('desktop shortcuts', () => {
-  it('saves a binding and delivers the matching key to the product page', async () => {
+  it.each(['macos', 'windows', 'linux'] as const)('saves a binding and delivers the matching key on %s', async platform => {
     const userData = await mkdtemp(join(tmpdir(), 'dsh-shortcuts-'))
     temporary.push(userData)
     const frame = { url: 'dsh-app://app/', name: '', parent: null }
@@ -49,7 +49,7 @@ describe('desktop shortcuts', () => {
       close: vi.fn()
     })
     const updateMenu = vi.fn()
-    const shortcuts = installDesktopShortcuts(() => window, userData, 'macos', updateMenu)
+    const shortcuts = installDesktopShortcuts(() => window, userData, platform, updateMenu)
     shortcuts.attach(window)
     const call = async (channel: string, ...args: unknown[]) => {
       const handler = ipc.handlers.get(channel)
@@ -76,12 +76,12 @@ describe('desktop shortcuts', () => {
     expect(shortcuts.fileMenu({ fileMenu: '文件', closePage: '关闭页面或窗口' }).submenu?.[0]?.enabled).toBe(true)
     const prevented = vi.fn()
     contents.emit('before-input-event', { preventDefault: prevented, defaultPrevented: false }, {
-      type: 'keyDown', code: 'KeyB', key: 'b', modifiers: [], meta: true, control: false, alt: false, shift: false,
+      type: 'keyDown', code: 'KeyB', key: 'b', modifiers: [], meta: platform === 'macos', control: platform !== 'macos', alt: false, shift: false,
       isComposing: false, isAutoRepeat: false
     })
     expect(prevented).toHaveBeenCalled()
     expect(contents.send).toHaveBeenCalledWith(DESKTOP_IPC.shortcutsInput, expect.objectContaining({
-      kind: 'keyboard', code: 'KeyB', meta: true
+      kind: 'keyboard', code: 'KeyB', meta: platform === 'macos', control: platform !== 'macos'
     }))
     const saved = await call(DESKTOP_IPC.shortcutsEdit, {
       type: 'set', id: 'sidebar.left.toggle', binding: { code: 'KeyJ', modifiers: ['primary'] }

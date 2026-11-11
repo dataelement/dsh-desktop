@@ -1,14 +1,11 @@
 import { appendFile, chmod, rm, writeFile } from 'node:fs/promises'
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { execFile as execFileCallback } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
+import { prepareAppleIntermediateCertificate } from './apple-intermediate-certificate.mjs'
 
 const execFile = promisify(execFileCallback)
-const developerIdG2CertificateUrl =
-  'https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer'
-const developerIdG2CertificateSha256 =
-  'f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a'
 
 function required(name) {
   const value = process.env[name]?.trim()
@@ -39,19 +36,6 @@ async function writeCertificate(source, destination) {
   await writeFile(destination, Buffer.from(source.slice(dataPrefix.length), 'base64'), {
     mode: 0o600
   })
-}
-
-async function downloadVerifiedCertificate(source, expectedSha256, destination) {
-  const response = await fetch(source)
-  if (!response.ok) {
-    throw new Error(`Unable to download Apple intermediate certificate: ${response.status}`)
-  }
-  const certificate = Buffer.from(await response.arrayBuffer())
-  const actualSha256 = createHash('sha256').update(certificate).digest('hex')
-  if (actualSha256 !== expectedSha256) {
-    throw new Error(`Apple intermediate certificate checksum mismatch: ${actualSha256}`)
-  }
-  await writeFile(destination, certificate, { mode: 0o600 })
 }
 
 const runnerTemp = required('RUNNER_TEMP')
@@ -93,11 +77,7 @@ try {
     '-P',
     certificatePassword
   )
-  await downloadVerifiedCertificate(
-    developerIdG2CertificateUrl,
-    developerIdG2CertificateSha256,
-    intermediateCertificatePath
-  )
+  await prepareAppleIntermediateCertificate(intermediateCertificatePath)
   await security('import', intermediateCertificatePath, '-k', keychainPath)
   await rm(intermediateCertificatePath, { force: true })
   await security(

@@ -52,7 +52,7 @@ export class DesktopPlatformView {
   constructor(
     private readonly preload: string,
     private readonly getLocale: () => PlatformLocale,
-    private readonly platform: 'darwin' | 'win32',
+    private readonly platform: NodeJS.Platform,
     private readonly clientVersion: string,
     private readonly blocked: (owner: PlatformOwner) => boolean
   ) {}
@@ -71,6 +71,9 @@ export class DesktopPlatformView {
   }
 
   async open(owner: PlatformOwner, page: 'usage' | 'top-up', bounds: PlatformBounds): Promise<void> {
+    // The upstream account protocol has no Linux desktop identity. Never impersonate macOS.
+    const platform = this.platform
+    if (platform !== 'darwin' && platform !== 'win32') throw new Error('Platform view unsupported on this platform')
     if (this.disposed) throw new Error('Platform view disposed')
     if (this.blocked(owner)) throw new Error('Platform view blocked by update prompt')
     this.close()
@@ -111,7 +114,7 @@ export class DesktopPlatformView {
     browserSession.setPermissionCheckHandler(() => false)
     const deploymentHeaders = account.requestHeaders ?? {}
     const injectedNames = new Set([...Object.keys(deploymentHeaders),
-      ...Object.keys(platformClientHeaders(this.platform, this.clientMetadata()))]
+      ...Object.keys(platformClientHeaders(platform, this.clientMetadata()))]
       .map(name => name.toLowerCase()))
     const injectedRequests = new Set<number>()
     browserSession.webRequest.onCompleted(details => { injectedRequests.delete(details.id) })
@@ -122,7 +125,7 @@ export class DesktopPlatformView {
         injectedRequests.add(details.id)
         const injected = {
           ...deploymentHeaders,
-          ...platformClientHeaders(this.platform, this.clientMetadata())
+          ...platformClientHeaders(platform, this.clientMetadata())
         }
         const cookie = headers.cookie ?? ''
         Object.assign(headers, injected)

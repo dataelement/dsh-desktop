@@ -149,7 +149,7 @@ describe('web home import', () => {
     await mkdir(join(coreOnly, 'profiles', 'web'), { recursive: true })
     await writeFile(
       join(coreOnly, 'profiles', 'web', 'package.json'),
-      JSON.stringify({ dependencies: { dshmarket: '1.0.0' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } })
+      JSON.stringify({ dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } })
     )
     expect(await shouldOfferWebHomeImport(coreOnly, webHome)).toBe(true)
   })
@@ -190,7 +190,7 @@ describe('web home import', () => {
     expect(preview.workspaceCount).toBe(2)
     expect(preview.presetCount).toBe(1)
     expect(preview.hasCredentials).toBe(true)
-    expect(preview.plugins).toEqual(['@scope/extra', 'demo-plugin', 'local-plugin'])
+    expect(preview.plugins).toEqual(['@scope/extra', 'demo-plugin', 'dshmarket', 'local-plugin'])
     expect(await communityPluginNames(webHome)).toEqual(preview.plugins)
 
     await importWebHome({ source: webHome, dest })
