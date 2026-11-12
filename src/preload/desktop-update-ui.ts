@@ -532,11 +532,8 @@ function button(label: string, className: string): HTMLButtonElement {
 }
 
 function focusDialog(card: HTMLElement): void {
-  const action = card.querySelector<HTMLButtonElement>('button:not(.dialog-close)')
-  if (action) {
-    action.focus()
-    return
-  }
+  // Initial focus enters the panel without drawing a button focus ring; Tab
+  // still reaches its controls and preserves their keyboard-visible outline.
   card.tabIndex = -1
   card.focus()
 }
