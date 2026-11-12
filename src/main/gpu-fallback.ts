@@ -116,16 +116,16 @@ export function isRendererGpuFallbackCandidate(options: {
   return windowsRendererFallbackCodes.has(options.exitCode >>> 0)
 }
 
-/** Software rendering preserves Chromium's sandbox, including when reading
- * an old persisted sandbox-disabled state. */
+/** Software rendering relaxes only the GPU hardware sandbox to withstand
+ * Windows privilege/driver barriers, while strictly preserving Renderer sandboxing. */
 export function gpuFallbackSwitches(level: GpuFallbackLevel): string[] {
   switch (level) {
     case 'default':
       return []
     case 'sandbox-disabled':
-      return ['disable-gpu', 'disable-gpu-compositing']
+      return ['disable-gpu', 'disable-gpu-compositing', 'disable-gpu-sandbox']
     case 'gpu-disabled':
-      return ['disable-gpu', 'disable-gpu-compositing']
+      return ['disable-gpu', 'disable-gpu-compositing', 'disable-gpu-sandbox']
   }
 }
 

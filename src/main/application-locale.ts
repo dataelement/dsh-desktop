@@ -1,6 +1,7 @@
 import { parse } from 'yaml'
+import { desktopLocale, legacyLocale, preferredDesktopLocale, type DesktopLocale } from '../shared/desktop-locale'
 
-export type HarnessLocale = 'en' | 'zh'
+export type HarnessLocale = DesktopLocale
 
 /** Profile patch entry that stores the language chosen in Desktop settings. */
 const LOCALE_PLUGIN_NAME = '@deepseek-ai/dsh-client-locale'
@@ -21,7 +22,7 @@ const en = {
 export type ApplicationMessageKey = keyof typeof en
 
 // This catalog must also be available before Harness and its locale service start.
-const messages: Record<HarnessLocale, Record<ApplicationMessageKey, string>> = {
+const messages: Record<'en' | 'zh', Record<ApplicationMessageKey, string>> = {
   en,
   zh: {
     'memoryRecovery.heading': '应用内存不足，已停止运行以释放资源',
@@ -38,18 +39,12 @@ const messages: Record<HarnessLocale, Record<ApplicationMessageKey, string>> = {
 }
 
 export function applicationText(locale: HarnessLocale, key: ApplicationMessageKey): string {
-  return messages[locale][key]
+  return messages[legacyLocale(locale)][key]
 }
 
-/**
- * A language the user chose in Desktop. Only the `zh` and `en` primary tags
- * count; anything else is left unresolved so the caller can try the next source.
- */
+/** Recognize Harness's built-in languages without writing a display fallback to settings. */
 export function explicitHarnessLocale(preference: unknown): HarnessLocale | undefined {
-  if (typeof preference !== 'string') return undefined
-  const primary = preference.trim().toLowerCase().split('-')[0]
-  if (primary === 'zh' || primary === 'en') return primary
-  return undefined
+  return desktopLocale(preference)
 }
 
 /** The first explicit Desktop choice among the sources, ignoring empty and unknown tags. */
@@ -84,7 +79,7 @@ export function resolveHarnessLocale(
   preferredSystemLanguages: readonly string[]
 ): HarnessLocale {
   return explicitHarnessLocale(preference)
-    ?? (preferredSystemLanguages[0]?.toLowerCase().startsWith('zh') ? 'zh' : 'en')
+    ?? preferredDesktopLocale(preferredSystemLanguages)
 }
 
 /**
@@ -110,4 +105,18 @@ export function localePreferenceFromProfilePatch(patchText: string): unknown {
     return (config as { preference?: unknown }).preference
   }
   return undefined
+}
+
+/** Read `locale.preference` from a legacy settings document. A missing row is not a choice. */
+export function localePreferenceFromSettings(settingsText: string): unknown {
+  let value: unknown
+  try {
+    value = parse(settingsText)
+  } catch {
+    return undefined
+  }
+  if (!value || typeof value !== 'object') return undefined
+  const locale = (value as { locale?: unknown }).locale
+  if (!locale || typeof locale !== 'object') return undefined
+  return (locale as { preference?: unknown }).preference
 }

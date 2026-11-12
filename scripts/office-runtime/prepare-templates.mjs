@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { electronExecutable } from '../electron-node-loader.mjs'
+import { electronExecutable } from '../verify/electron-node-loader.mjs'
 import { createTemplateLibrary } from '../../packages/dsh-desktop-office/lib/templates.js'
 
 const exec = promisify(execFile)

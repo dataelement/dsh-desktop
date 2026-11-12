@@ -2,8 +2,8 @@
 
 The change covers HTML bootstrapping and client activation, plus Electron request routing. Backend Profile composition and plugin failure policy remain unchanged.
 
-- Read static shell assets from the current installation’s `node_modules/@deepseek-ai/dsh-web-frontend/dist`, using the existing `bundledRuntimeRoot()` anchor in both packaged and development builds. Do not resolve shell assets from a Profile or caller cwd.
-- Load `dsh-desktop://harness/` before starting Harness. The existing shell prepares its static modules and waits on `__DSH_BOOT_READY__`. A narrow main-frame IPC bridge supplies the current backend’s structured index injections only after authenticated boot.
+- Read static application assets from the current installation’s `node_modules/@deepseek-ai/dsh-web-frontend/dist`. Do not resolve them from a Profile or caller cwd.
+- Show `build/splash.html` first, then load `dsh-app://app/`. The index document inserts `__DSH_BOOT_READY__` before page scripts. Static files are served immediately. Other requests return 503 until Host has authenticated and the shell holds that cookie. A narrow main-frame IPC bridge supplies the current backend’s structured index injections only after that handshake.
 - Obtain injections from an authenticated route registered by the existing bundled desktop-client-ui plugin. Normal Profile and Safe Mode both include that plugin; their backend/plugin discovery anchors remain unchanged. The current webServer injection table remains the authority for graph, revision and script URLs.
 - The main process owns the backend cookie, proxies application requests and strips transport response headers. Only the owned loopback backend is accepted. Reject foreign origins, confine static paths and cancel superseded connections. No launch token or cookie is exposed in page URLs or logs.
 - Preserve the registration queue → bootstrap script execution → boot graph → module-system creation → application activation order, using the upstream desktop injection interpreter. Reuse the prepared document after backend readiness. Reload it on backend restart; reset deferred boot and authentication state so previous launches cannot resolve the next page.
@@ -21,11 +21,11 @@ Verification: behavior tests for local serving, traversal and origin rejection, 
 
 ## Startup failure cover
 
-The host cover applies during HTML bootstrapping and client activation, on both
-`dsh-desktop://harness/` and legacy loopback HTTP pages. It uses packaged Desktop
-loader images and a preload-owned shadow root because plugin slots are not yet
-available. It does not change Profile composition, module resolution, bootstrap
-ordering, API routing, or the normal/Safe Mode backend anchors.
+The host cover applies during HTML bootstrapping and client activation, on
+`dsh-app://app/` and on a loopback page that belongs to the current Host. It paints the same
+`startup-whale.gif` as the startup page, in a preload-owned shadow root,
+because plugin slots are not yet available. It does not change Profile composition,
+module resolution, bootstrap ordering, API routing, or the normal/Safe Mode backend anchors.
 
 A mounted sidebar releases the cover only when no startup failure is pending.
 The desktop boot-failure bridge holds the cover before sending the original
@@ -45,3 +45,15 @@ remain retryable, and recovery/splash documents are not covered. Renderer
 navigation continues using the existing bounded recovery owner, including its
 `ERR_ABORTED` handling. Inspector/WebSocket errors do not select another transport;
 this change adds no HTTP fallback or compatibility-mode setting.
+
+## Failure ownership during repair
+
+The preload registers a per-document identity with main before reporting errors.
+Main binds it to the current navigation version. Both upstream boot failures and
+the host DOM fallback use that identity, including failures before boot data is
+ready. A repair restart advances the navigation version: delayed failures from
+the old document are acknowledged and ignored, while current errors retain their
+original message and recovery path. Repeated boot requests cannot rebind an old
+document to a new navigation. This applies to normal and Safe Mode shell pages;
+legacy HTTP pages retain their existing recovery path. Backend loading, Profile
+resolution and plugin disable policy are unchanged.

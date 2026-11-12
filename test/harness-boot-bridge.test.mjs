@@ -13,7 +13,7 @@ import { canGrantWindowPermission } from '../src/main/security-policy'
 let dom
 let mainFrameDescriptor
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   mainFrameDescriptor = Object.getOwnPropertyDescriptor(process, 'isMainFrame')
   Object.defineProperty(process, 'isMainFrame', { value: true, configurable: true })
   dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
@@ -46,6 +46,23 @@ describe('local Harness boot bridge', () => {
     expect(dom.window.localStorage.getItem('session')).toBe('repair-session')
     expect(electron.ipcRenderer.send).not.toHaveBeenCalled()
   })
+  it('registers each document before reporting early boot errors and uses a new identity after repair navigation', async () => {
+    const reportDomFailure = installHarnessBootBridge()
+    const first = electron.contextBridge.exposeInMainWorld.mock.calls[0][1]
+    const firstId = electron.ipcRenderer.invoke.mock.calls[0][1]
+    expect(electron.ipcRenderer.invoke.mock.calls[0][0]).toBe('harness:boot-document')
+    expect(reportDomFailure).toBe(first.failed)
+    await reportDomFailure('bootstrap script failed before ready')
+    expect(electron.ipcRenderer.invoke).toHaveBeenLastCalledWith('harness:boot-failed', 'bootstrap script failed before ready', firstId)
+    installHarnessBootBridge()
+    const second = electron.contextBridge.exposeInMainWorld.mock.calls[1][1]
+    const secondId = electron.ipcRenderer.invoke.mock.calls.at(-1)[1]
+    expect(secondId).not.toBe(firstId)
+    await first.failed('late old error')
+    expect(electron.ipcRenderer.invoke).toHaveBeenLastCalledWith('harness:boot-failed', 'late old error', firstId)
+    await second.failed('genuine new error')
+    expect(electron.ipcRenderer.invoke).toHaveBeenLastCalledWith('harness:boot-failed', 'genuine new error', secondId)
+  })
   it.each(['dsh-desktop://desktop/splash.html', 'https://example.com/', 'dsh-desktop://harness.evil/'])('does not expose backend boot to %s', href => {
     vi.stubGlobal('location', { href })
     installHarnessBootBridge()
@@ -59,22 +76,22 @@ describe('local Harness boot bridge', () => {
   it('holds the startup cover before sending the original failure to main', async () => {
     const order = []
     installHarnessBootBridge(() => order.push('covered'))
-    electron.ipcRenderer.invoke.mockImplementation(async (channel, message) => {
-      order.push([channel, message])
+    electron.ipcRenderer.invoke.mockImplementation(async (channel, message, documentId) => {
+      order.push([channel, message, documentId])
       return { ok: true }
     })
     const bridge = electron.contextBridge.exposeInMainWorld.mock.calls[0][1]
     await bridge.failed('client-modules: test-package import failed')
-    expect(order).toEqual(['covered', ['harness:boot-failed', 'client-modules: test-package import failed']])
+    expect(order).toEqual(['covered', ['harness:boot-failed', 'client-modules: test-package import failed', expect.any(String)]])
   })
   it('reports bounded textual errors using the dedicated recovery channel', async () => {
     installHarnessBootBridge()
     const bridge = electron.contextBridge.exposeInMainWorld.mock.calls[0][1]
     electron.ipcRenderer.invoke.mockResolvedValue({ ok: true })
     await bridge.failed('x'.repeat(25000))
-    expect(electron.ipcRenderer.invoke.mock.calls[0]).toEqual(['harness:boot-failed', 'x'.repeat(20000)])
+    expect(electron.ipcRenderer.invoke.mock.calls[1]).toEqual(['harness:boot-failed', 'x'.repeat(20000), expect.any(String)])
     await expect(bridge.failed({ bad: true })).rejects.toThrow('message')
-    expect(electron.ipcRenderer.invoke).toHaveBeenCalledTimes(1)
+    expect(electron.ipcRenderer.invoke).toHaveBeenCalledTimes(2)
   })
   it('preserves backend failure and never refreshes storage after failed authentication', async () => {
     installHarnessBootBridge()

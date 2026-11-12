@@ -248,17 +248,17 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-        run: node scripts/prepare-macos-signing-keychain.mjs
+        run: node scripts/release/prepare-macos-signing-keychain.mjs
       - name: Build signed ${{ matrix.label }} package
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
-        run: node scripts/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never
+        run: node scripts/verify/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never
       - name: Build isolated ${{ matrix.label }} development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: node scripts/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never --config electron-builder.dev.cjs
+        run: node scripts/verify/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never --config electron-builder.dev.cjs
       - name: Preserve ${{ matrix.label }} update metadata
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         run: mv dist/latest-mac.yml dist/latest-mac-${{ matrix.arch }}.yml
@@ -420,13 +420,17 @@ jobs:
         timeout-minutes: 15
       - name: Run complete Windows test suite
         if: inputs.checks == 'extended' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'windows')
-        run: npx --no-install vitest run --reporter=verbose --exclude '**/test/docx-template-fidelity*' --exclude '**/test/ppt-personal-templates*' --exclude '**/test/ppt-import-memory*' --exclude '**/test/ppt-personal-template-ui*' --exclude '**/test/ppt-windows-font-layout*'
+        run: |
+          npx --no-install vitest run --mode windows-parallel --reporter=verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx --no-install vitest run --mode windows-serial --reporter=verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         timeout-minutes: 15
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Check recovery UI on native Windows at three display scales
         if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
-        run: node scripts/check-recovery-ui.mjs
+        run: node scripts/verify/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always() && github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
         with:
@@ -438,10 +442,14 @@ jobs:
           if-no-files-found: warn
       - name: Build Windows release package
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never
+        run: node scripts/verify/verify-target.mjs win32 x64 && node scripts/release/electron-builder-windows.mjs --win --x64 --publish never
       - name: Build isolated Windows development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
-        run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs
+        run: node scripts/verify/verify-target.mjs win32 x64 && node scripts/release/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs
+      - name: Test installer failure cancellation on Windows
+        env:
+          DSH_TEST_NSIS: '1'
+        run: npx --no-install vitest run test/windows-installer-errors.test.ts
       - name: Smoke test packaged Windows Harness
         if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
         shell: pwsh
@@ -616,7 +624,7 @@ jobs:
         env:
           ARCHIVE_DIST: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist' || 'dist-dev' }}
         run: |
-          node scripts/archive-windows-release.mjs "$env:ARCHIVE_DIST"
+          node scripts/release/archive-windows-release.mjs "$env:ARCHIVE_DIST"
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         with:
@@ -698,7 +706,7 @@ jobs:
           HTTPS_PROXY: ''
           ALL_PROXY: ''
         run: |
-          node scripts/download-artifact-ranges.mjs "$GITHUB_REPOSITORY" "$SOURCE_RUN_ID" \
+          node scripts/release/download-artifact-ranges.mjs "$GITHUB_REPOSITORY" "$SOURCE_RUN_ID" \
             windows-x64-unsigned "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
           unzip -q "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip" -d "$WINDOWS_SIGNING_WORK_DIR/release"
           rm "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
@@ -740,10 +748,10 @@ jobs:
           test -s "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
           tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"
           JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
-            node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
+            node scripts/release/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
           rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
           JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
-            node scripts/electron-builder-windows.mjs --win --x64 --publish never \
+            node scripts/release/electron-builder-windows.mjs --win --x64 --publish never \
             --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
             --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"
           rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
@@ -791,7 +799,7 @@ jobs:
           else
             version="${SIGNED_VERSION#v}"
           fi
-          node scripts/finalize-windows-release.mjs \
+          node scripts/release/finalize-windows-release.mjs \
             "$WINDOWS_SIGNING_WORK_DIR/release" \
             "$version"
           test -f "$WINDOWS_SIGNING_WORK_DIR/release/latest.yml"
@@ -933,7 +941,7 @@ jobs:
       - name: Merge macOS update metadata
         run: |
           set -euo pipefail
-          node scripts/merge-mac-update-metadata.mjs \
+          node scripts/release/merge-mac-update-metadata.mjs \
             release-assets/latest-mac-arm64.yml \
             release-assets/latest-mac-x64.yml \
             release-assets/latest-mac.yml
@@ -943,7 +951,7 @@ jobs:
       - name: Verify release assets before publication
         run: |
           set -euo pipefail
-          node scripts/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}"
+          node scripts/verify/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}"
       - name: Build GitHub release note prompt
         run: |
           set -euo pipefail
@@ -1004,7 +1012,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
         run: 'env GITHUB_SHA="$RELEASE_SOURCE_SHA" "$RUNNER_TEMP/release-review-env/bin/python" .github/scripts/confirm_popup_release.py'
       - name: Inject approved popup notes into update feeds
-        run: env GITHUB_SHA="$RELEASE_SOURCE_SHA" node scripts/inject-popup-notes.mjs
+        run: env GITHUB_SHA="$RELEASE_SOURCE_SHA" node scripts/release/inject-popup-notes.mjs
       - name: Preserve release review evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1092,7 +1100,7 @@ jobs:
             echo "⚠️ CRASH_ADMIN_TOKEN secret not set; skipping rollout configuration."
             exit 0
           fi
-          node scripts/configure-rollout.mjs "${RELEASE_TAG#v}" 5
+          node scripts/release/configure-rollout.mjs "${RELEASE_TAG#v}" 5
 
       - name: Build Feishu release note prompt
         run: |
@@ -1188,7 +1196,7 @@ jobs:
       - name: Merge macOS update metadata
         run: |
           set -euo pipefail
-          node scripts/merge-mac-update-metadata.mjs \
+          node scripts/release/merge-mac-update-metadata.mjs \
             release-assets/latest-mac-arm64.yml \
             release-assets/latest-mac-x64.yml \
             release-assets/latest-mac.yml
@@ -1196,7 +1204,7 @@ jobs:
             \( -name latest-mac-arm64.yml -o -name latest-mac-x64.yml \) \
             -delete
       - name: Verify release assets before publication
-        run: node scripts/verify-release-assets.mjs release-assets "${{ inputs.version }}"
+        run: node scripts/verify/verify-release-assets.mjs release-assets "${{ inputs.version }}"
       - name: Create or update pre-release
         env:
           GH_TOKEN: ${{ github.token }}

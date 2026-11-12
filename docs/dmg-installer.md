@@ -6,12 +6,12 @@ The DMG uses a 540 × 380 background with one arrow, no installation caption, an
 
 - `build/dmg/install-bg.png`: supplied background, scaled proportionally to width 540 and vertically centered within the existing canvas. The source file remains intact; the canvas clips the small vertical overflow.
 - `build/dmg/arrow.png`: supplied arrow, rendered once into the background.
-- `scripts/render-dmg-background.swift`: AppKit renderer for the 1080 × 760 Retina representation.
-- `scripts/prepare-dmg-background.cjs`: generates 540 × 380 (72 DPI) and 1080 × 760 (144 DPI) representations and combines them into `.build/dmg/background.tiff`.
+- `scripts/release/render-dmg-background.swift`: AppKit renderer for the 1080 × 760 Retina representation.
+- `scripts/release/prepare-dmg-background.cjs`: generates 540 × 380 (72 DPI) and 1080 × 760 (144 DPI) representations and combines them into `.build/dmg/background.tiff`.
 
 The macOS `beforePack` hook prepares the artwork for release and development packaging, including direct electron-builder invocations in CI. It uses Node and the macOS build tools (`swiftc`, `sips`, `tiffutil`); no extra package dependency is required. Other platforms skip generation. Failures stop packaging rather than using stale artwork.
 
-For artwork inspection alone, run `node scripts/prepare-dmg-background.cjs` on macOS. Normal builds continue to use the existing `npm run package:mac:arm64` or `npm run package:mac:x64` commands. A `--prepackaged` build skips the pack phase, so run the preparation command first in that case.
+For artwork inspection alone, run `node scripts/release/prepare-dmg-background.cjs` on macOS. Normal builds continue to use the existing `npm run package:mac:arm64` or `npm run package:mac:x64` commands. A `--prepackaged` build skips the pack phase, so run the preparation command first in that case.
 
 ## Verification
 

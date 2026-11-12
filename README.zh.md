@@ -4,12 +4,12 @@
 </h1>
 
 <p align="center">
-  <strong>DSH Desktop by Dataelem</strong>（DSH 客户端）是 Dataelem 团队基于 DeepSeek Harness 框架打造的桌面 Agent 应用，提供开源版与企业版。<br />
-  官方网站：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · 开源仓库：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
+  <strong>DSH Desktop by Dataelem</strong>（DSH 客户端）是 Dataelem 团队基于 DeepSeek Harness 框架打造的桌面 Agent 应用，提供开源版与<a href="https://www.dshdesktop.com/zh/enterprise/">企业版</a>。<br />
+  官方网站：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
+  <a href="README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
 </p>
 
 <p align="center">
@@ -20,20 +20,13 @@
 
 ![DSH Desktop 的 Preset、模型提供方、手机控制与可编辑 PPT 生成功能](docs/images/dsh-desktop-hero-v021.png)
 
-<p align="center"><strong>使用 DeepSeek 官方模型或主流第三方模型，管理可移植的 Agent Preset，在手机上继续 Harness 会话，并将材料生成可继续编辑的 PPTX。</strong></p>
-
-DSH Desktop 把本地 DeepSeek Harness 封装为可安装的桌面应用。它会自动启动 Harness，把 Profile、插件、工作区、模型配置和会话保存在应用安装目录之外，并在本地 Runtime 就绪后直接进入完整 Harness 界面。
-
-> [!IMPORTANT]
-> DSH Desktop 当前处于早期预览阶段，基于仍在快速迭代的 `@deepseek-ai/dsh@0.2.1-rc.3`。macOS 正式包已完成代码签名并通过 Apple 公证；Windows x64 安装包也已完成代码签名。随着下载量、安装量和发行者信誉逐步积累，Windows 安全提示会逐渐减少，但不会立即消失。
+基于 DeepSeek Harness，增强主流模型适配、Word / Excel / PPT 模板、启动异常恢复与工作台，提供开箱即用的桌面体验。
 
 ## 下载安装
 
-我们提供稳定版和预览版：**稳定版**可在[官网](https://dshdesktop.com/zh/)下载，推荐日常使用；**预览版**可在 [GitHub Releases](https://github.com/dataelement/dsh-desktop/releases) 中选择标记为 **Pre-release** 的版本。
+请前往[官方网站](https://www.dshdesktop.com/zh/)下载 DSH Desktop。
 
-预览版除了包含我们的新增功能，还会积极跟进 DeepSeek Harness 官方最新版本，可能与社区插件不兼容，**不建议普通用户使用**。欢迎愿意尝鲜的用户体验并在社区反馈；经尝鲜用户验证后，我们才会向全体社区用户推送。
-
-安装版会在启动后及每六小时检查更新。发现新版本时，DSH Desktop 会先询问用户；同意后才开始下载，只有选择“重新启动并安装”后才会进入安装。你也可以从应用菜单手动检查，或跳过当前版本而不影响后续版本提示。
+DSH Desktop 会自动检查更新。新版本会先进行灰度测试，确认稳定后再向所有用户全量推送。
 
 ## 加入社区
 
@@ -45,26 +38,31 @@ DSH Desktop 把本地 DeepSeek Harness 封装为可安装的桌面应用。它�
 
 ## DSH Desktop 带来了什么
 
-DeepSeek Harness 已经提供 Agent Runtime 与 Web UI。DSH Desktop 在此基础上补齐真正的桌面宿主能力：
+DeepSeek Harness 提供 Agent Runtime、Web UI 和基础模型接入能力。DSH Desktop 复用这些基础，重点增强以下体验：
 
-- 自动启动和停止 Harness，不需要另开 CLI 或浏览器标签页
-- 通过系统原生目录选择器添加和管理项目工作区
-- 支持 DeepSeek 官方模型与主流第三方模型提供方
-- 将完整的自定义 Agent Preset 导入或导出为便携的 [`.dshpreset` 压缩包](docs/preset-packages.md)，安装前检查命名冲突并提示信任风险
-- 通过内置 PPT 模式将材料生成并交付为可继续编辑的 PPTX
-- 在 macOS 和 Windows 自带 Python 及 Office 库，支持离线生成和检查 DOCX、PPTX、XLSX
-- 应用升级时保留 Profile、插件、工作区、会话和模型配置
-- 识别 Harness 启动或前端插件故障，把诊断写入 `harness.log` 并提供引导恢复入口
-- 提供不破坏用户数据的安全模式，临时屏蔽第三方插件
-- 让已配对的手机通过局域网或可选的临时公网隧道继续会话
-- 在应用内检查桌面更新，并由用户决定是否下载和安装
-- 针对 macOS 和 Windows 优化原生菜单、标题栏、窗口焦点、主题和品牌体验
+- **主流模型适配**：优化模型提供方配置与首次接入，补充模型搜索、图片输入及推理能力配置，并改善第三方模型兼容性。
+- **Office 三件套模板**：提供 Word 原生套版、Excel 案例工作簿及 PPT 可编辑模板，结合业务技能生成 DOCX、XLSX、PPTX；桌面端随附 Python 和 Office 处理依赖。
+- **启动异常与插件故障恢复**：结合启动和前端诊断定位问题，提供引导恢复、安全模式及修复 Agent 入口，尽量保留用户会话与配置。
+- **工作台**：集中浏览、安装和打开工作台应用，支持市场安装与本地导入，并复用 Harness 会话交互。
+- **Agent Preset 迁移**：通过 [`.dshpreset` 包](docs/preset-packages.md)导入导出自定义 Preset，安装前检查冲突并提示信任风险。
+- **手机连接**：扫码配对后，通过局域网或可选公网隧道在手机上继续会话。
+- **原生桌面体验**：自动管理 Harness 启停，集成系统目录选择、原生菜单与窗口；应用升级保留用户数据，并提供自动更新检查。
 
-## PPT 生成
+## Office 三件套
 
-点击 **PPT** 按钮，选择模板，再描述你想制作的内容。内置 **16 套模板、192 种版式**，可输出可继续编辑的 PPTX。模板预览统一使用英文，生成内容支持中文和英文，并配有对应字体设置；预览语言不决定输出语言。
+提供 Word、Excel、PPT 三种制作模式。选择模板并提供材料，即可让 Agent 按模板制作可继续编辑的文件。
 
-PPT 功能保持预装，相关自动提示词仅在选中 PPT 按钮的会话中生效。模板、校验和参考来源详见 [PPT 说明](packages/ppt-runtime/README.md)。
+- **Word**：沿用原生模板的版式与样式，适合通知、纪要、报告等文档，输出 DOCX。
+- **Excel**：基于案例工作簿整理数据、制作分析与图表，输出 XLSX。
+- **PPT**：内置 **16 套模板、192 种版式**，输出可编辑 PPTX，也支持导入个人模板。内置模板预览使用英文，生成内容支持中文和英文；预览语言不决定输出语言。
+
+桌面端随附 Python 和 Office 处理依赖，无需另行安装这些运行环境。PPT 模板模式的自动提示词仅在当前会话启用该模式时生效。
+
+## 工作台
+
+工作台把面向具体业务的操作界面与 Agent 会话结合起来，让常用任务不再只有聊天入口。
+
+你可以在工作台市场浏览、收藏和安装应用，也可以导入本地开发的工作台。打开后，在业务界面中操作，并结合关联的 Agent 会话完成任务；安装或更新后，按界面提示重启即可加载。移除工作台不会删除已有会话和项目文件。
 
 ## 手机连接
 
@@ -81,7 +79,7 @@ Cloudflare 启动失败时会尝试 Pinggy。若已显示 Cloudflare 配对链�
 
 如果第三方插件导致启动或页面渲染异常，DSH Desktop 会结合 Runtime 与前端证据定位相关插件，并打开引导式恢复界面。
 
-从 `Harness` 菜单选择“以安全模式重启…”，应用会使用只包含官方核心 Bundle 的隔离 Profile 启动。正常 Profile 中的第三方插件会被屏蔽，但 Agent、会话、模型配置和工作区仍然可用。你可以从页面顶部的安全模式提示卸载选中的问题插件，或恢复正常启动。
+从 `Harness` 菜单选择“以安全模式重启…”，可暂时屏蔽第三方插件，同时保留 Agent、会话、模型配置和工作区。你可以在管理界面停用问题插件，再重启正常模式验证；停用不会删除插件和用户数据，之后可以重新启用。
 
 恢复页面会检查插件是否有兼容更新；有可用版本时，可升级对应插件，安全模式还支持批量升级。需要帮助时，鼠标悬停“**微信群**”即可显示二维码，点击 **Discord** 则会打开社区链接。
 
@@ -93,12 +91,10 @@ open -a "DSH Desktop" --args --safe-mode
 
 ## 本地数据与安全边界
 
-- Harness Web UI 只运行在随机回环端口。
-- Renderer 不具备 Node.js 权限，并启用 Context Isolation 与 Sandbox。
-- WebView、不可信站内跳转和非预期权限请求会被阻止。
-- 外部网页链接交给系统浏览器打开。
-- Profile 与会话保存在 Electron 的用户级应用数据目录，不在安装目录内。
-- 手机访问需要短时配对 Token。WiFi 扫码即连；互联网隧道还需要电脑上显示的连接密码。
+- 会话与配置保存在本机用户数据目录，应用升级不会覆盖这些数据。
+- 内置侧栏浏览器与应用权限隔离；普通外链交由系统浏览器打开。
+- 手机通过扫码配对连接；互联网连接还需要输入电脑上显示的连接密码。
+- Agent 的文件与命令操作受权限控制，请谨慎批准敏感操作，并只安装可信插件。
 
 ## 平台支持
 
@@ -132,3 +128,9 @@ Harness 包含目标平台原生依赖，因此每一种正式安装包都在对
 DSH Desktop 采用 [MIT License](LICENSE) 开源。
 
 DeepSeek Harness 及其依赖仍遵循各自的上游许可证与商标规则。DSH Desktop 是独立的社区桌面应用。
+
+## 了解企业版
+
+企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。企业版的 BISHENG 客户端与服务端均已开源，可通过下方仓库获取源码。
+
+[企业管理平台开源仓库](https://github.com/dataelement/bisheng) · [企业版客户端仓库](https://github.com/dataelement/bisheng-desktop) · [企业版介绍](https://www.dshdesktop.com/zh/enterprise/)

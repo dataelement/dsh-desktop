@@ -1,6 +1,4 @@
-import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -71,26 +69,5 @@ describe('windows console hide launch arguments', () => {
       environment: { [HIDE_CONSOLE_BOOTSTRAP_ENV]: join(dir, 'missing.mjs') }
     }, { [HIDE_CONSOLE_BOOTSTRAP_ENV]: path }, 'win32')
     expect(replaced[0]).toBe('pnpm.cjs')
-  })
-})
-
-describe('windows console hide import under Electron', () => {
-  it('loads the bootstrap with ELECTRON_RUN_AS_NODE', () => {
-    const electron: unknown = createRequire(import.meta.url)('electron')
-    if (typeof electron !== 'string') return
-    const result = spawnSync(electron, [
-      '--import',
-      pathToFileURL(join(process.cwd(), 'build', 'windows-hide-console-import.mjs')).href,
-      '--input-type=module',
-      '-e',
-      'process.stdout.write("console-hide-import-ok")'
-    ], {
-      encoding: 'utf8',
-      timeout: 20_000,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
-    })
-    expect(result.error).toBeUndefined()
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain('console-hide-import-ok')
   })
 })

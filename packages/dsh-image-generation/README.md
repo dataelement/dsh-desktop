@@ -70,8 +70,8 @@ macOS Desktop 的 Host 运行在 Electron utility process 中；写图子进程�
 
 ```sh
 npx vitest run test/image-generation.test.mjs test/desktop-plugin-closure.test.ts
-node scripts/verify-image-generation.mjs
-node scripts/verify-image-electron.mjs
+node scripts/verify/verify-image-generation.mjs
+node scripts/verify/verify-image-electron.mjs
 npm run typecheck
 npm test
 ```

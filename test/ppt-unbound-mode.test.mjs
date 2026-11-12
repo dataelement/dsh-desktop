@@ -284,7 +284,7 @@ describe('PPT hero and session dock routing', () => {
     expect(registered.get('conversation.chat.userMessageFooter').component).toBe(openingCard)
     expect(registered.get('conversation.chat.userMessageFooter').config.inject(undefined).mode).toBe(mode)
     mode.setMode(undefined, 'ppt')
-    expect(registered.get('conversation.hero.modeActions').config.inject(undefined).mode).toBe(mode)
+    expect(registered.get('conversation.hero.options').config.inject(undefined).mode).toBe(mode)
   })
 })
 

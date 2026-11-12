@@ -8,33 +8,121 @@ import { attachDiagnostics } from './diagnostics'
 
 let gpuInfo = 'not-yet-available'
 let service: DesktopService | undefined
+let updateServiceFailure: string | undefined
 export let desktopDiagnostics: ReturnType<typeof attachDiagnostics> | undefined
+
+export function createAggregatedUploadConfirmation(options: {
+  showMessageBox: (options: Electron.MessageBoxOptions) => Promise<{ response: number }>
+  getPendingCount?: () => number
+  maxReportsPerLaunch?: number
+}) {
+  let status: 'unprompted' | 'approved' | 'rejected' = 'unprompted'
+  let promptPromise: Promise<boolean> | undefined
+  let uploadedCount = 0
+  const maxReports = options.maxReportsPerLaunch ?? 5
+
+  return {
+    async confirmUpload(body: string): Promise<boolean> {
+      if (status === 'rejected') {
+        return false
+      }
+      if (status === 'approved') {
+        if (uploadedCount < maxReports) {
+          uploadedCount++
+          return true
+        }
+        return false
+      }
+
+      if (!promptPromise) {
+        promptPromise = (async () => {
+          try {
+            const report = JSON.parse(body) as { version: string; kind: string; lines: string[] }
+            const pendingTotal = (options.getPendingCount?.() ?? 0) + 1
+            const countDetail = pendingTotal > 1 ? `（本次聚合 ${pendingTotal} 项故障报告）` : ''
+            const { response } = await options.showMessageBox({
+              type: 'question',
+              title: '发送故障报告',
+              message: '是否发送本次故障报告，帮助排查问题？',
+              detail: `版本：${report.version}\n故障类型：${report.kind}${countDetail}\n\n报告将发送到 https://dshdesktop.com/crash，包含安装 ID、版本、平台、故障时间、错误信息、故障时的系统内存/进程资源和显卡信息，以及 harness.log 最后最多 100 行（本次 ${report.lines.length} 行）。\n\n点击“发送一次”仅同意发送本次报告；选择“不发送”将丢弃本次待传报告，不影响继续使用。`,
+              buttons: ['不发送', '发送一次'],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true
+            })
+            const approved = response === 1
+            status = approved ? 'approved' : 'rejected'
+            return approved
+          } catch {
+            status = 'rejected'
+            return false
+          } finally {
+            promptPromise = undefined
+          }
+        })()
+      }
+
+      const approved = await promptPromise
+      if (approved) {
+        if (uploadedCount < maxReports) {
+          uploadedCount++
+          return true
+        }
+        return false
+      }
+      return false
+    },
+    getStatus() {
+      return status
+    },
+    getUploadedCount() {
+      return uploadedCount
+    },
+    resetForTesting() {
+      status = 'unprompted'
+      promptPromise = undefined
+      uploadedCount = 0
+    }
+  }
+}
+
+function rememberUpdateServiceFailure(error: unknown): void {
+  service = undefined
+  updateServiceFailure = error instanceof Error ? error.message : String(error)
+  console.warn('[desktop-service] update service initialization failed', updateServiceFailure)
+}
+
+function openDesktopService(): DesktopService {
+  const confirmation = createAggregatedUploadConfirmation({
+    showMessageBox: opts => dialog.showMessageBox(opts),
+    getPendingCount: () => service?.pending().length ?? 0
+  })
+  return new DesktopService({
+    stateDir: join(app.getPath('userData'), 'desktop-service'),
+    logPath: join(app.getPath('logs'), 'harness.log'),
+    version: app.getVersion(), platform: process.platform, arch: process.arch,
+    // Chromium networking uses the same proxy configuration as the desktop app.
+    request: (url, init) => net.fetch(url, init),
+    confirmUpload: confirmation.confirmUpload
+  })
+}
+
+/** Official packages only. This does not attach crash diagnostics or open a diagnostic session. */
+export function initializeDesktopUpdateService(): void {
+  if (!app.isPackaged || service || updateServiceFailure) return
+  try {
+    service = openDesktopService()
+  } catch (error) {
+    rememberUpdateServiceFailure(error)
+  }
+}
 
 /** Call only after the single-instance lock, before bootstrap writes this session's log. */
 export function initializeDesktopService(options: { getExitContext?: () => GpuExitContext } = {}): void {
-  if (!app.isPackaged || service) return
+  if (!app.isPackaged || updateServiceFailure) return
   try {
-    service = new DesktopService({
-      stateDir: join(app.getPath('userData'), 'desktop-service'),
-      logPath: join(app.getPath('logs'), 'harness.log'),
-      version: app.getVersion(), platform: process.platform, arch: process.arch,
-      // Chromium networking uses the same proxy configuration as the desktop app.
-      request: (url, init) => net.fetch(url, init),
-      confirmUpload: async body => {
-        const report = JSON.parse(body) as { version: string; kind: string; lines: string[] }
-        const { response } = await dialog.showMessageBox({
-          type: 'question',
-          title: '发送故障报告',
-          message: '是否发送本次故障报告，帮助排查问题？',
-          detail: `版本：${report.version}\n故障类型：${report.kind}\n\n报告将发送到 https://dshdesktop.com/crash，包含安装 ID、版本、平台、故障时间、错误信息、故障时的系统内存/进程资源和显卡信息，以及 harness.log 最后最多 100 行（本次 ${report.lines.length} 行）。\n\n点击“发送一次”仅同意发送本次报告；选择“不发送”将丢弃本次待传报告，不影响继续使用。`,
-          buttons: ['不发送', '发送一次'],
-          defaultId: 0,
-          cancelId: 0,
-          noLink: true
-        })
-        return response === 1
-      }
-    })
+    if (!service) service = openDesktopService()
+    if (desktopDiagnostics || !service) return
     void app.whenReady().then(async () => {
       gpuInfo = graphicsSnapshot(await app.getGPUInfo('basic'))
     }).catch(error => console.warn('[desktop-service] GPU metadata unavailable', error instanceof Error ? error.name : 'unknown'))
@@ -44,11 +132,11 @@ export function initializeDesktopService(options: { getExitContext?: () => GpuEx
       onError: error => console.warn('[desktop-service]', error instanceof Error ? error.name : 'Diagnostic failure')
     })
   } catch (error) {
-    service = undefined
-    console.warn('[desktop-service] initialization failed', error instanceof Error ? error.name : 'Unknown error')
+    desktopDiagnostics = undefined
+    rememberUpdateServiceFailure(error)
   }
 }
 export async function checkDesktopUpdate(manual = false) {
-  if (!service) throw new Error('Desktop update service is unavailable')
+  if (!service) throw new Error(updateServiceFailure ?? 'Desktop update service is unavailable')
   return service.checkUpdate(manual)
 }

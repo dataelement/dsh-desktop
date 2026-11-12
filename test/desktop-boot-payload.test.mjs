@@ -27,7 +27,7 @@ function harness() {
   })
   const webCtx = {
     webServer,
-    connection: { authorizeIndex },
+    connection: { authorizeIndex, browserPeer: { principal: { kind: 'owner' } } },
     effect(setup) { cleanups.push(setup()) }
   }
   const ctx = {
@@ -49,7 +49,7 @@ function harness() {
     route.handler(req, res)
     return { req, res, headers }
   }
-  return { ctx, webServer, authorizeIndex, emit, request, cleanups, setRows(value) { rows = value } }
+  return { ctx, connection: webCtx.connection, webServer, authorizeIndex, emit, request, cleanups, setRows(value) { rows = value } }
 }
 
 describe('desktop boot payload route', () => {
@@ -70,6 +70,20 @@ describe('desktop boot payload route', () => {
     h.setRows([{ kind: 'global', name: '__DSH_BOOT__', value: { revision: 'second', entries: ['updated'] } }])
     expect(JSON.parse(h.request().res.end.mock.calls[0][0]).injections[0].value.revision).toBe('second')
     expect(h.emit).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes the current authenticated browser Peer to permission-aware injections', () => {
+    const h = harness()
+    h.emit.mockImplementation((_event, table, peer) => {
+      table.push({ kind: 'global', name: '__TEST_PRINCIPAL__', value: peer.principal.kind })
+    })
+    registerDesktopBootRoute(h.ctx)
+    expect(JSON.parse(h.request().res.end.mock.calls[0][0]).injections[0].value).toBe('owner')
+    expect(h.emit.mock.calls[0][2]).toBe(h.connection.browserPeer)
+    const replacement = { principal: { kind: 'owner' } }
+    h.connection.browserPeer = replacement
+    h.request()
+    expect(h.emit.mock.calls[1][2]).toBe(replacement)
   })
 
   it('requires the same browser authentication as the index before collecting rows', () => {

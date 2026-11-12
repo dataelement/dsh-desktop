@@ -126,6 +126,14 @@ export function apply(ctx, config) {
       }
     }
   })
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/create-workbench.mjs', methods: ['GET'], requestBody: 'buffered',
+    async fetch() {
+      return new Response(await readFile(new URL('./create-workbench.mjs', import.meta.url), 'utf8'), {
+        headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }
+      })
+    }
+  })
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/development-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/author-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/market-acceptance', 'market-acceptance.zh.md'))
@@ -207,6 +215,18 @@ export function apply(ctx, config) {
     }
   })
   const known = (error) => error instanceof MarketInstallError || error instanceof CatalogError || error instanceof StateError
+  // Plugin Manager failures carry `code` plus `diagnostic`, not `message`.
+  // The card reads `error`; sending only the code hid the Windows install cause.
+  const operationFailureText = (error) => {
+    const diagnostic = typeof error?.diagnostic === 'string' ? error.diagnostic.trim() : ''
+    const message = typeof error?.message === 'string' ? error.message.trim() : ''
+    const text = diagnostic || message
+    if (text === '') return 'Plugin operation did not complete.'
+    const lines = text.split(/\r?\n/u).map(line => line.trim()).filter(Boolean)
+    const coded = lines.find(line => /\bERR_[A-Z][A-Z0-9_]*\b/u.test(line))
+    const named = lines.filter(line => /EPERM|EBUSY|EEXIST|ENOENT|error/iu.test(line))
+    return (coded ?? named.at(-1) ?? lines.at(-1) ?? text).slice(0, 400)
+  }
   const installFailure = (error, fallback) => Response.json({ error: known(error) ? error.message : fallback,
     ...(error instanceof MarketInstallError && error.code ? { code: error.code, params: error.params } : {})
   }, {
@@ -261,7 +281,7 @@ export function apply(ctx, config) {
         reloadRequired: false,
         actionRequired: result.application === 'restart-required' ? 'restart' : 'none',
         ...(result.restartReason ? { restartReason: result.restartReason } : {}),
-        ...(failed ? { error: result.error?.message || result.error?.code || 'Plugin operation did not complete.', code: result.error?.code || result.application } : {})
+        ...(failed ? { error: operationFailureText(result.error), code: result.error?.code || result.application } : {})
       }, { status: failed ? 409 : 200, headers: { 'cache-control': 'no-store' } })
     }
     ctx.connection.fetch.register({

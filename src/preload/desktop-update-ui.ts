@@ -1,3 +1,6 @@
+import { desktopLocale } from '../shared/desktop-locale'
+import { updateText } from '../shared/desktop-update-messages'
+import { renderUpdateNotes } from './update-notes-view'
 import { popupReleaseNotes } from '../shared/update-release-notes'
 import { ipcRenderer } from 'electron'
 import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
@@ -9,9 +12,12 @@ import {
   comparePreloadVersions,
   rollbackReleases,
   rollbackEmptyMessage,
+  presentedUpdateMessage,
+  UPDATE_ACTION_FAILED,
   type UpdateLocale
 } from './update-view'
 import brandMark from '../../build/brand-mark.svg?raw'
+const t = (key: Parameters<typeof updateText>[1], values: Readonly<Record<string, string | number>> = {}) => updateText(locale, key, values)
 const ROOT_ID = 'dsh-desktop-update-root'
 let locale: UpdateLocale = 'en'
 let detailOpen = false
@@ -33,14 +39,29 @@ let installingVersion: string | null = null
 const ABOUT_ROOT_ID = 'dsh-desktop-about-root'
 interface AboutInfo {
   desktopVersion: string
-  harnessVersion: string
-  locale: 'en' | 'zh'
+  harnessVersion?: string
+  locale: UpdateLocale
 }
 let aboutHost: HTMLElement | null = null
 let aboutShadow: ShadowRoot | null = null
 let aboutOpen = false
 let aboutInfo: AboutInfo | null = null
 let receivedStatusEvent = false
+let themeObserver: MutationObserver | undefined
+
+// The host is attached to documentElement, outside the node that owns Harness
+// tokens. Copy the resolved Desktop theme instead of following the OS scheme.
+const THEME_PROPERTIES = [
+  '--dsw-alias-label-primary',
+  '--dsw-alias-label-secondary',
+  '--dsw-alias-label-primary-inverted',
+  '--dsw-alias-bg-layer-1',
+  '--dsw-alias-bg-layer-2',
+  '--dsw-alias-border-l2',
+  '--dsw-alias-button-primary-fill',
+  '--dsw-alias-button-primary-hover',
+  '--dsw-alias-interactive-bg-hover'
+] as const
 
 function mount(): void {
   if (document.getElementById(ROOT_ID)) return
@@ -68,7 +89,8 @@ function mount(): void {
 // Retain snapshot request identity so later progress for that same historical
 // request cannot reopen a manual dialog after a renderer or Harness restart.
 function applyStatus(status: UpdateStatus, delivery: 'event' | 'snapshot' = 'event'): void {
-  if (status.locale) locale = status.locale
+  const statusLocale = desktopLocale(status.locale)
+  if (statusLocale) locale = statusLocale
   // A fresh automatic check is a new presentation, not a continuation of an
   // earlier manual result or an update detail the user left open.
   if (!status.manual && status.phase === 'checking') detailOpen = false
@@ -77,6 +99,7 @@ function applyStatus(status: UpdateStatus, delivery: 'event' | 'snapshot' = 'eve
     dismissedVersion = null
     dismissedTransientPhase = null
     detailOpen = true
+    closeAbout()
   }
   const failedActiveUpdate = delivery === 'event' && status.phase === 'error' &&
     (accepting || installing || currentStatus?.phase === 'downloading' || currentStatus?.phase === 'downloaded')
@@ -87,6 +110,7 @@ function applyStatus(status: UpdateStatus, delivery: 'event' | 'snapshot' = 'eve
     dismissedVersion = null
     dismissedTransientPhase = null
     detailOpen = true
+    closeAbout()
   }
   if (status.phase === 'idle') detailOpen = false
   currentStatus = status
@@ -129,7 +153,7 @@ function render(): void {
   card.setAttribute('role', centered ? 'dialog' : 'status')
   if (centered) card.setAttribute('aria-modal', 'false')
   card.setAttribute('aria-live', 'polite')
-  card.setAttribute('aria-label', locale === 'zh' ? 'DSH Desktop 更新' : 'DSH Desktop update')
+  card.setAttribute('aria-label', t('updateLabel'))
 
   const row = element('div', 'row')
   const badge = appIcon()
@@ -146,19 +170,23 @@ function render(): void {
 
   // The failure's own words beat ours, when it has any.
   const description = element('p', 'description')
+  const failureText = presentedUpdateMessage(status.message, locale)
   description.textContent =
-    status.phase === 'error' && status.message ? status.message : status.phase === 'up-to-date' ? (locale === 'zh' ? '当前已是最新版本' : 'You’re on the latest version') : !centered && status.phase === 'available' ? (releaseNotes?.split('\n').find(line => line.trim()) || headline.description) : headline.description
+    status.phase === 'error' && failureText ? failureText : status.phase === 'up-to-date' ? (t('latest')) : !centered && status.phase === 'available' ? (releaseNotes?.split('\n').find(line => line.trim()) || headline.description) : headline.description
   if (description.textContent) body.appendChild(description)
 
   if (centered && status.phase === 'available') {
     const label = element('p', 'notes-label')
-    label.textContent = locale === 'zh' ? '更新日志' : 'What’s new'
-    const notes = element('p', 'release-notes')
-    notes.textContent = releaseNotes || (locale === 'zh' ? '此版本暂无更新日志。' : 'No release notes for this version.')
+    label.textContent = t('notes')
+    const notes = element('div', 'release-notes')
+    notes.tabIndex = 0
+    notes.setAttribute('role', 'region')
+    notes.setAttribute('aria-label', label.textContent)
+    renderUpdateNotes(notes, releaseNotes || (t('noNotes')))
     body.append(label, notes)
   }
   if (!centered && status.phase === 'available') {
-    const details = button(locale === 'zh' ? '查看详情' : 'View details', 'details')
+    const details = button(t('details'), 'details')
     details.addEventListener('click', () => { detailOpen = true; render() })
     body.appendChild(details)
   }
@@ -176,7 +204,7 @@ function render(): void {
 
   if (status.phase === 'available') {
     const actions = element('div', 'actions')
-    const accept = button(locale === 'zh' ? '更新' : 'Update', 'primary')
+    const accept = button(t('update'), 'primary')
     accept.disabled = accepting
     accept.addEventListener('click', () => {
       accepting = true
@@ -204,13 +232,7 @@ function render(): void {
   if (status.phase === 'downloaded') {
     const actions = element('div', 'actions')
     const install = button(
-      installing
-        ? locale === 'zh'
-          ? '正在重启…'
-          : 'Restarting…'
-        : locale === 'zh'
-          ? '重新启动并安装'
-          : 'Restart and install',
+      t(installing ? 'restarting' : 'install'),
       'primary'
     )
     install.disabled = installing
@@ -231,10 +253,10 @@ function render(): void {
   }
 
   if (centered && ['up-to-date', 'error', 'unsupported'].includes(status.phase)) {
-    const confirm = button(locale === 'zh' ? '确定' : 'OK', 'primary confirm')
+    const confirm = button(t('ok'), 'primary confirm')
     confirm.addEventListener('click', dismissCurrent)
     if (status.phase === 'error') {
-      const retry = button(locale === 'zh' ? '重试' : 'Retry', 'primary confirm')
+      const retry = button(t('retry'), 'primary confirm')
       retry.addEventListener('click', () => { void ipcRenderer.invoke('updates:check').catch((error: unknown) => console.error('[updater] unable to retry update', error)) })
       body.appendChild(retry)
     }
@@ -242,27 +264,30 @@ function render(): void {
   }
   if (centered && status.availableVersion) {
     const current = element('p', 'current-version')
-    current.textContent = locale === 'zh' ? `当前版本 v${status.currentVersion}` : `Current version v${status.currentVersion}`
+    current.textContent = t('current', { version: status.currentVersion })
     body.appendChild(current)
   }
   card.appendChild(row)
+  if (centered) card.appendChild(closeButton(t('close'), dismissCurrent))
   const wasVisible = content.childElementCount > 0
   const root = content.getRootNode()
   const focused = root instanceof ShadowRoot ? root.activeElement : null
-  const focusedClass = focused instanceof HTMLElement ? focused.className : ''
+  const focusedInside = focused instanceof HTMLElement && content.contains(focused)
+  const focusedButtonClass = focused instanceof HTMLElement && focused.tagName === 'BUTTON' && !focused.classList.contains('dialog-close')
+    ? focused.className
+    : ''
   content.replaceChildren(card)
-  if (focusedClass) Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find(node => node.className === focusedClass)?.focus()
-  else if (centered && !wasVisible) {
-    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    card.tabIndex = -1
-    const focusTarget = card.querySelector<HTMLButtonElement>('button') || card
-    focusTarget.focus()
+  if (focusedButtonClass) {
+    Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find(node => node.className === focusedButtonClass)?.focus()
+  } else if (centered && (!wasVisible || focusedInside)) {
+    if (!wasVisible) previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    focusDialog(card)
   }
 }
 
 /** Remember ignored releases; manual checks may offer them again. */
 function skipButton(status: UpdateStatus): HTMLButtonElement {
-  const skip = button(locale === 'zh' ? '忽略' : 'Ignore', 'secondary')
+  const skip = button(t('ignore'), 'secondary')
   skip.addEventListener('click', () => {
     const version = status.availableVersion
     if (!version) return
@@ -331,7 +356,7 @@ function renderAbout(): void {
 
   aboutHost.style.display = 'flex'
   const info = aboutInfo
-  const zh = info.locale === 'zh'
+  const a = (key: Parameters<typeof updateText>[1]) => updateText(info.locale, key)
   const currentVer = info.desktopVersion
 
   let overlay = aboutShadow.querySelector('.about-overlay') as HTMLElement | null
@@ -351,12 +376,13 @@ function renderAbout(): void {
   card.tabIndex = -1
   card.setAttribute('role', 'dialog')
   card.setAttribute('aria-modal', 'false')
-  card.setAttribute('aria-label', zh ? '关于 DSH Desktop' : 'About DSH Desktop')
+  card.setAttribute('aria-label', a('about'))
 
   const header = element('div', 'about-header')
   header.appendChild(appIcon())
+  header.appendChild(closeButton(a('close'), closeAbout))
   const switcher = element('div', 'switcher')
-  const selectVersionBtn = button(zh ? '版本切换' : 'Switch version', 'version-switch')
+  const selectVersionBtn = button(a('switchVersion'), 'version-switch')
   const switchIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   switchIcon.setAttribute('viewBox', '0 0 24 24')
   switchIcon.setAttribute('aria-hidden', 'true')
@@ -381,19 +407,19 @@ function renderAbout(): void {
   title.textContent = 'DSH Desktop'
   card.appendChild(title)
   const version = element('p', 'about-line')
-  version.textContent = `v${info.desktopVersion} (${zh ? '内置' : 'bundled'} Harness ${info.harnessVersion} `
+  version.textContent = `v${info.desktopVersion} (${a('bundled')} Harness ${info.harnessVersion ?? a('unknown')}`
   const hint = button('', 'info')
   hint.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor"/><path d="M10 9v5M10 6v1" stroke="currentColor" stroke-width="1.5"/></svg>'
-  hint.setAttribute('aria-label', zh ? 'Harness 版本说明' : 'About the Harness version')
+  hint.setAttribute('aria-label', a('harnessHint'))
   const tooltip = element('span', 'tooltip')
   tooltip.id = 'harness-version-hint'
   tooltip.setAttribute('role', 'tooltip')
-  tooltip.textContent = zh ? 'Harness 随 DSH Desktop 更新。' : 'Harness is updated with DSH Desktop.'
+  tooltip.textContent = a('harnessUpdated')
   hint.setAttribute('aria-describedby', tooltip.id)
   hint.appendChild(tooltip)
   version.append(hint, document.createTextNode(')'))
   card.appendChild(version)
-  const confirm = button(zh ? '确定' : 'OK', 'primary confirm')
+  const confirm = button(a('ok'), 'primary confirm')
   confirm.addEventListener('click', closeAbout)
   card.appendChild(confirm)
   // Version picker inside About dialog
@@ -402,16 +428,16 @@ function renderAbout(): void {
     pickerContainer.id = 'desktop-version-list'
     if (versionPickerLoading) {
       const line = element('p', 'version-status-text')
-      line.textContent = zh ? '正在获取版本列表…' : 'Loading versions…'
+      line.textContent = a('loadingVersions')
       pickerContainer.appendChild(line)
     } else if (versionPickerError) {
       const line = element('p', 'version-status-text')
-      line.textContent = zh ? '暂时无法获取版本列表' : 'Unable to load version list'
+      line.textContent = a('versionsError')
       pickerContainer.appendChild(line)
     } else {
       const older = rollbackReleases(versionPickerList || [], currentVer)
       if (older.length > 0) {
-        appendAboutVersionGroup(pickerContainer, zh ? '历史版本（回退）' : 'Roll back', older, currentVer, zh)
+        appendAboutVersionGroup(pickerContainer, a('rollback'), older, currentVer, info.locale)
       } else {
         const line = element('p', 'version-status-text')
         line.textContent = rollbackEmptyMessage(info.locale)
@@ -433,7 +459,7 @@ function appendAboutVersionGroup(
   heading: string,
   releases: AvailableRelease[],
   currentVersion: string,
-  zh: boolean
+  selectedLocale: UpdateLocale
 ): void {
   if (releases.length === 0) return
   const group = element('div', 'version-group')
@@ -446,7 +472,7 @@ function appendAboutVersionGroup(
     const pick = button(`v${release.version}`, 'version-tag-btn')
     pick.disabled = installingVersion !== null
     pick.addEventListener('click', () => {
-      selectVersionFromAbout(release, currentVersion, zh)
+      selectVersionFromAbout(release, currentVersion, selectedLocale)
     })
     buttonsRow.appendChild(pick)
   }
@@ -454,11 +480,9 @@ function appendAboutVersionGroup(
   container.appendChild(group)
 }
 
-function selectVersionFromAbout(release: AvailableRelease, currentVersion: string, zh: boolean): void {
+function selectVersionFromAbout(release: AvailableRelease, currentVersion: string, selectedLocale: UpdateLocale): void {
   if (comparePreloadVersions(release.version, currentVersion) >= 0) return
-  const message = zh
-    ? `将降级到 ${release.version}（当前 ${currentVersion}）。降级不会迁移新版本写入的数据，可能导致配置不兼容。确定继续？`
-    : `This downgrades to ${release.version} (currently ${currentVersion}). A downgrade does not migrate data written by newer versions and may be config-incompatible. Continue?`
+  const message = updateText(selectedLocale, 'downgradeConfirm', { version: release.version, current: currentVersion })
   if (!window.confirm(message)) return
 
   installingVersion = release.version
@@ -488,7 +512,7 @@ function dismissCurrent(): void {
 function showActionError(error: unknown): void {
   if (!currentStatus) return
   detailOpen = true
-  applyStatus({ ...currentStatus, phase: 'error', message: error instanceof Error ? error.message : (locale === 'zh' ? '操作失败，请重试。' : 'The update action failed. Please try again.') })
+  applyStatus({ ...currentStatus, phase: 'error', message: error instanceof Error ? error.message : UPDATE_ACTION_FAILED })
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(
@@ -507,10 +531,27 @@ function button(label: string, className: string): HTMLButtonElement {
   return node
 }
 
+function focusDialog(card: HTMLElement): void {
+  // Initial focus enters the panel without drawing a button focus ring; Tab
+  // still reaches its controls and preserves their keyboard-visible outline.
+  card.tabIndex = -1
+  card.focus()
+}
+
+function closeButton(label: string, onClick: () => void): HTMLButtonElement {
+  const node = button('×', 'dialog-close')
+  node.setAttribute('aria-label', label)
+  node.addEventListener('click', event => {
+    event.stopPropagation()
+    onClick()
+  })
+  return node
+}
+
 const styles = `
-  :host { color-scheme: light dark; }
+  :host { color-scheme: light; }
   * { box-sizing: border-box; }
-  .card, .about-card { pointer-events:auto; width:100%; color:var(--dsw-alias-label-primary,#202124); background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l2,#e5e7eb); border-radius:16px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:calc(100vh - 48px); overflow:auto; overflow-wrap:anywhere; }
+  .card, .about-card { position:relative; pointer-events:auto; width:100%; color:var(--dsw-alias-label-primary,#202124); background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l2,#e5e7eb); border-radius:16px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:calc(100vh - 48px); overflow:auto; overflow-wrap:anywhere; }
   .row { display:flex; gap:12px; align-items:center; }
   .body { min-width:0; flex:1; }
   .centered .row { display:block; }
@@ -522,7 +563,23 @@ const styles = `
   .title,.about-title { margin:16px 0 8px; font-size:18px; line-height:26px; font-weight:600; }
   .notification .title { margin:0; font-size:14px; line-height:20px; }
   .description,.about-line,.release-notes,.notes-label,.current-version { margin:8px 0; font-size:13px; line-height:20px; color:var(--dsw-alias-label-secondary,#666b73); }
-  .release-notes { white-space:pre-wrap; max-height:180px; overflow:auto; }
+  .release-notes { max-height:min(280px,35vh); overflow:auto; overflow-wrap:anywhere; padding-right:4px; overscroll-behavior:contain; }
+  .release-notes p { margin:0 0 8px; white-space:pre-wrap; }
+  .release-notes h3 { margin:16px 0 8px; font-size:13px; color:var(--dsw-alias-label-primary,inherit); }
+  .release-notes ul,.release-notes ol { margin:8px 0 12px; padding-left:22px; }
+  .release-notes li { margin:5px 0; padding-left:2px; }
+  .release-notes code { font-size:12px; padding:1px 4px; border-radius:4px; background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12)); }
+  .release-notes > :first-child { margin-top:0; }
+  .release-notes > :last-child { margin-bottom:0; }
+  .card,.release-notes,.version-picker-container { scrollbar-width:thin; scrollbar-color:var(--dsw-alias-border-l2,#b4b7be) transparent; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar { width:6px; height:6px; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-track { background:transparent; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-thumb { background:var(--dsw-alias-border-l2,#b4b7be); border-radius:999px; }
+  :is(.card,.release-notes,.version-picker-container)::-webkit-scrollbar-thumb:hover { background:var(--dsw-alias-label-secondary,#888d96); }
+  /* Hide only the visual scrollbar; preserve wheel, touch and keyboard scrolling. */
+  .release-notes { scrollbar-width:none; }
+  .release-notes::-webkit-scrollbar { display:none; width:0; height:0; }
+  .release-notes:focus-visible { outline:2px solid var(--dsw-alias-label-secondary,#888d96); outline-offset:3px; border-radius:4px; }
   .notes-label { margin-top:24px; }
   .current-version { text-align:center; font-size:12px; margin:14px 0 0; }
   button { appearance:none; border:0; font:inherit; cursor:pointer; border-radius:6px; min-height:32px; }
@@ -544,11 +601,14 @@ const styles = `
   .notification .body { overflow-wrap:anywhere; }
   .about-overlay { width:100%; }
   .about-card { overflow:visible; }
-  .about-card:focus { outline:none; }
+  .card:focus, .about-card:focus { outline:none; }
   @media (max-width:440px) { .notification .row { flex-wrap:wrap; } .notification .actions { margin-left:auto; } }
-  .about-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .dialog-close { position:absolute; top:12px; right:12px; z-index:1; display:grid; place-items:center; width:28px; height:28px; min-height:28px; padding:0; background:transparent; color:var(--dsw-alias-label-secondary,#666b73); font-size:18px; line-height:1; }
+  .dialog-close:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover,#f0f2f5); }
+  .dialog-close:focus, .dialog-close:focus-visible { outline:none; }
+  .about-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-right:36px; }
   .about-line { display:flex; align-items:center; flex-wrap:wrap; gap:3px; }
-  .info { position:relative; background:transparent; padding:0 3px; color:inherit; min-height:24px; }
+  .info { position:relative; background:transparent; padding:0 0 0 3px; margin-right:-3px; color:inherit; min-height:24px; }
   .tooltip { display:none; position:absolute; right:0; bottom:100%; width:220px; padding:8px 12px; font-size:12px; line-height:18px; background:var(--dsw-alias-bg-layer-2,#f0f2f5); color:var(--dsw-alias-label-primary,#202124); border-radius:8px; box-shadow:0 3px 12px rgba(0,0,0,.12); }
   .info:hover .tooltip,.info:focus .tooltip { display:block; }
   .switcher { position:relative; }
@@ -560,16 +620,16 @@ const styles = `
   .progressValue { height:100%; background:var(--dsw-alias-button-primary-fill,#000); }
   .spinner { position:absolute; inset:16px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .75s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  @media (prefers-color-scheme:dark) {
-    .card,.about-card,.version-picker-container { background:var(--dsw-alias-bg-layer-1,#1f2023); color:var(--dsw-alias-label-primary,#f3f4f6); border-color:var(--dsw-alias-border-l2,#41434a); }
-    .description,.about-line,.release-notes,.notes-label,.current-version,.secondary,.version-switch,.version-group-title,.version-status-text { color:var(--dsw-alias-label-secondary,#a9adb5); }
-    .tooltip { background:var(--dsw-alias-bg-layer-2,#34363b); color:var(--dsw-alias-label-primary,#f3f4f6); }
-    .primary { background:var(--dsw-alias-button-primary-fill,#f9fafb); color:var(--dsw-alias-label-primary-inverted,#191b1f); }
-    .primary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover,#e6e8eb); }
-    button:focus-visible { outline-color:var(--dsw-alias-label-primary,#f3f4f6); }
-    .details { color:var(--dsw-alias-label-primary,#f3f4f6); }
-    .progressValue { background:var(--dsw-alias-button-primary-fill,#f9fafb); }
-  }
+  :host([data-dsh-theme="dark"]) :is(.card,.about-card,.version-picker-container) { background:var(--dsw-alias-bg-layer-1,#1f2023); color:var(--dsw-alias-label-primary,#f3f4f6); border-color:var(--dsw-alias-border-l2,#41434a); }
+  :host([data-dsh-theme="dark"]) :is(.description,.about-line,.release-notes,.notes-label,.current-version,.secondary,.version-switch,.version-group-title,.version-status-text) { color:var(--dsw-alias-label-secondary,#a9adb5); }
+  :host([data-dsh-theme="dark"]) .tooltip { background:var(--dsw-alias-bg-layer-2,#34363b); color:var(--dsw-alias-label-primary,#f3f4f6); }
+  :host([data-dsh-theme="dark"]) .primary { background:var(--dsw-alias-button-primary-fill,#f9fafb); color:var(--dsw-alias-label-primary-inverted,#191b1f); }
+  :host([data-dsh-theme="dark"]) .primary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover,#e6e8eb); }
+  :host([data-dsh-theme="dark"]) button:focus-visible { outline-color:var(--dsw-alias-label-primary,#f3f4f6); }
+  :host([data-dsh-theme="dark"]) .details { color:var(--dsw-alias-label-primary,#f3f4f6); }
+  :host([data-dsh-theme="dark"]) :is(.secondary,.details,.version-switch,.version-tag-btn,.dialog-close):hover { background:var(--dsw-alias-interactive-bg-hover,rgba(255, 255, 255, .12)); }
+  :host([data-dsh-theme="dark"]) .progress { background:var(--dsw-alias-bg-layer-2,#34363b); }
+  :host([data-dsh-theme="dark"]) .progressValue { background:var(--dsw-alias-button-primary-fill,#f9fafb); }
   @media (prefers-reduced-motion:reduce) { .spinner { animation:none; } }
 `
 const aboutStyles = styles
@@ -588,15 +648,27 @@ function onUpdateStatus(_event: Electron.IpcRendererEvent, status: UpdateStatus)
 }
 
 function onShowAbout(_event: Electron.IpcRendererEvent, info: AboutInfo): void {
-  locale = info.locale
+  locale = desktopLocale(info.locale) ?? locale
+  if (detailOpen) dismissCurrent()
   previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  aboutInfo = info
+  aboutInfo = { ...info, locale }
   aboutOpen = true
   versionPickerOpen = false
   renderAbout()
 }
+
+function onUiLocale(_event: Electron.IpcRendererEvent, next: unknown): void {
+  const resolved = desktopLocale(next)
+  if (!resolved) return
+  locale = resolved
+  if (currentStatus) currentStatus = { ...currentStatus, locale: resolved }
+  if (aboutInfo) aboutInfo = { ...aboutInfo, locale: resolved }
+  render()
+  renderAbout()
+}
 ipcRenderer.on('updates:status-changed', onUpdateStatus)
 ipcRenderer.on('desktop:show-about', onShowAbout)
+ipcRenderer.on('desktop:ui-locale', onUiLocale)
 
 function closeAbout(): void {
   aboutOpen = false
@@ -617,11 +689,73 @@ function onKeydown(event: KeyboardEvent): void {
 }
 window.addEventListener('pointerdown', onOutsidePointer)
 window.addEventListener('keydown', onKeydown)
+
+function themeHosts(): HTMLElement[] {
+  const nodes: HTMLElement[] = []
+  if (host) nodes.push(host)
+  if (aboutHost) nodes.push(aboutHost)
+  return nodes
+}
+
+function syncDesktopTheme(): void {
+  const body = document.body
+  const theme = body?.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light'
+  const view = document.defaultView
+  const computed = body && view ? view.getComputedStyle(body) : null
+  // Alias tokens on body point at --dsw-static-* on the same element. The host
+  // is not inside body, so copy the used color instead of the var() reference.
+  const probe = body ? document.createElement('span') : null
+  if (body && probe) {
+    probe.setAttribute('aria-hidden', 'true')
+    probe.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none'
+    body.appendChild(probe)
+  }
+  try {
+    for (const node of themeHosts()) {
+      node.dataset.dshTheme = theme
+      node.style.setProperty('color-scheme', theme)
+      for (const property of THEME_PROPERTIES) {
+        const specified = computed?.getPropertyValue(property).trim() ?? ''
+        if (!specified) {
+          node.style.removeProperty(property)
+          continue
+        }
+        if (probe && view) probe.style.setProperty('background-color', `var(${property})`)
+        const resolved = probe && view ? view.getComputedStyle(probe).backgroundColor.trim() : ''
+        node.style.setProperty(property, resolved && !resolved.startsWith('var(') ? resolved : specified)
+      }
+    }
+  } finally {
+    probe?.remove()
+  }
+}
+
+function watchDesktopTheme(): void {
+  themeObserver?.disconnect()
+  themeObserver = undefined
+  syncDesktopTheme()
+  const body = document.body
+  const Observer = document.defaultView?.MutationObserver
+  if (!body || !Observer) return
+  themeObserver = new Observer(() => syncDesktopTheme())
+  themeObserver.observe(body, {
+    attributes: true,
+    attributeFilter: ['data-ds-dark-theme', 'class', 'style']
+  })
+}
+
+function stopDesktopThemeWatch(): void {
+  themeObserver?.disconnect()
+  themeObserver = undefined
+}
+
 window.addEventListener('unload', () => {
+  stopDesktopThemeWatch()
   window.removeEventListener('pointerdown', onOutsidePointer)
   window.removeEventListener('keydown', onKeydown)
   ipcRenderer.removeListener('updates:status-changed', onUpdateStatus)
   ipcRenderer.removeListener('desktop:show-about', onShowAbout)
+  ipcRenderer.removeListener('desktop:ui-locale', onUiLocale)
 }, { once: true })
 
 void ipcRenderer
@@ -635,4 +769,5 @@ void ipcRenderer
 export function mountDesktopUpdateUi(): void {
   mount()
   mountAbout()
+  watchDesktopTheme()
 }

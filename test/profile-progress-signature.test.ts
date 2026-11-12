@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { progressSignature } from '../src/main/runtime/profile-plugin-command'
+import { progressSignature } from '../src/main/profile/profile-plugin-command'
 
 /**
  * The signature exists to tell a slow install apart from a stalled one. Every

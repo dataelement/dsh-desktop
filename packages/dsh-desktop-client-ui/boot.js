@@ -16,7 +16,9 @@ export function registerDesktopBootRoute(ctx) {
         // Exact routes bypass Connection's /api prefix handler. Reuse index auth
         // because these rows contain the same protected bootstrap data.
         if (!webCtx.connection.authorizeIndex(req, res)) return
-        const body = JSON.stringify({ injections: webCtx.webServer.collectIndexInjections() })
+        // Harness 0.2.2 scopes injection rows (including access policy) to a Peer.
+        // After index authentication, use the same owner Peer as its static frontend.
+        const body = JSON.stringify({ injections: webCtx.webServer.collectIndexInjections(webCtx.connection.browserPeer) })
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
         res.end(body)
       }

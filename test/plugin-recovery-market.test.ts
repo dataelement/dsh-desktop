@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, runPluginRecoveryUpgrades, planPluginRecovery, runPluginRecoveryPlan } from '../src/main/plugin-recovery-market'
-import type { ProfileCompatibilityIssue } from '../src/main/state/profile-compatibility'
-import type { PluginHealthReport } from '../src/main/state/plugin-market-check'
+import type { ProfileCompatibilityIssue } from '../src/main/profile/profile-compatibility'
+import type { PluginHealthReport } from '../src/main/recovery/plugin-market-check'
 
 describe('per-plugin recovery checks', () => {
   it('plans upgrades and removals together while leaving unknown checks untouched', async () => {

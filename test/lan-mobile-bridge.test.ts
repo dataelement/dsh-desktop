@@ -718,6 +718,42 @@ describe('LAN mobile bridge pairing surface', () => {
     })
   })
 
+  it('uses the shell session cookie instead of spending the launch token', async () => {
+    const seen: { url: string | undefined; cookie: string | undefined }[] = []
+    const harness = createServer(async (request, response) => {
+      seen.push({ url: request.url, cookie: request.headers.cookie })
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(Buffer.from(chunk))
+      const body = Buffer.concat(chunks).toString('utf8')
+      if (body.length === 0) {
+        response.statusCode = 204
+        response.end()
+        return
+      }
+      const envelope = JSON.parse(body) as { rpcId?: unknown }
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({
+        type: 'server-response',
+        rpcId: envelope.rpcId,
+        result: { ok: true, value: { models: [] } }
+      }))
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`,
+      harnessCookie: () => 'session=desktop-cookie',
+      harnessAuthToken: () => 'spent-token'
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const listed = await mobileRpc(port, cookie, 'session.models', {})
+    expect(listed.status).toBe(200)
+    expect(seen.some(item => item.cookie === 'session=desktop-cookie')).toBe(true)
+    expect(seen.some(item => item.url?.includes('spent-token') === true)).toBe(false)
+  })
+
   it('streams native session follow snapshots and events to an authorized phone', async () => {
     let sessionOpen: unknown
     const harness = createServer((_request, response) => {

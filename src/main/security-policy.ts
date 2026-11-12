@@ -25,10 +25,13 @@ export function isTrustedAppUrl(rawUrl: string): boolean {
 export function canGrantWindowPermission(
   permission: string,
   requestingUrl: string | undefined,
-  isMainFrame: boolean
+  isMainFrame: boolean,
+  mediaTypes: readonly string[] = []
 ): boolean {
   return (
-    (permission === 'clipboard-sanitized-write' || permission === 'notifications') &&
+    (permission === 'clipboard-sanitized-write' ||
+      permission === 'notifications' ||
+      (permission === 'media' && mediaTypes.length === 1 && mediaTypes[0] === 'audio')) &&
     isMainFrame &&
     requestingUrl !== undefined &&
     (isHarnessUrl(requestingUrl) || isHarnessShellUrl(requestingUrl))

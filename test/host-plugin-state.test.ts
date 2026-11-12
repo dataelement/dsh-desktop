@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { prepareProfileBundleForHostEnable, profileHasEnabledBundle, readDisabledHostPlugins, setHostPluginEnabled } from '../src/main/state/host-plugin-state'
+import { prepareProfileBundleForHostEnable, profileHasEnabledBundle, readDisabledHostPlugins, setHostPluginEnabled } from '../src/main/profile/host-plugin-state'
 
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })

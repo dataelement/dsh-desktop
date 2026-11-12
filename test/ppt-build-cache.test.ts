@@ -7,7 +7,7 @@ import {
   planPptBuild,
   PPT_PACKAGES,
   recordPptBuild
-} from '../scripts/ppt-build-cache.mjs'
+} from '../scripts/ppt/ppt-build-cache.mjs'
 
 let root: string
 let outputRoot: string
