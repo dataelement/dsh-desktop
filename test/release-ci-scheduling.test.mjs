@@ -33,6 +33,13 @@ function scheduled(job, name, input) {
 }
 
 describe('release CI scheduling', () => {
+  it('cancels superseded pull-request checks while retaining running release builds', () => {
+    const expression = workflow.concurrency['cancel-in-progress'].slice(3, -2).trim()
+    expect(enabled(expression, { event: 'pull_request' })).toBe(true)
+    expect(enabled(expression, { event: 'workflow_dispatch' })).toBe(false)
+    expect(enabled(expression, { event: 'push', ref: 'refs/tags/v1.0.0' })).toBe(false)
+  })
+
   it('shows only five fields with safe build defaults', () => {
     const inputs = workflow.on.workflow_dispatch.inputs
     expect(Object.keys(inputs)).toEqual(['mode', 'target', 'version', 'source_run_id', 'checks'])
