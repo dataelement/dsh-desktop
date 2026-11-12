@@ -1041,7 +1041,7 @@ async function main(): Promise<void> {
     tunnelLog: message => { console.warn(message) },
     port: desktopMobilePort(app.isPackaged && !desktopDevelopmentBuild()),
     onReconnectRequested: () => {
-      void openMobilePairing().catch((error: unknown) => { console.error(error) })
+      void openMobilePairing('reconnect').catch((error: unknown) => { console.error(error) })
     },
     onConnectedChange: connected => {
       if (window.isDestroyed()) return
@@ -1063,10 +1063,11 @@ async function main(): Promise<void> {
       new Promise<void>(resolve => { timer = setTimeout(resolve, 3000) })
     ]).finally(() => { if (timer !== undefined) clearTimeout(timer) })
   }
-  async function openMobilePairing(): Promise<void> {
+  async function openMobilePairing(reason: 'manual' | 'reconnect' = 'manual'): Promise<void> {
     if (mobileBridge === undefined) return
     const opened = await presentMobilePairing({
       bridge: mobileBridge,
+      reason,
       parent: window.isDestroyed() ? undefined : window,
       ...(mobileWindow === undefined ? {} : { current: mobileWindow }),
       locale: menuLocale,

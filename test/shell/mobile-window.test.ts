@@ -79,6 +79,27 @@ describe('formal shell mobile window', () => {
     expect(native.windows[0]?.show).toHaveBeenCalledOnce()
   })
 
+  it.each([false, true])('preserves LAN on phone reconnect with a closed pairing window (stale window=%s)', async stale => {
+    const value = bridge()
+    let current: Awaited<ReturnType<typeof presentMobilePairing>>
+    if (stale) {
+      current = await presentMobilePairing({ ...options(value), reason: 'reconnect' })
+      current?.destroy()
+      vi.clearAllMocks()
+      native.events.length = 0
+    }
+    const opened = await presentMobilePairing({ ...options(value), current, reason: 'reconnect' })
+    expect(opened).toBeDefined()
+    expect(value.toggleTunnel).not.toHaveBeenCalled()
+    expect(native.events).toEqual(['show', 'load'])
+  })
+
+  it('preserves an active internet tunnel on reconnect without toggling it', async () => {
+    const value = bridge({ desktopUrl: 'http://127.0.0.1/desktop', tunnelActive: true })
+    expect(await presentMobilePairing({ ...options(value), reason: 'reconnect' })).toBeDefined()
+    expect(value.toggleTunnel).not.toHaveBeenCalled()
+  })
+
   it('coalesces concurrent opens while the local page is loading', async () => {
     const value = bridge()
     const load = deferred()

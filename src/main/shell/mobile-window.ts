@@ -16,6 +16,8 @@ interface MobilePairingOptions {
   locale: DesktopLocale
   iconPath?: string
   hostReady: boolean
+  /** A phone reconnect may present the window, but must not change network mode. */
+  reason?: 'manual' | 'reconnect'
 }
 
 export async function presentMobilePairing(options: MobilePairingOptions): Promise<BrowserWindow | undefined> {
@@ -79,7 +81,7 @@ async function openMobilePairing(options: MobilePairingOptions): Promise<Browser
   window.focus()
   // Start without awaiting before requesting HTML, so the first page already
   // selects internet mode and renders download/tunnel progress (or its error).
-  if (shouldOpenInternetTunnel(snapshot)) {
+  if (options.reason !== 'reconnect' && shouldOpenInternetTunnel(snapshot)) {
     void options.bridge.toggleTunnel(true).catch((error: unknown) => {
       console.error('[mobile-pairing] Failed to enable internet pairing:', error)
     })
