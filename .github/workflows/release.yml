@@ -430,10 +430,10 @@ jobs:
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Check recovery UI on native Windows at three display scales
-        if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended')
         run: node scripts/verify/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
+        if: always() && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'))
         with:
           name: windows-recovery-ui
           retention-days: 7
@@ -452,7 +452,7 @@ jobs:
           DSH_TEST_NSIS: '1'
         run: npx --no-install vitest run test/windows-installer-errors.test.ts
       - name: Smoke test packaged Windows Harness
-        if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended')
         shell: pwsh
         env:
           SMOKE_EXE: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist\win-unpacked\DSH Desktop.exe' || 'dist-dev\win-unpacked\DSH Desktop Dev.exe' }}
@@ -579,6 +579,8 @@ jobs:
               throw "DSH Desktop Dev exited after workspace and session creation (exit code $($desktop.ExitCode))."
             }
             Write-Host 'Packaged Windows Harness smoke test passed.'
+            node scripts/verify/check-workbench-install.mjs "$executable" "artifacts/workbench-install"
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows workbench installation acceptance failed.' }
           } finally {
             foreach ($path in @($desktopStdout, $desktopStderr)) {
               if (Test-Path $path) {
@@ -619,8 +621,18 @@ jobs:
             } while ((Get-Date) -lt $cleanupDeadline)
             if ($remaining.Count -gt 0) { throw 'Processes from the isolated packaged smoke did not exit.' }
           }
+      - name: Upload Windows workbench installation evidence
+        if: always() && (github.event_name == 'pull_request' || inputs.checks == 'extended')
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-workbench-installation
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            artifacts/workbench-install/*.png
+            artifacts/workbench-install/results.json
       - name: Archive and verify unpacked Windows payload
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease' || inputs.checks == 'extended'))
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease' || inputs.checks == 'extended'))
         shell: pwsh
         env:
           ARCHIVE_DIST: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist' || 'dist-dev' }}
