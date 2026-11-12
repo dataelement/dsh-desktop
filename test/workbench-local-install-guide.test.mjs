@@ -57,7 +57,7 @@ async function mount(language = 'zh') {
   let snapshot
   const listeners = new Set()
   const service = Object.assign(Object.create(plugin.Workbenches.prototype), {
-    ctx, state: { active: null }, native: { status: 'ready', bundles: {} }, hostRestartNeeded: false, applicationOutcomes: new Map(),
+    ctx, state: { active: null }, native: { status: 'ready', bundles: {} }, hostRestartNeeded: false, extraRestartSources: new Set(), applicationOutcomes: new Map(),
     localInstall: { phase: 'idle', file: null, requestId: null, pendingBuilds: [], error: '' },
     load: vi.fn(async () => {}), refreshNative: vi.fn(async () => {}), setMarketOpen: vi.fn(),
     leave: vi.fn(async () => { service.state.active = null }),
