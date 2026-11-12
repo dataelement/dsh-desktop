@@ -23,7 +23,8 @@ it('registers the image settings tab in 0.1.7 and opens the configuration form',
     } })
     throw new Error(name)
   }
-  new Function('window', source)({ __ModuleLoader__: { load({ factory }) { plugin = factory(require) } } })
+  const dispatchEvent = vi.fn()
+  new Function('window', source)({ dispatchEvent, __ModuleLoader__: { load({ factory }) { plugin = factory(require) } } })
   const entries = [], disposers = []
   plugin.apply({
     uiConversation: { events: { register() {} } },
@@ -41,6 +42,8 @@ it('registers the image settings tab in 0.1.7 and opens the configuration form',
     profiles: Object.fromEntries(Object.entries(DEFAULTS).map(([name, defaults]) => [name, { ...defaults, configured: false }])) }
   const fetchMock = vi.fn(async () => ({ ok: true, text: async () => JSON.stringify(settings) }))
   vi.stubGlobal('fetch', fetchMock)
+  const setEnabled = vi.fn(async () => ({ ok: true, restartRequired: true }))
+  vi.stubGlobal('dshDesktop', { getBuiltInImageGenerationStatus: async () => ({ enabled: true }), setBuiltInImageGenerationEnabled: setEnabled })
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -52,6 +55,16 @@ it('registers the image settings tab in 0.1.7 and opens the configuration form',
     expect(container.querySelector('button[type=submit]').textContent).toBe('save')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0][1].method).toBe('GET')
+    await act(async () => container.querySelector('[role=switch]').click())
+    expect(setEnabled).toHaveBeenLastCalledWith(false)
+    expect(dispatchEvent.mock.calls[0][0].detail).toEqual({ source: 'image', restartRequired: true })
+    await act(async () => container.querySelector('[role=switch]').click())
+    expect(setEnabled).toHaveBeenLastCalledWith(true)
+    expect(dispatchEvent).toHaveBeenCalledTimes(2)
+    setEnabled.mockResolvedValue({ ok: false, restartRequired: true })
+    await act(async () => container.querySelector('[role=switch]').click())
+    expect(dispatchEvent).toHaveBeenCalledTimes(2)
+
   } finally {
     await act(async () => root.unmount())
     container.remove()

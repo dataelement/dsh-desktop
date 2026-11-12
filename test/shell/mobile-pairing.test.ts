@@ -31,9 +31,9 @@ describe('mobile pairing on the new shell', () => {
     expect(() => desktopMobilePort(false, { DSH_DEV_MOBILE_PORT: '80' })).toThrow('DSH_DEV_MOBILE_PORT')
   })
 
-  it('opens an internet tunnel only when no LAN address is available', () => {
+  it('prefers internet pairing even with a LAN address, without switching connected phones', () => {
     expect(shouldOpenInternetTunnel({})).toBe(true)
-    expect(shouldOpenInternetTunnel({ pairingUrl: 'http://192.168.1.8:43128/pair?token=secret' })).toBe(false)
+    expect(shouldOpenInternetTunnel({ pairingUrl: 'http://192.168.1.8:43128/pair?token=secret' })).toBe(true)
     expect(shouldOpenInternetTunnel({ tunnelActive: true })).toBe(false)
     expect(shouldOpenInternetTunnel({ connected: true })).toBe(false)
   })

@@ -47,7 +47,8 @@ function setup({ bundles = [], composed = false, language = 'en', desktop = {} }
   }
   const sandbox = { document, fetch, setTimeout, dshDesktop: desktop,
     __DSH_BOOT__: { entries: composed ? [{ id: 'dshmarket' }] : [] },
-    window: { addEventListener: vi.fn(), removeEventListener: vi.fn(), __ModuleLoader__: { load({ factory }) { exported = factory(() => React) } } }
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail } },
+    window: { dispatchEvent: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), __ModuleLoader__: { load({ factory }) { exported = factory(() => React) } } }
   }
   vm.runInNewContext(code, sandbox)
   const ctx = {
@@ -357,10 +358,25 @@ describe('recommended market ordinary PluginManager client', () => {
     app.dispose()
   })
 
+  it('does not request a restart when image enablement was applied live', async () => {
+    const desktop = {
+      getBuiltInImageGenerationStatus: vi.fn(async () => ({ enabled: false, marketActive: false })),
+      setBuiltInImageGenerationEnabled: vi.fn(async () => ({ ok: true, restartRequired: false }))
+    }
+    const app = setup({ desktop })
+    const control = app.mount('desktop-host-plugins')
+    control.render(); await flush()
+    const input = find(control.render(), node => node.type === 'input')[0]
+    await input.props.onChange({ preventDefault() {} })
+    expect(button(control.render(), app.dictionaries().en.builtInImageRestart)).toBeUndefined()
+    expect(text(control.render())).toContain(app.dictionaries().en.builtInImageEnabled)
+    app.dispose()
+  })
+
   it.each(['zh', 'en'])('preserves the recommended entry and built-in image enable/restart behavior in %s', async language => {
     const desktop = {
       getBuiltInImageGenerationStatus: vi.fn(async () => ({ enabled: false, marketActive: false })),
-      setBuiltInImageGenerationEnabled: vi.fn(async () => ({ ok: true })),
+      setBuiltInImageGenerationEnabled: vi.fn(async () => ({ ok: true, restartRequired: true })),
       restartHarness: vi.fn(async () => ({ ok: true }))
     }
     const app = setup({ language, desktop })
