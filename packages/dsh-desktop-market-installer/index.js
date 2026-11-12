@@ -135,6 +135,7 @@ export async function stagePnpmRunner(directory) {
     // The staged runner imports this sibling. Copy it first so a failed helper
     // copy cannot leave a runner that resolves the helper from .desktop-bin.
     await copyFile(helperSource, join(directory, 'windows-hide-console.mjs'))
+    await copyFile(fileURLToPath(new URL('./registry-view.mjs', import.meta.url)), join(directory, 'registry-view.mjs'))
     await copyFile(source, staged)
     return staged
   } catch {
