@@ -83,6 +83,11 @@ Start by asking for the first piece of information still missing.`,
       zh: { failed: '工作台注册失败', identity: '身份解析', register: '注册', guidance: '请将以下包名、阶段和原因提供给开发助手修复，然后重新加载工作台。' },
       en: { failed: 'Workbench registration failed', identity: 'Identity resolution', register: 'Registration', guidance: 'Give the package, stage and reason below to your development assistant, then reload the workbench after fixing it.' }
     }
+    const RESTART_NS = 'dsh-desktop-restart'
+    const restartCopy = {
+      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。' },
+      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.' }
+    }
     const registrationText = (ctx, key) => ctx.locale?.bind
       ? ctx.locale.bind(REGISTRATION_NS)(key)
       : registrationCopy[isEnglish() ? 'en' : 'zh'][key]
@@ -159,6 +164,16 @@ Start by asking for the first piece of information still missing.`,
     const isEnglish = () => !localeActive().toLowerCase().startsWith('zh')
     const tr = (value) => isEnglish() ? enCopy[value] || value : value
     const both = (zh, en) => isEnglish() ? en : zh
+    async function readWorkbenchJson(response) {
+      try {
+        const data = await response.json()
+        if (data && typeof data === 'object' && !Array.isArray(data)) return data
+      } catch {
+        // The desktop proxy can return a plain text 502 before Harness responds.
+      }
+      const message = both('工作台服务暂时无法响应，请稍后重试。', 'The workbench service is temporarily unavailable. Please try again.')
+      throw new Error(response.ok ? message : `${message} (HTTP ${response.status})`)
+    }
     const FALLBACK_LOCALE_SNAPSHOT = { active: 'zh', revision: 0 }
     const subscribeHostLocale = (listener) => hostLocale?.subscribe?.(listener) || (() => {})
     const snapshotHostLocale = () => hostLocale?.getSnapshot?.() || FALLBACK_LOCALE_SNAPSHOT
@@ -276,6 +291,12 @@ Start by asking for the first piece of information still missing.`,
       set(value) { this.enabled = !!value; try { window.localStorage.setItem(WORKBENCH_PREF, String(this.enabled)) } catch {} ; for (const listener of this.listeners) listener() }
     }
     const EMPTY = () => ({ version: 1, added: [], pinned: [], favorites: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {}, hiddenWorkspaces: {} })
+    class UnavailableWorkbenchError extends Error {
+      constructor(id) {
+        super('工作台当前不可用。')
+        this.workbenchId = id
+      }
+    }
     // This controller owns navigation and local state only. It never terminates
     // agents, changes a running session's preset, or registers global tools.
     class Workbenches {
@@ -287,6 +308,7 @@ Start by asking for the first piece of information still missing.`,
         this.revision = 0
         this.ready = false
         this.error = ''
+        this.errorDismissed = false
         this.blocked = false
         this.restoreMarketOnLoad = storedMarketOpen()
         this.marketOpen = this.restoreMarketOnLoad
@@ -318,8 +340,18 @@ Start by asking for the first piece of information still missing.`,
         this.removingPlugin = null
         this.removedWorkbenchIds = new Set()
         this.installing = null
+        this.firstMarketInstall = null
         this.applicationOutcomes = new Map()
         this.hostRestartNeeded = false
+        this.restartPackages = []
+        this.extraRestartSources = new Set()
+        try {
+          const pending = JSON.parse(window.sessionStorage?.getItem('dsh-desktop-pending-restart') || 'null')
+          if (typeof pending?.runtimeId === 'string') {
+            this.restartRuntimeId = pending.runtimeId
+            if (pending.image === true) this.extraRestartSources.add('image')
+          }
+        } catch { /* Restricted or stale storage must not prevent startup. */ }
         this.installFailures = new Map()
         this.draftNotes = new Map()
         this.noteTimers = new Map()
@@ -336,7 +368,7 @@ Start by asking for the first piece of information still missing.`,
       }
       getSnapshot = () => this.snapshot
       subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
-      get restartNeeded() { return this.hostRestartNeeded || [...this.applicationOutcomes.values()].some(result => result.application === 'restart-required') }
+      get restartNeeded() { return this.extraRestartSources.size > 0 || this.hostRestartNeeded || [...this.applicationOutcomes.values()].some(result => result.application === 'restart-required') }
       get reloadNeeded() { return [...this.applicationOutcomes.values()].some(result => result.application === 'reload-required') }
       pendingApplications(application) {
         return new Set([...this.applicationOutcomes.values()].filter(result => result.stage === 'install' && result.application === application).map(result => result.catalogId))
@@ -352,6 +384,26 @@ Start by asking for the first piece of information still missing.`,
         if (this.pendingRestart.has(catalogId) || this.pendingReload.has(catalogId) || this.native.status !== NATIVE_STATUS.ready) return install
         const bundle = this.native.bundles[install.pluginName]
         return bundle && bundle.installed !== false ? install : null
+      }
+      marketInstallUnconfirmed(entry) {
+        const unconfirmed = (id, name) => this.firstMarketInstall === id || this.marketInstallFailureFor(id, name)?.kind === 'install'
+        if (unconfirmed(entry.catalogId || entry.id, this.pluginFor(entry))) return true
+        // A provider can register before its market receipt arrives. Do not
+        // introduce it as a local workbench while that first install is unresolved.
+        return !entry.listed && !!entry.sourcePackage && this.remoteCatalog.some(item =>
+          (item.distribution?.name === entry.sourcePackage || this.installs[item.id]?.pluginName === entry.sourcePackage) &&
+          unconfirmed(item.id, entry.sourcePackage))
+      }
+      marketInstallFailureFor(catalogId, name) {
+        const failed = this.installFailures.get(catalogId)
+        if (failed) return failed
+        // After a page reload the manager still knows which installation
+        // failed activation, even though the validated files are on disk.
+        // Keep existing and deliberately disabled installations manageable.
+        const outcome = this.applicationOutcomes.get(name)
+        if (!outcome || outcome.catalogId !== catalogId || outcome.stage !== 'install' || outcome.application !== 'failed' ||
+            this.state.added.includes(catalogId) || this.native.bundles[name]?.enabled === false) return undefined
+        return { kind: 'install', message: outcome.error?.diagnostic || outcome.error?.message || '工作台插件当前不可用。' }
       }
       originFor(entry) {
         const id = entry.catalogId || entry.id
@@ -394,6 +446,7 @@ Start by asking for the first piece of information still missing.`,
         return entries.some((entry) => entry.id !== id && this.state.added.includes(entry.id) && entry.installed && this.pluginFor(entry) === source)
       }
       activationFor(entry) {
+        if (this.marketInstallUnconfirmed(entry)) return 'unknown'
         const name = this.pluginFor(entry)
         if (!name || this.native.status !== NATIVE_STATUS.ready) return 'unknown'
         const bundle = this.native.bundles[name]
@@ -417,11 +470,39 @@ Start by asking for the first piece of information still missing.`,
         let stopped = false
         let timer
         const poll = async () => {
-          await this.refreshRestartStatus()
+          await Promise.all([this.refreshRestartStatus(), this.refreshMarketRestartStatus()])
           if (!stopped && !this.disposed) timer = setTimeout(poll, 5000)
         }
+        const changed = (event) => {
+          if (event.detail?.source !== 'image' || event.detail?.restartRequired !== true) return
+          this.extraRestartSources.add('image')
+          this.publish()
+        }
+        window.addEventListener?.('dsh-desktop-restart-required', changed)
         poll()
-        return () => { stopped = true; clearTimeout(timer) }
+        return () => { stopped = true; clearTimeout(timer); window.removeEventListener?.('dsh-desktop-restart-required', changed) }
+      }
+      async refreshMarketRestartStatus() {
+        const runtimeId = this.restartRuntimeId
+        try {
+          const response = await this.request('/dsh-desktop/market-installer/status', { credentials: 'same-origin', cache: 'no-store' })
+          if (!response.ok) return
+          const status = await response.json()
+          if (this.disposed || runtimeId !== this.restartRuntimeId || typeof status.phase !== 'string' || typeof status.restartRequired !== 'boolean') return
+          const before = this.extraRestartSources.has('market')
+          if (status.restartRequired) this.extraRestartSources.add('market')
+          else this.extraRestartSources.delete('market')
+          if (before !== status.restartRequired) this.publish()
+        } catch {
+          // An unavailable optional market must not erase pending changes.
+        }
+      }
+      restartReasons() {
+        return [...new Set([
+          ...(this.hostRestartNeeded ? (this.restartPackages.length ? this.restartPackages : ['workbenches']) : []),
+          ...[...this.applicationOutcomes].filter(([, result]) => result.application === 'restart-required').map(([name]) => name),
+          ...this.extraRestartSources
+        ])]
       }
       async refreshRestartStatus() {
         if (this.restartStatusRequest) return this.restartStatusRequest
@@ -432,16 +513,20 @@ Start by asking for the first piece of information still missing.`,
           if (this.disposed) return
           const restarted = typeof data.runtimeId === 'string' && this.restartRuntimeId && data.runtimeId !== this.restartRuntimeId
           if (typeof data.runtimeId === 'string') this.restartRuntimeId = data.runtimeId
-          const before = this.restartNeeded
+          const before = JSON.stringify(this.restartReasons())
           if (typeof data.restartRequired === 'boolean') this.hostRestartNeeded = data.restartRequired
+          if (Array.isArray(data.packages)) this.restartPackages = data.packages.filter(name => typeof name === 'string')
+          if (restarted) this.extraRestartSources.delete('image')
           if (restarted && data.restartRequired === false) {
             this.hostRestartNeeded = false
+            this.extraRestartSources.clear()
             // A confirmed runtime replacement has applied local restart-only outcomes too.
             for (const [name, result] of this.applicationOutcomes) {
               if (result.application === 'restart-required') this.applicationOutcomes.delete(name)
             }
           }
-          if (before !== this.restartNeeded) this.publish()
+          this.persistRestartSources()
+          if (before !== JSON.stringify(this.restartReasons())) this.publish()
         })().catch(() => {
           // Restart guidance is supplementary; a disconnected host must not
           // replace the user's conversation with a polling error.
@@ -621,7 +706,7 @@ Start by asking for the first piece of information still missing.`,
           const pluginClosed = pluginName && this.native.bundles[pluginName]?.enabled === false
           const bundle = pluginName && this.native.bundles[pluginName]
           const packageMissing = this.native.status === NATIVE_STATUS.ready && pluginName && (!bundle || bundle.installed === false)
-          const failedInstall = this.installFailures.get(item.id)
+          const failedInstall = this.marketInstallFailureFor(item.id, pluginName)
           // A recovery removal can leave an old navigation/market record. The
           // native inventory wins once it is available: no package means there
           // is no current load failure to report.
@@ -658,7 +743,7 @@ Start by asking for the first piece of information still missing.`,
             screenshots: item.screenshots.map(image => image.url),
             listed: true,
             local: false,
-            installed: !!provider,
+            installed: !!provider && !this.marketInstallUnconfirmed(item),
             pendingRestart,
             pendingReload,
             loadFailure: loadFailure || '',
@@ -670,7 +755,7 @@ Start by asking for the first piece of information still missing.`,
             const evidence = this.packageEvidence?.[provider.sourcePackage]
             const metadata = { ...provider }
             for (const [key, value] of Object.entries(evidence?.metadata || {})) if (value !== undefined) metadata[key] = value
-            remote.push({ ...provider, catalogId: provider.id, installedMetadata: metadata, listed: false, local: provider.id.startsWith('local:') || evidence?.origin === 'local', installed: true })
+            remote.push({ ...provider, catalogId: provider.id, installedMetadata: metadata, listed: false, local: provider.id.startsWith('local:') || evidence?.origin === 'local', installed: !this.marketInstallUnconfirmed(provider) })
           }
         }
         const visible = new Set(remote.map((entry) => entry.catalogId || entry.id))
@@ -716,19 +801,31 @@ Start by asking for the first piece of information still missing.`,
       }
       identityForSource(source, repository, legacyId) {
         const local = this.localIdentity(source)
-        const installed = Object.keys(this.installs).filter((id) => this.installRecordFor(id)?.pluginName === source)
-        const listed = this.remoteCatalog.filter(entry => entry.distribution?.name === source).map(entry => entry.id)
-        const legacy = typeof legacyId === 'string'
-          ? this.remoteCatalog.filter(entry => entry.workbenchId === legacyId || entry.legacyWorkbenchIds?.includes(legacyId)).map(entry => entry.id)
-          : []
         const declared = this.repositoryIdentity(repository)
-        const identities = [...new Set([...installed, ...listed, ...legacy, ...(declared ? [declared] : [])])]
-        if (identities.length > 1) throw new Error(`Client package ${source} matches multiple workbenches.`)
         // Once introduced locally, later catalog discovery must not move owned sessions.
         const referenced = this.state.added.includes(local) || this.state.pinned.includes(local) || this.state.active === local
           || this.state.favorites.includes(local) || Object.values(this.state.sessionBindings).includes(local)
           || Object.hasOwn(this.state.notes, local) || Object.hasOwn(this.state.recentSessions, local) || Object.hasOwn(this.state.hiddenWorkspaces, local)
         if (this.knownProviders[local]?.sourcePackage === source || referenced) return local
+        const installed = Object.keys(this.installs).filter((id) => this.installRecordFor(id)?.pluginName === source)
+        const listed = this.remoteCatalog.filter(entry => entry.distribution?.name === source).map(entry => entry.id)
+        const legacy = typeof legacyId === 'string'
+          ? this.remoteCatalog.filter(entry => entry.workbenchId === legacyId || entry.legacyWorkbenchIds?.includes(legacyId)).map(entry => entry.id)
+          : []
+        // Multiple receipts can share a package name after a rename or a
+        // replacement. Only an exact content match identifies the current install.
+        const evidence = this.packageEvidence?.[source]
+        const verified = evidence?.contentVerified && evidence.fingerprint
+          ? installed.filter(id => this.installs[id].fingerprint === evidence.fingerprint && this.installs[id].version === evidence.version)
+          : []
+        const matches = verified.length ? [verified] : [installed, listed, legacy]
+        const identities = [...new Set([...matches.flat(), ...(declared ? [declared] : [])])]
+        if (identities.length > 1) {
+          // A canonical repository can select among aliases only when it
+          // agrees with every source that supplies attribution.
+          if (declared && matches.every(ids => !ids.length || ids.includes(declared))) return declared
+          throw new Error(`Client package ${source} matches multiple workbenches: ${identities.sort().join(', ')}.`)
+        }
         const remembered = Object.entries(this.knownProviders).filter(([id, entry]) => !id.startsWith('local:') && entry.sourcePackage === source).map(([id]) => id)
         const historicallyReferenced = listed.some(id => this.state.added.includes(id) || this.state.pinned.includes(id)
           || this.state.favorites.includes(id) || this.state.active === id || Object.values(this.state.sessionBindings).includes(id)
@@ -737,7 +834,7 @@ Start by asking for the first piece of information still missing.`,
         if (this.packageEvidence?.[source]?.origin === 'local' && !installed.length && !declared && !legacy.length
           && !remembered.length && !historicallyReferenced) return local
         if (identities.length) return identities[0]
-        if (remembered.length > 1) throw new Error(`Client package ${source} matches multiple workbenches.`)
+        if (remembered.length > 1) throw new Error(`Client package ${source} matches multiple workbenches: ${remembered.sort().join(', ')}.`)
         if (remembered.length) throw new Error(`Client package ${source} is not attributed to its previous market repository.`)
         return local
       }
@@ -783,7 +880,7 @@ Start by asking for the first piece of information still missing.`,
       }
       reconcileLocalProviders() {
         if (!this.ready || this.blocked || this.disposed) return
-        const local = this.marketCatalog().filter(entry => !entry.listed && this.catalog.has(entry.id))
+        const local = this.marketCatalog().filter(entry => !entry.listed && entry.installed && this.catalog.has(entry.id))
         this.rememberIntroducedLocal(local.filter(entry => this.state.added.includes(entry.id)).map(entry => entry.id))
         const additions = local.filter(entry => this.state.added.includes(entry.id)
           ? !this.state.pinned.includes(entry.id)
@@ -813,6 +910,9 @@ Start by asking for the first piece of information still missing.`,
             const source = remembered?.sourcePackage
             const bundle = source && this.native.bundles[source]
             if (legacy.startsWith('local:') || !source || !bundle || bundle.installed === false || bundle.error || this.catalog.has(legacy) || !referenced(legacy) || migrations[legacy]) continue
+            // A distinct market receipt may represent a different workbench
+            // that reused this package name. Do not transfer its owned data.
+            if (this.installs[legacy]?.pluginName === source) continue
             const current = [...this.catalog.values()].filter((provider) => provider.sourcePackage === source &&
               this.remoteCatalog.some((entry) => entry.id === provider.id))
             if (current.length === 1 && current[0].id !== legacy) migrations[legacy] = current[0].id
@@ -840,23 +940,52 @@ Start by asking for the first piece of information still missing.`,
           }
         }, migrations))
       }
+      persistRestartSources() {
+        try {
+          if (this.extraRestartSources.has('image') && this.restartRuntimeId) window.sessionStorage?.setItem('dsh-desktop-pending-restart', JSON.stringify({ runtimeId: this.restartRuntimeId, image: true }))
+          else window.sessionStorage?.removeItem('dsh-desktop-pending-restart')
+        } catch { /* The server remains authoritative when storage is unavailable. */ }
+      }
       publish() {
-        this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
+        this.persistRestartSources()
+        const catalog = this.marketCatalog()
+        if (this.error instanceof UnavailableWorkbenchError) {
+          const id = this.error.workbenchId
+          const entry = catalog.find(item => item.id === id || item.catalogId === id)
+          // Registration and installation can finish after a rejected action.
+          // Retire only the notice for the workbench that became available.
+          if (entry && !this.marketInstallUnconfirmed(entry) &&
+              ((entry.installed && this.catalog.has(entry.id) && this.activationFor(entry) !== 'off') || entry.pendingRestart || entry.pendingReload)) {
+            this.error = ''
+          }
+        }
+        const error = this.error instanceof UnavailableWorkbenchError ? this.error.message : this.error
+        this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDismissed: this.errorDismissed,
+
           catalogLoaded: this.catalogLoaded, catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, checkingUpdates: this.checkingUpdates, pending: this.pending, marketOpen: this.marketOpen,
-          registrationFailures: [...this.registrationFailures.values()], catalog: this.marketCatalog(), categories: this.marketCategories, installs: this.installs, installing: this.installing, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
+          registrationFailures: [...this.registrationFailures.values()], catalog, categories: this.marketCategories, installs: this.installs, installing: this.installing || this.firstMarketInstall, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, restartReasons: this.restartReasons(), reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
         for (const listener of this.listeners) listener()
       }
-      report(error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : String(error); this.publish() } }
+      report(error) {
+        if (this.disposed) return
+        this.error = error instanceof UnavailableWorkbenchError ? error : error instanceof Error ? error.message : String(error)
+        this.errorDismissed = false
+        this.publish()
+      }
+      dismissError() {
+        this.errorDismissed = true
+        this.publish()
+      }
       run(promise) { void promise.catch((error) => this.report(error)) }
       async read() {
         const response = await this.request(API, { credentials: 'same-origin', cache: 'no-store' })
-        const data = await response.json()
+        const data = await readWorkbenchJson(response)
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         return data
       }
       async readCatalog(force = false) {
         const response = await this.request(force ? `${CATALOG_API}?force=1` : `${CATALOG_API}?cache=1`, { credentials: 'same-origin', cache: 'no-store' })
-        const data = await response.json()
+        const data = await readWorkbenchJson(response)
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         if (!data.catalog) return null
         const categories = new Map(data.catalog.categories.map(category => [category.id, category.name]))
@@ -913,7 +1042,7 @@ Start by asking for the first piece of information still missing.`,
         const names = [...new Set([...this.providers.keys(), ...Object.values(this.knownProviders).map(item => item.sourcePackage)])].filter(name => typeof name === 'string').slice(0, 64)
         const evidenceQuery = names.map(name => `package=${encodeURIComponent(name)}`).join('&')
         const response = await this.request(evidenceQuery ? `${MARKET_INSTALLS_API}?${evidenceQuery}` : MARKET_INSTALLS_API, { credentials: 'same-origin', cache: 'no-store' })
-        const data = await response.json()
+        const data = await readWorkbenchJson(response)
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         return data
       }
@@ -931,7 +1060,7 @@ Start by asking for the first piece of information still missing.`,
           const response = await this.request(path, {
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: catalogId, ...options })
           })
-          const data = await response.json()
+          const data = await readWorkbenchJson(response)
           if (!response.ok) {
             const error = new Error(installErrorMessage(this.ctx, data, response.status))
             error.result = data.result
@@ -962,6 +1091,7 @@ Start by asking for the first piece of information still missing.`,
       }
       // Install and update are the same operation: Awesome names the one version to install.
       async installFromMarket(catalogId, { confirmedReplacement = false } = {}) {
+        if (this.installing || this.firstMarketInstall) throw new Error('另一个工作台正在安装，请稍候。')
         const entry = this.remoteCatalog.find((item) => item.id === catalogId)
         if (!entry) throw new Error('这个工作台已不在工作台市场中。')
         const installed = this.marketCatalog().find((item) => item.catalogId === catalogId)
@@ -970,11 +1100,12 @@ Start by asking for the first piece of information still missing.`,
         const installedVersion = installed && (this.native.status === NATIVE_STATUS.ready && name
           ? bundle?.installed !== false && bundle?.version
           : this.installedVersionFor(installed))
-        const wasInstalled = this.native.status === NATIVE_STATUS.ready && name
+        const wasInstalled = !this.marketInstallUnconfirmed(entry) && (this.native.status === NATIVE_STATUS.ready && name
           ? !!bundle && bundle.installed !== false
-          : !!installed?.installed || !!this.installRecordFor(catalogId)
+          : !!installed?.installed || !!this.installRecordFor(catalogId))
         if (installedVersion && newerVersion(installedVersion, entry.version)) throw new Error('本机工作台版本高于市场版本，已取消安装以避免降级。')
         if (wasInstalled && this.updateRiskFor(installed) && confirmedReplacement !== true) throw new Error('需要确认更新本机工作台代码。')
+        if (!wasInstalled) this.firstMarketInstall = catalogId
         try {
           const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId, confirmedReplacement === true ? { confirmedReplacement: true } : {})
           this.installs = { ...this.installs, [catalogId]: data.install }
@@ -991,8 +1122,10 @@ Start by asking for the first piece of information still missing.`,
         } catch (error) {
           if (confirmationRisk(error)) throw error
           this.installFailures.set(catalogId, { kind: wasInstalled ? 'update' : 'install', message: error instanceof Error ? error.message : String(error) })
-          this.publish()
           throw error
+        } finally {
+          if (!wasInstalled) this.firstMarketInstall = null
+          this.publish()
         }
       }
       reloadPage() {
@@ -1187,7 +1320,7 @@ Start by asking for the first piece of information still missing.`,
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ revision: this.revision, state: next, ...(migrations ? { migrations } : {}) })
           })
-          const data = await response.json()
+          const data = await readWorkbenchJson(response)
           if (!response.ok) throw new Error(response.status === 409 ? '工作台已在其他窗口更新，请重新加载后再操作。' : data.error || `HTTP ${response.status}`)
           this.revision = data.revision
         }).catch((error) => { this.blocked = true; this.report(error); throw error })
@@ -1256,15 +1389,18 @@ Start by asking for the first piece of information still missing.`,
       }
       isActive() {
         const source = this.sourcePackage()
-        const id = this.identityForSource(source, this.providers.get(source)?.repository)
+        const provider = this.providers.get(source)
+        const id = this.identityForSource(source, provider?.repository, provider?.id)
         return this.state.active === id && this.state.added.includes(id)
       }
       ownsSession(sessionId) {
         const source = this.sourcePackage()
-        return this.state.sessionBindings[sessionId] === this.identityForSource(source, this.providers.get(source)?.repository)
+        const provider = this.providers.get(source)
+        return this.state.sessionBindings[sessionId] === this.identityForSource(source, provider?.repository, provider?.id)
       }
       add(id) {
-        if (!this.catalog.has(id)) return Promise.reject(new Error('工作台当前不可用。'))
+        const entry = this.catalog.get(id)
+        if (!entry || this.marketInstallUnconfirmed(entry)) return Promise.reject(new UnavailableWorkbenchError(id))
         return this.commit((state) => {
           if (!state.added.includes(id)) state.added.push(id)
           if (!state.pinned.includes(id)) state.pinned.push(id)
@@ -1272,8 +1408,9 @@ Start by asking for the first piece of information still missing.`,
       }
       async open(id, sessionId) {
         if (!workbenchPreference.getSnapshot()) throw new Error('工作台功能已关闭。')
-        if (!this.catalog.has(id) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
-        if (this.activationFor(this.catalog.get(id)) === 'off') throw new Error('工作台插件已关闭，请先开启。')
+        const entry = this.catalog.get(id)
+        if (!entry || this.marketInstallUnconfirmed(entry) || !this.state.added.includes(id)) throw new Error('请先添加可用的工作台。')
+        if (this.activationFor(entry) === 'off') throw new Error('工作台插件已关闭，请先开启。')
         if (sessionId && this.state.sessionBindings[sessionId] !== id) throw new Error('会话不属于当前工作台。')
         this.rememberNativeSession(this.currentSession())
         this.setMarketOpen(false)
@@ -1426,7 +1563,7 @@ Start by asking for the first piece of information still missing.`,
         })
       }
       toggleFavorite(id) {
-        if (!this.marketCatalog().some(entry => entry.catalogId === id) && !(this.state.favorites || []).includes(id)) return Promise.reject(new Error('工作台当前不可用。'))
+        if (!this.marketCatalog().some(entry => entry.catalogId === id) && !(this.state.favorites || []).includes(id)) return Promise.reject(new UnavailableWorkbenchError(id))
         return this.commit((state) => {
           const favorites = Array.isArray(state.favorites) ? state.favorites : []
           state.favorites = favorites.includes(id) ? favorites.filter((item) => item !== id) : [...favorites, id]
@@ -1582,7 +1719,8 @@ Start by asking for the first piece of information still missing.`,
       // Providers keep their own project/profile flows; Desktop owns session identity.
       ensureSession({ folder, sessionId: savedSessionId } = {}) {
         const source = this.sourcePackage()
-        const id = this.identityForSource(source, this.providers.get(source)?.repository)
+        const provider = this.providers.get(source)
+        const id = this.identityForSource(source, provider?.repository, provider?.id)
         if (!this.ready || this.blocked || this.disposed || this.state.active !== id || !this.state.added.includes(id) || !this.catalog.has(id)) return Promise.reject(new Error('请先打开可用的工作台。'))
         const key = JSON.stringify([id, folder, savedSessionId || null])
         if (this.sessionRequests.has(key)) return this.sessionRequests.get(key)
@@ -1690,6 +1828,52 @@ Start by asking for the first piece of information still missing.`,
     }
 
     const css = `
+      .dshRestartNotice {
+        position:fixed; right:20px; bottom:20px; z-index:1000; pointer-events:auto;
+        width:max-content; max-width:min(520px, calc(100vw - 40px)); max-height:calc(100vh - 48px);
+        overflow:auto; overflow-wrap:anywhere; box-sizing:border-box; padding:12px 14px;
+        border:1px solid var(--dsw-alias-border-l2); border-radius:16px;
+        background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary);
+        box-shadow:0 8px 24px rgba(0,0,0,.12);
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+        font-size:13px; line-height:20px; text-align:left; white-space:normal;
+      }
+      /* Version updates and workbench notifications share the lower-right corner. */
+      html:has([data-dsh-update-corner-visible]) .dshRestartNotice { display:none; }
+      .dshRestartRow { display:flex; gap:12px; align-items:center; }
+      .dshRestartIcon {
+        display:grid; place-items:center; flex:none; width:36px; height:36px;
+        box-sizing:border-box; border:1px solid var(--dsw-alias-border-l2);
+        border-radius:50%; background:var(--dsw-alias-bg-layer-2);
+      }
+      .dshRestartBody { min-width:0; flex:1; }
+      .dshRestartTitle { margin:0; font-size:14px; line-height:20px; font-weight:600; }
+      .dshRestartDescription { margin:2px 0 0; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
+      .dshRestartActions { display:flex; align-items:center; gap:8px; flex:none; }
+      .dshRestartNotice button {
+        appearance:none; border:0; border-radius:6px; font:inherit; cursor:pointer;
+        white-space:nowrap; min-height:32px;
+      }
+      .dshRestartNotice .dshRestartPrimary {
+        padding:6px 12px; font-weight:500;
+        background:var(--dsw-alias-button-primary-fill); color:var(--dsw-alias-label-primary-inverted);
+      }
+      .dshRestartNotice .dshRestartPrimary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover); }
+      .dshRestartNotice .dshRestartToggle {
+        padding:6px 8px; color:var(--dsw-alias-label-secondary); background:transparent;
+      }
+      .dshRestartNotice .dshRestartToggle:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }
+      .dshRestartNotice button:focus-visible { outline:2px solid var(--dsw-alias-label-primary); outline-offset:3px; }
+      .dshRestartNotice button:disabled { opacity:.55; cursor:default; }
+      .dshRestartDetails { margin-top:12px; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
+      .dshRestartDetails ul { margin:0; padding-left:20px; }
+      .dshRestartDetails p { margin:8px 0 0; }
+      .dshRestartError { margin:12px 0 0; color:var(--dsw-alias-state-error-primary); }
+      @media (max-width:480px) {
+        .dshRestartRow { flex-wrap:wrap; }
+        .dshRestartBody { flex-basis:calc(100% - 48px); }
+        .dshRestartActions { margin-left:auto; flex-wrap:wrap; justify-content:flex-end; max-width:100%; }
+      }
       html[data-dsh-workbench-active] [data-dsh-sidebar-new-session]{display:none!important}
       .dshWb{font-family:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);box-sizing:border-box}
       /* Only style controls owned by the Workbench UI. The native conversation
@@ -1895,25 +2079,70 @@ Start by asking for the first piece of information still missing.`,
     }
     function Button({ children, primary, ...props }) { return h('button', { type: 'button', className: `dshWbBtn${primary ? ' dshWbPrimary' : ''}`, ...props }, children) }
     function Notice({ service, showCatalogStatus = false }) {
-      const { error, catalogError, catalogStale, catalogLoaded, catalogRefreshing, pending, ready, restartNeeded, reloadNeeded } = useWorkbench(service)
-      const [restarting, setRestarting] = React.useState(false)
-      const bridge = globalThis.dshDesktop
-      const restart = async () => {
-        setRestarting(true)
-        try { await bridge.restartHarness() } catch (failure) { setRestarting(false); service.report(failure) }
-      }
-      if (restartNeeded && !error) return h('div', { className: 'dshWbNotice', role: 'status' }, tr('工作台安装变更需要重启 Harness 后生效。已有会话和数据不受影响。 '),
-        typeof bridge?.restartHarness === 'function'
-          ? h(Button, { primary: true, disabled: restarting, onClick: () => void restart() }, restarting ? tr('正在重启…') : tr('立即重启'))
-          : tr('请从菜单 Harness → 重启 Harness。'))
-      if (reloadNeeded && !error) return h('div', { className: 'dshWbNotice', role: 'status' }, tr('工作台安装完成，刷新页面后生效。已有会话和数据不受影响。 '),
+      const { error, catalogError, catalogStale, catalogLoaded, catalogRefreshing, ready, reloadNeeded } = useWorkbench(service)
+      if (reloadNeeded) return h('div', { className: 'dshWbNotice', role: 'status' }, tr('工作台安装完成，刷新页面后生效。已有会话和数据不受影响。 '),
         h(Button, { primary: true, onClick: () => service.reloadPage() }, tr('立即刷新')))
-      if (error) return h('div', { className: 'dshWbNotice', role: 'alert' }, tr(error), ' ', h(Button, { disabled: pending > 0, onClick: () => service.run(service.load()) }, tr('重新加载')))
-      if (!ready) return h('div', { className: 'dshWbNotice', role: 'status' }, tr('正在读取本地工作台…'))
+      if (!ready) return error ? null : h('div', { className: 'dshWbNotice', role: 'status' }, tr('正在读取本地工作台…'))
       if (!showCatalogStatus) return null
       if (catalogRefreshing) return h('div', { className: 'dshWbNotice dshWbCatalogProgress', role: 'status', 'aria-live': 'polite' }, h(MarketIcon, { name: 'refresh', size: 14 }), tr(catalogLoaded || service.remoteCatalog.length > 0 ? '正在更新目录…' : '正在首次读取市场目录…'))
       if (catalogError || catalogStale) return h('div', { className: 'dshWbNotice', role: 'status' }, tr(catalogLoaded || service.remoteCatalog.length > 0 ? '在线市场暂时无法更新，正在显示上一次成功读取的目录。' : '在线市场暂时无法读取，仍可使用已安装的工作台。 '), h(Button, { disabled: catalogRefreshing, onClick: () => service.run(service.refreshCatalog()) }, tr('重试')))
       return null
+    }
+    function RestartNotice({ service, t }) {
+      const { error: workbenchError, errorDismissed, pending: workbenchPending, restartNeeded, restartReasons } = useWorkbench(service)
+      const [busy, setBusy] = React.useState(false)
+      const [error, setError] = React.useState('')
+      const pending = React.useRef(false)
+      const live = React.useRef(true)
+      const details = React.useId()
+      const [expanded, setExpanded] = React.useState(false)
+      React.useEffect(() => { live.current = true; return () => { live.current = false } }, [])
+      const restart = async () => {
+        if (pending.current) return
+        pending.current = true; setBusy(true); setError('')
+        try {
+          const bridge = globalThis.dshDesktop
+          if (typeof bridge?.restartHarness !== 'function') throw new Error(t('unavailable'))
+          const result = await bridge.restartHarness()
+          if (result?.ok !== true) throw new Error(t('failed'))
+          // Keep the notice until a runtime replacement is actually observed.
+          await service.refreshRestartStatus()
+        } catch (reason) {
+          if (live.current) setError(reason instanceof Error ? reason.message : t('failed'))
+        } finally {
+          pending.current = false
+          if (live.current) setBusy(false)
+        }
+      }
+      if (workbenchError && !errorDismissed) {
+        return h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert' },
+          h('div', { className: 'dshRestartRow' },
+            h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
+              h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' },
+                h('circle', { cx: 12, cy: 12, r: 9 }),
+                h('path', { d: 'M12 8v4m0 4h.01' }))),
+            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, tr(workbenchError))),
+            h('div', { className: 'dshRestartActions' },
+              h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => service.dismissError() }, both('关闭', 'Dismiss')),
+              h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载')))))
+      }
+      if (!restartNeeded) return null
+      return h('aside', { className: 'dshRestartNotice', 'aria-label': t('title'), 'aria-live': 'polite', 'aria-busy': busy },
+        h('div', { className: 'dshRestartRow' },
+          h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
+            h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+              h('path', { d: 'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8' }),
+              h('path', { d: 'M21 3v5h-5' }),
+              h('path', { d: 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16' }),
+              h('path', { d: 'M8 16H3v5' }))),
+          h('div', { className: 'dshRestartBody' },
+            h('p', { className: 'dshRestartTitle' }, t('title')),
+            h('p', { className: 'dshRestartDescription' }, t('description'))),
+          h('div', { className: 'dshRestartActions' },
+            h('button', { type: 'button', className: 'dshRestartToggle', disabled: busy, 'aria-expanded': expanded, 'aria-controls': details, onClick: () => setExpanded(value => !value) }, t(expanded ? 'hide' : 'details')),
+            h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy, onClick: () => void restart() }, t(busy ? 'restarting' : 'restart')))),
+        expanded && h('div', { id: details, className: 'dshRestartDetails' }, h('ul', null, ...restartReasons.map(reason => h('li', { key: reason }, ['workbenches', 'market', 'image'].includes(reason) ? t(reason) : reason))), h('p', null, t('interrupted'))),
+        error && h('p', { className: 'dshRestartError', role: 'alert' }, error))
     }
     function screenshotsFor(entry) {
       const images = Array.isArray(entry?.screenshots) ? entry.screenshots.filter(image => typeof image === 'string' && image) : []
@@ -2011,7 +2240,7 @@ Start by asking for the first piece of information still missing.`,
       const dropTargetRef = React.useRef(null)
       if (!enabled || !wide) return null
       const disabled = !ready || pending > 0 || service.blocked
-      const pinned = state.pinned.map((id) => catalog.find((item) => item.id === id)).filter((item) => item && state.added.includes(item.id) && service.catalog.has(item.id) && service.activationFor(item) !== 'off').map(displayEntry)
+      const pinned = state.pinned.map((id) => catalog.find((item) => item.id === id)).filter((item) => item && item.installed !== false && state.added.includes(item.id) && service.catalog.has(item.id) && service.activationFor(item) !== 'off').map(displayEntry)
       const active = state.active && pinned.find((item) => item.id === state.active)
       const chooseNative = () => {
         setOpen(false)
@@ -2648,7 +2877,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             const orphanRecord = entry.unavailable && !pluginName && !service.marketInstallFor(entry.id)
             const canUninstall = orphanRecord || staleRecord || (localRemoval ? localRemoval.removable : !!service.marketInstallFor(entry.id) || (native?.status === NATIVE_STATUS.ready && !!bundle && bundle.installed !== false && bundle.removable === true))
             const removalLabel = orphanRecord ? tr('移除失联记录') : staleRecord ? tr('移除残留记录') : tr('卸载')
-            const installed = !removedWorkbenchIds.includes(catalogId) && (entry.pendingRestart || entry.pendingReload || (native?.status === NATIVE_STATUS.ready && pluginName
+            const installed = !removedWorkbenchIds.includes(catalogId) && !service.marketInstallUnconfirmed(entry) && (entry.pendingRestart || entry.pendingReload || (native?.status === NATIVE_STATUS.ready && pluginName
               ? !!bundle && bundle.installed !== false
               : entry.installed || !!service.installRecordFor(catalogId)))
             // Native inventory describes the package actually on disk. The market
@@ -2693,7 +2922,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                     ? h(React.Fragment, null,
                       FailureHint({ id: catalogId, kind: entry.failureKind, detail: entry.loadFailure }),
                       !entry.unavailable && h('button', { type: 'button', className: 'dshWbRetry', title: installing === catalogId ? both(`正在重试安装${entry.title}`, `Retrying installation of ${entry.title}`) : entry.listed && entry.distribution ? tr('重试安装') : tr('重新加载'), 'aria-label': installing === catalogId ? both(`正在重试安装${entry.title}`, `Retrying installation of ${entry.title}`) : both(`${entry.listed && entry.distribution ? tr('重试安装') : tr('重新加载')}${entry.title}`, `${entry.listed && entry.distribution ? tr('重试安装') : tr('重新加载')} ${entry.title}`), 'aria-busy': installing === catalogId, disabled: disabled || !!installing, onClick: () => entry.listed && entry.distribution ? installMarket(entry) : service.run(service.load()) }, h(MarketIcon, { name: 'refresh', size: 17 })),
-                      entry.failureKind === 'install' && !added.includes(entry.id) && !service.installs[catalogId] && h('button', { type: 'button', className: 'dshWbRetry', title: tr('清除失败提示'), 'aria-label': tr('清除失败提示'), onClick: () => service.clearInstallFailure(catalogId) }, h('span', { 'aria-hidden': true }, '×')))
+                      entry.failureKind === 'install' && !added.includes(entry.id) && !service.installs[catalogId] && (!bundle || bundle.installed === false) && h('button', { type: 'button', className: 'dshWbRetry', title: tr('清除失败提示'), 'aria-label': tr('清除失败提示'), onClick: () => service.clearInstallFailure(catalogId) }, h('span', { 'aria-hidden': true }, '×')))
                     : tab === 'mine'
                     ? h('button', { type: 'button', className: !entry.listed ? 'dshWbUninstall dshWbLocalUninstall' : 'dshWbUninstall', title: canUninstall ? both(`${removalLabel}${entry.title}`, `${removalLabel} ${entry.title}`) : tr(localRemoval?.reason) || tr('原生插件状态未知或不可卸载'), 'aria-label': both(`${removalLabel}${entry.title}`, `${removalLabel} ${entry.title}`), 'aria-describedby': !canUninstall ? `dsh-wb-uninstall-reason-${catalogId}` : undefined, disabled: disabled || !!removingPlugin || !canUninstall, onClick: () => setRemoving(entry.id) }, removalLabel)
                     : installed
@@ -2929,6 +3158,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       ctx.effect(() => ctx.locale.register(DOWNLOAD_NS, downloadCopy), 'workbenches: download dictionaries')
       ctx.effect(() => ctx.locale.register(REGISTRATION_NS, registrationCopy), 'workbenches: registration dictionaries')
       ctx.effect(() => ctx.locale.register(INSTALL_NS, installCopy), 'workbenches: install dictionaries')
+      ctx.effect(() => ctx.locale.register(RESTART_NS, restartCopy), 'desktop: restart dictionaries')
       const service = new Workbenches(ctx)
       ctx.effect(() => ctx.reflect.provide('desktopWorkbenches', service), 'workbenches: service')
       ctx.inject?.(['inputTriggers'], scoped => {
@@ -2955,6 +3185,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         return () => { unsubscribe(); document.documentElement.removeAttribute('data-dsh-workbench-active') }
       }, 'workbenches: global session entry')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'desktop-restart-notice', locale: RESTART_NS, inject: () => ({ service, t: ctx.locale.bind(RESTART_NS) }) }, RestartNotice))
       ctx.slots.inject('sidebar.quickSwitcher', () => ctx.slots.register({ name: 'sidebar.quickSwitcher', inject: () => ({ service }) }, WorkbenchSidebarSwitcher))
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
       function WorkbenchEnableSetting() {
@@ -3000,6 +3231,6 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         return () => { window.removeEventListener('beforeunload', beforeUnload); service.dispose() }
       }, 'workbenches: lifecycle')
     }
-    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace', 'modules', 'remote', 'remote.pluginManager', 'locale'], Workbenches, Frame, Market, Notebook, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt }
+    return { apply, inject: ['slots', 'layout', 'sessions', 'workspaces', 'uiWorkspace', 'modules', 'remote', 'remote.pluginManager', 'locale'], Workbenches, Frame, Market, Notebook, RestartNotice, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt }
   }
 })

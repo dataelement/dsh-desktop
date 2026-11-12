@@ -6,16 +6,40 @@ import { LanMobileBridge } from '../mobile/lan-mobile-bridge'
 import { secureWindow } from '../security'
 import { shouldOpenInternetTunnel } from './mobile-pairing'
 
-export async function presentMobilePairing(options: {
+// Coalesce repeated clicks while the bridge or local page is still opening.
+const pendingWindows = new WeakMap<LanMobileBridge, Promise<BrowserWindow | undefined>>()
+
+interface MobilePairingOptions {
   bridge: LanMobileBridge
   parent?: BrowserWindow
   current?: BrowserWindow
   locale: DesktopLocale
   iconPath?: string
   hostReady: boolean
-}): Promise<BrowserWindow | undefined> {
+  /** A phone reconnect may present the window, but must not change network mode. */
+  reason?: 'manual' | 'reconnect'
+}
+
+export async function presentMobilePairing(options: MobilePairingOptions): Promise<BrowserWindow | undefined> {
+  const pending = pendingWindows.get(options.bridge)
+  if (pending !== undefined) return pending
+  const opening = openMobilePairing(options)
+  pendingWindows.set(options.bridge, opening)
+  try {
+    return await opening
+  } finally {
+    pendingWindows.delete(options.bridge)
+  }
+}
+
+async function openMobilePairing(options: MobilePairingOptions): Promise<BrowserWindow | undefined> {
   const t = (key: Parameters<typeof desktopDailyText>[1]) => desktopDailyText(options.locale, key)
   const parent = options.parent !== undefined && !options.parent.isDestroyed() ? options.parent : undefined
+  if (options.current !== undefined && !options.current.isDestroyed()) {
+    options.current.show()
+    options.current.focus()
+    return options.current
+  }
   if (!options.hostReady) {
     await showNotice(parent, options.locale, {
       type: 'info',
@@ -24,7 +48,7 @@ export async function presentMobilePairing(options: {
     })
     return undefined
   }
-  let snapshot = await options.bridge.start()
+  const snapshot = await options.bridge.start()
   if (snapshot.desktopUrl === undefined) {
     await options.bridge.stop()
     await showNotice(parent, options.locale, {
@@ -34,15 +58,13 @@ export async function presentMobilePairing(options: {
     })
     return undefined
   }
-  if (shouldOpenInternetTunnel(snapshot)) snapshot = await options.bridge.toggleTunnel(true)
   const desktopUrl = options.bridge.createDesktopUrl()
   if (desktopUrl === undefined) return undefined
-  if (options.current !== undefined && !options.current.isDestroyed()) options.current.destroy()
   const window = new BrowserWindow({
-    width: 560,
-    height: 720,
-    minWidth: 420,
-    minHeight: 560,
+    width: 500,
+    height: 640,
+    minWidth: 380,
+    minHeight: 540,
     title: pairingTitle(options.locale),
     ...(options.iconPath === undefined ? {} : { icon: options.iconPath }),
     ...(parent === undefined ? {} : { parent }),
@@ -55,9 +77,22 @@ export async function presentMobilePairing(options: {
     }
   })
   secureWindow(window)
-  await window.loadURL(desktopUrl)
   window.show()
   window.focus()
+  // Start without awaiting before requesting HTML, so the first page already
+  // selects internet mode and renders download/tunnel progress (or its error).
+  if (options.reason !== 'reconnect' && shouldOpenInternetTunnel(snapshot)) {
+    void options.bridge.toggleTunnel(true).catch((error: unknown) => {
+      console.error('[mobile-pairing] Failed to enable internet pairing:', error)
+    })
+  }
+  try {
+    await window.loadURL(desktopUrl)
+  } catch (error) {
+    if (!window.isDestroyed()) window.destroy()
+    throw error
+  }
+  if (window.isDestroyed()) return undefined
   return window
 }
 
