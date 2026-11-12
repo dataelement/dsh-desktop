@@ -191,7 +191,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     const saved = await f.httpRequest('template/save', { draftId: message.result.value.data.draftId, name: 'HTTP template' }, { channel: '/kimi-ppt' });
     expect(saved.status).toBe(200);
     expect(JSON.parse(saved.body).result.value.data).toMatchObject({ name: 'HTTP template' });
-  }, 30_000);
+  }, NATIVE_TEMPLATE_TEST_TIMEOUT_MS);
 
   it('uploads, imports and reuses a PPTX above 64 MB with its real image assets intact', async () => {
     const f = await fixture();
