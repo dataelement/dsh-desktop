@@ -14,7 +14,7 @@ import { gunzipSync } from 'node:zlib'
 import { selectMarketFetch } from './market-fetch.mjs'
 
 export const MAX_PACKAGE_BYTES = 8 * 1024 * 1024
-const MAX_UNPACKED_BYTES = 64 * 1024 * 1024
+const MAX_UNPACKED_BYTES = 256 * 1024 * 1024
 const MAX_MANIFEST_BYTES = 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 60_000
 const INSTALLS_FILE = 'market-installs.json'
@@ -53,7 +53,7 @@ function networkDiagnostic(error) {
   return codes.size ? [...codes].join(', ') : 'NETWORK_ERROR'
 }
 
-async function download(url, { fetchImpl, maxBytes, what }) {
+async function downloadOnce(url, { fetchImpl, maxBytes, what }) {
   let address
   try { address = new URL(url) } catch { throw new MarketInstallError(`The download URL for ${what} is invalid.`, 502, 'invalid_download_url') }
   if (address.protocol !== 'https:' || address.username || address.password || address.port) {
@@ -88,6 +88,20 @@ async function download(url, { fetchImpl, maxBytes, what }) {
     throw new MarketInstallError(`Could not finish downloading ${what}: ${networkDiagnostic(error)}.`, 502, 'download_interrupted', { diagnostic: networkDiagnostic(error) })
   } finally { reader.releaseLock() }
   return Buffer.concat(chunks)
+}
+
+// Retry transient transport failures against the same pinned source only.
+async function download(url, options) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await downloadOnce(url, options) }
+    catch (error) {
+      const transient = error instanceof MarketInstallError
+        && ['download_failed', 'download_interrupted'].includes(error.code)
+        && /ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_SOCKET|TIMEOUT/.test(error.params?.diagnostic || '')
+      if (!transient || attempt >= 2) throw error
+      await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)))
+    }
+  }
 }
 
 /** Reads `package/package.json` from an npm-style `.tgz` without extracting anything to disk. */
@@ -158,12 +172,22 @@ export async function resolveInstallTarget(entry, { fetchImpl, temporaryRoot = t
     let manifest
     try { manifest = JSON.parse((await download(manifestUrl, { fetchImpl, maxBytes: MAX_MANIFEST_BYTES, what: 'package.json from the repository' })).toString('utf8')) }
     catch (error) { if (error instanceof MarketInstallError) throw error; fail('package.json in the repository is not valid JSON.', 502) }
-    return {
-      pluginSpec: `github:${owner}/${repo}#${distribution.commit}`,
-      expectedPluginName: checkManifest(manifest, entry),
-      expectedVersion: distribution.version,
-      cleanup: async () => {}
+    const name = checkManifest(manifest, entry)
+    // Git sources retain the installer's approved prepare/build lifecycle.
+    // Only explicitly prebuilt community snapshots may use a source archive.
+    if (distribution.sourceArchive !== true || manifest.scripts?.prepare) {
+      return { pluginSpec: `github:${owner}/${repo}#${distribution.commit}`, expectedPluginName: name,
+        expectedVersion: distribution.version, cleanup: async () => {} }
     }
+    // Download the same pinned source through the host transport instead of Git's separate network stack.
+    const bytes = await download(`https://codeload.github.com/${owner}/${repo}/tar.gz/${distribution.commit}`, { fetchImpl, maxBytes: 64 * 1024 * 1024, what: 'the source package' })
+    checkManifest(readPackedManifest(bytes), entry)
+    const directory = await mkdtemp(join(temporaryRoot, 'dsh-workbench-source-'))
+    const file = join(directory, 'workbench.tgz')
+    await writeFile(file, bytes)
+    return { pluginSpec: `file:${file}`, expectedPluginName: name, expectedVersion: distribution.version,
+      cleanup: () => rm(directory, { recursive: true, force: true }) }
+
   }
   fail(`Installing from ${distribution.type} is not supported by this Desktop version.`, 502)
 }

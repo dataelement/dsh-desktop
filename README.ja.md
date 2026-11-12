@@ -129,3 +129,7 @@ DeepSeek Harness とその依存関係には、それぞれの上流ライセン
 エンタープライズ版は、BISHENG デスクトップクライアントと BISHENG 企業プラットフォームのサーバーで構成されます。DSH Desktop を基盤とするクライアントでは、企業アカウントでローカルファイルと利用を許可されたモデル、ナレッジ、ツール、スキルを組み合わせて作業できます。サーバーはリソースと権限を一元設定し、クレジットと利用量を管理します。 エンタープライズ版の BISHENG クライアントとサーバーはいずれもオープンソースで、以下のリポジトリからソースコードを取得できます。
 
 [企業管理プラットフォームのソース](https://github.com/dataelement/bisheng) · [エンタープライズ版クライアントのリポジトリ](https://github.com/dataelement/bisheng-desktop) · [エンタープライズ版の紹介](https://www.dshdesktop.com/ja/enterprise/)
+
+ランタイム：`@deepseek-ai/dsh@0.2.2-alpha.2`。 モバイルのリモートアクセスには Cloudflare Quick Tunnel を使用します。
+
+プレビュー版：[**Pre-release**](https://github.com/dataelement/dsh-desktop/releases)。

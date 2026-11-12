@@ -64,15 +64,21 @@ describe('workbench download transport', () => {
   it('normalizes an interrupted response and creates no partial package', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-market-download-test-'))
     try {
+      const bodies = []
+      const fetchImpl = async () => {
       let reads = 0
       const body = new ReadableStream({ pull(controller) {
         if (reads++ === 0) controller.enqueue(new Uint8Array([1, 2]))
         else controller.error(new TypeError('terminated private', { cause: Object.assign(new Error('private'), { code: 'UND_ERR_SOCKET' }) }))
       } })
-      await expect(resolveInstallTarget(release, { temporaryRoot: root, fetchImpl: async () => new Response(body) })).rejects.toMatchObject({
+      bodies.push(body)
+      return new Response(body)
+      }
+      await expect(resolveInstallTarget(release, { temporaryRoot: root, fetchImpl })).rejects.toMatchObject({
         status: 502, code: 'download_interrupted', params: { diagnostic: 'UND_ERR_SOCKET' }, message: 'Could not finish downloading the Release package: UND_ERR_SOCKET.'
       })
-      expect(body.locked).toBe(false)
+      expect(bodies).toHaveLength(3)
+      expect(bodies.every(body => !body.locked)).toBe(true)
       expect(await readdir(root)).toEqual([])
     } finally { await rm(root, { recursive: true, force: true }) }
   })

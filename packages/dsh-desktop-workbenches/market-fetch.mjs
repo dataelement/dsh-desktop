@@ -16,5 +16,15 @@ export function selectMarketFetch({ runtime = process, loadElectron = () => requ
     if (typeof net?.fetch !== 'function') throw new Error('Electron utility network transport is unavailable.')
     return net.fetch.bind(net)
   }
+  if (runtime.env?.DSH_MARKET_DOWNLOAD_URL && runtime.env?.DSH_MARKET_DOWNLOAD_TOKEN) {
+    const endpoint = new URL(runtime.env.DSH_MARKET_DOWNLOAD_URL)
+    if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || endpoint.username || endpoint.password) throw new Error('Invalid market download bridge.')
+    return (input, init = {}) => {
+      if (init.method && init.method !== 'GET') throw new Error('Market downloads only support GET.')
+      const target = new URL(endpoint)
+      target.searchParams.set('url', String(input))
+      return globalThis.fetch(target, { signal: init.signal, headers: { authorization: `Bearer ${runtime.env.DSH_MARKET_DOWNLOAD_TOKEN}` } })
+    }
+  }
   return globalThis.fetch
 }

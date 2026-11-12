@@ -370,3 +370,394 @@ describe('compact workbench card states', () => {
     } finally { await ui.close() }
   })
 })
+
+
+describe('community prototype provenance', () => {
+  it.each(['xyb-openharness-dsh-plugins', 'another-owner'])('labels only official fallback artwork for %s', async owner => {
+    const ui = await mountCard()
+    try {
+      const id = `${owner}/gastric-workbench`
+      await React.act(async () => {
+        ui.service.remoteCatalog.push({ id, owner, repository: 'gastric-workbench', name: 'Prototype fixture', url: `https://github.com/${id}`, category: 'other', categoryName: 'Other', version: '1.0.0', distribution: { type: 'npm', name: 'prototype-fixture', version: '1.0.0' }, description: { zh: 'Fixture', en: 'Fixture' }, screenshots: [] })
+        ui.service.publish()
+      })
+      const card = [...ui.document.querySelectorAll('.dshWbCard')].find(card => card.textContent.includes('Prototype fixture'))
+      expect(card).toBeTruthy()
+      if (owner === 'xyb-openharness-dsh-plugins') {
+        expect(card.textContent).toContain('原型 · 模拟资料')
+        expect(card.querySelector('img').alt).toContain('模拟资料')
+        await React.act(async () => card.querySelector('.dshWbMediaOpen').click())
+        expect(ui.document.querySelector('[role="dialog"]').textContent).toContain('图片来自社区公开原型，内容为模拟资料。')
+      } else {
+        expect(card.querySelector('.dshWbPrototypeLabel')).toBeNull()
+        expect(card.querySelector('.dshWbCardScreenshot')).toBeNull()
+      }
+    } finally { await ui.close() }
+  })
+})
+
+describe('charity entry flow', () => {
+  const buttonByText = (root, text) => [...root.querySelectorAll('button')].find(node => node.textContent.trim() === text)
+  const click = async node => {
+    expect(node).not.toBeNull()
+    expect(node).not.toBeUndefined()
+    await React.act(async () => node.click())
+  }
+  const enter = async ui => click(ui.document.querySelector('[aria-label="进入小胰宝公益专区"]'))
+  const searchFor = async (input, value) => {
+    const view = input.ownerDocument.defaultView
+    await React.act(async () => {
+      // React DOM is imported before this per-test jsdom window. Its input
+      // polyfill observes focused key events instead of the native input event.
+      input.attachEvent ||= () => {}
+      input.detachEvent ||= () => {}
+      input.focus()
+      Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype, 'value').set.call(input, value)
+      input.dispatchEvent(new view.KeyboardEvent('keyup', { key: 'a', bubbles: true }))
+    })
+  }
+
+  it.each(['zh', 'en'])('exposes the full charity coverage and opens onboarding from the more-conditions chip in %s', async language => {
+    const ui = await mountCard({ language })
+    try {
+      const entry = ui.document.querySelector('.dshWbCharityEntry')
+      expect(entry.querySelector('.dshWbCharityEntryMedia img').getAttribute('src')).toBe('/api/desktop-workbenches/assets/charity-banner.png')
+      const tags = entry.querySelector('.dshWbCharityTags')
+      expect(tags.closest('[aria-hidden="true"]')).toBeNull()
+      expect(tags.children).toHaveLength(4)
+      const conditionTags = [...tags.children].slice(0, 3)
+      for (const tag of conditionTags) {
+        expect(tag.textContent.trim().length).toBeGreaterThan(0)
+        expect(tag.closest('[aria-hidden="true"]')).toBeNull()
+      }
+      if (language === 'zh') {
+        expect(conditionTags.map(tag => tag.textContent)).toEqual(['胰腺癌', '肺癌', '乳腺癌'])
+        expect(entry.querySelector('.dshWbCharityCoverage').textContent).toContain('覆盖更多癌种与罕见病')
+      }
+      const more = tags.querySelector(language === 'zh' ? '[aria-label="浏览更多病种工作台"]' : '[aria-label="Browse more condition workbenches"]')
+      expect(more.tagName).toBe('BUTTON')
+      expect(more).toBe(tags.lastElementChild)
+      expect(more.disabled).toBe(false)
+      // A collection entry must not replace or alter the neighboring workbench.
+      const ordinaryCard = ui.document.querySelector('article.dshWbCard')
+      expect(ordinaryCard.querySelector('.dshWbTitleText').textContent).toBe('Helper')
+      expect(ordinaryCard.querySelector('.dshWbCharityTags')).toBeNull()
+      await click(more)
+      expect(ui.document.querySelector('.dshWbCharity').textContent).toContain(language === 'zh' ? '欢迎来到小胰宝' : 'Welcome to Xiaoyibao')
+      expect(ui.document.querySelector('.dshWbCharityEntry')).toBeNull()
+    } finally { await ui.close() }
+  })
+
+  it('replaces market navigation with the first-visit guide, and remembers skipping it on re-entry', async () => {
+    const ui = await mountCard()
+    try {
+      await enter(ui)
+      const welcome = ui.document.querySelector('.dshWbCharity')
+      expect(welcome.textContent).toContain('欢迎来到小胰宝')
+      expect(welcome.textContent).toContain('找到病种工作台')
+      expect(welcome.textContent).toContain('安装到 DSH')
+      expect(welcome.textContent).toContain('开始整理资料')
+      expect(ui.document.querySelector('.dshWbToolbar')).toBeNull()
+      await click(buttonByText(welcome, '跳过介绍，直接浏览'))
+      expect(ui.document.querySelector('.dshWbCharity').textContent).toContain('找到您的病种工作台')
+      expect(ui.document.querySelector('.dshWbCharity').textContent).not.toContain('Helper')
+      await click(ui.document.querySelector('[aria-label="返回工作台市场"]'))
+      expect(ui.document.querySelector('.dshWbToolbar')).not.toBeNull()
+      expect(ui.document.querySelector('.dshWbCharityEntry')).not.toBeNull()
+      await enter(ui)
+      expect(ui.document.querySelector('.dshWbCharity').textContent).not.toContain('欢迎来到小胰宝')
+      expect(ui.document.querySelector('.dshWbCharity').textContent).toContain('找到您的病种工作台')
+    } finally { await ui.close() }
+  })
+
+  it('filters community progress projects by disease and never offers to install unpublished projects', async () => {
+    const ui = await mountCard()
+    try {
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '查找我的病种工作台'))
+      const projects = () => ui.document.querySelector('.dshWbCharityProjects')
+      expect(projects().textContent).toContain('项目介绍')
+      expect(projects().textContent).toContain('肺癌')
+      expect(projects().textContent).toContain('乳腺癌')
+      const progressLinks = [...projects().querySelectorAll('a')].filter(link => link.textContent.includes('查看进展'))
+      expect(progressLinks.length).toBeGreaterThan(0)
+      for (const link of progressLinks) {
+        expect(link.href).toMatch(/^https:\/\/github\.com\/xyb-openharness-dsh-plugins\//)
+        expect(link.rel).toContain('noopener')
+      }
+      expect([...projects().querySelectorAll('button')].some(button => /^(安装|正在安装)/.test(button.textContent.trim()))).toBe(false)
+      const input = ui.document.querySelector('[aria-label="搜索病种工作台"]')
+      await searchFor(input, '肺癌')
+      expect(projects().textContent).toContain('肺癌')
+      expect(projects().textContent).not.toContain('乳腺癌')
+      await searchFor(input, 'no-matching-condition')
+      expect(projects().querySelector('a')).toBeNull()
+      await searchFor(input, '')
+      expect(projects().textContent).toContain('乳腺癌')
+    } finally { await ui.close() }
+  })
+
+  it('uses the market card frame and real prototype previews without fabricated versions or installation actions', async () => {
+    const ui = await mountCard()
+    try {
+      const marketCard = ui.document.querySelector('article.dshWbCard')
+      const frameClasses = [...marketCard.children].map(node => node.className)
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '跳过介绍，直接浏览'))
+      const grid = ui.document.querySelector('.dshWbGrid.dshWbCharityProjects')
+      expect(grid).not.toBeNull()
+      const cards = [...grid.querySelectorAll('article.dshWbCard.dshWbCharityProject')]
+      expect(cards).toHaveLength(14)
+      for (const card of cards) {
+        expect([...card.children].map(node => node.className)).toEqual(frameClasses)
+        const body = card.querySelector('.dshWbCardBody')
+        expect(body.querySelector('.dshWbCardTitle h2')).not.toBeNull()
+        const title = body.querySelector('.dshWbTitleText')
+        expect(card.querySelector('[title="' + title.textContent + '"]')).not.toBeNull()
+        expect(body.querySelector('.dshWbAuthorRow .dshWbCardVersion.dshWbCharityStatus').textContent).toBe('项目介绍')
+        expect(body.querySelector('.dshWbCardDescription')).not.toBeNull()
+        expect(body.querySelector('.dshWbActions')).toBe(body.lastElementChild)
+        const image = card.querySelector('.dshWbCardScreenshot')
+        expect(image.getAttribute('src')).toMatch(/^\/api\/desktop-workbenches\/assets\/charity-projects\/[a-z]+\.webp$/)
+        expect(image.alt).toContain('原型')
+        expect(card.querySelector('.dshWbMetrics')).toBeNull()
+        expect([...card.querySelectorAll('button')].some(button => /安装/.test(button.textContent))).toBe(false)
+        const about = [...card.querySelectorAll('a')].find(link => link.textContent.includes('查看介绍'))
+        expect(about.href).toBe('https://github.com/xyb-openharness-dsh-plugins/.github/blob/main/PROJECTS.md')
+      }
+      const card = cards.find(card => card.querySelector('.dshWbTitleText').textContent === '胰腺癌工作台')
+      const thumbnail = card.querySelector('.dshWbCardScreenshot').getAttribute('src')
+      const preview = card.querySelector('.dshWbMediaOpen')
+      preview.focus()
+      await click(preview)
+      const dialog = ui.document.querySelector('.dshWbModal[role="dialog"]')
+      expect(dialog).not.toBeNull()
+      expect(dialog.getAttribute('aria-label')).toContain('胰腺癌工作台')
+      expect(dialog.querySelector('.dshWbCarouselSlide img').getAttribute('src')).toBe(thumbnail)
+      await click(dialog.querySelector('.dshWbCarouselSlide'))
+      const lightbox = ui.document.querySelector('.dshWbDetailLightbox[role="dialog"]')
+      expect(lightbox.querySelector('img').getAttribute('src')).toBe(thumbnail)
+      await click(lightbox.querySelector('[aria-label="关闭截图预览"]'))
+      expect(ui.document.querySelector('.dshWbDetailLightbox')).toBeNull()
+      expect(ui.document.querySelector('.dshWbModal')).toBe(dialog)
+      await click(buttonByText(dialog, '关闭'))
+      expect(ui.document.querySelector('[role="dialog"]')).toBeNull()
+      expect(ui.document.activeElement).toBe(preview)
+      await click(preview)
+      await React.act(async () => ui.document.dispatchEvent(new ui.document.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      expect(ui.document.querySelector('[role="dialog"]')).toBeNull()
+    } finally { await ui.close() }
+  })
+
+  it('keeps real listed workbench installation pending and recoverable in the shared charity card', async () => {
+    let finishRequest
+    const calls = []
+    const id = 'xyb-openharness-dsh-plugins/psych-install-fixture'
+    const ui = await mountCard({ request: (path, options) => {
+      calls.push({ path, options })
+      return new Promise(resolve => { finishRequest = resolve })
+    } })
+    try {
+      await React.act(async () => {
+        ui.service.remoteCatalog.push({ id, owner: 'xyb-openharness-dsh-plugins', repository: 'psych-install-fixture', name: '心理支持安装测试工作台', url: `https://github.com/${id}`, category: 'other', categoryName: 'Other', version: '1.0.0', distribution: { type: 'npm', name: 'psych-install-fixture', version: '1.0.0' }, description: { zh: '心理支持与情绪记录', en: 'Psychological support and mood records' }, screenshots: [] })
+        ui.service.publish()
+      })
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '跳过介绍，直接浏览'))
+      const card = () => [...ui.document.querySelectorAll('.dshWbCharityProject')].find(card => card.querySelector('.dshWbTitleText').textContent === '心理支持安装测试工作台')
+      expect(card().classList.contains('dshWbCard')).toBe(true)
+      expect(card().querySelector('.dshWbActions')).toBe(card().querySelector('.dshWbCardBody').lastElementChild)
+      const install = buttonByText(card(), '安装')
+      expect(install.disabled).toBe(false)
+      await click(install)
+      expect(calls).toHaveLength(1)
+      expect(calls[0].path).toBe('/api/desktop-workbenches/market-install')
+      expect(JSON.parse(calls[0].options.body)).toEqual({ id })
+      expect(ui.service.installing).toBe(id)
+      expect(buttonByText(card(), '正在安装…').disabled).toBe(true)
+      finishRequest(Response.json({ error: 'Package currently unavailable' }, { status: 502 }))
+      await React.act(async () => {})
+      expect(ui.service.installing).toBeNull()
+      expect(ui.service.state.added).not.toContain(id)
+      expect(ui.document.querySelector('.dshWbCharity').textContent).toContain('Package currently unavailable')
+      expect(buttonByText(card(), '安装').disabled).toBe(false)
+    } finally { await ui.close() }
+  })
+
+  it('shows all fourteen introductions once, applies community classifications and combines category with search', async () => {
+    const ui = await mountCard()
+    try {
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '跳过介绍，直接浏览'))
+      const group = ui.document.querySelector('.dshWbCharityCategories')
+      expect(group.getAttribute('aria-label')).toBe('按社区项目分类筛选')
+      expect([...group.querySelectorAll('button')].map(button => button.textContent)).toEqual(['全部', '癌种工作台', '罕见病工作台', '跨病种支撑'])
+      const category = value => group.querySelector(`[data-category="${value}"]`)
+      const cards = () => [...ui.document.querySelectorAll('.dshWbCharityProjects article')]
+      const titles = () => cards().map(card => card.querySelector('.dshWbTitleText').textContent)
+      expect(cards()).toHaveLength(14)
+      expect(new Set(titles()).size).toBe(14)
+      expect([...ui.document.querySelectorAll('.dshWbCharityStatus')].every(status => status.textContent === '项目介绍')).toBe(true)
+      await click(category('cancer'))
+      expect(category('cancer').getAttribute('aria-pressed')).toBe('true')
+      expect(cards()).toHaveLength(11)
+      expect(titles().filter(title => title.includes('胃肠间质瘤'))).toHaveLength(1)
+      expect(titles().some(title => title.includes('肌营养'))).toBe(false)
+      const input = ui.document.querySelector('[aria-label="搜索病种工作台"]')
+      await searchFor(input, 'GIST')
+      expect(cards()).toHaveLength(1)
+      expect(titles()[0]).toContain('胃肠间质瘤')
+      await click(category('rare'))
+      expect(cards()).toHaveLength(1)
+      expect(input.value).toBe('GIST')
+      expect(titles()[0]).toContain('胃肠间质瘤')
+      await searchFor(input, '')
+      expect(cards()).toHaveLength(3)
+      expect(titles().some(title => title.includes('ATTR') || title.includes('淀粉'))).toBe(true)
+      await searchFor(input, '乳腺癌')
+      expect(cards()).toHaveLength(0)
+      await click(category('cancer'))
+      expect(cards()).toHaveLength(1)
+      expect(titles()[0]).toContain('乳腺癌')
+      await click(ui.document.querySelector('.dshWbCharityCollection [data-collection="mine"]'))
+      expect(input.value).toBe('')
+      expect(category('all').getAttribute('aria-pressed')).toBe('true')
+      await click(ui.document.querySelector('.dshWbCharityCollection [data-collection="find"]'))
+      expect(input.value).toBe('')
+      expect(cards()).toHaveLength(14)
+    } finally { await ui.close() }
+  })
+
+  it.each([
+    ['al-amyloidosis-fixture', 'AL amyloidosis workbench', '转甲状腺素蛋白淀粉样变性工作台', '转甲状腺素'],
+    ['esophagogastric-junction-fixture', 'Esophagogastric junction workbench', '胃癌工作台', '胃癌']
+  ])('keeps the distinct gallery project visible when an official %s catalog entry is present', async (repository, title, galleryTitle, query) => {
+    const ui = await mountCard()
+    const owner = 'xyb-openharness-dsh-plugins'
+    const id = `${owner}/${repository}`
+    try {
+      await React.act(async () => {
+        ui.service.remoteCatalog.push({ id, owner, repository, name: title, url: `https://github.com/${id}`, category: 'other', categoryName: 'Other', version: '1.0.0', distribution: { type: 'npm', name: repository, version: '1.0.0' }, description: { zh: title, en: title }, screenshots: [] })
+        ui.service.publish()
+      })
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '跳过介绍，直接浏览'))
+      expect(ui.document.querySelector('.dshWbCharityCategories [data-category="all"]').getAttribute('aria-pressed')).toBe('true')
+      const titles = () => [...ui.document.querySelectorAll('.dshWbCharityProjects article .dshWbTitleText')].map(heading => heading.textContent)
+      // Official identity keeps a new community workbench visible in All,
+      // but a related disease name must not replace a distinct gallery project.
+      expect(titles()).toContain(title)
+      expect(titles().filter(value => value === galleryTitle)).toHaveLength(1)
+      await searchFor(ui.document.querySelector('[aria-label="搜索病种工作台"]'), query)
+      expect(titles()).toContain(galleryTitle)
+      expect(titles()).not.toContain(title)
+    } finally { await ui.close() }
+  })
+
+  it('recognizes published official support workbenches, and filters installed and local providers by provenance', async () => {
+    const ui = await mountCard()
+    const officialId = 'xyb-openharness-dsh-plugins/psych-fixture'
+    const sourcePackage = 'charity-support-fixture'
+    const catalogEntry = (id, owner) => ({ id, owner, repository: 'psych-fixture', name: '官方心理支持工作台', url: `https://github.com/${id}`, category: 'other', categoryName: 'Other', version: '1.0.0', distribution: { type: 'npm', name: owner === 'xyb-openharness-dsh-plugins' ? sourcePackage : 'unrelated-support-fixture', version: '1.0.0' }, description: { zh: '心理支持与情绪记录', en: 'Psychological support and mood records' }, screenshots: [] })
+    try {
+      await React.act(async () => {
+        ui.service.remoteCatalog.push(catalogEntry(officialId, 'xyb-openharness-dsh-plugins'), catalogEntry('unrelated-owner/psych-fixture', 'unrelated-owner'))
+        ui.service.publish()
+      })
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '跳过介绍，直接浏览'))
+      const support = () => ui.document.querySelector('.dshWbCharityCategories [data-category="support"]')
+      const projects = () => ui.document.querySelector('.dshWbCharityProjects')
+      await click(support())
+      expect(projects().querySelectorAll('article')).toHaveLength(1)
+      expect(projects().textContent).toContain('官方心理支持工作台')
+      expect(projects().querySelector(`a[href="https://github.com/${officialId}"]`)).not.toBeNull()
+      expect(projects().querySelector('a[href*="unrelated-owner"]')).toBeNull()
+      expect(buttonByText(projects(), '安装').disabled).toBe(false)
+      await React.act(async () => {
+        // Registration and inventory are real service inputs; keep readiness off
+        // while introducing fixture providers so registration does not fetch state.
+        ui.service.ready = false
+        ui.service.ctx.fiber.entry.options.name = sourcePackage
+        ui.service.native.bundles[sourcePackage] = { name: sourcePackage, installed: true, enabled: true, version: '1.0.0', removable: true }
+        ui.service.installs[officialId] = { catalogId: officialId, pluginName: sourcePackage, version: '1.0.0' }
+        ui.service.register({ title: '官方心理支持工作台', repository: `https://github.com/${officialId}`, version: '1.0.0' }, () => null)
+        ui.service.state.added.push(officialId)
+        ui.service.ctx.fiber.entry.options.name = 'local-unrelated-cancer-fixture'
+        ui.service.native.bundles['local-unrelated-cancer-fixture'] = { name: 'local-unrelated-cancer-fixture', installed: true, enabled: true, version: '1.0.0' }
+        ui.service.register({ title: '本地心理支持与肺癌工作台', version: '1.0.0' }, () => null)
+        ui.service.state.added.push('local:local-unrelated-cancer-fixture')
+        ui.service.ctx.fiber.entry.options.name = 'helper'
+        ui.service.ready = true
+        ui.service.publish()
+      })
+      await click(ui.document.querySelector('.dshWbCharityCollection [data-collection="mine"]'))
+      expect(projects().querySelectorAll('article')).toHaveLength(1)
+      expect(projects().textContent).toContain('官方心理支持工作台')
+      expect(projects().textContent).not.toContain('本地心理支持与肺癌工作台')
+      expect(projects().textContent).not.toContain('Helper')
+      await click(support())
+      expect(projects().querySelectorAll('article')).toHaveLength(1)
+      await click(ui.document.querySelector('.dshWbCharityCategories [data-category="cancer"]'))
+      expect(projects().querySelectorAll('article')).toHaveLength(0)
+    } finally { await ui.close() }
+  })
+
+  it('keeps the charity installed collection scoped and supports keyboard tab switching', async () => {
+    const ui = await mountCard()
+    try {
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '跳过介绍，直接浏览'))
+      const installedTab = ui.document.querySelector('.dshWbCharityCollection [data-collection="mine"]')
+      const findTab = ui.document.querySelector('.dshWbCharityCollection [data-collection="find"]')
+      await click(installedTab)
+      expect(installedTab.getAttribute('aria-selected')).toBe('true')
+      const projects = ui.document.querySelector('.dshWbCharityProjects')
+      expect(projects.getAttribute('aria-labelledby')).toBe(installedTab.id)
+      expect(projects.textContent).not.toContain('Helper')
+      expect(projects.querySelector('article')).toBeNull()
+      await React.act(async () => installedTab.dispatchEvent(new ui.document.defaultView.KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true })))
+      expect(findTab.getAttribute('aria-selected')).toBe('true')
+      expect(ui.document.activeElement).toBe(findTab)
+      expect(projects.textContent).toContain('乳腺癌')
+    } finally { await ui.close() }
+  })
+
+  it('opens the usage guide and can return to the market without creating or installing anything', async () => {
+    let requests = 0
+    const ui = await mountCard({ request: async () => { requests++; throw new Error('Unexpected network request') } })
+    try {
+      await enter(ui)
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '跳过介绍，直接浏览'))
+      await click(buttonByText(ui.document.querySelector('.dshWbCharity'), '使用指南'))
+      const guide = ui.document.querySelector('.dshWbCharityGuide')
+      expect(guide.textContent).toContain('社区官方使用指南')
+      expect(guide.querySelector('.dshWbCharityGuideSource')).toBeNull()
+      expect(guide.querySelector('.dshWbCharityGuideScope')).toBeNull()
+      expect([...guide.querySelectorAll('.dshWbCharityUsageSteps h3')].map(heading => heading.textContent)).toEqual(['新建档案与资料目录', '导入并解析资料', '逐项核对结果'])
+      const usage = [...guide.querySelectorAll('a')].find(link => link.textContent.includes('阅读官方使用指南'))
+      expect(usage.href).toBe('https://github.com/xyb-openharness-dsh-plugins/.github/blob/main/USAGE.md')
+      expect(usage.rel).toContain('noopener')
+      expect([...guide.querySelectorAll('a')].some(link => link.href === 'https://github.com/xyb-openharness-dsh-plugins/.github/blob/main/INSTALL.md')).toBe(true)
+      expect(guide.textContent).not.toContain('可以稍后添加')
+      await click(ui.document.querySelector('[aria-label="返回工作台市场"]'))
+      expect(ui.document.querySelector('.dshWbCharity')).toBeNull()
+      expect(ui.document.querySelector('.dshWbCharityEntry')).not.toBeNull()
+      expect(requests).toBe(0)
+    } finally { await ui.close() }
+  })
+
+  it('shows English entry and onboarding copy in the English host locale', async () => {
+    const ui = await mountCard({ language: 'en' })
+    try {
+      await click(ui.document.querySelector('.dshWbCharityEntry button'))
+      const welcome = ui.document.querySelector('.dshWbCharity')
+      expect(welcome.textContent).toContain('Welcome to Xiaoyibao')
+      expect(welcome.textContent).not.toContain('欢迎来到小胰宝')
+      const skip = [...welcome.querySelectorAll('button')].find(button => /skip/i.test(button.textContent))
+      await click(skip)
+      expect(ui.document.querySelector('.dshWbCharitySearch')).not.toBeNull()
+      expect(ui.document.querySelector('.dshWbCharity').textContent).not.toContain('找到您的病种工作台')
+    } finally { await ui.close() }
+  })
+})

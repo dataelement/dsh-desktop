@@ -588,7 +588,8 @@ describe('GitHub release contract', () => {
     )
 
     for (const readme of readmes) {
-      expect(readme).toMatch(/https:\/\/(?:www\.)?dshdesktop\.com\/(?:#download|zh\/)/)
+      const websiteLinks = [...readme.matchAll(/https:\/\/(?:www\.)?dshdesktop\.com[^\s<>"')]+/g)].map(match => new URL(match[0]))
+      expect(websiteLinks.some(url => /^\/(?:zh|en|ja|ru|es|pt)\/$/.test(url.pathname) || (url.pathname === '/' && url.hash === '#download'))).toBe(true)
       expect(readme).not.toContain('| Platform | Package | Download |')
       expect(readme).not.toContain('| 平台 | 安装包 | 下载 |')
       expect(readme).not.toContain('Coming soon')

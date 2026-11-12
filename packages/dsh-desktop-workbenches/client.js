@@ -10,6 +10,95 @@ window.__ModuleLoader__.load({
       zh: { download_failed: '无法下载工作台安装包', download_interrupted: '工作台安装包下载中断', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
       en: { download_failed: 'Could not download the workbench package', download_interrupted: 'Workbench package download interrupted', invalid_download_url: 'The workbench download URL is invalid.', unsafe_download_url: 'The workbench download URL must use HTTPS without credentials or a custom port.' }
     }
+    const CHARITY_NS = 'dsh-desktop-workbenches.charity'
+    const charityCopy = {
+      zh: {
+        more: '更多病种…', moreLabel: '浏览更多病种工作台', coverage: '覆盖更多癌种与罕见病', title: '小胰宝 · 公益专区', community: '社区专区', intro: '按病种查找工作台，安装后开始使用。', enter: '进入专区', enterLabel: '进入小胰宝公益专区', back: '返回市场', backLabel: '返回工作台市场',
+        welcome: '欢迎来到小胰宝', welcomeSub: '为患者和家属整理资料、记录病程、准备就诊。', welcomeNote: '从一份资料开始，让每一次就诊更从容。', start: '查找我的病种工作台', skip: '跳过介绍，直接浏览',
+        step1: '找到病种工作台', step1Sub: '按您已确诊的病种查找', step2: '安装到 DSH', step2Sub: '查看介绍后再安装', step3: '开始整理资料', step3Sub: '打开工作台，跟随指引开始',
+        find: '找到您的病种工作台', findSub: '按您已确诊的病种名称搜索，了解适合您的工作台。', search: '搜索病种工作台', placeholder: '输入病种名称或常用简称', searchButton: '搜索', clear: '清除搜索', findTab: '查找工作台', installed: '已安装', guide: '使用指南', browse: '返回病种查找',
+        progress: '开发中', design: '设计中', project: '项目介绍', prototype: '原型截图', prototypeNote: '图片来自社区公开原型，内容为模拟资料。', about: '查看介绍', viewProgress: '查看进展', communityNote: '项目介绍依据社区 PROJECTS.md，不代表已在市场发布；可安装项目以市场实际发布为准。', catalogError: '暂时无法更新市场目录，您仍可查看社区项目介绍。',
+        categories: '按社区项目分类筛选', all: '全部', cancer: '癌种工作台', rare: '罕见病工作台', supportCategory: '跨病种支撑', categorySource: '分类依据：社区项目目录',
+        noMatch: '没有找到对应的工作台', noMatchSub: '试试病种全称或其他常用简称，也可以向社区反馈需求。', noneInstalled: '还没有安装公益工作台', noneInstalledSub: '先了解适合您的病种工作台，发布后即可安装使用。', feedback: '反馈需求', allProjects: '查看全部社区项目', help: '需要安装帮助？',
+        guideTitle: '社区官方使用指南', guideSub: '建档、导入资料、核对结果，三步开始使用。', guideSource: '来源：USAGE.md · 组织级说明 v0.1 · 2026-10-29', guideScope: '各病种工作台的成熟度和功能不同，请以目标工作台的具体说明为准。', readGuide: '阅读官方使用指南', installGuide: '官方安装说明',
+        record: '新建档案与资料目录', recordSub: '打开工作台新建档案，填写姓名并选择患者本人或家属；创建默认资料目录，或选择自己的目录。', report: '导入并解析资料', reportSub: '按分类放入文件，检查后勾选导入，再开始解析。TXT/MD/CSV 在本机解析；PDF、图片、Office 使用 MinerU，需要同意并配置 Token。', verify: '逐项核对结果', verifySub: '先查看每份解析结果及失败原因；没有候选时查看解析文本或调整资料类型。进入“去核对”，逐项接受、修改后接受或拒绝，确认后才写入记录。', reopen: '安装后从哪里打开？', reopenSub: '按提示重启 Harness 后，在“工作台 → 已安装”确认，也可从侧栏固定入口打开。', privacy: 'AI 回复需人工核对，不能替代医生判断。', support: '整理资料 · 记录病程 · 就诊准备', manage: '前往已安装管理', open: '打开工作台', install: '安装', installing: '正在安装…', unavailable: '启用后可打开',
+        pdac: '胰腺癌工作台', pdacBrand: '小胰宝', pdacDesc: '围绕胰腺癌的资料整理、营养记录和就诊准备，让病程信息更有序。',
+        lung: '肺癌工作台', lungBrand: '小肺宝', lungDesc: '整理病理分型、基因检查与病程记录，为复诊和沟通准备资料。',
+        breast: '乳腺癌工作台', breastBrand: '小粉宝 PinkyPal', breastDesc: '汇总病程、整理检查指标与报告，准备每一次就诊需要的材料。',
+        lymphoma: '淋巴瘤工作台', lymphomaBrand: '小铃铛 LymBell', lymphomaDesc: '围绕分型、多疗程记录和就诊准备，清楚回顾每一阶段的资料。',
+        ovarian: '卵巢癌工作台', ovarianBrand: '小巢宝', ovarianDesc: '整理病程资料、治疗历程与指标趋势，帮助准备医患沟通。',
+        gist: '胃肠间质瘤工作台', gistBrand: '小吉宝 GistPal · GIST', gistDesc: '项目方向：整理病理资料、用药记录与复查影像；同时属于癌种与罕见病项目。',
+        colorectal: '结直肠癌工作台', colorectalBrand: '小畅宝 Colopal', colorectalDesc: '项目方向：分子分型资料、肠道功能与造口记录、CEA 指标序列。',
+        gastric: '胃癌工作台', gastricBrand: '小胃宝 Stompal', gastricDesc: '项目方向：标志物资料、进食与营养记录、体重序列。',
+        esophageal: '食管癌工作台', esophagealBrand: '小咽宝 EsopPal', esophagealDesc: '项目方向：分型与分段资料、吞咽和进食通路、体重与白蛋白记录。',
+        cervical: '宫颈癌工作台', cervicalBrand: '小莲宝 CerviPal', cervicalDesc: '项目方向：分期资料、生育相关资料、放疗与长期影响记录。',
+        anal: '肛管癌工作台', analBrand: '小萌宝 AnalPal', analDesc: '项目方向：症状与副作用记录、肠道日记、肛周皮肤与造口生活记录。',
+        fshd: '面肩肱型肌营养不良症工作台', fshdBrand: '小飞侠 · FSHD', fshdDesc: '项目方向：确诊档案、功能与康复记录、并发症筛查资料、医保与资源。',
+        attr: '转甲状腺素蛋白淀粉样变性工作台', attrBrand: '淀粉宝宝 ATTR-Pal', attrDesc: '项目方向：型别确认资料、心脏与神经受累记录、用药耐受与家族筛查准备。',
+        psych: '心理支持工作台', psychBrand: '小心宝', psychDesc: '跨病种项目方向：为患者与照护者提供情绪陪伴、睡眠与情绪记录、资源检索。'
+      },
+      en: {
+        more: 'More conditions…', moreLabel: 'Browse more condition workbenches', coverage: 'More cancer types and rare conditions', title: 'Xiaoyibao · Charity', community: 'Community', intro: 'Find a condition-specific workbench, install it and get started.', enter: 'Explore', enterLabel: 'Explore Xiaoyibao Charity', back: 'Back to market', backLabel: 'Back to Workbench Market',
+        welcome: 'Welcome to Xiaoyibao', welcomeSub: 'Organize records, track your journey and prepare for appointments.', welcomeNote: 'Start with one document. Feel more prepared for your next visit.', start: 'Find my workbench', skip: 'Skip introduction and browse',
+        step1: 'Find your workbench', step1Sub: 'Search for your diagnosed condition', step2: 'Install in DSH', step2Sub: 'Read the introduction before installing', step3: 'Organize your records', step3Sub: 'Open the workbench and follow its guide',
+        find: 'Find your condition-specific workbench', findSub: 'Search for a diagnosed condition and explore workbenches for you.', search: 'Search condition workbenches', placeholder: 'Enter a condition or abbreviation', searchButton: 'Search', clear: 'Clear search', findTab: 'Find a workbench', installed: 'Installed', guide: 'Getting started', browse: 'Back to workbenches',
+        progress: 'In development', design: 'In design', project: 'Project overview', prototype: 'Prototype screenshot', prototypeNote: 'Images are community prototypes with simulated records.', about: 'Read introduction', viewProgress: 'View progress', communityNote: 'Project overviews come from the community PROJECTS.md. They do not establish market availability; installation requires an actual market release.', catalogError: 'The market could not be refreshed. You can still explore community projects.',
+        categories: 'Filter by community project category', all: 'All', cancer: 'Cancer workbenches', rare: 'Rare disease workbenches', supportCategory: 'Cross-condition support', categorySource: 'Categories: community project directory',
+        noMatch: 'No matching workbenches', noMatchSub: 'Try a full condition name or another abbreviation, or suggest a workbench to the community.', noneInstalled: 'No charity workbenches installed yet', noneInstalledSub: 'Explore workbenches for your condition. Install them once published.', feedback: 'Suggest a workbench', allProjects: 'All community projects', help: 'Need help installing?',
+        guideTitle: 'Official community user guide', guideSub: 'Create a record, import files, and review the results.', guideSource: 'Source: USAGE.md · Organization guide v0.1 · 2026-10-29', guideScope: 'Features and maturity vary by condition. Check the instructions for your specific workbench.', readGuide: 'Read the official user guide', installGuide: 'Official installation guide',
+        record: 'Create a patient record and folder', recordSub: 'Create a record, enter a name and choose patient or family member. Create the default records folder or choose your own.', report: 'Import and parse records', reportSub: 'Place files in the category folders, check and select them for import, then parse. TXT/MD/CSV are parsed locally. PDF, images and Office files use MinerU with consent and a Token.', verify: 'Review each result', verifySub: 'Check each parsing result and failure reason. If no candidates appear, view the parsed text or change the document type. Accept, edit and accept, or reject each candidate. Only confirmed items become records.', reopen: 'Where do I open it after installation?', reopenSub: 'Restart Harness if prompted, then check Workbenches → Installed. You can also use its pinned sidebar shortcut.', privacy: 'The official guide distinguishes record verification from medical review. AI replies also require human review. See the original for data handling, backups and FAQs.', support: 'Records · Timeline · Appointment preparation', manage: 'Manage installed workbenches', open: 'Open workbench', install: 'Install', installing: 'Installing…', unavailable: 'Enable to open',
+        pdac: 'Pancreatic cancer workbench', pdacBrand: 'Xiaoyibao', pdacDesc: 'Organize records, nutrition notes and appointment preparation for pancreatic cancer.',
+        lung: 'Lung cancer workbench', lungBrand: 'Xiaofeibao', lungDesc: 'Organize pathology, genetic reports and timeline records for appointments.',
+        breast: 'Breast cancer workbench', breastBrand: 'PinkyPal', breastDesc: 'Review your timeline, organize reports and prepare documents for each visit.',
+        lymphoma: 'Lymphoma workbench', lymphomaBrand: 'LymBell', lymphomaDesc: 'Keep subtype information and treatment-course records together for appointments.',
+        ovarian: 'Ovarian cancer workbench', ovarianBrand: 'Xiaochaobao', ovarianDesc: 'Organize records, treatment timelines and indicator trends for discussions.',
+        gist: 'GIST workbench', gistBrand: 'GistPal · GIST', gistDesc: 'Project focus: pathology, medication records and follow-up images. Listed under both cancer and rare diseases.',
+        colorectal: 'Colorectal cancer workbench', colorectalBrand: 'Colopal', colorectalDesc: 'Project focus: molecular subtype records, bowel function, stoma records and CEA trends.',
+        gastric: 'Gastric cancer workbench', gastricBrand: 'Stompal', gastricDesc: 'Project focus: biomarker records, food and nutrition notes, and weight trends.',
+        esophageal: 'Esophageal cancer workbench', esophagealBrand: 'EsopPal', esophagealDesc: 'Project focus: subtype and location records, swallowing, feeding routes, weight and albumin.',
+        cervical: 'Cervical cancer workbench', cervicalBrand: 'CerviPal', cervicalDesc: 'Project focus: staging records, fertility information, radiotherapy and long-term effects.',
+        anal: 'Anal cancer workbench', analBrand: 'AnalPal', analDesc: 'Project focus: symptoms, side effects, bowel diaries, perianal skin and life with a stoma.',
+        fshd: 'FSHD workbench', fshdBrand: 'Xiaofeixia · FSHD', fshdDesc: 'Project focus: diagnostic records, function and rehabilitation, complication screening, insurance and resources.',
+        attr: 'ATTR amyloidosis workbench', attrBrand: 'ATTR-Pal', attrDesc: 'Project focus: subtype records, cardiac and neurological involvement, medication tolerance and family screening preparation.',
+        psych: 'Psychological support workbench', psychBrand: 'Xiaoxinbao', psychDesc: 'Cross-condition project focus: emotional companionship, sleep and mood records, and resources for patients and caregivers.'
+      }
+    }
+    const CHARITY_PROJECTS_URL = 'https://github.com/xyb-openharness-dsh-plugins/.github/blob/main/PROJECTS.md'
+    const CHARITY_USAGE_URL = 'https://github.com/xyb-openharness-dsh-plugins/.github/blob/main/USAGE.md'
+    const CHARITY_INSTALL_URL = 'https://github.com/xyb-openharness-dsh-plugins/.github/blob/main/INSTALL.md'
+    // Public gallery snapshot checked on 2026-11-12. These are progress links,
+    // never install targets. The reviewed market catalog remains the install authority.
+    const CHARITY_PROJECTS = ['pdac', 'lung', 'breast', 'lymphoma', 'ovarian', 'gist', 'colorectal', 'gastric', 'esophageal', 'cervical', 'anal', 'fshd', 'attr', 'psych']
+    const CHARITY_PROJECT_CATEGORIES = Object.fromEntries(CHARITY_PROJECTS.map(key => [key, key === 'gist' ? ['cancer', 'rare'] : key === 'psych' ? ['support'] : ['fshd', 'attr'].includes(key) ? ['rare'] : ['cancer']]))
+    const CHARITY_PROJECT_PATTERNS = { pdac: /胰腺|小胰宝|pancrea|pdac/i, lung: /肺癌|小肺宝|\blung\b|nsclc|sclc/i, breast: /乳腺|小粉宝|breast|pinkypal/i, lymphoma: /淋巴瘤|小铃铛|lymphoma|lymbell/i, ovarian: /卵巢|小巢宝|ovarian/i, gist: /胃肠间质|小吉宝|\bgist\b/i, colorectal: /结直肠|小畅宝|colorectal|colopal/i, gastric: /胃癌|小胃宝|\bgastric\b|stompal/i, esophageal: /食管|小咽宝|esophag|esoppal/i, cervical: /宫颈|小莲宝|cervical|cervipal/i, anal: /肛管|小萌宝|\banal\b|analpal/i, fshd: /面肩肱|小飞侠|\bfshd\b|facioscapulohumeral/i, attr: /转甲状腺素|淀粉宝宝|\battr\b|transthyretin/i, psych: /心理支持|小心宝|\bpsych\b|psychological support/i }
+    const communityProjectFor = entry => ({
+      'xyb-openharness-dsh-plugins/xyb-workbench': 'pdac',
+      'xyb-openharness-dsh-plugins/xiaoxinbao-workbench': 'psych',
+      'xyb-openharness-dsh-plugins/colorectal-workbench': 'colorectal',
+      'xyb-openharness-dsh-plugins/gastric-workbench': 'gastric',
+      'xyb-openharness-dsh-plugins/esophageal-workbench': 'esophageal',
+      'xyb-openharness-dsh-plugins/cervical-workbench': 'cervical'
+    })[String(entry.catalogId || entry.id || '').toLowerCase()]
+    const communityPrototype = entry => !!communityProjectFor(entry)
+      && !entry.screenshot && !(entry.screenshots || []).some(image => typeof image === 'string' && image)
+    const charitySearchText = entry => `${entry.catalogId || entry.id || ''} ${entry.title || ''} ${entry.titleEn || ''} ${entry.name || ''} ${entry.description || ''} ${entry.descriptionEn || ''}`
+    // Identify a project's own title/package, not other conditions mentioned in its description.
+    const charityProjectsForEntry = entry => CHARITY_PROJECTS.filter(key => CHARITY_PROJECT_PATTERNS[key].test(`${entry.catalogId || entry.id || ''} ${entry.title || ''} ${entry.titleEn || ''} ${entry.name || ''}`))
+    const charityCategoriesForEntry = entry => {
+      const known = charityProjectsForEntry(entry).flatMap(key => CHARITY_PROJECT_CATEGORIES[key])
+      if (known.length) return [...new Set(known)]
+      const name = `${entry.title || ''} ${entry.titleEn || ''} ${entry.name || ''}`
+      return /罕见|rare disease/i.test(name) ? ['rare'] : /癌|瘤|cancer|oncology/i.test(name) ? ['cancer'] : []
+    }
+    const charityTextFor = (service) => service.ctx.locale?.bind
+      ? service.ctx.locale.bind(CHARITY_NS)
+      : (key) => charityCopy[isEnglish() ? 'en' : 'zh'][key]
+    // Match verified organization provenance and medical content, not all of its plugins.
+    function isCharityWorkbench(entry) {
+      const identity = String(entry.catalogId || entry.id || '').toLowerCase()
+      const official = entry.owner === 'xyb-openharness-dsh-plugins' || identity.startsWith('xyb-openharness-dsh-plugins/')
+      return official && (identity.endsWith('-workbench') || charityProjectsForEntry(entry).length > 0 || /癌|瘤|胰|罕见|cancer|oncology|pancrea|pdac|lymphoma|gist|fshd|attr|amyloid|dystrophy/i.test(charitySearchText(entry)))
+    }
     const REGISTRATION_NS = 'dsh-desktop-workbenches.registration'
     const registrationCopy = {
       zh: { failed: '工作台注册失败', identity: '身份解析', register: '注册', guidance: '请将以下包名、阶段和原因提供给开发助手修复，然后重新加载工作台。' },
@@ -660,7 +749,7 @@ window.__ModuleLoader__.load({
         if (!data.catalog) return null
         const categories = new Map(data.catalog.categories.map(category => [category.id, category.name]))
         return {
-          entries: data.catalog.workbenches.map(entry => ({ ...entry, categoryName: categories.get(entry.category)?.zh || entry.category, categoryNames: categories.get(entry.category) })),
+          entries: data.catalog.workbenches.map(entry => ({ ...entry, ...(communityProjectFor(entry) ? { name: charityCopy[isEnglish() ? 'en' : 'zh'][communityProjectFor(entry)] } : {}), categoryName: categories.get(entry.category)?.zh || entry.category, categoryNames: categories.get(entry.category) })),
           categories: data.catalog.categories.map(({ id, name }) => ({ id, name: name.zh, ...(name.en ? { names: name } : {}) })),
           stale: data.stale === true
         }
@@ -1594,6 +1683,100 @@ window.__ModuleLoader__.load({
       @container workbench-market (max-width:520px){.dshWbGrid{grid-template-columns:1fr}}
       @media(max-width:900px){.dshWbMarket{padding-bottom:40px;--dsh-wb-page-gutter:24px}.dshWbBusiness{min-width:180px}}
       @media(max-width:640px){.dshWbMarket{padding-bottom:40px;--dsh-wb-page-gutter:16px}.dshWbMarketHeader{flex-direction:column;margin:0;padding:20px 16px 22px}.dshWbMarketHeaderActions{width:100%;justify-content:flex-start}.dshWbCreate{flex:1;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
+
+      /* Charity collection: a self-contained surface using the host theme tokens. */
+      .dshWbCharityEntry,.dshWbCharity{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--dsw-alias-label-primary)}
+      .dshWbCharityArt{display:block;object-fit:contain;pointer-events:none;user-select:none}
+      .dshWbCharityEntry{container-type:inline-size;position:relative;box-sizing:border-box;height:360px;min-width:0;overflow:hidden;display:flex;flex-direction:column;border:1px solid color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,var(--dsw-alias-border-l2));border-radius:14px;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 3%,color-mix(in srgb,var(--dsw-alias-state-success-primary) 4%,var(--dsw-alias-bg-layer-1)))}
+      /* Match the host card's 16px inset, 3:1 media, 26px title and information rows. */
+      .dshWbCharityEntryMedia{position:relative;aspect-ratio:3/1;max-height:120px;flex-shrink:0;margin:15px 15px 0;overflow:hidden;border-radius:6px;background:var(--dsw-alias-bg-module-platform)}
+      .dshWbCharityEntryMedia>img{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+      .dshWbCharityEntryMedia>.dshWbCharityBadge{position:absolute;top:12px;left:12px}
+      .dshWbCharityEntryContent{position:relative;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;min-width:0;padding:16px 15px 15px;box-sizing:border-box}
+      .dshWbCharityBadge{display:inline-flex;align-items:center;gap:6px;max-width:100%;border-radius:8px;padding:5px 10px;font-size:12px;line-height:18px;letter-spacing:.04em;font-weight:650;color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 65%,var(--dsw-alias-state-business-primary));background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,var(--dsw-alias-bg-layer-1))}
+      .dshWbCharityEntry h2{font-size:18px;font-weight:650;line-height:26px;letter-spacing:-.018em;margin:0;min-height:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .dshWbCharityEntry p{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:18px}
+      .dshWbCharityEntrySubtitle{min-height:18px}
+      .dshWbCharityEntryInfo{margin-top:8px}
+      .dshWbCharityTags{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;margin:0}
+      .dshWbCharityTags :is(span,button){box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:22px;white-space:nowrap;font:inherit;font-size:12px;font-weight:500;line-height:18px;padding:2px 9px;border:0;border-radius:7px;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,var(--dsw-alias-bg-layer-1));color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 65%,var(--dsw-alias-state-business-primary))}
+      .dshWbCharityTags>span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .dshWbCharityTags .dshWbCharityMore{flex:none;border:1px solid var(--dsw-alias-border-l2);padding:1px 9px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dshWbCharityMore:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dshWbCharityEntry .dshWbCharityCoverage{font-size:13px;line-height:22px;margin:0}
+      .dshWb .dshWbCharityPrimary{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:42px;box-sizing:border-box;padding:10px 18px;border:0;border-radius:8px;font-family:inherit;font-size:14px;font-weight:600;line-height:22px;text-decoration:none;white-space:normal;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);cursor:pointer}
+      .dshWb .dshWbCharityPrimary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
+      .dshWbCharityEntry .dshWbCharityPrimary{align-self:flex-end;margin-top:auto;min-height:40px;font-size:13px;padding:8px 16px}
+      .dshWbCharity :is(button,input,summary,a):focus-visible,.dshWbCharityEntry button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:4px}
+      .dshWbCharity h2:focus{outline:none}
+      .dshWbCharityHeader{min-height:176px;box-sizing:border-box;align-items:center;padding-top:42px;padding-bottom:42px}
+      .dshWbCharityHeaderLabel{font-size:12px;font-weight:600;letter-spacing:.03em;padding:8px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}
+      .dshWbCharity .dshWbCharityBody{max-width:1376px}.dshWbCharity-find .dshWbCharityHeader{min-height:124px;padding-top:24px;padding-bottom:24px}
+      .dshWbCharityBreadcrumb{display:flex;align-items:center;gap:14px;min-height:72px;font-size:13px;color:var(--dsw-alias-label-secondary);border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-border-l2) 55%,transparent)}
+      .dshWbCharityBreadcrumb button{display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;padding:6px 0;color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer}
+      .dshWbCharityBreadcrumb strong{font-weight:600;color:var(--dsw-alias-label-primary)}
+      .dshWbCharityBreadcrumb .dshWbCharityHelp{margin-left:auto;white-space:nowrap;font-size:12px}
+      .dshWbCharityHero{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(180px,1fr);align-items:center;gap:24px;min-height:252px}
+      .dshWbCharityHero h2{margin:0 0 14px;font-size:clamp(30px,3.7cqw,52px);font-weight:720;line-height:1.3;letter-spacing:-.045em;text-wrap:balance}
+      .dshWbCharityHero p{margin:0;font-size:clamp(14px,1.65cqw,20px);line-height:1.8;color:var(--dsw-alias-label-secondary)}
+      .dshWbCharityHero small{display:block;margin-top:12px;font-size:13px;color:var(--dsw-alias-label-tertiary)}
+      .dshWbCharityHero>.dshWbCharityArt{width:100%;height:280px;max-width:320px;justify-self:end}
+      .dshWbCharityWelcome{max-width:976px;margin:0 auto;padding:32px 0 36px}
+      .dshWbCharitySteps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:36px;list-style:none;margin:16px 0 32px;padding:0}
+      .dshWbCharitySteps li{position:relative;min-width:0;text-align:center}
+      .dshWbCharityStepIcon{position:relative;display:grid;place-items:center;width:88px;height:88px;box-sizing:border-box;margin:0 auto 30px;border-radius:50%;color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 9%,var(--dsw-alias-bg-layer-1))}
+      .dshWbCharityStepIcon>span{position:absolute;bottom:-10px;left:calc(50% - 12px);display:grid;place-items:center;width:24px;height:24px;border-radius:50%;font-size:12px;font-weight:700;color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 24%,var(--dsw-alias-bg-layer-1));border:3px solid var(--dsw-alias-bg-layer-1)}
+      .dshWbCharitySteps h3{margin:0 0 8px;font-size:20px;line-height:1.5;font-weight:650;letter-spacing:-.02em}
+      .dshWbCharitySteps p{margin:0;font-size:15px;line-height:1.7;color:var(--dsw-alias-label-secondary)}
+      .dshWbCharityStepArrow{position:absolute;top:24px;right:-33px;color:var(--dsw-alias-label-tertiary)}
+      .dshWbCharityWelcomeActions{display:flex;flex-direction:column;align-items:center;gap:15px;padding-top:8px}
+      .dshWbCharityWelcomeActions .dshWbCharityPrimary{min-width:360px;min-height:54px;font-size:17px}
+      .dshWbCharitySkip{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;text-decoration:underline;text-underline-offset:4px;padding:7px;cursor:pointer}
+      .dshWbCharityFind{padding:16px 0 0}
+      .dshWbCharityFindHeading{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:104px}
+      .dshWbCharityFindHeading h2{font-size:36px;font-weight:700;line-height:1.4;letter-spacing:-.035em;margin:0 0 9px}
+      .dshWbCharityFindHeading p{font-size:14px;line-height:1.7;color:var(--dsw-alias-label-secondary);margin:0}
+      .dshWbCharityFindHeading>.dshWbCharityArt{width:100px;height:100px}
+      .dshWbCharitySearch{display:flex;gap:12px;margin:8px 0 24px}
+      .dshWbCharitySearch label{position:relative;display:flex;align-items:center;flex:1;min-width:0}
+      .dshWbCharitySearch label>svg{position:absolute;left:16px;color:var(--dsw-alias-label-tertiary);pointer-events:none}
+      .dshWbCharitySearch input{box-sizing:border-box;width:100%;height:48px;padding:12px 16px 12px 46px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-1);color:inherit;font-family:inherit;font-size:14px}
+      .dshWbCharitySearch input::placeholder{color:var(--dsw-alias-label-tertiary)}
+      .dshWbCharitySearch .dshWbCharityPrimary{min-width:100px}
+      .dshWbCharityToolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--dsw-alias-border-l2)}
+      .dshWbCharityCollection{display:flex;flex-wrap:wrap;gap:12px}
+      .dshWbCharityCollection button{font-family:inherit;font-size:14px;font-weight:500;line-height:22px;color:var(--dsw-alias-label-secondary);background:transparent;border:0;border-radius:8px;padding:8px 20px;cursor:pointer}
+      .dshWbCharityCollection button[aria-selected=true]{background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font-weight:650}
+      .dshWbCharityCategories{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;max-width:100%;margin-left:auto}
+      .dshWbCharityCategories button{font:inherit;font-size:13px;line-height:20px;padding:6px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:20px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dshWbCharityCategories button[aria-pressed=true]{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground);border-color:var(--dsw-alias-label-primary)}
+      .dshWbCharityCategorySource{font-size:12px;color:var(--dsw-alias-label-tertiary);text-underline-offset:3px}
+      .dshWbCharityCatalogNotice{font-size:12px;line-height:1.7;color:var(--dsw-alias-label-tertiary);margin:14px 0 18px}
+      .dshWbCharityProjects{margin-top:20px}
+      .dshWbCharityStatus{flex:none;white-space:nowrap}
+      .dshWbProjectAbout{font-size:12px;line-height:22px;color:var(--dsw-alias-label-secondary);text-decoration:none;text-underline-offset:3px}
+      .dshWbProjectAbout:hover{text-decoration:underline}
+      .dshWbCharityEmpty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:50px 20px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-module-platform);border-radius:12px}
+      .dshWbCharityEmpty h3,.dshWbCharityEmpty p{margin:0}.dshWbCharityEmpty h3{font-size:18px;font-weight:600;color:var(--dsw-alias-label-primary)}.dshWbCharityEmpty p{font-size:13px;line-height:1.7}
+      .dshWbCharityFooter{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:18px 0;border-top:1px solid var(--dsw-alias-border-l2)}
+      .dshWbPrototypeLabel{position:absolute;z-index:1;left:8px;bottom:8px;padding:3px 7px;border-radius:6px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:11px}
+      .dshWbCharityGuide{padding:8px 0;max-width:1040px;margin:auto}
+      .dshWbCharityGuide .dshWbCharityHero{min-height:148px}.dshWbCharityGuide .dshWbCharityHero h2{font-size:32px;margin-top:16px}.dshWbCharityGuide .dshWbCharityHero .dshWbCharityArt{height:148px}
+      .dshWbCharityUsageSteps{gap:16px;margin:8px 0 16px}
+      .dshWbCharityUsageSteps li{text-align:left;background:var(--dsw-alias-bg-module-platform);border-radius:12px;padding:18px;min-height:0;box-sizing:border-box}
+      .dshWbCharityUsageSteps .dshWbCharityStepIcon{margin:0 0 10px;width:32px;height:32px;background:transparent;display:block}.dshWbCharityUsageSteps .dshWbCharityStepIcon>span{left:auto;right:-14px;bottom:-4px;border:0;width:20px;height:20px;font-size:11px}
+      .dshWbCharityUsageSteps .dshWbCharityStepArrow{display:none}.dshWbCharityUsageSteps h3{font-size:16px}
+      .dshWbCharityGuideSource{font-size:12px;color:var(--dsw-alias-label-tertiary);margin:0 0 10px;line-height:1.8}
+      .dshWbCharityGuideScope{font-size:14px;color:var(--dsw-alias-label-secondary);margin:0 0 20px;line-height:1.8}
+      .dshWbCharityGuideActions{display:flex;align-items:center;flex-wrap:wrap;gap:16px}
+      .dshWbCharityGuideActions>a:not(.dshWbCharityPrimary){display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--dsw-alias-label-secondary);text-underline-offset:4px}
+      .dshWbCharityReopen{display:flex;align-items:center;gap:16px;margin:16px 0 10px;padding:16px;border-radius:12px;background:var(--dsw-alias-bg-module-platform)}
+      .dshWbCharityReopen h3{font-size:17px;font-weight:650;margin:0 0 8px}.dshWbCharityReopen p{font-size:14px;color:var(--dsw-alias-label-secondary);margin:0}
+      .dshWbCharityPrivacy{font-size:12px;line-height:1.8;color:var(--dsw-alias-label-tertiary)}
+      @container (max-width:320px){.dshWbCharityEntryContent{padding-left:12px;padding-right:12px}.dshWbCharityTags{gap:4px}.dshWbCharityTags :is(span,button){padding-left:6px;padding-right:6px;font-size:11px}.dshWbCharityEntry h2{font-size:17px}.dshWbCharityEntry p{font-size:12px}.dshWbCharityEntry .dshWbCharityCoverage{font-size:12px}}
+      @container workbench-market (max-width:960px){.dshWbCharityHero h2{font-size:34px}.dshWbCharityHero p{font-size:14px}}
+      @container workbench-market (max-width:640px){.dshWbCharityHero{grid-template-columns:1fr 140px;min-height:205px;gap:8px}.dshWbCharityHero h2{font-size:26px}.dshWbCharityHero>.dshWbCharityArt{height:170px}.dshWbCharityHero small{display:none}.dshWbCharitySteps{gap:14px}.dshWbCharitySteps h3{font-size:14px}.dshWbCharitySteps p{font-size:12px}.dshWbCharityStepArrow{right:-20px}.dshWbCharityStepIcon{width:56px;height:56px}.dshWbCharityFindHeading h2{font-size:25px}.dshWbCharityFindHeading>.dshWbCharityArt{width:90px;height:90px}.dshWbCharityHeader{padding-top:24px;padding-bottom:24px;min-height:114px;flex-direction:row}.dshWbCharityHeaderLabel{display:none}.dshWbCharityUsageSteps{grid-template-columns:1fr}.dshWbCharityUsageSteps li{min-height:0}.dshWbCharityGuide .dshWbCharityHero h2{font-size:26px}}
+      @container workbench-market (max-width:400px){.dshWbCharityBreadcrumb{gap:8px;font-size:11px}.dshWbCharityBreadcrumb .dshWbCharityHelp{font-size:11px}.dshWbCharityHero{grid-template-columns:1fr;position:relative;padding-top:24px}.dshWbCharityHero>.dshWbCharityArt{display:none}.dshWbCharityWelcomeActions .dshWbCharityPrimary{min-width:0;width:100%;font-size:14px}.dshWbCharitySearch{gap:8px}.dshWbCharitySearch .dshWbCharityPrimary{min-width:64px;padding:10px}.dshWbCharityFindHeading>.dshWbCharityArt{display:none}.dshWbCharitySteps h3{font-size:12px}}
     `
     function ensureStyles() {
       const existing = document.querySelector('style[data-plugin-css="dsh-desktop-workbenches"]')
@@ -1659,7 +1842,9 @@ window.__ModuleLoader__.load({
       const images = Array.isArray(entry?.screenshots) ? entry.screenshots.filter(image => typeof image === 'string' && image) : []
       const primary = typeof entry?.screenshot === 'string' && entry.screenshot ? [entry.screenshot] : []
       // Published market images can replace stale runtime descriptor URLs.
-      return [...new Set(entry?.listed ? [...images, ...primary] : [...primary, ...images])]
+      const available = [...new Set(entry?.listed ? [...images, ...primary] : [...primary, ...images])]
+      const project = communityProjectFor(entry)
+      return available.length || !project ? available : [`/api/desktop-workbenches/assets/charity-projects/${project}.webp`]
     }
     function useScreenshots(entry) {
       const candidates = screenshotsFor(entry)
@@ -1872,14 +2057,14 @@ window.__ModuleLoader__.load({
     function EntryTitle({ entry, showIcon = false }) {
       const href = entry.listed === true && typeof entry.repository === 'string' && /^https:\/\/github\.com\//.test(entry.repository) ? entry.repository : ''
       const icon = showIcon && h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 15 }))
-      const title = h('span', { className: 'dshWbTitleText' }, entry.title)
+      const title = h('span', { className: 'dshWbTitleText', title: entry.title }, entry.title)
       return href ? h('a', { className: 'dshWbTitleLink', href, target: '_blank', rel: 'noopener noreferrer', title: both(`在 GitHub 上查看${entry.title || ''}`, `View ${entry.title || ''} on GitHub`) }, icon, title) : h('span', { className: 'dshWbTitleLink' }, icon, title)
     }
     function Preview({ entry, detail = false }) {
       const [screenshots, setFailedScreenshot] = useScreenshots(entry)
       const screenshot = screenshots[0]
       if (detail) return null
-      if (screenshot) return h('img', { className: 'dshWbCardScreenshot', src: screenshot, alt: both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshot`), loading: 'lazy', style: { objectPosition: entry.screenshotPosition || 'center' }, onError: () => setFailedScreenshot(screenshot) })
+      if (screenshot) return h(React.Fragment, null, communityPrototype(entry) && h('span', { className: 'dshWbPrototypeLabel' }, both('原型 · 模拟资料', 'Prototype · simulated records')), h('img', { className: 'dshWbCardScreenshot', src: screenshot, alt: communityPrototype(entry) ? both('社区原型图，内容为模拟资料', 'Community prototype with simulated records') : entry.previewAlt || both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshot`), loading: 'lazy', style: { objectPosition: entry.screenshotPosition || 'center' }, onError: () => setFailedScreenshot(screenshot) }))
       const columns = entry.layout?.businessSide === 'left' ? '1fr 1.8fr' : '1.45fr 1fr'
       return h('div', { className: 'dshWbPreview', role: 'img', 'aria-label': both(`${entry.title}界面预览（模拟）`, `${entry.title} simulated preview`) },
         h('div', { className: 'dshWbPreviewBar', 'aria-hidden': true }, h('span', { className: 'dshWbPreviewDot' }), h('span', { className: 'dshWbPreviewDot' }), h('span', { className: 'dshWbPreviewDot' })),
@@ -1917,7 +2102,7 @@ window.__ModuleLoader__.load({
       }
       if (screenshots.length === 0) return null
       const many = screenshots.length > 1
-      const carousel = h('div', { className: 'dshWbCarousel', role: 'region', 'aria-roledescription': tr('轮播'), 'aria-label': both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshots`),
+      const carousel = h('div', { className: 'dshWbCarousel', role: 'region', 'aria-roledescription': tr('轮播'), 'aria-label': communityPrototype(entry) ? both('社区原型图（模拟资料）', 'Community prototype (simulated records)') : both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshots`),
         onKeyDown: (event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); go(index - 1) } else if (event.key === 'ArrowRight') { event.preventDefault(); go(index + 1) } } },
         h('div', { ref: trackRef, className: 'dshWbCarouselTrack', onScroll: (event) => { const track = event.currentTarget; if (track.clientWidth) setIndex(Math.round(track.scrollLeft / track.clientWidth)) } },
           screenshots.map((src, i) => h('button', { key: src, type: 'button', className: 'dshWbCarouselSlide', 'aria-label': both(`放大截图 ${i + 1}/${screenshots.length}`, `Enlarge screenshot ${i + 1} of ${screenshots.length}`), tabIndex: i === index ? 0 : -1, onClick: (event) => openLightbox(event, src) },
@@ -1931,12 +2116,12 @@ window.__ModuleLoader__.load({
         h('button', { ref: lightboxCloseRef, type: 'button', className: 'dshWbLightboxClose', 'aria-label': tr('关闭截图预览'), onClick: () => setLightbox(null) }, '×'),
         h('img', { src: lightbox, alt: both(`${entry.title || tr('工作台')}截图放大`, `Enlarged ${entry.title || tr('工作台')} screenshot`), onClick: (event) => event.stopPropagation() })))
     }
-    function useDialogFocus(open, onClose, dialogRef) {
+    function useDialogFocus(open, onClose, dialogRef, returnFocus) {
       const closeRef = React.useRef(onClose)
       closeRef.current = onClose
       React.useEffect(() => {
         if (!open) return undefined
-        const previousFocus = document.activeElement
+        const previousFocus = returnFocus || document.activeElement
         const market = document.querySelector('.dshWbMarket')
         const wasInert = market?.inert === true
         if (market) market.inert = true
@@ -1959,11 +2144,11 @@ window.__ModuleLoader__.load({
           if (market && !wasInert) market.inert = false
           if (previousFocus?.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus()
         }
-      }, [open, dialogRef])
+      }, [open, dialogRef, returnFocus])
     }
-    function DetailModal({ entry, onClose }) {
+    function DetailModal({ entry, onClose, returnFocus }) {
       const dialogRef = React.useRef(null)
-      useDialogFocus(!!entry, onClose, dialogRef)
+      useDialogFocus(!!entry, onClose, dialogRef, returnFocus)
       if (!entry) return null
       // Render through a portal to body: the market panel declares container-type,
       // which would otherwise resolve a fixed-position overlay against that panel
@@ -1975,10 +2160,11 @@ window.__ModuleLoader__.load({
               h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1, display: 'flex', alignItems: 'center', gap: 8 } }, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })), h(EntryTitle, { entry })),
               h(Button, { autoFocus: true, onClick: onClose }, tr('关闭'))
             ),
+            (entry.previewAlt || communityPrototype(entry)) && h('p', { className: 'dshWbMuted' }, communityPrototype(entry) ? both('图片来自社区公开原型，内容为模拟资料。', 'Images are community prototypes with simulated records.') : entry.requirements),
             h(ScreenshotGallery, { entry }),
             entry.description && h('p', null, entry.description),
             h(EntryMeta, { entry }),
-            h('p', { className: 'dshWbMuted' }, both(`适用人群：${entry.audience || tr('暂无')}。${entry.requirements || ''}`, `Audience: ${entry.audienceEn || entry.audience || tr('暂无')}. ${entry.requirementsEn || entry.requirements || ''}`))
+            !entry.previewAlt && !communityPrototype(entry) && h('p', { className: 'dshWbMuted' }, both(`适用人群：${entry.audience || tr('暂无')}。${entry.requirements || ''}`, `Audience: ${entry.audienceEn || entry.audience || tr('暂无')}. ${entry.requirementsEn || entry.requirements || ''}`))
           )
         ),
         document.body
@@ -2156,10 +2342,139 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h('span', { className: 'dshWbFailureIcon', tabIndex: 0, 'aria-label': both(`${label}详情：${tr(detail)}`, `${label} details: ${tr(detail)}`), 'aria-describedby': tooltipId }, h(MarketIcon, { name: 'failure', size: 17 })),
         h('span', { id: tooltipId, className: 'dshWbFailureTooltip', role: 'tooltip', tabIndex: 0 }, `${label}：${tr(detail)}`))
     }
+    function CharityArt({ className = '' }) {
+      return h('img', { className: `dshWbCharityArt ${className}`, src: '/api/desktop-workbenches/assets/charity-folder.png', alt: '', draggable: false })
+    }
+    // Market and community cards share the same geometry and responsive styles.
+    function WorkbenchCardFrame({ media, className = '', children }) {
+      return h('article', { className: `dshWbCard ${className}`.trim() },
+        h('div', { className: 'dshWbMedia' }, media),
+        h('div', { className: 'dshWbCardBody' }, children))
+    }
+    function CharityProjectCard({ entry, text, onPreview, project = false, primaryAction }) {
+      const communityProject = communityProjectFor(entry)
+      if (communityProject && !project) entry = { ...entry, title: text(communityProject) }
+      const previewId = `dsh-xyb-preview-${entry.id}`
+      return h(WorkbenchCardFrame, { className: 'dshWbCharityProject', media: h(React.Fragment, null,
+        h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-describedby': previewId, 'aria-label': both(`查看${entry.title}详情`, `View ${entry.title} details`), onClick: event => onPreview(entry, event.currentTarget) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))),
+        h('span', { id: previewId, className: 'dshWbControlTooltip', role: 'tooltip' }, tr('查看详情'))) },
+        h('div', { className: 'dshWbCardTitle' }, h('h2', null, h(EntryTitle, { entry }))),
+        h('div', { className: 'dshWbAuthorRow' }, h(AuthorItem, { entry, showVersion: false }), project
+          ? h('span', { className: 'dshWbCardVersion dshWbCharityStatus' }, text('project'))
+          : entry.version && h('span', { className: 'dshWbCardVersion' }, `v${entry.version}`)),
+        h('div', { className: 'dshWbDescriptionHint' }, h('p', { className: 'dshWbMuted dshWbCardDescription' }, entry.description)),
+        h('div', { className: 'dshWbActions' },
+          h('div', { className: 'dshWbCardVersionActions' }, project
+            ? h('a', { className: 'dshWbProjectAbout', href: CHARITY_PROJECTS_URL, target: '_blank', rel: 'noopener noreferrer' }, text('about'))
+            : h(EntryMetrics, { entry })),
+          h('div', { className: 'dshWbCardControls' },
+            !project && entry.repository && h('a', { className: 'dshWbRoundButton', href: entry.repository, target: '_blank', rel: 'noopener noreferrer', 'aria-label': tr('查看 GitHub') }, h(MarketIcon, { name: 'github' })),
+            project ? h('a', { className: 'dshWbBtn dshWbPrimary', href: CHARITY_PROJECTS_URL, target: '_blank', rel: 'noopener noreferrer' }, text('viewProgress')) : primaryAction)))
+    }
+    function CharityEntry({ text, onEnter }) {
+      return h('section', { className: 'dshWbCharityEntry', 'aria-label': text('title') },
+        h('div', { className: 'dshWbCharityEntryMedia' },
+          h('img', { src: '/api/desktop-workbenches/assets/charity-banner.png', alt: '', draggable: false }),
+          h('span', { className: 'dshWbCharityBadge' }, text('community'))),
+        h('div', { className: 'dshWbCharityEntryContent' },
+          h('h2', null, text('title')), h('p', { className: 'dshWbCharityEntrySubtitle' }, text('intro')),
+          h('div', { className: 'dshWbCharityEntryInfo' },
+            h('div', { className: 'dshWbCharityTags' },
+              ['pdac', 'lung', 'breast'].map(key => h('span', { key, title: text(key) }, text(key).replace(isEnglish() ? ' workbench' : '工作台', ''))),
+              h('button', { type: 'button', className: 'dshWbCharityMore', 'aria-label': text('moreLabel'), onClick: onEnter }, text('more'))),
+            h('p', { className: 'dshWbCharityCoverage' }, text('coverage'))),
+          h(Button, { primary: true, className: 'dshWbCharityPrimary', 'aria-label': text('enterLabel'), onClick: onEnter }, text('enter'), h(MarketIcon, { name: 'chevronRight', size: 18 }))))
+    }
+    function CharitySteps({ text, usage = false }) {
+      const steps = usage ? [['record', 'content'], ['report', 'content'], ['verify', 'search']] : [['step1', 'search'], ['step2', 'install'], ['step3', 'content']]
+      return h('ol', { className: `dshWbCharitySteps${usage ? ' dshWbCharityUsageSteps' : ''}` }, steps.map(([key, icon], index) =>
+        h('li', { key }, h('div', { className: 'dshWbCharityStepIcon' }, h(MarketIcon, { name: icon, size: 32 }), h('span', null, index + 1)),
+          h('h3', null, text(key)), h('p', null, text(`${key}Sub`)), index < 2 && h('span', { className: 'dshWbCharityStepArrow', 'aria-hidden': true }, h(MarketIcon, { name: 'chevronRight', size: 28 })))))
+    }
+    function CharityPage({ service, page, setPage, onBack, onContinue, marketEntries, installedEntries, installMarket, disabled, installing, catalogError, onManage, children }) {
+      const text = charityTextFor(service)
+      const [collection, setCollection] = React.useState('find')
+      const [query, setQuery] = React.useState('')
+      const [projectCategory, setProjectCategory] = React.useState('all')
+      const [detailEntry, setDetailEntry] = React.useState(null)
+      const previewTriggerRef = React.useRef(null)
+      const showPreview = (entry, trigger) => { previewTriggerRef.current = trigger; setDetailEntry(entry) }
+      const headingRef = React.useRef(null)
+      React.useEffect(() => { headingRef.current?.focus({ preventScroll: true }) }, [page])
+      const search = query.trim().toLowerCase()
+      const liveEntries = (collection === 'mine' ? installedEntries : marketEntries).filter(isCharityWorkbench)
+      const matches = entry => `${charitySearchText(entry)} ${charityProjectsForEntry(entry).join(' ')}`.toLowerCase().includes(search)
+      const entries = liveEntries.filter(entry => matches(entry) && (projectCategory === 'all' || charityCategoriesForEntry(entry).includes(projectCategory)))
+      const projects = collection === 'find' ? CHARITY_PROJECTS.filter(key =>
+        (projectCategory === 'all' || CHARITY_PROJECT_CATEGORIES[key].includes(projectCategory)) &&
+        !liveEntries.some(entry => charityProjectsForEntry(entry).includes(key)) &&
+        `${charityCopy.zh[key]} ${charityCopy.en[key]} ${charityCopy.zh[`${key}Brand`]} ${charityCopy.en[`${key}Brand`]} ${key}`.toLowerCase().includes(search)) : []
+      const changeCollection = value => { setCollection(value); setQuery(''); setProjectCategory('all') }
+      const navigateTabs = event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const next = event.key === 'Home' ? 'find' : event.key === 'End' ? 'mine' : collection === 'find' ? 'mine' : 'find'
+        changeCollection(next)
+        event.currentTarget.parentElement.querySelector(`[data-collection="${next}"]`)?.focus()
+      }
+      const secondaryLink = (key, href = CHARITY_PROJECTS_URL) => h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, text(key), h(MarketIcon, { name: 'chevronRight', size: 16 }))
+      return h('section', { className: `dshWb dshWbMarket dshWbCharity dshWbCharity-${page}`, 'aria-label': text('title') },
+        h('header', { className: 'dshWbMarketHeader dshWbCharityHeader', 'data-window-drag': true },
+          h('div', { className: 'dshWbMarketHeaderText' }, h('h1', null, tr('工作台')), h('p', { className: 'dshWbMuted' }, tr('有序组织专属界面、会话与资料'))),
+          h('span', { className: 'dshWbCharityHeaderLabel' }, text('title'))),
+        h('div', { className: 'dshWbCharityBody' },
+          h('nav', { className: 'dshWbCharityBreadcrumb', 'aria-label': text('title') }, h('button', { type: 'button', 'aria-label': text('backLabel'), onClick: onBack }, h(MarketIcon, { name: 'chevronLeft', size: 17 }), text('back')), h('span', { 'aria-hidden': true }, '/'), h('strong', null, text('title')),
+            h('button', { type: 'button', className: 'dshWbCharityHelp', onClick: () => setPage(page === 'guide' ? 'find' : 'guide') }, h(MarketIcon, { name: 'content', size: 16 }), text(page === 'guide' ? 'browse' : 'guide'))),
+          h(Notice, { service }),
+          page === 'welcome' ? h('div', { className: 'dshWbCharityWelcome' },
+            h('div', { className: 'dshWbCharityHero' }, h('div', null, h('h2', { ref: headingRef, tabIndex: -1 }, text('welcome')), h('p', null, text('welcomeSub')), h('small', null, text('welcomeNote'))), h(CharityArt)),
+            h(CharitySteps, { text }),
+            h('div', { className: 'dshWbCharityWelcomeActions' }, h(Button, { primary: true, className: 'dshWbCharityPrimary', onClick: onContinue }, text('start'), h(MarketIcon, { name: 'chevronRight', size: 20 })), h('button', { type: 'button', className: 'dshWbCharitySkip', onClick: onContinue }, text('skip'))))
+          : page === 'guide' ? h('div', { className: 'dshWbCharityGuide' },
+            h('div', { className: 'dshWbCharityHero' }, h('div', null, h('span', { className: 'dshWbCharityBadge' }, text('guide')), h('h2', { ref: headingRef, tabIndex: -1 }, text('guideTitle')), h('p', null, text('guideSub'))), h(CharityArt)),
+            h(CharitySteps, { text, usage: true }),
+            h('div', { className: 'dshWbCharityGuideActions' }, h('a', { className: 'dshWbCharityPrimary', href: CHARITY_USAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, text('readGuide'), h(MarketIcon, { name: 'chevronRight', size: 18 })), secondaryLink('installGuide', CHARITY_INSTALL_URL)),
+            h('div', { className: 'dshWbCharityReopen' }, h(MarketIcon, { name: 'market', size: 28 }), h('div', null, h('h3', null, text('reopen')), h('p', null, text('reopenSub')))), h('p', { className: 'dshWbCharityPrivacy' }, text('privacy')))
+          : h('div', { className: 'dshWbCharityFind' },
+            h('div', { className: 'dshWbCharityFindHeading' }, h('div', null, h('h2', { ref: headingRef, tabIndex: -1 }, text('find')), h('p', null, text('findSub'))), h(CharityArt)),
+            h('form', { className: 'dshWbCharitySearch', onSubmit: event => { event.preventDefault(); headingRef.current?.focus({ preventScroll: true }) } },
+              h('label', null, h(MarketIcon, { name: 'search', size: 20 }), h('input', { type: 'search', value: query, placeholder: text('placeholder'), 'aria-label': text('search'), onChange: event => setQuery(event.target.value) })), h(Button, { primary: true, className: 'dshWbCharityPrimary', type: 'submit' }, text('searchButton'))),
+            h('div', { className: 'dshWbCharityToolbar' },
+              h('div', { className: 'dshWbCharityCollection', role: 'tablist', 'aria-label': text('title') }, ['find', 'mine'].map(value => h('button', { type: 'button', id: `dsh-xyb-${value}-tab`, key: value, 'data-collection': value, role: 'tab', 'aria-selected': collection === value, 'aria-controls': 'dsh-xyb-projects', tabIndex: collection === value ? 0 : -1, onKeyDown: navigateTabs, onClick: () => changeCollection(value) }, text(value === 'find' ? 'findTab' : 'installed')))),
+              h('div', { className: 'dshWbCharityCategories', role: 'group', 'aria-label': text('categories') }, ['all', 'cancer', 'rare', 'support'].map(value => h('button', { key: value, type: 'button', 'data-category': value, 'aria-pressed': projectCategory === value, onClick: () => setProjectCategory(value) }, text(value === 'support' ? 'supportCategory' : value))))),
+            catalogError && h('p', { className: 'dshWbCharityCatalogNotice', role: 'status' }, text('catalogError')),
+            h('div', { className: 'dshWbGrid dshWbCharityProjects', id: 'dsh-xyb-projects', role: 'tabpanel', 'aria-labelledby': `dsh-xyb-${collection}-tab` },
+              entries.map(entry => {
+                const id = entry.catalogId || entry.id
+                const installed = installedEntries.some(item => (item.catalogId || item.id) === id)
+                const awaitingRestart = service.pendingRestart.has(id)
+                const awaitingReload = service.pendingReload.has(id)
+                const canOpen = installed && service.activationFor(entry) === 'on' && !entry.loadFailure && !awaitingRestart && !awaitingReload && service.state.added.includes(entry.id) && service.catalog.has(entry.id)
+                return h(CharityProjectCard, { key: id, entry, text, onPreview: showPreview,
+                  primaryAction: h(Button, { primary: true, disabled: disabled || !!installing || awaitingRestart || awaitingReload || (!installed && (!entry.listed || !entry.distribution)), onClick: () => installed ? canOpen ? service.run(service.open(entry.id)) : onManage() : installMarket(entry) }, installing === id ? text('installing') : installed ? awaitingRestart ? tr('重启后生效') : awaitingReload ? tr('刷新后生效') : text(canOpen ? 'open' : 'manage') : text('install')) })
+              }),
+              projects.map(key => h(CharityProjectCard, { key, text, project: true, onPreview: showPreview, entry: {
+                id: `charity-project-${key}`, title: text(key), author: text(`${key}Brand`), description: text(`${key}Desc`),
+                screenshots: [`/api/desktop-workbenches/assets/charity-projects/${key}.webp`], previewAlt: `${text(key)} · ${text('prototype')}`, requirements: text('prototypeNote')
+              } })),
+              entries.length + projects.length === 0 && h('div', { className: 'dshWbCharityEmpty', role: 'status' }, h(MarketIcon, { name: 'search', size: 34 }), h('h3', null, text(collection === 'mine' && liveEntries.length === 0 ? 'noneInstalled' : 'noMatch')), h('p', null, text(collection === 'mine' && liveEntries.length === 0 ? 'noneInstalledSub' : 'noMatchSub')), h(Button, { onClick: () => changeCollection(collection === 'mine' && liveEntries.length === 0 ? 'find' : collection) }, text(collection === 'mine' && liveEntries.length === 0 ? 'findTab' : 'clear')))),
+            h('footer', { className: 'dshWbCharityFooter' }, secondaryLink('feedback', 'https://github.com/xyb-openharness-dsh-plugins/.github/issues'), secondaryLink('allProjects')))),
+        detailEntry && h(DetailModal, { entry: detailEntry, onClose: () => setDetailEntry(null), returnFocus: previewTriggerRef.current }), children)
+    }
     function Market({ service }) {
       useHostLocale(service)
       const { state, catalog, categories: marketCategories = [], ready, pending, installing, catalogLoaded, catalogError, catalogRefreshing, checkingUpdates, native, togglingPlugin, removingPlugin, removedWorkbenchIds = [] } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
+      const charityText = charityTextFor(service)
+      const enterCharity = () => {
+        let seen = false
+        try { seen = window.localStorage.getItem('dsh-xyb-welcome-v1') === 'seen' } catch {}
+        setSearch(''); setCategory('all'); setTab('market'); setCharityPage(seen ? 'find' : 'welcome')
+      }
+      const finishWelcome = () => {
+        try { window.localStorage.setItem('dsh-xyb-welcome-v1', 'seen') } catch {}
+        setCharityPage('find')
+      }
       const [tab, setTab] = React.useState('market')
       const [search, setSearch] = React.useState('')
       const [category, setCategory] = React.useState('all')
@@ -2173,6 +2488,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const [replacing, setReplacing] = React.useState(null)
       const PAGE_SIZE = 24
       const [visibleCount, setVisibleCount] = React.useState(PAGE_SIZE)
+      const [charityPage, setCharityPage] = React.useState(null)
       if (typeof React.useEffect === 'function') {
         React.useEffect(() => { setVisibleCount(PAGE_SIZE) }, [tab, search, category, sortBy])
       }
@@ -2216,7 +2532,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const selected = (tab === 'mine' ? catalog.map(displayEntry) : allEntries).find((entry) => (entry.catalogId || entry.id) === detail)
       const removingEntry = allEntries.find((entry) => entry.id === removing) || localizedCatalog.find((entry) => entry.id === removing)
       const removingStale = removingEntry && service.staleRecordFor(removingEntry)
-      const selectCollection = (value) => { setTab(value); setCategory('all'); setDetail(null); setVisibleCount(PAGE_SIZE) }
+      const selectCollection = (value) => { setCharityPage(null); setTab(value); setCategory('all'); setDetail(null); setVisibleCount(PAGE_SIZE) }
       const navigateCollections = (event) => {
         const values = ['market', 'favorites', 'mine']
         const current = values.indexOf(tab)
@@ -2234,6 +2550,8 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         try { await copySubmissionPrompt(text); setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: tr('已复制'), tone: 'success' }) }
         catch { setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: tr('复制失败，请展开指令手动复制。') }) }
       }
+      if (charityPage) return h(CharityPage, { service, page: charityPage, setPage: setCharityPage, onBack: () => setCharityPage(null), onContinue: finishWelcome, marketEntries, installedEntries, installMarket, disabled, installing, catalogError, onManage: () => selectCollection('mine') },
+        replacing && h(ConfirmMarketUpdate, { entry: replacing.entry, risk: replacing.risk, disabled: !!installing, onCancel: () => setReplacing(null), onConfirm: () => { service.run(service.installFromMarket(replacing.entry.catalogId || replacing.entry.id, { confirmedReplacement: true })); setReplacing(null) } }))
       return h('section', { className: `dshWb dshWbMarket${detail != null || removing != null ? ' dshWbMarketModalOpen' : ''}`, 'aria-label': tr('工作台市场') },
         h('header', { className: 'dshWbMarketHeader', 'data-window-drag': true },
           h('div', { className: 'dshWbMarketHeaderText' },
@@ -2294,7 +2612,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
           h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, tr('PR 是 GitHub 上的提交审核请求。提交后可在上方粘贴链接查看进度，以 GitHub 上的状态为准，本机不保存提交状态。审核通过、PR 合并并且市场目录更新后，工作台才会上架。')),
           copyStatus && h(Toast, { key: copyStatus.id, text: copyStatus.text, tone: copyStatus.tone, holdMs: 2000, onDone: () => setCopyStatus((current) => current?.id === copyStatus.id ? null : current) })),
         tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
-          h('div', { className: 'dshWbGrid', 'data-tab': tab }, displayedEntries.map((entry) => {
+          h('div', { className: 'dshWbGrid', 'data-tab': tab },
+            tab === 'market' && !search && category === 'all' && h(CharityEntry, { text: charityText, onEnter: enterCharity }),
+            displayedEntries.map((entry) => {
             const catalogId = entry.catalogId || entry.id
             const isFavorite = favorites.includes(catalogId)
             const pluginName = service.pluginFor(entry)
@@ -2329,9 +2649,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             const showUpdate = (updateAvailable || updating || awaitingRestart || awaitingReload || (installedFailure && entry.failureKind === 'update')) && !canRetryInstalled
             const updateLabel = awaitingRestart ? tr('重启后生效') : awaitingReload ? tr('刷新后生效') : updating ? tr('更新中…') : tr('更新')
             const updateTitle = awaitingRestart ? both(`${entry.title}安装完成，重启 Harness 后生效`, `${entry.title} installed. Restart Harness to apply.`) : awaitingReload ? both(`${entry.title}安装完成，刷新页面后生效`, `${entry.title} installed. Reload the page to apply.`) : updating ? both(`正在更新${entry.title}`, `Updating ${entry.title}`) : both(`${updateLabel}${entry.title}至 v${entry.listedVersion}`, `Update ${entry.title} to v${entry.listedVersion}`)
-            return h('article', { key: catalogId, className: 'dshWbCard' },
-              h('div', { className: 'dshWbMedia' }, h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-describedby': `dsh-wb-preview-tooltip-${catalogId}`, 'aria-label': both(`查看${entry.title}详情`, `View ${entry.title} details`), onClick: () => setDetail(catalogId) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))), h('span', { id: `dsh-wb-preview-tooltip-${catalogId}`, className: 'dshWbControlTooltip', role: 'tooltip' }, tr('查看详情'))),
-              h('div', { className: 'dshWbCardBody' },
+            return h(WorkbenchCardFrame, { key: catalogId, media: h(React.Fragment, null, h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-describedby': `dsh-wb-preview-tooltip-${catalogId}`, 'aria-label': both(`查看${entry.title}详情`, `View ${entry.title} details`), onClick: () => setDetail(catalogId) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))), h('span', { id: `dsh-wb-preview-tooltip-${catalogId}`, className: 'dshWbControlTooltip', role: 'tooltip' }, tr('查看详情'))) },
                 h('div', { className: 'dshWbCardTitle' }, h('h2', null, h(EntryTitle, { entry })), tab === 'mine' && service.isLocalEntry(entry) && h('span', { className: 'dshWbCategory' }, tr('本地')), tab === 'mine' && h('span', { className: 'dshWbControlHint dshWbSwitchHint' }, h('button', { type: 'button', className: 'dshWbRunSwitch', role: 'switch', 'aria-checked': activation === 'on', 'aria-label': both(`${entry.title}运行状态`, `${entry.title} running state`), 'aria-describedby': `dsh-wb-switch-tooltip-${catalogId}`, disabled: disabled || !!togglingPlugin || !hasNativeControl || activation === 'unknown', onClick: () => service.run(service.setPluginEnabled(pluginName, activation !== 'on')) }), h('span', { id: `dsh-wb-switch-tooltip-${catalogId}`, className: 'dshWbControlTooltip', role: 'tooltip' }, activation === 'unknown' ? tr('原生插件状态暂不可用') : activation === 'on' ? tr('停用') : tr('启用')))),
                 h('div', { className: 'dshWbAuthorRow' }, h(AuthorItem, { entry, showVersion: false }), versionText && h('span', { className: 'dshWbCardVersion' }, versionText)),
                 h('div', { className: 'dshWbDescriptionHint' }, h('p', { className: 'dshWbMuted dshWbCardDescription' }, entry.description || tr('这个工作台暂时还没有填写介绍。'))),
@@ -2358,7 +2676,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                       ? h('span', { className: 'dshWbInstalled', role: 'status' }, tr('已安装'))
                       : entry.distribution
                         ? h(Button, { primary: true, disabled: disabled || !!installing, onClick: () => installMarket(entry) }, installing === catalogId ? tr('正在安装…') : tr('安装'))
-                        : entry.listed === true && entry.repository && h('a', { className: 'dshWbBtn dshWbPrimary', href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, tr('查看安装说明'))))))
+                        : entry.listed === true && entry.repository && h('a', { className: 'dshWbBtn dshWbPrimary', href: entry.repository, target: '_blank', rel: 'noopener noreferrer' }, tr('查看安装说明')))))
           }), entries.length === 0 && (tab !== 'market' || (ready && !catalogRefreshing) || catalogLoaded) && h('div', { className: 'dshWbEmpty' }, h('div', null,
             h('strong', null, tab === 'market' && !catalogLoaded && catalogError ? tr('市场目录暂不可用') : tab === 'favorites' && !search ? tr('还没有收藏工作台') : tab === 'mine' && !search ? tr('还没有安装工作台') : tr('没有找到匹配的工作台')),
             h('p', { className: 'dshWbMuted' }, tab === 'market' && !catalogLoaded && catalogError ? tr('请重试读取目录，或使用已安装的工作台。') : tab === 'favorites' && !search ? tr('把鼠标移到市场卡片上，点击书签即可收藏。') : tab === 'mine' && !search ? tr('到工作台市场选择一个工作台开始。') : tr('试试其他关键词或分类。'))))),
@@ -2583,6 +2901,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
     }
     function apply(ctx) {
       hostLocale = ctx.locale
+      ctx.effect(() => ctx.locale.register(CHARITY_NS, charityCopy), 'workbenches: charity dictionaries')
       ctx.effect(() => ctx.locale.register(DOWNLOAD_NS, downloadCopy), 'workbenches: download dictionaries')
       ctx.effect(() => ctx.locale.register(REGISTRATION_NS, registrationCopy), 'workbenches: registration dictionaries')
       const service = new Workbenches(ctx)

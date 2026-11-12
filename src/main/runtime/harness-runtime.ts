@@ -29,6 +29,7 @@ export interface HarnessRuntimeOptions {
     args: string[],
     options: SpawnOptionsWithoutStdio
   ): HarnessChildProcess
+  marketDownload?: { url: string; token: string }
   preferredPort?: number
   startupTimeoutMs?: number
   /** Mirror log lines to the console (development builds only). */
@@ -523,7 +524,9 @@ export class HarnessRuntime {
       return
     }
     await mkdir(this.options.dshHome, { recursive: true })
-    const shellEnvironment = await prewarmShellEnvironment()
+    const shellEnvironment = { ...await prewarmShellEnvironment(),
+      ...(this.options.marketDownload ? { DSH_MARKET_DOWNLOAD_URL: this.options.marketDownload.url, DSH_MARKET_DOWNLOAD_TOKEN: this.options.marketDownload.token } : {})
+    }
     let configurationProblems
     try {
       configurationProblems = await inspectStartupConfiguration(this.options.dshHome, profile, shellEnvironment, launchDirectory)

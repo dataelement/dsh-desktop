@@ -73,10 +73,35 @@ describe('workbench market install targets', () => {
   })
 
   it('reads the package name from the pinned commit for source installs', async () => {
-    const fetchImpl = vi.fn(async () => Response.json({ name: 'project-helper', version: '0.3.0' }))
+    const fetchImpl = vi.fn(async url => String(url).includes('codeload.github.com') ? new Response(packed({ name: 'project-helper', version: '0.3.0' })) : Response.json({ name: 'project-helper', version: '0.3.0' }))
     const target = await resolveInstallTarget(entry({ type: 'github-source', version: '0.3.0', url: 'https://github.com/o/r', commit }), { fetchImpl })
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://raw.githubusercontent.com/o/r/${commit}/package.json`)
-    expect(target).toMatchObject({ pluginSpec: `github:o/r#${commit}`, expectedPluginName: 'project-helper', expectedVersion: '0.3.0' })
+    expect(target).toMatchObject({ expectedPluginName: 'project-helper', expectedVersion: '0.3.0' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(target.pluginSpec).toBe(`github:o/r#${commit}`)
+    await target.cleanup()
+  })
+
+  it('keeps prepare sources on the approved Git lifecycle even when archive use is requested', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ name: 'built-helper', version: '1.0.0', main: './generated/index.js', scripts: { prepare: 'node build.mjs' } }))
+    const target = await resolveInstallTarget(entry({ type: 'github-source', sourceArchive: true, version: '1.0.0', url: 'https://github.com/o/built-helper', commit }), { fetchImpl })
+    expect(target.pluginSpec).toBe(`github:o/built-helper#${commit}`)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a transient failure and validates the successful independent response', async () => {
+    const bytes = packed({ name: 'project-helper', version: '2.0.0' })
+    const fetchImpl = vi.fn().mockRejectedValueOnce(Object.assign(new Error('reset'), { code: 'ECONNRESET' })).mockImplementation(async () => new Response(bytes))
+    const target = await resolveInstallTarget(entry({ type: 'github-release', version: '2.0.0', url: 'https://github.com/o/r/releases/download/v2/w.tgz', sha256: sha256(bytes) }), { fetchImpl, temporaryRoot: await tempRoot() })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(target.expectedPluginName).toBe('project-helper')
+    await target.cleanup()
+  })
+
+  it('preserves diagnostics when transient retries are exhausted', async () => {
+    const fetchImpl = vi.fn(async () => { throw Object.assign(new Error('reset'), { code: 'ECONNRESET' }) })
+    await expect(resolveInstallTarget(entry({ type: 'github-source', version: '1', url: 'https://github.com/o/r', commit }), { fetchImpl })).rejects.toMatchObject({ code: 'download_failed', params: { diagnostic: 'ECONNRESET' } })
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
   })
 
   it('reads package.json only from the top-level package directory', () => {
@@ -132,7 +157,7 @@ describe('workbench market install routes', () => {
     const routes = []
     const connection = { fetch: { register(route) { routes.push(route) } } }
     // The catalog reader captures fetch when the plugin applies.
-    vi.stubGlobal('fetch', fetchCatalog || vi.fn(async url => Response.json(String(url).endsWith('/package.json') ? { name: 'project-helper', version: '1.2.0' } : catalog)))
+    vi.stubGlobal('fetch', fetchCatalog || vi.fn(async url => String(url).includes('codeload.github.com') ? new Response(packed({ name: 'project-helper', version: '1.2.0' })) : Response.json(String(url).endsWith('/package.json') ? { name: 'project-helper', version: '1.2.0' } : catalog)))
     apply({ effect: fn => fn(), reflect: { provide() {} }, connection, inject(deps, callback) { if (pluginManager && !deps.includes('tools')) callback({ connection, pluginManager, effect: fn => fn() }) } }, { root })
     const call = async (path, body) => {
       const route = routes.find(value => value.path === path)
@@ -151,14 +176,16 @@ describe('workbench market install routes', () => {
 
   it('reads local installation readiness without starting or awaiting catalog network requests', async () => {
     let resolve
-    const fetchCatalog = vi.fn(() => new Promise(done => { resolve = done }))
+    const fetchCatalog = vi.fn(url => String(url).includes('community-catalog.json')
+      ? Promise.resolve(Response.json({ schemaVersion: 1, workbenches: [] }))
+      : new Promise(done => { resolve = done }))
     const { call } = await host(undefined, index, fetchCatalog)
     expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {}, lifecycle: null })
     expect(fetchCatalog).not.toHaveBeenCalled()
     const refresh = call('/api/desktop-workbenches/catalog')
     try {
       expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {}, lifecycle: null })
-      expect(fetchCatalog).toHaveBeenCalledTimes(1)
+      expect(fetchCatalog).toHaveBeenCalledTimes(2)
     } finally { resolve(Response.json(index)) }
     expect((await refresh).status).toBe(200)
   })

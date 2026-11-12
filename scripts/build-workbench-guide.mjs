@@ -74,7 +74,8 @@ export function renderBundledGuide(markdown, language = 'zh') {
   const notice = language === 'en'
     ? '> Bundled offline snapshot: use only after online retrieval fails. This is not guaranteed to be the latest standard and must not override the online version. Report the retrieval failure, this offline source, and document version.\n\n'
     : '> 内置离线快照：仅在在线获取失败后备用，不保证是最新规范，不得覆盖在线版本。请报告获取失败原因、本离线来源和文档版本。\n\n'
-  return notice + markdown
+  const newline = markdown.includes('\r\n') ? '\r\n' : '\n'
+  return notice.replace(/\n/g, newline) + markdown
 }
 
 export function renderGuideFromSource(readFile = path => readFileSync(join(root, path), 'utf8')) {

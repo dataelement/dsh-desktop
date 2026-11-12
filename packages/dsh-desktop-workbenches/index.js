@@ -8,7 +8,8 @@ import { selectMarketFetch } from './market-fetch.mjs'
 import { createMarketInstallStore, MarketInstallError, resolveInstallTarget } from './market-install.mjs'
 import { readSubmissionStatus, SubmissionStatusError } from './submission-status.mjs'
 import { createStateStore, MAX_STATE_BYTES, StateError } from './state.mjs'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rename } from 'node:fs/promises'
+import { createCommunityReader } from './community-catalog.mjs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -67,11 +68,39 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
-  const readCatalog = createCatalogReader({
+  const readMarketCatalog = createCatalogReader({
     fetch: selectMarketFetch(),
     cachePath: join(config.root, 'workbench-catalog-cache.json'),
     onWarning: error => ctx.logger?.warn?.(error)
   })
+  const communityCachePath = join(config.root, 'community-catalog-cache.json')
+  const readCommunityCatalog = createCommunityReader({
+    url: 'https://raw.githubusercontent.com/xyb-openharness-dsh-plugins/.github/main/generated/community-catalog.json',
+    fetchImpl: selectMarketFetch(),
+    loadCache: async () => {
+      try { return JSON.parse(await readFile(communityCachePath, 'utf8')) }
+      catch { return { schemaVersion: 1, workbenches: JSON.parse(await readFile(new URL('./community-workbenches.json', import.meta.url), 'utf8')) } }
+    },
+    saveCache: async catalog => {
+      await mkdir(config.root, { recursive: true })
+      const temporary = `${communityCachePath}.${randomUUID()}.tmp`
+      await writeFile(temporary, JSON.stringify(catalog), { mode: 0o600 })
+      await rename(temporary, communityCachePath)
+    },
+    warn: error => ctx.logger?.warn?.(`Community catalog: ${error.message}`)
+  })
+  const readCatalog = async (options) => {
+    const [market, community] = await Promise.allSettled([readMarketCatalog(options), readCommunityCatalog(options)])
+    if (market.status === 'rejected' && community.status === 'rejected') throw market.reason
+    const result = market.status === 'fulfilled' ? market.value : { catalog: null, stale: true }
+    const extra = community.status === 'fulfilled' ? community.value : { catalog: null, stale: true }
+    const catalog = result.catalog || { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
+    const existing = new Set(catalog.workbenches.map(entry => entry.id))
+    return { ...result, stale: result.stale || extra.stale, catalog: { ...catalog,
+      categories: [...catalog.categories.filter(category => category.id !== 'community-care'), { id: 'community-care', name: { zh: '社区照护', en: 'Community care' } }],
+      workbenches: [...catalog.workbenches, ...(extra.catalog?.workbenches || []).filter(entry => !existing.has(entry.id))]
+    } }
+  }
   const marketInstalls = createMarketInstallStore(config.root)
   const restartRuntimeId = randomUUID()
   const restartStatus = createRestartStatus(async () => readLocalWorkbenchSnapshot(undefined, await marketInstalls.read()))
@@ -126,6 +155,48 @@ export function apply(ctx, config) {
       }
     }
   })
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/assets/charity-folder.png',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch() {
+      try {
+        const image = await readFile(new URL('./assets/charity-folder.png', import.meta.url))
+        return new Response(image, { headers: { 'content-type': 'image/png', 'cache-control': 'no-cache' } })
+      } catch {
+        return Response.json({ error: 'Could not read the charity illustration.' }, { status: 500 })
+      }
+    }
+  })
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/assets/charity-banner.png',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch() {
+      try {
+        const image = await readFile(new URL('./assets/charity-banner.png', import.meta.url))
+        return new Response(image, { headers: { 'content-type': 'image/png', 'cache-control': 'no-cache' } })
+      } catch {
+        return Response.json({ error: 'Could not read the charity banner.' }, { status: 500 })
+      }
+    }
+  })
+  // Only known packaged project images are exposed; no user-controlled path is read.
+  for (const project of ['pdac', 'lung', 'breast', 'lymphoma', 'ovarian', 'gist', 'colorectal', 'gastric', 'esophageal', 'cervical', 'anal', 'fshd', 'attr', 'psych']) {
+    ctx.connection.fetch.register({
+      path: `/api/desktop-workbenches/assets/charity-projects/${project}.webp`,
+      methods: ['GET'],
+      requestBody: 'buffered',
+      async fetch() {
+        try {
+          const image = await readFile(new URL(`./assets/charity-projects/${project}.webp`, import.meta.url))
+          return new Response(image, { headers: { 'content-type': 'image/webp', 'cache-control': 'no-cache' } })
+        } catch {
+          return Response.json({ error: 'Could not read the community project image.' }, { status: 500 })
+        }
+      }
+    })
+  }
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/development-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/author-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/market-acceptance', 'market-acceptance.zh.md'))
