@@ -1,5 +1,6 @@
 import { disableProfilePlugin } from '../profile/plugin-disable'
 import type { PluginRecoveryLocale } from '../plugin-recovery-view'
+import { buildRepairPlan, type RepairPlan } from '../repair-policy'
 import { readStartupRecoveryNavigation, startupRecoveryPageUrl, startupRecoveryViewModel } from './startup-recovery'
 
 /** A navigation from the recovery page, or an explicit cancellation. Cancellation is not an action. */
@@ -14,7 +15,12 @@ export interface StartupRecoverySessionOptions {
   plugins: readonly string[]
   launchDirectory: string
   locale: PluginRecoveryLocale
-  operationLines?: readonly string[]
+  /** Host failure lines already collected. The page classifies these; it does not invent a plan from them. */
+  logs?: readonly string[]
+  /** Reads the market and the repair journal. Defaults to disabling the named plugins. */
+  loadPlan?: () => Promise<RepairPlan>
+  upgradePlugin?: (name: string, version: string) => Promise<{ ok: boolean; detail?: string }>
+  recordRound?: (plan: RepairPlan, status: 'pending' | 'restart' | 'failed') => Promise<void>
   theme: string
   /** True when the recovery page is open. False and a rejection are both a failed presentation. */
   show: (url: string) => boolean | Promise<boolean>
@@ -40,8 +46,7 @@ interface RecoveryRound {
 
 /**
  * Show the existing startup recovery page for plugins named by a failed launch.
- * The only repair is disabling those plugins on the named profile and relaunching.
- * The repair agent, plugin upgrades and uninstall backups stay on the previous shell.
+ * One click runs the current round: upgrade a compatible version, or disable when that version was already tried.
  */
 export async function runStartupRecovery(options: StartupRecoverySessionOptions): Promise<void> {
   const plugins = [...options.plugins]
@@ -49,12 +54,14 @@ export async function runStartupRecovery(options: StartupRecoverySessionOptions)
   let seq = 0
   while (!options.isQuitting()) {
     seq += 1
+    const plan = await (options.loadPlan ?? (async () => buildRepairPlan({ plugins })))()
     const url = startupRecoveryPageUrl(startupRecoveryViewModel({
       message: options.message,
       plugins,
       launchDirectory: options.launchDirectory,
       locale: options.locale,
-      ...(options.operationLines === undefined ? {} : { operationLines: options.operationLines }),
+      plan,
+      ...(options.logs === undefined ? {} : { logs: options.logs }),
       ...(notice === undefined ? {} : { notice })
     }), String(seq), options.theme)
     const round = createRecoveryRound()
@@ -109,18 +116,57 @@ export async function runStartupRecovery(options: StartupRecoverySessionOptions)
           : 'App rollback stays on the update card. This page can disable the related plugins and restart.'
         continue
       }
-      if (action !== 'auto-process') {
+      if (action !== 'auto-process' || plan.action === undefined) {
+        notice = options.locale === 'zh' ? '这个操作还不可用。' : 'That action is not available.'
+        continue
+      }
+      if (plan.action === 'upgrade') {
+        try {
+          await options.recordRound?.(plan, 'pending')
+        } catch (error) {
+          notice = error instanceof Error ? error.message : String(error)
+          continue
+        }
+        const failed: string[] = []
+        for (const candidate of plan.upgrades) {
+          try {
+            const result = options.upgradePlugin === undefined
+              ? { ok: false, detail: candidate.packageName }
+              : await options.upgradePlugin(candidate.packageName, candidate.targetVersion)
+            if (!result.ok) failed.push(result.detail ?? candidate.packageName)
+          } catch (error) {
+            failed.push(error instanceof Error ? error.message : String(error))
+          }
+        }
+        try {
+          await options.recordRound?.(plan, failed.length > 0 ? 'failed' : 'restart')
+        } catch (error) {
+          console.error(error)
+        }
+        if (failed.length > 0) {
+          notice = failed.join('\n')
+          continue
+        }
+        options.relaunch()
+        return
+      }
+      if (plan.action !== 'disable') {
         notice = options.locale === 'zh' ? '这个操作还不可用。' : 'That action is not available.'
         continue
       }
       const failed: string[] = []
-      for (const plugin of plugins) {
+      for (const plugin of plan.plugins) {
         const result = await disableProfilePlugin(options.dshHome, plugin, options.profile)
         if (!result.ok) failed.push(`${plugin}: ${result.detail}`)
       }
       if (failed.length > 0) {
         notice = failed.join('\n')
         continue
+      }
+      try {
+        await options.recordRound?.(plan, 'restart')
+      } catch (error) {
+        console.error(error)
       }
       options.relaunch()
       return

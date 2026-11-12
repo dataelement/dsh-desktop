@@ -1,6 +1,11 @@
 import { desktopResourceUrl, resolveDesktopResourceName } from '../desktop-protocol'
+import { checkBlockingPluginUpdates } from '../plugin-recovery-market'
+import { buildPluginRecoveryViewModel, type PluginRecoveryLocale, type PluginRecoveryViewModel } from '../plugin-recovery-view'
+import { evaluatePluginMarketCompatibility } from '../recovery/plugin-market-check'
+import { readRepairJournal, recordRepairAttempt, repairAttemptsForVersion } from '../recovery/repair-job'
 import { extractPluginFailureReferences } from '../recovery/harness-log'
-import type { PluginRecoveryLocale, PluginRecoveryViewModel } from '../plugin-recovery-view'
+import { buildRepairPlan, type RepairAttempt, type RepairPlan } from '../repair-policy'
+import { installedPluginVersion } from './plugin-maintenance'
 
 const RECOVERY_PAGE = 'plugin-recovery.html'
 const PACKAGE_BOUNDARY = '[^A-Za-z0-9._@/-]'
@@ -61,70 +66,99 @@ export function startupRecoveryPageUrl(model: PluginRecoveryViewModel, seq: stri
   })
 }
 
+/** The existing recovery page. One round is either the untried upgrade or a disable. */
 export function startupRecoveryViewModel(options: {
   message: string
   plugins: readonly string[]
   launchDirectory: string
   locale: PluginRecoveryLocale
   notice?: string
-  operationLines?: readonly string[]
+  logs?: readonly string[]
+  plan?: RepairPlan
 }): PluginRecoveryViewModel {
-  const zh = options.locale === 'zh'
-  return {
-    locale: options.locale,
-    brand: 'DSH Desktop',
-    badge: zh ? '启动修复' : 'Startup recovery',
-    heading: zh ? '启动遇到问题，DSH 暂时无法正常启动' : 'A startup error is preventing DSH from opening',
-    summary: operationSummary(zh, options.operationLines ?? []),
-    reasonTitle: zh ? '插件启动失败' : 'A plugin failed during startup',
-    reasonDetail: zh
-      ? '相关插件会在这一轮被停用，文件和数据会保留。'
-      : 'The related plugins are disabled in this round. Files and data are kept.',
-    plugins: [...options.plugins],
+  return buildPluginRecoveryViewModel({
+    snapshot: {
+      phase: 'failed',
+      message: options.message,
+      launchDirectory: options.launchDirectory,
+      logs: [...(options.logs ?? [options.message])]
+    },
+    plugins: options.plugins,
     removedPlugins: [],
+    locale: options.locale,
     ...(options.notice === undefined ? {} : { notice: options.notice }),
-    safetyNote: zh
-      ? '停用不会卸载插件；你的工作区、会话和模型配置会保留。'
-      : 'Disabling does not uninstall plugins. Your workspaces, sessions and model settings are kept.',
-    primaryLabel: zh ? '停用并重启' : 'Disable and restart',
-    primaryBusyLabel: zh ? '正在停用并重启…' : 'Disabling and restarting…',
-    marketPrimary: false,
-    logLabel: zh ? '打开日志' : 'Open log',
-    advancedLabel: zh ? '查看报错详情' : 'Error details',
-    errorLabel: zh ? '错误信息' : 'Error details',
-    launchDirectoryLabel: zh ? '启动目录' : 'Launch directory',
-    launchDirectory: options.launchDirectory,
-    rawError: operationError(options.message, zh, options.operationLines ?? []),
-    quitLabel: zh ? '退出 DSH Desktop' : 'Quit DSH Desktop',
-    safeModeLabel: zh ? '进入安全模式' : 'Enter Safe Mode',
-    canUninstall: false,
-    safeModeOnly: false,
-    canRepair: true,
-    offerRepairAgent: false,
-    repairDetailsLabel: zh ? '查看修复方案' : 'View repair plan',
-    repairDetails: [
-      ...options.plugins.map(name => zh
-        ? `停用插件 ${name}（保留插件文件和数据）`
-        : `Disable plugin ${name} (keep files and data)`),
-      ...(options.operationLines ?? []).map(line => zh ? `插件操作 ${line}` : `Plugin operation ${line}`)
-    ],
-    rollbackVisible: false
+    ...(options.plan === undefined ? {} : { repairPlan: options.plan })
+  })
+}
+
+/**
+ * Choose this round from the market and the repair journal.
+ * An upgrade version already recorded for this app version is not offered again.
+ */
+export async function loadStartupRecoveryPlan(options: {
+  dshHome: string
+  profile: string
+  plugins: readonly string[]
+  appVersion: string
+  runtimeVersion: string
+  locale: PluginRecoveryLocale
+  fetchFn?: typeof fetch
+}): Promise<RepairPlan> {
+  let attempts: RepairAttempt[] = []
+  try {
+    attempts = repairAttemptsForVersion(await readRepairJournal(options.dshHome), options.appVersion)
+  } catch (error) {
+    console.error(error)
   }
+  const checks = await checkBlockingPluginUpdates({
+    plugins: options.plugins,
+    attemptedUpgrades: attemptedUpgradeVersions(attempts),
+    locale: options.locale,
+    check: async plugin => evaluatePluginMarketCompatibility({
+      packageName: plugin,
+      installedVersion: await installedPluginVersion(options.dshHome, options.profile, plugin),
+      currentRuntimeVersion: options.runtimeVersion,
+      hasLocalIssue: true,
+      locale: options.locale,
+      timeoutMs: 2_500,
+      ...(options.fetchFn === undefined ? {} : { fetchFn: options.fetchFn })
+    })
+  })
+  return buildRepairPlan({
+    plugins: options.plugins,
+    upgrades: checks.flatMap(check => check.upgradeCandidate ? [check.upgradeCandidate] : []),
+    attempts
+  })
 }
 
-function operationSummary(zh: boolean, lines: readonly string[]): string {
-  const base = zh
-    ? '这一轮会停用相关插件并重新启动。插件文件和数据会保留。'
-    : 'This round disables the related plugins and restarts. Plugin files and data are kept.'
-  if (lines.length === 0) return base
-  return zh
-    ? `${base} 修复方案里列出最近 ${String(lines.length)} 条插件操作。`
-    : `${base} The repair plan lists the latest ${String(lines.length)} plugin operations.`
+/** Persist the round before its side effect, then update the same record with the result. */
+export function recordStartupRepairRound(
+  dshHome: string,
+  appVersion: string,
+  plan: RepairPlan,
+  status: 'pending' | 'restart' | 'failed'
+): Promise<void> {
+  if (plan.action !== 'upgrade' && plan.action !== 'disable') return Promise.resolve()
+  const versions = Object.fromEntries(plan.upgrades.map(candidate => [candidate.packageName, candidate.targetVersion]))
+  return recordRepairAttempt(dshHome, {
+    key: JSON.stringify([appVersion, plan.action, [...plan.plugins].sort(), versions]),
+    action: plan.action,
+    appVersion,
+    plugins: [...plan.plugins],
+    versions,
+    status
+  }).then(() => undefined)
 }
 
-function operationError(message: string, zh: boolean, lines: readonly string[]): string {
-  if (lines.length === 0) return message
-  return `${message}\n\n${zh ? '最近的插件操作' : 'Recent plugin operations'}\n${lines.join('\n')}`
+function attemptedUpgradeVersions(attempts: readonly RepairAttempt[]): Map<string, string> {
+  const versions = new Map<string, string>()
+  for (const attempt of attempts) {
+    if (attempt.action !== 'upgrade' || attempt.status === 'verified' || attempt.versions === undefined) continue
+    for (const [name, version] of Object.entries(attempt.versions)) {
+      if (version !== '') versions.set(name, version)
+    }
+  }
+  return versions
 }
 
 function mentionsPackage(message: string, name: string): boolean {

@@ -5,12 +5,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() } }))
 
+import { clearManifestCache } from '../../src/main/recovery/plugin-market-check'
 import { listInstalledProfilePlugins } from '../../src/main/recovery/plugin-recovery'
+import { buildRepairPlan } from '../../src/main/repair-policy'
 import { DESKTOP_PROFILE } from '../../src/main/shell/safe-mode-page'
 import { runStartupRecovery } from '../../src/main/shell/startup-recovery-session'
 import {
   isStartupRecoveryPageUrl,
+  loadStartupRecoveryPlan,
   readStartupRecoveryNavigation,
+  recordStartupRepairRound,
   startupRecoveryPageUrl,
   startupRecoveryTargets,
   startupRecoveryViewModel
@@ -76,25 +80,83 @@ describe('startup recovery page', () => {
     expect(isStartupRecoveryPageUrl('dsh-desktop://desktop/safe-mode.html')).toBe(false)
   })
 
-  it('keeps the repair agent, upgrades and rollback off the page', () => {
+  it('uses the existing recovery view model and does not add operation history', () => {
     const model = startupRecoveryViewModel({
       message: 'example-plugin failed',
       plugins: ['example-plugin'],
       launchDirectory: '/tmp/profile',
-      locale: 'zh'
+      locale: 'zh',
+      logs: ['example-plugin failed', 'plugin operation install example-plugin@1.2.3 settled failed']
     })
     const url = new URL(startupRecoveryPageUrl(model, '2', 'light'))
     const state = JSON.parse(url.searchParams.get('state') ?? '{}') as {
       canRepair?: boolean
       offerRepairAgent?: boolean
-      rollbackVisible?: boolean
       primaryLabel?: string
+      repairDetails?: string[]
+      rawError?: string
+      summary?: string
     }
     expect(url.pathname).toBe('/plugin-recovery.html')
     expect(state.canRepair).toBe(true)
     expect(state.offerRepairAgent).toBe(false)
-    expect(state.rollbackVisible).toBe(false)
-    expect(state.primaryLabel).toBe('停用并重启')
+    expect(state.primaryLabel).toBe('一键修复')
+    expect(state.summary).toContain('别着急，我们已找到可尝试的修复方案')
+    expect(state.repairDetails).toEqual([
+      '本轮将停用 1 个相关插件并重启验证。插件文件和数据保留。',
+      '停用插件 example-plugin（保留插件文件和数据）'
+    ])
+    expect(state.rawError).toBe('example-plugin failed')
+    expect(JSON.stringify(state)).not.toContain('1.2.3')
+  })
+
+  it('shows one untried upgrade and nothing else in the plan', () => {
+    const model = startupRecoveryViewModel({
+      message: 'dsh-better-sidebar failed',
+      plugins: ['dsh-better-sidebar'],
+      launchDirectory: '/tmp/profile',
+      locale: 'zh',
+      plan: buildRepairPlan({
+        plugins: ['dsh-better-sidebar'],
+        upgrades: [{ packageName: 'dsh-better-sidebar', targetVersion: '0.31.0', installedVersion: '0.30.0' }]
+      })
+    })
+    expect(model.primaryLabel).toBe('一键修复')
+    expect(model.repairDetails).toEqual([
+      '本轮将升级 1 个相关插件并重启验证。若仍未解决，下轮将停用相关插件。',
+      '升级插件 dsh-better-sidebar（当前 0.30.0） 至 0.31.0'
+    ])
+  })
+
+  it('offers a compatible market upgrade, then disable after that version is recorded', async () => {
+    const home = join(tmpdir(), `dsh-startup-market-${Date.now()}`)
+    temporary.push(home)
+    await writeProfile(home, 'desktop', 'round-plugin')
+    clearManifestCache()
+    const fetchFn = (async () => new Response(JSON.stringify({
+      'dist-tags': { latest: '2.0.0' },
+      versions: { '2.0.0': { name: 'round-plugin', version: '2.0.0' } }
+    }), { status: 200 })) as typeof fetch
+    const request = {
+      dshHome: home,
+      profile: DESKTOP_PROFILE,
+      plugins: ['round-plugin'],
+      appVersion: '0.12.1',
+      runtimeVersion: '0.2.2',
+      locale: 'zh' as const,
+      fetchFn
+    }
+    const first = await loadStartupRecoveryPlan(request)
+    expect(first.action).toBe('upgrade')
+    expect(first.upgrades[0]?.installedVersion).toBe('1.0.0')
+    expect(first.upgrades[0]?.targetVersion).toBe('2.0.0')
+    await recordStartupRepairRound(home, '0.12.1', first, 'restart')
+    const second = await loadStartupRecoveryPlan(request)
+    expect(second.action).toBe('disable')
+    expect(second.plugins).toEqual(['round-plugin'])
+    const journal = await readFile(join(home, 'repair-journal.json'), 'utf8')
+    expect(journal).toContain('2.0.0')
+    expect(journal).not.toContain('插件操作')
   })
 })
 
@@ -134,6 +196,53 @@ describe('startup recovery session', () => {
     const desktopState = await readFile(join(home, 'profiles', 'desktop', '.dsh-market', 'state.json'), 'utf8')
     expect(desktopState).toContain('example-plugin')
     await expect(readFile(join(home, 'profiles', 'web', '.dsh-market', 'state.json'), 'utf8')).rejects.toThrow()
+  })
+
+  it('records a failed upgrade and shows disable on the next round', async () => {
+    const upgradePlan = buildRepairPlan({
+      plugins: ['example-plugin'],
+      upgrades: [{ packageName: 'example-plugin', targetVersion: '2.0.0', installedVersion: '1.0.0' }]
+    })
+    const disablePlan = buildRepairPlan({ plugins: ['example-plugin'] })
+    const recorded: string[] = []
+    let upgraded = 0
+    let relaunched = false
+    const urls: string[] = []
+    await runStartupRecovery({
+      ...sessionOptions({
+        show: url => { urls.push(url); return true },
+        bindRound: deliverQueued(['dsh-recovery://auto-process', 'dsh-recovery://quit']),
+        loadPlan: async () => recorded.includes('failed') ? disablePlan : upgradePlan,
+        upgradePlugin: async () => { upgraded += 1; return { ok: false, detail: 'upgrade failed' } },
+        recordRound: async (_plan, status) => { recorded.push(status) },
+        relaunch: () => { relaunched = true }
+      })
+    })
+    expect(upgraded).toBe(1)
+    expect(relaunched).toBe(false)
+    expect(recorded).toEqual(['pending', 'failed'])
+    expect(new URL(urls[0] ?? '').searchParams.get('state')).toContain('升级插件 example-plugin（当前 1.0.0） 至 2.0.0')
+    expect(new URL(urls[1] ?? '').searchParams.get('state')).toContain('停用插件 example-plugin（保留插件文件和数据）')
+  })
+
+  it('relaunches after the upgrade round is saved', async () => {
+    const upgradePlan = buildRepairPlan({
+      plugins: ['example-plugin'],
+      upgrades: [{ packageName: 'example-plugin', targetVersion: '2.0.0', installedVersion: '1.0.0' }]
+    })
+    const recorded: string[] = []
+    let relaunched = false
+    await runStartupRecovery({
+      ...sessionOptions({
+        bindRound: deliverQueued(['dsh-recovery://auto-process']),
+        loadPlan: async () => upgradePlan,
+        upgradePlugin: async () => ({ ok: true }),
+        recordRound: async (_plan, status) => { recorded.push(status) },
+        relaunch: () => { relaunched = true }
+      })
+    })
+    expect(recorded).toEqual(['pending', 'restart'])
+    expect(relaunched).toBe(true)
   })
 
   it('keeps an action that arrives before the page finishes opening', async () => {
@@ -321,7 +430,9 @@ describe('startup recovery session', () => {
     })
     const state = new URL(urls[0] ?? '').searchParams.get('state') ?? ''
     expect(state).toContain('dsh-better-sidebar')
-    expect(state).toContain('停用并重启')
+    expect(state).toContain('一键修复')
+    expect(state).toContain('停用插件 dsh-better-sidebar（保留插件文件和数据）')
+    expect(state).not.toContain('插件操作')
   })
 })
 

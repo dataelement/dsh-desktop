@@ -37,7 +37,7 @@ function record(target: string): PluginOperationRecord {
 }
 
 describe('plugin operation journal', () => {
-  it('keeps a recent line and shows it on the recovery page', async () => {
+  it('keeps a recent line without placing it on the recovery page', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'dsh-plugin-operations-'))
     temporary.push(userData)
     const directory = pluginOperationDirectory(userData)
@@ -58,10 +58,10 @@ describe('plugin operation journal', () => {
       plugins: ['example-plugin'],
       launchDirectory: '/tmp/profile',
       locale: 'zh',
-      operationLines: lines
+      logs: lines
     })
-    expect(model.summary).toContain('最近 1 条插件操作')
-    expect(model.repairDetails?.some(line => line.includes('example-plugin@1.2.3'))).toBe(true)
-    expect(model.rawError).toContain('最近的插件操作')
+    expect(model.repairDetails?.some(line => line.includes('example-plugin@1.2.3'))).toBe(false)
+    expect(model.rawError).toBe('example-plugin failed')
+    expect(model.summary).not.toContain('插件操作')
   })
 })

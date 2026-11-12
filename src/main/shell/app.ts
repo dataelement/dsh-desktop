@@ -65,10 +65,10 @@ import {
 } from './mobile-pairing'
 import { presentMobilePairing } from './mobile-window'
 import { DESKTOP_PROFILE } from './safe-mode-page'
-import { isStartupRecoveryPageUrl, readStartupRecoveryNavigation, startupRecoveryTargets } from './startup-recovery'
+import { isStartupRecoveryPageUrl, loadStartupRecoveryPlan, readStartupRecoveryNavigation, recordStartupRepairRound, startupRecoveryTargets } from './startup-recovery'
 import { runStartupRecovery } from './startup-recovery-session'
 import { OperationJournal } from './operation-journal'
-import { pluginOperationDirectory, readRecentPluginOperations } from './plugin-operations'
+import { pluginOperationDirectory } from './plugin-operations'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report'
 import { runOperationReportJob, type OperationReportJobResult } from './operation-report-job'
 import { evaluatePluginMarketCompatibility, type PluginHealthReport } from '../recovery/plugin-market-check'
@@ -748,18 +748,46 @@ async function main(): Promise<void> {
     if (plugins.length === 0 || owner.isDestroyed()) return false
     await persistCrashReport(error, 'host')
     const locale = legacyLocale(menuLocale)
-    const operationLines = await readRecentPluginOperations(pluginOperationDirectory(app.getPath('userData')), 12)
-      .catch(() => [])
+    const shownMessage = message.length > 4_000 ? `${message.slice(0, 4_000)}\n…` : message
     let roundQuitting = false
     owner.show()
     await runStartupRecovery({
       dshHome,
       profile: DESKTOP_PROFILE,
-      message: message.length > 4_000 ? `${message.slice(0, 4_000)}\n…` : message,
+      message: shownMessage,
       plugins,
       launchDirectory: projectDir,
       locale,
-      operationLines,
+      logs: [shownMessage, diagnostic].filter(line => line.length > 0),
+      loadPlan: () => loadStartupRecoveryPlan({
+        dshHome,
+        profile: DESKTOP_PROFILE,
+        plugins,
+        appVersion: app.getVersion(),
+        runtimeVersion: bundledHarnessVersion(app.getAppPath()) ?? app.getVersion(),
+        locale
+      }),
+      upgradePlugin: (name, version) => {
+        const pnpm = pnpmEntryPath(app.getAppPath(), existsSync)
+        if (pnpm === undefined) {
+          return Promise.resolve({
+            ok: false,
+            detail: locale === 'zh' ? '找不到 pnpm，不能升级插件。' : 'pnpm is unavailable, so the plugin cannot be upgraded.'
+          })
+        }
+        return upgradePluginToGeneration({
+          dshHome,
+          pluginName: name,
+          targetVersion: version,
+          profile: DESKTOP_PROFILE,
+          nodeExecutablePath: electronNodeExecutable(process.execPath),
+          pnpmEntryPath: pnpm,
+          pnpmRunnerPath: pluginPnpmRunnerPath(app.getAppPath()),
+          hideConsoleBootstrapPath: packagedPagePath('windows-hide-console-import.mjs'),
+          note: line => { console.info(line) }
+        })
+      },
+      recordRound: (plan, status) => recordStartupRepairRound(dshHome, app.getVersion(), plan, status),
       theme: nativeTheme.themeSource,
       show: async url => {
         if (quitting || roundQuitting || owner.isDestroyed()) return false
