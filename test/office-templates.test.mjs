@@ -12,6 +12,7 @@ import { registerOfficeContext, registerOfficeRoutes } from '../packages/dsh-des
 import { registerBusinessSkills } from '../packages/dsh-desktop-office/lib/business-skills.js'
 import { apply as applyPpt } from 'dsh-ppt'
 import { electronExecutable } from '../scripts/electron-node-loader.mjs'
+import { officeCliAttempts, officeCliCommand, runOfficeCli } from '../scripts/office-runtime/prepare-templates.mjs'
 
 const scratch = []
 afterEach(async () => { for (const directory of scratch.splice(0)) await rm(directory, { recursive: true, force: true }) })
@@ -26,8 +27,16 @@ it('produces the same workbook semantics across repeated official Kit recalculat
   for (const filename of ['first.xlsx', 'second.xlsx']) {
     const output = join(directory, filename)
     outputs.push(output)
-    await promisify(execFile)(electronExecutable(resolve('.')), [resolve('build/office-cli.mjs'), 'recalculate', '--input', join(resources, 'annual-business/example.xlsx'), '--output', output], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 30_000
+    // Match template preparation: let Kit report its timeout before the outer
+    // process deadline, and recycle only a timed-out process on busy macOS CI.
+    const command = officeCliCommand(electronExecutable(resolve('.')), resolve('build/office-cli.mjs'),
+      ['recalculate', '--input', join(resources, 'annual-business/example.xlsx'), '--output', output])
+    await runOfficeCli(`recalculate ${filename}`, async () => {
+      // Kit reserves outputs exclusively; a timeout can leave this scratch file behind.
+      await rm(output, { force: true })
+      return promisify(execFile)(command.file, command.args, {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: command.timeout, windowsHide: true
+      })
     })
     await promisify(execFile)(python, ['-I', '-B', resolve('scripts/office-runtime/normalize-package.py'), output])
   }
@@ -51,7 +60,7 @@ for path in sys.argv[1:]:
 assert snapshot(sys.argv[1], False) == snapshot(sys.argv[2], False)
 assert snapshot(sys.argv[1], True) == snapshot(sys.argv[2], True)
 `, ...outputs])
-}, 60_000)
+}, 2 * officeCliAttempts * officeCliCommand('', '', []).timeout + 30_000)
 
 it('normalizes platform-specific chart-axis ID serialization', async () => {
   const directory = await temporary()

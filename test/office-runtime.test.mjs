@@ -60,6 +60,29 @@ describe('Office template preview limits', () => {
     })).rejects.toBe(invalid)
     expect(invalidCalls).toBe(1)
   })
+
+  it('recycles an execFile timeout with empty stderr but does not retry a nonzero exit', async () => {
+    let calls = 0
+    const result = await runOfficeCli('recalculate', () => {
+      calls += 1
+      return exec(process.execPath, ['-e', calls === 1
+        ? 'setInterval(() => {}, 1000)'
+        : 'process.stdout.write("recalculated")'], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: calls === 1 ? 100 : 10_000,
+      })
+    })
+    expect(calls).toBe(2)
+    expect(result.stdout).toBe('recalculated')
+
+    let crashes = 0
+    await expect(runOfficeCli('recalculate', () => {
+      crashes += 1
+      return exec(process.execPath, ['-e', 'process.exit(2)'], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 10_000,
+      })
+    })).rejects.toMatchObject({ code: 2, killed: false })
+    expect(crashes).toBe(1)
+  })
 })
 
 describe('Office runtime assembly', () => {
