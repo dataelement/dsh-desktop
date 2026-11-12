@@ -58,11 +58,24 @@ vm.runInNewContext(code, {
   setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args), AbortController
 })
 
+// Expand only the hook-free card frame so market tests can inspect its DOM.
+// Stateful components stay opaque and retain their existing hook indices.
+function marketElement(type, props, ...children) {
+  const elementProps = { ...props, children }
+  if (typeof type === 'function' && type.name === 'WorkbenchCardFrame') {
+    const element = type(elementProps)
+    // Keep the keyed component's identity available to these tree assertions.
+    if (props?.key !== undefined) element.props.key = props.key
+    return element
+  }
+  return { type, props: elementProps }
+}
+
 function marketCard(service, tab = 'market') {
   let renderMarket
   let stateIndex = 0
   const testReact = {
-    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    createElement: marketElement,
     Component: class {},
     Fragment: Symbol('Fragment'),
     useState: (initial) => [stateIndex++ === 0 ? tab : initial, () => {}],
@@ -99,7 +112,7 @@ function interactiveMarket(service, tab = 'market', clipboard) {
   let stateIndex = 0
   const state = []
   const testReact = {
-    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    createElement: marketElement,
     Component: class {},
     Fragment: Symbol('Fragment'),
     useState: (initial) => {

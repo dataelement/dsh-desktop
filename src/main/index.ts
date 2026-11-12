@@ -1,3 +1,4 @@
+import { startMarketDownload } from './runtime/market-download'
 import { HarnessBootFailures } from './harness-boot-failures'
 import { isMemoryExit } from './resource-diagnostics'
 import { ProcessRecovery } from './process-recovery'
@@ -3527,7 +3528,10 @@ async function bootstrap(): Promise<void> {
     }
   })
   createWindow()
+  const marketDownload = await startMarketDownload((input, init) => net.fetch(input instanceof Request ? input.url : String(input), init))
+  app.once('will-quit', () => marketDownload.close())
   runtime = new HarnessRuntime({
+    marketDownload,
     // A packaged app's stdout may be a closed pipe; only mirror logs in development.
     echoLogs: !app.isPackaged,
     dshEntryPath: dshEntryPath(),

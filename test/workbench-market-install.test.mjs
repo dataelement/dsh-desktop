@@ -73,10 +73,13 @@ describe('workbench market install targets', () => {
   })
 
   it('reads the package name from the pinned commit for source installs', async () => {
-    const fetchImpl = vi.fn(async () => Response.json({ name: 'project-helper', version: '0.3.0' }))
+    const fetchImpl = vi.fn(async url => String(url).includes('codeload.github.com') ? new Response(packed({ name: 'project-helper', version: '0.3.0' })) : Response.json({ name: 'project-helper', version: '0.3.0' }))
     const target = await resolveInstallTarget(entry({ type: 'github-source', version: '0.3.0', url: 'https://github.com/o/r', commit }), { fetchImpl })
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://raw.githubusercontent.com/o/r/${commit}/package.json`)
-    expect(target).toMatchObject({ pluginSpec: `github:o/r#${commit}`, expectedPluginName: 'project-helper', expectedVersion: '0.3.0' })
+    expect(target).toMatchObject({ expectedPluginName: 'project-helper', expectedVersion: '0.3.0' })
+    expect(fetchImpl.mock.calls[1][0]).toBe(`https://codeload.github.com/o/r/tar.gz/${commit}`)
+    expect(target.pluginSpec).toMatch(/^file:/)
+    await target.cleanup()
   })
 
   it('reads package.json only from the top-level package directory', () => {
@@ -132,7 +135,7 @@ describe('workbench market install routes', () => {
     const routes = []
     const connection = { fetch: { register(route) { routes.push(route) } } }
     // The catalog reader captures fetch when the plugin applies.
-    vi.stubGlobal('fetch', fetchCatalog || vi.fn(async url => Response.json(String(url).endsWith('/package.json') ? { name: 'project-helper', version: '1.2.0' } : catalog)))
+    vi.stubGlobal('fetch', fetchCatalog || vi.fn(async url => String(url).includes('codeload.github.com') ? new Response(packed({ name: 'project-helper', version: '1.2.0' })) : Response.json(String(url).endsWith('/package.json') ? { name: 'project-helper', version: '1.2.0' } : catalog)))
     apply({ effect: fn => fn(), reflect: { provide() {} }, connection, inject(deps, callback) { if (pluginManager && !deps.includes('tools')) callback({ connection, pluginManager, effect: fn => fn() }) } }, { root })
     const call = async (path, body) => {
       const route = routes.find(value => value.path === path)
@@ -151,14 +154,16 @@ describe('workbench market install routes', () => {
 
   it('reads local installation readiness without starting or awaiting catalog network requests', async () => {
     let resolve
-    const fetchCatalog = vi.fn(() => new Promise(done => { resolve = done }))
+    const fetchCatalog = vi.fn(url => String(url).includes('community-catalog.json')
+      ? Promise.resolve(Response.json({ schemaVersion: 1, workbenches: [] }))
+      : new Promise(done => { resolve = done }))
     const { call } = await host(undefined, index, fetchCatalog)
     expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {}, lifecycle: null })
     expect(fetchCatalog).not.toHaveBeenCalled()
     const refresh = call('/api/desktop-workbenches/catalog')
     try {
       expect((await call('/api/desktop-workbenches/market-installs')).body).toEqual({ installs: {}, packages: {}, lifecycle: null })
-      expect(fetchCatalog).toHaveBeenCalledTimes(1)
+      expect(fetchCatalog).toHaveBeenCalledTimes(2)
     } finally { resolve(Response.json(index)) }
     expect((await refresh).status).toBe(200)
   })

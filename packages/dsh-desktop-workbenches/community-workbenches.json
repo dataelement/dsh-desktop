@@ -1,0 +1,134 @@
+[
+  {
+    "id": "xyb-openharness-dsh-plugins/xiaoxinbao-workbench",
+    "owner": "xyb-openharness-dsh-plugins",
+    "repository": "xiaoxinbao-workbench",
+    "url": "https://github.com/xyb-openharness-dsh-plugins/xiaoxinbao-workbench",
+    "name": "Cancer patient and caregiver emotional support and communication workbench for DSH Desktop",
+    "category": "community-care",
+    "description": {
+      "zh": "Cancer patient and caregiver emotional support and communication workbench for DSH Desktop",
+      "en": "Cancer patient and caregiver emotional support and communication workbench for DSH Desktop"
+    },
+    "version": "0.3.15",
+    "license": "MIT",
+    "screenshots": [],
+    "distribution": {
+      "type": "github-source",
+      "url": "https://github.com/xyb-openharness-dsh-plugins/xiaoxinbao-workbench",
+      "name": "dsh-cancer-psych-support-workbench",
+      "version": "0.3.15",
+      "commit": "3dfbe9b870f114cdb5a2bc3458e299ddbbba27d7"
+    }
+  },
+  {
+    "id": "xyb-openharness-dsh-plugins/gastric-workbench",
+    "owner": "xyb-openharness-dsh-plugins",
+    "repository": "gastric-workbench",
+    "url": "https://github.com/xyb-openharness-dsh-plugins/gastric-workbench",
+    "name": "小胃宝 Stompal",
+    "category": "community-care",
+    "description": {
+      "zh": "小胃宝 Stompal：本机优先的胃癌标志物档案、进食与营养（切除/倾倒/补充剂）、腹膜与腹腔治疗留痕、复诊准备工作台",
+      "en": "小胃宝 Stompal：本机优先的胃癌标志物档案、进食与营养（切除/倾倒/补充剂）、腹膜与腹腔治疗留痕、复诊准备工作台"
+    },
+    "version": "0.1.3",
+    "license": "MIT",
+    "screenshots": [],
+    "distribution": {
+      "type": "github-source",
+      "url": "https://github.com/xyb-openharness-dsh-plugins/gastric-workbench",
+      "name": "@xyb-community/gastric-workbench",
+      "version": "0.1.3",
+      "commit": "5bc6b85483ee842fd34846f812845c65327f8e21"
+    }
+  },
+  {
+    "id": "xyb-openharness-dsh-plugins/esophageal-workbench",
+    "owner": "xyb-openharness-dsh-plugins",
+    "repository": "esophageal-workbench",
+    "url": "https://github.com/xyb-openharness-dsh-plugins/esophageal-workbench",
+    "name": "本机优先的食管癌吞咽分级、进食通路、根治性放化疗路径与复诊准备工作台",
+    "category": "community-care",
+    "description": {
+      "zh": "本机优先的食管癌吞咽分级、进食通路、根治性放化疗路径与复诊准备工作台",
+      "en": "本机优先的食管癌吞咽分级、进食通路、根治性放化疗路径与复诊准备工作台"
+    },
+    "version": "0.1.3",
+    "license": "MIT",
+    "screenshots": [],
+    "distribution": {
+      "type": "github-source",
+      "url": "https://github.com/xyb-openharness-dsh-plugins/esophageal-workbench",
+      "name": "@xyb-community/esophageal-workbench",
+      "version": "0.1.3",
+      "commit": "74f897597465096bab5df1e197cd76e90ea0f88d"
+    }
+  },
+  {
+    "id": "xyb-openharness-dsh-plugins/cervical-workbench",
+    "owner": "xyb-openharness-dsh-plugins",
+    "repository": "cervical-workbench",
+    "url": "https://github.com/xyb-openharness-dsh-plugins/cervical-workbench",
+    "name": "本机优先的宫颈癌FIGO分期、生育保留、根治性放化疗与长期副作用、复诊准备工作台",
+    "category": "community-care",
+    "description": {
+      "zh": "本机优先的宫颈癌FIGO分期、生育保留、根治性放化疗与长期副作用、复诊准备工作台",
+      "en": "本机优先的宫颈癌FIGO分期、生育保留、根治性放化疗与长期副作用、复诊准备工作台"
+    },
+    "version": "0.1.5",
+    "license": "MIT",
+    "screenshots": [],
+    "distribution": {
+      "type": "github-source",
+      "url": "https://github.com/xyb-openharness-dsh-plugins/cervical-workbench",
+      "name": "@xyb-community/cervical-workbench",
+      "version": "0.1.5",
+      "commit": "7d7c41b55627e2e0f87993ac41d9c2b96f6b8aa7"
+    }
+  },
+  {
+    "id": "xyb-openharness-dsh-plugins/xyb-workbench",
+    "owner": "xyb-openharness-dsh-plugins",
+    "repository": "xyb-workbench",
+    "url": "https://github.com/xyb-openharness-dsh-plugins/xyb-workbench",
+    "name": "小胰宝",
+    "category": "community-care",
+    "description": {
+      "zh": "小胰宝：本机优先的胰腺癌病程整理与照护工作台",
+      "en": "a workbench serving PDAC patient with bundled therapy mgt/ct search-matching/nutrition supporting/Mentality support"
+    },
+    "version": "0.1.36",
+    "license": "UNLICENSED",
+    "screenshots": [],
+    "distribution": {
+      "type": "github-source",
+      "url": "https://github.com/xyb-openharness-dsh-plugins/xyb-workbench",
+      "name": "@xyb-openharness-dsh-plugins/xyb-workbench",
+      "version": "0.1.36",
+      "commit": "59e7b99f2d98119b17c4ee01b6a42987e075ad57"
+    }
+  },
+  {
+    "id": "xyb-openharness-dsh-plugins/colorectal-workbench",
+    "owner": "xyb-openharness-dsh-plugins",
+    "repository": "colorectal-workbench",
+    "url": "https://github.com/xyb-openharness-dsh-plugins/colorectal-workbench",
+    "name": "小畅宝 Colopal",
+    "category": "community-care",
+    "description": {
+      "zh": "小畅宝 Colopal：本机优先的结直肠癌病程整理、造口与肠道功能记录、复诊准备工作台",
+      "en": "结直肠癌工作台：分子分型、肠道功能与造口、治疗历程与复诊准备（Colopal 小畅宝，占位名）"
+    },
+    "version": "0.1.3",
+    "license": "MIT",
+    "screenshots": [],
+    "distribution": {
+      "type": "github-source",
+      "url": "https://github.com/xyb-openharness-dsh-plugins/colorectal-workbench",
+      "name": "@xyb-community/colorectal-workbench",
+      "version": "0.1.3",
+      "commit": "a1dcae40d7cfd0445678844f8bc436fc072cfeda"
+    }
+  }
+]
