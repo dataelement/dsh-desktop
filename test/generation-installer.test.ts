@@ -97,7 +97,12 @@ describe('the generation installer', () => {
         runInstall: stubInstall(async (staging) => {
           const policy = await readFile(join(staging, 'pnpm-workspace.yaml'), 'utf8')
           expect(policy).toContain('packages:\n  - .\n')
-          expect(policy).not.toContain('allowBuilds:')
+          if (profileWorkspace?.includes('esbuild: false')) {
+            expect(policy).toContain('\"esbuild\": false')
+          } else {
+            expect(policy).not.toContain('allowBuilds:')
+          }
+          expect(policy).not.toContain('unsafe')
           const pkg = join(staging, 'node_modules', 'isolated-plugin')
           await mkdir(pkg, { recursive: true })
           await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'isolated-plugin', version: '1.0.0' }))
@@ -166,7 +171,7 @@ describe('the generation installer', () => {
           '"@linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git": true'
         )
         expect(stagedPolicy).not.toContain('git+ssh://')
-        expect(stagedPolicy).not.toContain('esbuild')
+        expect(stagedPolicy).toContain('\"esbuild\": false')
         expect(stagedPolicy).not.toContain('patchedDependencies')
 
         const pkg = join(staging, 'node_modules', '@linxin666', 'dsh-remote-web-ui')

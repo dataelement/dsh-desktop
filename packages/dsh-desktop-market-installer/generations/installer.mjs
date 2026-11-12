@@ -114,20 +114,20 @@ function safeBuildApprovalKey(key) {
 }
 
 /**
- * Read only explicit, safe `allowBuilds: ...: true` entries from a Profile
+ * Read only explicit, safe `allowBuilds` decisions from a Profile
  * workspace file. Generation installs run in a separate pnpm workspace, so
- * an approval written by dsh-market has to cross that boundary deliberately.
+ * a decision written by dsh-market has to cross that boundary deliberately.
  * No other Profile workspace setting is inherited: patchedDependencies and
  * relative package globs would be invalid inside the immutable staging tree.
  */
-export function generationBuildApprovals(workspaceYaml) {
-  if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return []
+function generationBuildPolicy(workspaceYaml) {
+  if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return new Map()
   const blockPattern = /allowBuilds:[ \t]*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)*)/gu
-  const approved = new Set()
+  const decisions = new Map()
   for (const block of workspaceYaml.matchAll(blockPattern)) {
     for (const line of block[1].split(/\r?\n/u)) {
       const match = /^[ \t]+(\S.*?)\s*:\s*(true|false)\s*$/u.exec(line)
-      if (match === null || match[2] !== 'true') continue
+      if (match === null) continue
       let key = match[1]
       if (
         key.length >= 2 &&
@@ -138,10 +138,17 @@ export function generationBuildApprovals(workspaceYaml) {
           try { key = JSON.parse(key) } catch { continue }
         } else key = key.slice(1, -1).replaceAll("''", "'")
       }
-      if (safeBuildApprovalKey(key)) approved.add(key)
+      if (safeBuildApprovalKey(key)) decisions.set(key, match[2] === 'true')
     }
   }
-  return [...approved]
+  return decisions
+}
+
+/** Return approvals only; explicit refusals must never authorize git preparation. */
+export function generationBuildApprovals(workspaceYaml) {
+  return [...generationBuildPolicy(workspaceYaml)]
+    .filter(([, allowed]) => allowed)
+    .map(([key]) => key)
 }
 
 /**
@@ -161,7 +168,7 @@ export function pinnedGitBuildApproval(pluginName, pluginSpec, approvals) {
   return `${pluginName}@git+ssh://git@github.com/${owner}/${repo}.git#${sha}${subpath}`
 }
 
-async function stageBuildApprovals(
+async function stageBuildPolicy(
   dshHome,
   stagingDir,
   profile = 'web',
@@ -175,22 +182,21 @@ async function stageBuildApprovals(
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
   }
-  const approvals = generationBuildApprovals(yaml)
-  const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, approvals)
-  const stagedApprovals = pinned === undefined ? approvals : [...approvals, pinned]
-  // Isolate hoisting from ancestor workspaces even without Profile approvals.
-  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n', 'utf8')
-  if (stagedApprovals.length === 0) return []
-  const lines = [
-    'packages:',
-    '  - .',
-    '',
-    'allowBuilds:',
-    ...stagedApprovals.map((key) => `  ${JSON.stringify(key)}: true`),
-    ''
-  ]
-  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), lines.join('\n'), 'utf8')
-  return stagedApprovals
+  const decisions = generationBuildPolicy(yaml)
+  // Normalize source-bound git identities for either decision. A refusal skips
+  // scripts while allowing installation; it is never an approval.
+  for (const allowed of [true, false]) {
+    const keys = [...decisions].filter(([, value]) => value === allowed).map(([key]) => key)
+    const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, keys)
+    if (pinned !== undefined) decisions.set(pinned, allowed)
+  }
+  const lines = ['packages:', '  - .']
+  if (decisions.size > 0) {
+    lines.push('', 'allowBuilds:', ...[...decisions].map(([key, allowed]) => `  ${JSON.stringify(key)}: ${allowed}`))
+  }
+  // Isolate hoisting from ancestor workspaces even without Profile decisions.
+  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), `${lines.join('\n')}\n`, 'utf8')
+  return decisions
 }
 
 /**
@@ -356,13 +362,14 @@ export async function installGeneration(options) {
   const cleanupStaging = () => rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
 
   try {
-    const approvals = await stageBuildApprovals(
+    const buildPolicy = await stageBuildPolicy(
       dshHome,
       stagingDir,
       options.profile ?? 'web',
       pluginName,
       pluginSpec
     )
+    const approvals = [...buildPolicy].filter(([, allowed]) => allowed).map(([key]) => key)
     if (approvals.length > 0) {
       trace(`forwarded ${approvals.length} approved build-script key(s) into staging`)
     }
@@ -455,8 +462,8 @@ export async function installGeneration(options) {
     const lockfileText = await readFile(join(stagingDir, 'pnpm-lock.yaml'), 'utf8').catch(() => randomUUID())
     // Approval can change built files without changing the lockfile. Never
     // reuse an older unbuilt generation after the user approves its scripts.
-    const buildIdentity = options.strictDepBuilds === true || approvals.length > 0
-      ? `\nbuild-policy-v1:${JSON.stringify([...approvals].sort())}:${process.platform}:${process.arch}` : ''
+    const buildIdentity = options.strictDepBuilds === true || buildPolicy.size > 0
+      ? `\nbuild-policy-v2:${JSON.stringify([...buildPolicy].sort(([a], [b]) => a.localeCompare(b)))}:${process.platform}:${process.arch}` : ''
     const id = generationId(pluginName, version, lockfileText + buildIdentity)
     const generationDir = join(layout.generations, id)
 

@@ -8,7 +8,7 @@ import { createServer } from 'node:http'
 import { promisify } from 'node:util'
 import { installGeneration } from '../packages/dsh-desktop-market-installer/generations/installer.mjs'
 
-it('real pnpm refuses unapproved scripts and executes an explicitly approved rebuild in staging', async () => {
+it('real pnpm blocks undecided scripts, skips refused scripts, and executes approved scripts', async () => {
   // Windows TEMP may contain an 8.3 alias (RUNNER~1). pnpm resolves its
   // workspace root to a real path; keep every install path in that form.
   const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-build-approval-')))
@@ -57,10 +57,19 @@ it('real pnpm refuses unapproved scripts and executes an explicitly approved reb
     expect(blocked.detail).toContain('ERR_PNPM_IGNORED_BUILDS')
     const profile = join(home, 'profiles/web')
     await mkdir(profile, { recursive: true })
-    await writeFile(join(profile, 'pnpm-workspace.yaml'), 'allowBuilds:\n  dsh-test-build-dependency: true\n')
+    const policyPath = join(profile, 'pnpm-workspace.yaml')
+    const deniedPolicy = 'allowBuilds:\n  dsh-test-build-dependency: false\n'
+    await writeFile(policyPath, deniedPolicy)
+    const denied = await installGeneration(options)
+    expect(denied.ok, denied.detail).toBe(true)
+    await expect(readFile(join(denied.generation.directory, 'node_modules/dsh-test-build-dependency/built.js')))
+      .rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(policyPath, 'utf8')).toBe(deniedPolicy)
+    await writeFile(policyPath, 'allowBuilds:\n  dsh-test-build-dependency: true\n')
     let buildOutput = ''
     const approved = await installGeneration({ ...options, onOutput: chunk => { buildOutput += chunk } })
     expect(approved.ok, approved.detail).toBe(true)
+    expect(approved.generation.id).not.toBe(denied.generation.id)
     const builtFile = join(approved.generation.directory, 'node_modules/dsh-test-build-dependency/built.js')
     const built = await readFile(builtFile, 'utf8').catch(error => String(error))
     expect(built, `Approved build must produce ${builtFile}\n${buildOutput}`).toBe('module.exports = 42')

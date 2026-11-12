@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,9 @@ import { readDisabledPlugins } from '../packages/dsh-desktop-market-installer/pl
 const homes = []
 
 async function freshHome() {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-generation-backend-'))
+  // pnpm canonicalizes Windows TEMP (which can contain RUNNER~1). Use the
+  // same physical root for workspace discovery and source-bound build keys.
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'dsh-generation-backend-')))
   homes.push(home)
   const profile = join(home, 'profiles', 'web')
   await mkdir(profile, { recursive: true })
@@ -505,14 +507,15 @@ it('requires approval before publishing a generation with blocked installation s
   await mkdir(fixture)
   await writeFile(join(fixture, 'package.json'), JSON.stringify({
     name: 'script-approval-fixture', version: '1.0.0',
-    scripts: { postinstall: `node -e "require('node:fs').writeFileSync('build-proof.txt','approved')"` }
+    scripts: { postinstall: `"${process.execPath}" build.cjs` }
   }))
+  await writeFile(join(fixture, 'build.cjs'), "require('node:fs').writeFileSync('build-proof.txt', 'approved')")
   const pnpmEntryPath = join(process.cwd(), 'node_modules/pnpm/bin/pnpm.cjs')
   execFileSync(process.execPath, [pnpmEntryPath, 'pack', '--pack-destination', home], { cwd: fixture, stdio: 'pipe' })
   const backend = createGenerationPackageBackend({ dshHome: home, nodeExecutablePath: process.execPath, pnpmEntryPath })
   const request = { spec: join(home, 'script-approval-fixture-1.0.0.tgz'), kind: 'tarball' }
   const blocked = await backend.install(request)
-  expect(blocked.packageResult.exitCode).not.toBe(0)
+  expect(blocked.packageResult.exitCode, blocked.packageResult.output).not.toBe(0)
   expect(blocked.packageResult.output).toContain('script-approval-fixture')
   expect((await listGenerations(home))).toHaveLength(0)
   const pending = /Ignored build scripts: ([^\r\n]+)/u.exec(blocked.packageResult.output)[1].trim()
