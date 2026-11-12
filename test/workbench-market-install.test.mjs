@@ -77,9 +77,31 @@ describe('workbench market install targets', () => {
     const target = await resolveInstallTarget(entry({ type: 'github-source', version: '0.3.0', url: 'https://github.com/o/r', commit }), { fetchImpl })
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://raw.githubusercontent.com/o/r/${commit}/package.json`)
     expect(target).toMatchObject({ expectedPluginName: 'project-helper', expectedVersion: '0.3.0' })
-    expect(fetchImpl.mock.calls[1][0]).toBe(`https://codeload.github.com/o/r/tar.gz/${commit}`)
-    expect(target.pluginSpec).toMatch(/^file:/)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(target.pluginSpec).toBe(`github:o/r#${commit}`)
     await target.cleanup()
+  })
+
+  it('keeps prepare sources on the approved Git lifecycle even when archive use is requested', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ name: 'built-helper', version: '1.0.0', main: './generated/index.js', scripts: { prepare: 'node build.mjs' } }))
+    const target = await resolveInstallTarget(entry({ type: 'github-source', sourceArchive: true, version: '1.0.0', url: 'https://github.com/o/built-helper', commit }), { fetchImpl })
+    expect(target.pluginSpec).toBe(`github:o/built-helper#${commit}`)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a transient failure and validates the successful independent response', async () => {
+    const bytes = packed({ name: 'project-helper', version: '2.0.0' })
+    const fetchImpl = vi.fn().mockRejectedValueOnce(Object.assign(new Error('reset'), { code: 'ECONNRESET' })).mockImplementation(async () => new Response(bytes))
+    const target = await resolveInstallTarget(entry({ type: 'github-release', version: '2.0.0', url: 'https://github.com/o/r/releases/download/v2/w.tgz', sha256: sha256(bytes) }), { fetchImpl, temporaryRoot: await tempRoot() })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(target.expectedPluginName).toBe('project-helper')
+    await target.cleanup()
+  })
+
+  it('preserves diagnostics when transient retries are exhausted', async () => {
+    const fetchImpl = vi.fn(async () => { throw Object.assign(new Error('reset'), { code: 'ECONNRESET' }) })
+    await expect(resolveInstallTarget(entry({ type: 'github-source', version: '1', url: 'https://github.com/o/r', commit }), { fetchImpl })).rejects.toMatchObject({ code: 'download_failed', params: { diagnostic: 'ECONNRESET' } })
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
   })
 
   it('reads package.json only from the top-level package directory', () => {

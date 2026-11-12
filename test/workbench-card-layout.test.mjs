@@ -372,6 +372,30 @@ describe('compact workbench card states', () => {
 })
 
 
+describe('community prototype provenance', () => {
+  it.each(['xyb-openharness-dsh-plugins', 'another-owner'])('labels only official fallback artwork for %s', async owner => {
+    const ui = await mountCard()
+    try {
+      const id = `${owner}/gastric-workbench`
+      await React.act(async () => {
+        ui.service.remoteCatalog.push({ id, owner, repository: 'gastric-workbench', name: 'Prototype fixture', url: `https://github.com/${id}`, category: 'other', categoryName: 'Other', version: '1.0.0', distribution: { type: 'npm', name: 'prototype-fixture', version: '1.0.0' }, description: { zh: 'Fixture', en: 'Fixture' }, screenshots: [] })
+        ui.service.publish()
+      })
+      const card = [...ui.document.querySelectorAll('.dshWbCard')].find(card => card.textContent.includes('Prototype fixture'))
+      expect(card).toBeTruthy()
+      if (owner === 'xyb-openharness-dsh-plugins') {
+        expect(card.textContent).toContain('原型 · 模拟资料')
+        expect(card.querySelector('img').alt).toContain('模拟资料')
+        await React.act(async () => card.querySelector('.dshWbMediaOpen').click())
+        expect(ui.document.querySelector('[role="dialog"]').textContent).toContain('图片来自社区公开原型，内容为模拟资料。')
+      } else {
+        expect(card.querySelector('.dshWbPrototypeLabel')).toBeNull()
+        expect(card.querySelector('.dshWbCardScreenshot')).toBeNull()
+      }
+    } finally { await ui.close() }
+  })
+})
+
 describe('charity entry flow', () => {
   const buttonByText = (root, text) => [...root.querySelectorAll('button')].find(node => node.textContent.trim() === text)
   const click = async node => {

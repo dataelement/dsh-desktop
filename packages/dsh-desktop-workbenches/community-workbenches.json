@@ -18,7 +18,8 @@
       "url": "https://github.com/xyb-openharness-dsh-plugins/xiaoxinbao-workbench",
       "name": "dsh-cancer-psych-support-workbench",
       "version": "0.3.15",
-      "commit": "3dfbe9b870f114cdb5a2bc3458e299ddbbba27d7"
+      "commit": "3dfbe9b870f114cdb5a2bc3458e299ddbbba27d7",
+      "sourceArchive": true
     }
   },
   {
@@ -40,7 +41,8 @@
       "url": "https://github.com/xyb-openharness-dsh-plugins/gastric-workbench",
       "name": "@xyb-community/gastric-workbench",
       "version": "0.1.3",
-      "commit": "5bc6b85483ee842fd34846f812845c65327f8e21"
+      "commit": "5bc6b85483ee842fd34846f812845c65327f8e21",
+      "sourceArchive": true
     }
   },
   {
@@ -62,7 +64,8 @@
       "url": "https://github.com/xyb-openharness-dsh-plugins/esophageal-workbench",
       "name": "@xyb-community/esophageal-workbench",
       "version": "0.1.3",
-      "commit": "74f897597465096bab5df1e197cd76e90ea0f88d"
+      "commit": "74f897597465096bab5df1e197cd76e90ea0f88d",
+      "sourceArchive": true
     }
   },
   {
@@ -84,7 +87,8 @@
       "url": "https://github.com/xyb-openharness-dsh-plugins/cervical-workbench",
       "name": "@xyb-community/cervical-workbench",
       "version": "0.1.5",
-      "commit": "7d7c41b55627e2e0f87993ac41d9c2b96f6b8aa7"
+      "commit": "7d7c41b55627e2e0f87993ac41d9c2b96f6b8aa7",
+      "sourceArchive": true
     }
   },
   {
@@ -106,7 +110,8 @@
       "url": "https://github.com/xyb-openharness-dsh-plugins/xyb-workbench",
       "name": "@xyb-openharness-dsh-plugins/xyb-workbench",
       "version": "0.1.36",
-      "commit": "59e7b99f2d98119b17c4ee01b6a42987e075ad57"
+      "commit": "59e7b99f2d98119b17c4ee01b6a42987e075ad57",
+      "sourceArchive": true
     }
   },
   {
@@ -128,7 +133,8 @@
       "url": "https://github.com/xyb-openharness-dsh-plugins/colorectal-workbench",
       "name": "@xyb-community/colorectal-workbench",
       "version": "0.1.3",
-      "commit": "a1dcae40d7cfd0445678844f8bc436fc072cfeda"
+      "commit": "a1dcae40d7cfd0445678844f8bc436fc072cfeda",
+      "sourceArchive": true
     }
   }
 ]

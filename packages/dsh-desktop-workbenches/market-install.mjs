@@ -173,6 +173,12 @@ export async function resolveInstallTarget(entry, { fetchImpl, temporaryRoot = t
     try { manifest = JSON.parse((await download(manifestUrl, { fetchImpl, maxBytes: MAX_MANIFEST_BYTES, what: 'package.json from the repository' })).toString('utf8')) }
     catch (error) { if (error instanceof MarketInstallError) throw error; fail('package.json in the repository is not valid JSON.', 502) }
     const name = checkManifest(manifest, entry)
+    // Git sources retain the installer's approved prepare/build lifecycle.
+    // Only explicitly prebuilt community snapshots may use a source archive.
+    if (distribution.sourceArchive !== true || manifest.scripts?.prepare) {
+      return { pluginSpec: `github:${owner}/${repo}#${distribution.commit}`, expectedPluginName: name,
+        expectedVersion: distribution.version, cleanup: async () => {} }
+    }
     // Download the same pinned source through the host transport instead of Git's separate network stack.
     const bytes = await download(`https://codeload.github.com/${owner}/${repo}/tar.gz/${distribution.commit}`, { fetchImpl, maxBytes: 64 * 1024 * 1024, what: 'the source package' })
     checkManifest(readPackedManifest(bytes), entry)

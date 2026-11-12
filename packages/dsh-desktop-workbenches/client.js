@@ -72,10 +72,15 @@ window.__ModuleLoader__.load({
     const CHARITY_PROJECT_CATEGORIES = Object.fromEntries(CHARITY_PROJECTS.map(key => [key, key === 'gist' ? ['cancer', 'rare'] : key === 'psych' ? ['support'] : ['fshd', 'attr'].includes(key) ? ['rare'] : ['cancer']]))
     const CHARITY_PROJECT_PATTERNS = { pdac: /胰腺|小胰宝|pancrea|pdac/i, lung: /肺癌|小肺宝|\blung\b|nsclc|sclc/i, breast: /乳腺|小粉宝|breast|pinkypal/i, lymphoma: /淋巴瘤|小铃铛|lymphoma|lymbell/i, ovarian: /卵巢|小巢宝|ovarian/i, gist: /胃肠间质|小吉宝|\bgist\b/i, colorectal: /结直肠|小畅宝|colorectal|colopal/i, gastric: /胃癌|小胃宝|\bgastric\b|stompal/i, esophageal: /食管|小咽宝|esophag|esoppal/i, cervical: /宫颈|小莲宝|cervical|cervipal/i, anal: /肛管|小萌宝|\banal\b|analpal/i, fshd: /面肩肱|小飞侠|\bfshd\b|facioscapulohumeral/i, attr: /转甲状腺素|淀粉宝宝|\battr\b|transthyretin/i, psych: /心理支持|小心宝|\bpsych\b|psychological support/i }
     const communityProjectFor = entry => ({
-      'xyb-workbench': 'pdac', 'xiaoxinbao-workbench': 'psych',
-      'colorectal-workbench': 'colorectal', 'gastric-workbench': 'gastric',
-      'esophageal-workbench': 'esophageal', 'cervical-workbench': 'cervical'
-    })[String(entry.catalogId || entry.id || '').replace(/^https:\/\/github.com\//, '').split('/').pop()]
+      'xyb-openharness-dsh-plugins/xyb-workbench': 'pdac',
+      'xyb-openharness-dsh-plugins/xiaoxinbao-workbench': 'psych',
+      'xyb-openharness-dsh-plugins/colorectal-workbench': 'colorectal',
+      'xyb-openharness-dsh-plugins/gastric-workbench': 'gastric',
+      'xyb-openharness-dsh-plugins/esophageal-workbench': 'esophageal',
+      'xyb-openharness-dsh-plugins/cervical-workbench': 'cervical'
+    })[String(entry.catalogId || entry.id || '').toLowerCase()]
+    const communityPrototype = entry => !!communityProjectFor(entry)
+      && !entry.screenshot && !(entry.screenshots || []).some(image => typeof image === 'string' && image)
     const charitySearchText = entry => `${entry.catalogId || entry.id || ''} ${entry.title || ''} ${entry.titleEn || ''} ${entry.name || ''} ${entry.description || ''} ${entry.descriptionEn || ''}`
     // Identify a project's own title/package, not other conditions mentioned in its description.
     const charityProjectsForEntry = entry => CHARITY_PROJECTS.filter(key => CHARITY_PROJECT_PATTERNS[key].test(`${entry.catalogId || entry.id || ''} ${entry.title || ''} ${entry.titleEn || ''} ${entry.name || ''}`))
@@ -1754,6 +1759,7 @@ window.__ModuleLoader__.load({
       .dshWbCharityEmpty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:50px 20px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-module-platform);border-radius:12px}
       .dshWbCharityEmpty h3,.dshWbCharityEmpty p{margin:0}.dshWbCharityEmpty h3{font-size:18px;font-weight:600;color:var(--dsw-alias-label-primary)}.dshWbCharityEmpty p{font-size:13px;line-height:1.7}
       .dshWbCharityFooter{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:18px 0;border-top:1px solid var(--dsw-alias-border-l2)}
+      .dshWbPrototypeLabel{position:absolute;z-index:1;left:8px;bottom:8px;padding:3px 7px;border-radius:6px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:11px}
       .dshWbCharityGuide{padding:8px 0;max-width:1040px;margin:auto}
       .dshWbCharityGuide .dshWbCharityHero{min-height:148px}.dshWbCharityGuide .dshWbCharityHero h2{font-size:32px;margin-top:16px}.dshWbCharityGuide .dshWbCharityHero .dshWbCharityArt{height:148px}
       .dshWbCharityUsageSteps{gap:16px;margin:8px 0 16px}
@@ -2058,7 +2064,7 @@ window.__ModuleLoader__.load({
       const [screenshots, setFailedScreenshot] = useScreenshots(entry)
       const screenshot = screenshots[0]
       if (detail) return null
-      if (screenshot) return h('img', { className: 'dshWbCardScreenshot', src: screenshot, alt: entry.previewAlt || both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshot`), loading: 'lazy', style: { objectPosition: entry.screenshotPosition || 'center' }, onError: () => setFailedScreenshot(screenshot) })
+      if (screenshot) return h(React.Fragment, null, communityPrototype(entry) && h('span', { className: 'dshWbPrototypeLabel' }, both('原型 · 模拟资料', 'Prototype · simulated records')), h('img', { className: 'dshWbCardScreenshot', src: screenshot, alt: communityPrototype(entry) ? both('社区原型图，内容为模拟资料', 'Community prototype with simulated records') : entry.previewAlt || both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshot`), loading: 'lazy', style: { objectPosition: entry.screenshotPosition || 'center' }, onError: () => setFailedScreenshot(screenshot) }))
       const columns = entry.layout?.businessSide === 'left' ? '1fr 1.8fr' : '1.45fr 1fr'
       return h('div', { className: 'dshWbPreview', role: 'img', 'aria-label': both(`${entry.title}界面预览（模拟）`, `${entry.title} simulated preview`) },
         h('div', { className: 'dshWbPreviewBar', 'aria-hidden': true }, h('span', { className: 'dshWbPreviewDot' }), h('span', { className: 'dshWbPreviewDot' }), h('span', { className: 'dshWbPreviewDot' })),
@@ -2096,7 +2102,7 @@ window.__ModuleLoader__.load({
       }
       if (screenshots.length === 0) return null
       const many = screenshots.length > 1
-      const carousel = h('div', { className: 'dshWbCarousel', role: 'region', 'aria-roledescription': tr('轮播'), 'aria-label': both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshots`),
+      const carousel = h('div', { className: 'dshWbCarousel', role: 'region', 'aria-roledescription': tr('轮播'), 'aria-label': communityPrototype(entry) ? both('社区原型图（模拟资料）', 'Community prototype (simulated records)') : both(`${entry.title || tr('工作台')}产品截图`, `${entry.title || tr('工作台')} screenshots`),
         onKeyDown: (event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); go(index - 1) } else if (event.key === 'ArrowRight') { event.preventDefault(); go(index + 1) } } },
         h('div', { ref: trackRef, className: 'dshWbCarouselTrack', onScroll: (event) => { const track = event.currentTarget; if (track.clientWidth) setIndex(Math.round(track.scrollLeft / track.clientWidth)) } },
           screenshots.map((src, i) => h('button', { key: src, type: 'button', className: 'dshWbCarouselSlide', 'aria-label': both(`放大截图 ${i + 1}/${screenshots.length}`, `Enlarge screenshot ${i + 1} of ${screenshots.length}`), tabIndex: i === index ? 0 : -1, onClick: (event) => openLightbox(event, src) },
@@ -2154,11 +2160,11 @@ window.__ModuleLoader__.load({
               h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1, display: 'flex', alignItems: 'center', gap: 8 } }, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })), h(EntryTitle, { entry })),
               h(Button, { autoFocus: true, onClick: onClose }, tr('关闭'))
             ),
-            entry.previewAlt && h('p', { className: 'dshWbMuted' }, entry.requirements),
+            (entry.previewAlt || communityPrototype(entry)) && h('p', { className: 'dshWbMuted' }, communityPrototype(entry) ? both('图片来自社区公开原型，内容为模拟资料。', 'Images are community prototypes with simulated records.') : entry.requirements),
             h(ScreenshotGallery, { entry }),
             entry.description && h('p', null, entry.description),
             h(EntryMeta, { entry }),
-            !entry.previewAlt && h('p', { className: 'dshWbMuted' }, both(`适用人群：${entry.audience || tr('暂无')}。${entry.requirements || ''}`, `Audience: ${entry.audienceEn || entry.audience || tr('暂无')}. ${entry.requirementsEn || entry.requirements || ''}`))
+            !entry.previewAlt && !communityPrototype(entry) && h('p', { className: 'dshWbMuted' }, both(`适用人群：${entry.audience || tr('暂无')}。${entry.requirements || ''}`, `Audience: ${entry.audienceEn || entry.audience || tr('暂无')}. ${entry.requirementsEn || entry.requirements || ''}`))
           )
         ),
         document.body
@@ -2346,18 +2352,8 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h('div', { className: 'dshWbCardBody' }, children))
     }
     function CharityProjectCard({ entry, text, onPreview, project = false, primaryAction }) {
-      const communityProject = {
-        'xyb-workbench': 'pdac', 'xiaoxinbao-workbench': 'psych',
-        'colorectal-workbench': 'colorectal', 'gastric-workbench': 'gastric',
-        'esophageal-workbench': 'esophageal', 'cervical-workbench': 'cervical'
-      }[String(entry.catalogId || entry.id).split('/').pop()]
-      if (communityProject && !project) {
-        entry = { ...entry, title: text(communityProject),
-          ...(screenshotsFor(entry).length ? {} : {
-            screenshots: [`/api/desktop-workbenches/assets/charity-projects/${communityProject}.webp`],
-            previewAlt: text(communityProject), requirements: text('prototypeNote')
-          }) }
-      }
+      const communityProject = communityProjectFor(entry)
+      if (communityProject && !project) entry = { ...entry, title: text(communityProject) }
       const previewId = `dsh-xyb-preview-${entry.id}`
       return h(WorkbenchCardFrame, { className: 'dshWbCharityProject', media: h(React.Fragment, null,
         h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-describedby': previewId, 'aria-label': both(`查看${entry.title}详情`, `View ${entry.title} details`), onClick: event => onPreview(entry, event.currentTarget) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))),
