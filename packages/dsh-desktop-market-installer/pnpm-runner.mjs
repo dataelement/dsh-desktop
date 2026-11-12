@@ -350,7 +350,10 @@ function runPnpm(executable, args, options = {}) {
     const child = spawnProcess(executable, pnpmLaunchArguments(args), {
       stdio: ['inherit', 'pipe', 'pipe'],
       windowsHide: true,
-      env: options.environment ?? process.env
+      env: {
+        ...(options.environment ?? process.env),
+        DSH_DESKTOP_REGISTRY_VIEW: fileURLToPath(new URL('./registry-view.mjs', import.meta.url))
+      }
     })
     let output = ''
     let idle
@@ -598,6 +601,9 @@ async function runWithLockRecoveryUnisolated(executable, args, options = {}) {
  * then restore the market-facing fields regardless of pnpm's outcome.
  */
 export async function runWithLockRecovery(executable, args, options = {}) {
+  // Registry reads do not install or resolve the Profile dependency tree.
+  // Avoid rewriting its manifest (and racing another operation) just to preview a plugin.
+  if (['view', 'info', 'show', 'v'].includes(args[1])) return runPnpm(executable, args, options)
   const profileDirectory = options.profileDirectory ?? process.cwd()
   const isolateProjection = options.isolateProjection ?? suspendGenerationProjectionForPnpm
   const report = options.report ?? ((message) => process.stderr.write(`${MARKER} ${message}\n`))
