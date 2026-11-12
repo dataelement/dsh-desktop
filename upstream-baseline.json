@@ -20,7 +20,8 @@
         "文件拖放只接受 Host 授权过的会话文件；渲染进程不能提交本机路径",
         "Host 离开就绪后清掉启动注入和认证 Cookie；boot 只返回仍处于就绪的那一次，失败的刷新不交回上一次",
         "启动 Host 前读取 POSIX 登录 shell 环境；Windows 使用继承的注册表环境，不读 PowerShell profile",
-        "账号视图接收真实运行平台；Linux 不冒充 macOS，也不启用未支持的上游账号页面协议"
+        "账号视图接收真实运行平台；Linux 不冒充 macOS，也不启用未支持的上游账号页面协议",
+        "Linux 与 Windows 复用隐藏标题栏、原生窗口按钮 overlay 及应用/编辑菜单；托盘仍仅 Windows 启用"
       ]
     },
     {
@@ -157,7 +158,7 @@
     {
       "path": "src/preload/app.ts",
       "upstream": ["apps/desktop/src/preload-app.ts"],
-      "divergences": ["不安装强制更新遮罩；应用页挂上现有 desktop storage、快捷键桥和侧边栏浏览器，Safe Mode 时再盖上现有安全模式页"]
+      "divergences": ["不安装强制更新遮罩；应用页挂上现有 desktop storage、快捷键桥和侧边栏浏览器，Safe Mode 时再盖上现有安全模式页；Linux 复用 Windows 命名的 Harness 标题栏接缝，保留真实平台标识"]
     }
   ],
   "skipped": [

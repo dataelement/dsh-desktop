@@ -142,7 +142,7 @@ Linux packaging is currently a local, target-native qualification path, not part
 
 For a VM without a working GLES context, run the opt-in navigation qualification with `DISPLAY=:0 DSH_NAVIGATION_SOFTWARE_RENDERING=1 node scripts/verify/verify-desktop-navigation.mjs` under the desktop session authority. This adds only `--disable-gpu`, retains renderer sandboxing, and qualifies software rendering rather than the default GPU path. A failed default GPU probe must still be reported.
 
-Linux uses native window decorations and manual deb upgrades; automatic update/application rollback remains unsupported. The locked LibreOfficeKit uses its bundled WASM engine on Linux when no compatible native engine is installed. Qualification must execute the same packaged Harness, terminal, PPT and Office afterPack gates, then install and launch the deb in a disposable test environment. A generated deb alone is not evidence of successful UI activation or model requests.
+Linux uses the same 40 DIP caption, native window-control overlay and 应用 / 编辑 menus as Windows, with manual deb upgrades; automatic update/application rollback remains unsupported. The locked LibreOfficeKit uses its bundled WASM engine on Linux when no compatible native engine is installed. Qualification must execute the same packaged Harness, terminal, PPT and Office afterPack gates, then install and launch the deb in a disposable test environment. A generated deb alone is not evidence of successful UI activation or model requests.
 
 Formal release artifacts are built, signed, and published by the tag workflow. A local build or pull-request check is not formal release evidence.
 
