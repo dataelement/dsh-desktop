@@ -111,7 +111,7 @@ function extractPluginReferences(
     // entry wrapping a third-party bundle). Collect every entry in the chain;
     // taking only the first one loses the actual uninstallable owner.
     for (const match of text.matchAll(
-      /failed to (?:apply|import) loader entry [^\s]+ \((@[^)]+|[^)]+)\)/gi
+      /failed to (?:apply|import|activate) loader entry [^\s]+ \((@[^)]+|[^)]+)\)/gi
     )) {
       if (match[1] && accepts(match[1])) plugins.add(match[1].trim())
     }

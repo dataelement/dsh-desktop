@@ -44,6 +44,7 @@ import { buildWebImportViewModel } from '../web-import-view'
 import { DesktopBackendController } from './backend/backend-controller'
 import { DesktopBootSession, retainDesktopBoot } from './backend/boot-session'
 import { DesktopHostFatalError, DesktopHostProcess } from './backend/host-process'
+import { continueAfterHostStartup, createHostFailureIntake } from './host-failure-intake'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './backend/login-shell-environment'
 import { attachDesktopStorage } from './desktop-storage-bridge'
 import { ENTERPRISE_URL, aboutUsesPage, buildDarwinDesktopMenu, buildWindowsApplicationMenu, externalUrlToOpen, insertFileMenu, shortcutFileMenuLabels } from './enterprise-menu'
@@ -66,10 +67,10 @@ import {
 } from './mobile-pairing'
 import { presentMobilePairing } from './mobile-window'
 import { DESKTOP_PROFILE } from './safe-mode-page'
-import { isStartupRecoveryPageUrl, readStartupRecoveryNavigation, startupRecoveryTargets } from './startup-recovery'
+import { isStartupRecoveryPageUrl, loadStartupRecoveryPlan, readStartupRecoveryNavigation, recordStartupRepairRound, startupRecoveryTargets } from './startup-recovery'
 import { runStartupRecovery } from './startup-recovery-session'
 import { OperationJournal } from './operation-journal'
-import { pluginOperationDirectory, readRecentPluginOperations } from './plugin-operations'
+import { pluginOperationDirectory } from './plugin-operations'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report'
 import { runOperationReportJob, type OperationReportJobResult } from './operation-report-job'
 import { evaluatePluginMarketCompatibility, type PluginHealthReport } from '../recovery/plugin-market-check'
@@ -148,7 +149,7 @@ let quitting = false
 let pageRecovery: PageRecovery | undefined
 let windowsTray: Tray | undefined
 let backendReady = false
-let acceptRecoveryNavigation: ((url: string) => void) | undefined
+let recoveryReceiver: ((url: string) => void) | undefined
 const rendererConsole = new RendererConsoleTail()
 let activeOperationJournal: OperationJournal | undefined
 let operationReportJob: Promise<OperationReportJobResult> | undefined
@@ -319,7 +320,7 @@ function createWindow(
   window.webContents.on('will-navigate', (event, url) => {
     if (readStartupRecoveryNavigation(url) !== undefined) {
       event.preventDefault()
-      acceptRecoveryNavigation?.(url)
+      recoveryReceiver?.(url)
       return
     }
     if (isStartupRecoveryPageUrl(url) || isWebImportPageUrl(url, importPage) || isSplashPageUrl(url, splashPage)) return
@@ -542,6 +543,7 @@ async function main(): Promise<void> {
       ...(shouldStartInSafeMode(process.argv) || process.env.DSH_DESKTOP_SAFE_MODE === '1'
         ? {}
         : { restartSafeMode: () => { restartInSafeMode() } }),
+      showHarnessLog: () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
       hide: () => { app.hide() },
       hideOthers: () => { Menu.sendActionToFirstResponder('hideOtherApplications:') },
       unhideAll: () => { Menu.sendActionToFirstResponder('unhideAllApplications:') },
@@ -700,33 +702,83 @@ async function main(): Promise<void> {
     } catch (failure) {
       console.error(failure)
     }
-    const plugins = startupRecoveryTargets(message, await listInstalledProfilePlugins(dshHome, DESKTOP_PROFILE))
+    const diagnostic = error instanceof DesktopHostFatalError ? error.diagnostic ?? '' : ''
+    const plugins = startupRecoveryTargets(message, await listInstalledProfilePlugins(dshHome, DESKTOP_PROFILE), diagnostic)
     if (plugins.length === 0 || owner.isDestroyed()) return false
     await persistCrashReport(error, 'host')
     const locale = legacyLocale(menuLocale)
-    const operationLines = await readRecentPluginOperations(pluginOperationDirectory(app.getPath('userData')), 12)
-      .catch(() => [])
+    const shownMessage = message.length > 4_000 ? `${message.slice(0, 4_000)}\n…` : message
+    let roundQuitting = false
     owner.show()
     await runStartupRecovery({
       dshHome,
       profile: DESKTOP_PROFILE,
-      message: message.length > 4_000 ? `${message.slice(0, 4_000)}\n…` : message,
+      message: shownMessage,
       plugins,
       launchDirectory: projectDir,
       locale,
-      operationLines,
-      theme: nativeTheme.themeSource,
-      show: url => {
-        if (!owner.isDestroyed()) void loadDesktopPage(owner, url).catch((error: unknown) => { console.error(error) })
+      logs: [shownMessage, diagnostic].filter(line => line.length > 0),
+      loadPlan: () => loadStartupRecoveryPlan({
+        dshHome,
+        profile: DESKTOP_PROFILE,
+        plugins,
+        appVersion: app.getVersion(),
+        runtimeVersion: bundledHarnessVersion(app.getAppPath()) ?? app.getVersion(),
+        locale
+      }),
+      upgradePlugin: (name, version) => {
+        const pnpm = pnpmEntryPath(app.getAppPath(), existsSync)
+        if (pnpm === undefined) {
+          return Promise.resolve({
+            ok: false,
+            detail: locale === 'zh' ? '找不到 pnpm，不能升级插件。' : 'pnpm is unavailable, so the plugin cannot be upgraded.'
+          })
+        }
+        return upgradePluginToGeneration({
+          dshHome,
+          pluginName: name,
+          targetVersion: version,
+          profile: DESKTOP_PROFILE,
+          nodeExecutablePath: electronNodeExecutable(process.execPath),
+          pnpmEntryPath: pnpm,
+          pnpmRunnerPath: pluginPnpmRunnerPath(app.getAppPath()),
+          hideConsoleBootstrapPath: packagedPagePath('windows-hide-console-import.mjs'),
+          note: line => { console.info(line) }
+        })
       },
-      nextAction: () => new Promise(resolve => { acceptRecoveryNavigation = resolve }),
+      recordRound: (plan, status) => recordStartupRepairRound(dshHome, app.getVersion(), plan, status),
+      theme: nativeTheme.themeSource,
+      show: async url => {
+        if (quitting || roundQuitting || owner.isDestroyed()) return false
+        return loadDesktopPage(owner, url)
+      },
+      bindRound: (deliver, cancel) => {
+        const receiver = (url: string): void => {
+          if (recoveryReceiver !== receiver) return
+          recoveryReceiver = undefined
+          deliver(url)
+        }
+        recoveryReceiver = receiver
+        const onClose = (): void => { cancel() }
+        const onQuit = (): void => {
+          roundQuitting = true
+          cancel()
+        }
+        if (!owner.isDestroyed()) owner.on('closed', onClose)
+        app.on('before-quit', onQuit)
+        return () => {
+          if (recoveryReceiver === receiver) recoveryReceiver = undefined
+          if (!owner.isDestroyed()) owner.removeListener('closed', onClose)
+          app.removeListener('before-quit', onQuit)
+        }
+      },
       relaunch: () => {
         app.relaunch({ args: normalRelaunchArguments(clearNativeLocaleAttempt(process.argv)) })
         app.quit()
       },
       quit: () => { app.quit() },
       openLog: () => { void shell.openPath(join(dshHome, FATAL_REPORT_NAME)) },
-      isQuitting: () => quitting || owner.isDestroyed()
+      isQuitting: () => quitting || roundQuitting
     })
     return true
   }
@@ -739,65 +791,62 @@ async function main(): Promise<void> {
   activeOperationJournal = operationJournal
   let desktopHost: DesktopHostProcess | undefined
   let hostEnvironment: NodeJS.ProcessEnv = process.env
-  const pendingHostFailures: unknown[] = []
-  let drainingHostFailures = false
   const harnessRestarts = new HarnessRestartSessions()
-  async function drainHostFailures(): Promise<void> {
-    drainingHostFailures = true
-    try {
-      while (pendingHostFailures.length > 0 && !quitting) {
-        const failure = pendingHostFailures.shift()
-        await handleDesktopHostFailure(failure, {
-          quitting: () => quitting,
-          safeMode,
-          recoverConfiguration: () => stability.recoverStartupConfiguration({
-            dshHome,
-            profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
-            environment: hostEnvironment,
-            launchDirectory: projectDir,
-            showOpenDialog: options => window.isDestroyed() ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options),
-            reveal: path => { shell.showItemInFolder(path) }
-          }),
-          restartHost: async () => {
-            try {
-              await backend.start(prepareDesktopHost)
-            } catch (error: unknown) {
-              console.error(error)
-              return
-            }
-            const current = harnessRestarts.current()
-            if (current === undefined) return
-            await resumeHarnessRestart(harnessRestartSteps(current.id))
-          },
-          finishRestart: () => {
-            const current = harnessRestarts.current()
-            if (current !== undefined) harnessRestarts.end(current.id)
-          },
-          presentPluginRecovery: async current => {
-            if (startupRecoveryOpen) return true
-            startupRecoveryOpen = true
-            try {
-              const presented = await presentStartupRecovery(window, current)
-              if (!presented) startupRecoveryOpen = false
-              return presented
-            } catch (error: unknown) {
-              startupRecoveryOpen = false
-              throw error
-            }
-          },
-          reportFatal: current => reportFatal(current)
-        })
-      }
-    } finally {
-      drainingHostFailures = false
-      if (pendingHostFailures.length > 0 && !quitting) void drainHostFailures()
+  let backend!: DesktopBackendController<{ start: () => Promise<void>, stop: () => Promise<void> }>
+  const hostFailures = createHostFailureIntake({
+    quitting: () => quitting,
+    handle: failure => {
+      const currentBackend = backend
+      if (currentBackend === undefined) return Promise.resolve()
+      return handleDesktopHostFailure(failure, {
+        quitting: () => quitting,
+        safeMode,
+        recoverConfiguration: () => stability.recoverStartupConfiguration({
+          dshHome,
+          profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
+          environment: hostEnvironment,
+          launchDirectory: projectDir,
+          showOpenDialog: options => window.isDestroyed() ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options),
+          reveal: path => { shell.showItemInFolder(path) }
+        }),
+        restartHost: async () => {
+          try {
+            await currentBackend.start(prepareDesktopHost)
+          } catch (error: unknown) {
+            // The failed retry publishes its own error. Do not enqueue it here.
+            console.error(error)
+            return
+          }
+          const current = harnessRestarts.current()
+          if (current === undefined) return
+          await resumeHarnessRestart(harnessRestartSteps(current.id))
+        },
+        finishRestart: () => {
+          const current = harnessRestarts.current()
+          if (current !== undefined) harnessRestarts.end(current.id)
+        },
+        presentPluginRecovery: async current => {
+          if (startupRecoveryOpen) return true
+          startupRecoveryOpen = true
+          try {
+            const presented = await presentStartupRecovery(window, current)
+            if (!presented) startupRecoveryOpen = false
+            return presented
+          } catch (error: unknown) {
+            startupRecoveryOpen = false
+            throw error
+          }
+        },
+        reportFatal: current => reportFatal(current)
+      })
+    },
+    degrade: async (failure, recoveryError) => {
+      console.error(recoveryError)
+      if (quitting) return
+      await reportFatal(failure)
     }
-  }
-  function enqueueHostFailure(failure: unknown): void {
-    pendingHostFailures.push(failure)
-    if (!drainingHostFailures) void drainHostFailures()
-  }
-  const backend = new DesktopBackendController(onFailure => {
+  })
+  backend = new DesktopBackendController(onFailure => {
     const host = new DesktopHostProcess({
       // Market installs re-exec this binary. The macOS Helper stays in Node mode;
       // launching the app's main executable opens a terminal.
@@ -832,7 +881,7 @@ async function main(): Promise<void> {
   }, state => {
     retainDesktopBoot(bootSession, state.phase)
     if (state.phase !== 'error' || quitting) return
-    enqueueHostFailure(state.failure)
+    hostFailures.enqueue(state.failure)
   })
   const disposeFileDrag = installDesktopFileDrag(event => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
@@ -1320,7 +1369,8 @@ async function main(): Promise<void> {
       () => disposeDesktopProduct()
     ]).finally(() => { app.quit() })
   })
-  await startup
+  // The controller already queued this failure. Do not enqueue or report it again.
+  if (!await continueAfterHostStartup(startup)) return
   hostReady = true
   backendReady = true
   if (hostUrl() === undefined) throw new Error('Desktop Host is unavailable')

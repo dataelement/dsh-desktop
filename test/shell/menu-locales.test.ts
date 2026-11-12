@@ -22,9 +22,10 @@ describe('eight-language desktop menus', () => {
   it.each(languages)('preserves menu commands, roles and accelerators in %s', locale => {
     const text = menuMessages[locale]
     const action = vi.fn()
-    const darwin = buildDarwinDesktopMenu({ locale, appName: 'DSH', openEnterprise: action, showAbout: action, checkForUpdates: action, restart: action, restartSafeMode: action, hide: action, hideOthers: action, unhideAll: action, quit: action })
+    const darwin = buildDarwinDesktopMenu({ locale, appName: 'DSH', openEnterprise: action, showAbout: action, checkForUpdates: action, restart: action, restartSafeMode: action, showHarnessLog: action, hide: action, hideOthers: action, unhideAll: action, quit: action })
     expect(darwin[0]?.submenu?.[0]?.label).toBe(text.about)
-    expect(darwin[0]?.submenu?.[6]?.label).toBe(text.hide.replace('{app}', 'DSH'))
+    expect(darwin[0]?.submenu?.[5]?.label).toBe(text.log)
+    expect(darwin[0]?.submenu?.[7]?.label).toBe(text.hide.replace('{app}', 'DSH'))
     expect(darwin[1]?.submenu?.[0]).toMatchObject({ role: 'undo', label: text.undo })
     darwin[0]?.submenu?.[1]?.click?.()
     expect(action).toHaveBeenCalledOnce()

@@ -336,7 +336,8 @@ describe('desktop update presentation at the IPC boundary', () => {
     expect(updateDialog.textContent).toContain('更新失败')
     expect(updateDialog.textContent).toContain('桌面更新服务不可用。')
     expect(updateDialog.textContent).not.toContain('Desktop update service is unavailable')
-    expect(ui.shadow.activeElement?.textContent).toBe('重试')
+    expect(updateDialog.tabIndex).toBe(-1)
+    expect(ui.shadow.activeElement).toBe(updateDialog)
     required(updateDialog.querySelector<HTMLButtonElement>('.dialog-close')).click()
     expect(ui.host.style.display).toBe('none')
 

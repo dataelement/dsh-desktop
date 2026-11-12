@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -152,6 +152,41 @@ describe('web home import', () => {
       JSON.stringify({ dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } })
     )
     expect(await shouldOfferWebHomeImport(coreOnly, webHome)).toBe(true)
+  })
+
+  it.each(['settings-only', 'sessions-only', 'empty-profile'])('imports %s without requiring profile files', async (layout) => {
+    const source = await createRoot('dsh-web-minimal-')
+    const dest = join(await createRoot('dsh-desktop-minimal-'), 'harness')
+    if (layout === 'sessions-only') {
+      await mkdir(join(source, 'sessions', 'one'), { recursive: true })
+      await writeFile(join(source, 'sessions', 'one', 'session.json'), '{"id":"one"}\n')
+    } else {
+      await writeFile(join(source, 'settings.yaml'), 'theme: light\n')
+      if (layout === 'empty-profile') await mkdir(join(source, 'profiles', 'web'), { recursive: true })
+    }
+    expect(await shouldOfferWebHomeImport(dest, source)).toBe(true)
+
+    await importWebHome({ source, dest })
+
+    expect(await readFile(join(dest, 'profiles', 'web', 'pnpm-workspace.yaml'), 'utf8'))
+      .toBe('packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n')
+    const payload = layout === 'sessions-only' ? join('sessions', 'one', 'session.json') : 'settings.yaml'
+    expect(await readFile(join(dest, payload))).toEqual(await readFile(join(source, payload)))
+    expect(existsSync(join(source, 'profiles', 'web', 'pnpm-workspace.yaml'))).toBe(false)
+    expect((await readImportDecision(dest))?.decision).toBe('imported')
+    expect(existsSync(importTmpPath(dest))).toBe(false)
+  })
+
+  it('preserves an existing workspace configuration byte for byte', async () => {
+    const source = await createWebHome()
+    const config = 'packages:\n  - .\n\nnodeLinker: isolated\n# user configuration\n'
+    await writeFile(join(source, 'profiles', 'web', 'pnpm-workspace.yaml'), config)
+    const dest = join(await createRoot('dsh-desktop-workspace-config-'), 'harness')
+
+    await importWebHome({ source, dest })
+
+    expect(await readFile(join(dest, 'profiles', 'web', 'pnpm-workspace.yaml'), 'utf8')).toBe(config)
+    expect(await readFile(join(source, 'profiles', 'web', 'pnpm-workspace.yaml'), 'utf8')).toBe(config)
   })
 
   it('replaces an unused desktop home without leaving the old tree behind', async () => {
@@ -323,6 +358,9 @@ describe('web home import', () => {
     expect(existsSync(dest)).toBe(false)
     expect(existsSync(importTmpPath(dest))).toBe(false)
     expect(await desktopHomeIsUnused(dest)).toBe(true)
+    expect(await readImportDecision(dest)).toBeUndefined()
+    expect(await readFile(blocker, 'utf8')).toBe('blocked\n')
+    expect(await readFile(join(webHome, 'settings.yaml'), 'utf8')).toBe('locale:\n  preference: zh\n')
   })
 
   it('builds bilingual preview copy for the import page', () => {

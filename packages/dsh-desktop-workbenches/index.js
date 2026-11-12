@@ -126,6 +126,14 @@ export function apply(ctx, config) {
       }
     }
   })
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/create-workbench.mjs', methods: ['GET'], requestBody: 'buffered',
+    async fetch() {
+      return new Response(await readFile(new URL('./create-workbench.mjs', import.meta.url), 'utf8'), {
+        headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }
+      })
+    }
+  })
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/development-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/author-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/market-acceptance', 'market-acceptance.zh.md'))

@@ -89,6 +89,24 @@ describe('web home import offer', () => {
     expect(await readFile(join(homes.dshHome, 'settings.yaml'), 'utf8')).toBe(before)
   })
 
+  it('imports a home without a profile without asking again', async () => {
+    const homes = await fakeHomes()
+    await rm(join(homes.webHome, 'profiles'), { recursive: true })
+    const notices: Array<string | undefined> = []
+    const result = await offerWebHomeImport({
+      ...homes,
+      choose: async (_preview, notice) => {
+        notices.push(notice)
+        return notices.length === 1 ? 'import' : undefined
+      }
+    })
+
+    expect(result).toBe('imported')
+    expect(notices).toEqual([undefined])
+    expect(await readFile(join(homes.dshHome, 'settings.yaml'), 'utf8')).toBe('theme: light\n')
+    expect(await readFile(join(homes.webHome, 'settings.yaml'), 'utf8')).toBe('theme: light\n')
+  })
+
   it('asks again after a failed copy and records a later skip', async () => {
     const homes = await fakeHomes()
     const notices: Array<string | undefined> = []

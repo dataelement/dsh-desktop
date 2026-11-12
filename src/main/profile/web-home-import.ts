@@ -277,6 +277,8 @@ async function copyHomePayload(
 
   const sourceProfile = join(source, 'profiles', 'web')
   const destProfile = join(dest, 'profiles', 'web')
+  // A valid home may contain only settings or sessions, without any profile files to copy.
+  await mkdir(destProfile, { recursive: true })
   for (const name of PROFILE_FILES) {
     await copyIfPresent(join(sourceProfile, name), join(destProfile, name), dest, note)
   }
