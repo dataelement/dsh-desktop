@@ -194,7 +194,7 @@ async function openMarket() {
 
 async function selectArchive(archive) {
   await click("document.querySelector('.dshWbMarketHeaderActions button[aria-haspopup=menu]')")
-  await click(textButton('/^(上传安装包安装|Upload package)$/'))
+  await click(textButton('/^(上传安装包安装|Install from a package)$/'))
   await waitFor('upload dialog', () => evaluate("!!document.querySelector('.dshWbInstallModal input[type=file]')"))
   const { root } = await page.send('DOM.getDocument')
   const { nodeId } = await page.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.dshWbInstallModal input[type=file]' })
