@@ -51,10 +51,13 @@ describe('uploaded file preview', () => {
     }
     const open = new Function('ctx', 'session', 'sessionId', `${source.slice(helpersStart, helpersEnd)}; return (${source.slice(callbackStart, callbackEnd)});`)(ctx, session, 'session') as (path: string, options?: { line?: number; revealInFileManager?: boolean }) => Promise<void>
     await open('./report.txt', { line: 7 })
-    expect(opened.pop()).toEqual(['dsh-resource://file/session/session/nested/report.txt', { params: { line: 7 } }])
+    // Preserve the Host path when renderer session.cwd still names the old root.
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session//workspace/nested/report.txt', { params: { line: 7 } }])
     workingDirectory = '/workspace/changed'
     await open('report.txt')
-    expect(opened.pop()).toEqual(['dsh-resource://file/session/session/changed/report.txt'])
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session//workspace/changed/report.txt'])
+    await open('/workspace/nested/report.txt')
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session//workspace/nested/report.txt'])
     attached = true
     await open('report.txt', { line: 7 })
     expect(opened.pop()).toEqual(['dsh-resource://file/session/session//uploads/report.txt'])
