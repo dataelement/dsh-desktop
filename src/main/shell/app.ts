@@ -34,7 +34,7 @@ import { desktopLocale as matchDesktopLocale, desktopLanguageState, effectiveNat
 import { updateText } from '../../shared/desktop-update-messages'
 import { desktopDailyText } from '../../shared/desktop-daily-messages'
 import { desktopMenuMessages } from './menu-messages'
-import { type DesktopMenuCommand } from '../../shared/desktop-menu'
+import { usesDesktopCaption, type DesktopMenuCommand } from '../../shared/desktop-menu'
 import { parseWindowsMenuRequest, windowsMenuTemplate } from '../windows-menu'
 import { desktopWindowChrome, windowsChromeBackground, windowsTitleBarOverlay } from './window-chrome'
 import { buildWebImportViewModel } from '../web-import-view'
@@ -349,7 +349,7 @@ function createWindow(
     event.preventDefault()
     window.setTitle(app.getName())
   })
-  if (process.platform === 'win32') window.setMenuBarVisibility(false)
+  if (usesDesktopCaption(process.platform)) window.setMenuBarVisibility(false)
   window.webContents.on('console-message', details => {
     if (details.level !== 'error') return
     rendererConsole.push(`${details.sourceId}:${String(details.lineNumber)} ${details.message}`)
@@ -542,7 +542,7 @@ async function main(): Promise<void> {
   const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   menuLocale = await savedDesktopMenuLocale(dshHome, safeMode, reportedLocale)
   const refreshApplicationMenu = (): void => {
-    if (process.platform === 'win32') {
+    if (usesDesktopCaption(process.platform)) {
       const template = buildWindowsApplicationMenu({
         locale: menuLocale,
         connectPhone: () => { void openMobilePairing().catch((error: unknown) => { console.error(error) }) },
@@ -1115,7 +1115,7 @@ async function main(): Promise<void> {
   ipcMain.removeHandler('desktop-titlebar:popup-menu')
   ipcMain.handle('desktop-titlebar:popup-menu', (event, name: unknown, x: unknown, y: unknown) => {
     const owner = assertMain(event)
-    if (process.platform !== 'win32') throw new Error('The caption menu is only available on Windows.')
+    if (!usesDesktopCaption(process.platform)) throw new Error('The caption menu is only available on Windows and Linux.')
     const request = parseWindowsMenuRequest(name, x, y)
     const zoomFactor = owner.webContents.getZoomFactor()
     const template = windowsMenuTemplate(request.name, menuLocale, zoomFactor, {
@@ -1135,7 +1135,7 @@ async function main(): Promise<void> {
   ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
     const owner = assertMain(event)
     if (typeof isDark !== 'boolean') throw new Error('The DSH Desktop titlebar theme must be a boolean.')
-    if (process.platform === 'win32') {
+    if (usesDesktopCaption(process.platform)) {
       owner.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
       owner.setBackgroundColor(windowsChromeBackground(isDark))
     }

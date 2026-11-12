@@ -28,9 +28,11 @@ const findCollapsedWidth = (node: ts.Node): void => {
 }
 findCollapsedWidth(ast)
 
-it('uses the upstream zero-width column after the Windows preload marks the page', () => {
+it.each(['win32', 'linux'])('uses the caption layout without changing the %s platform identity', platform => {
   const doc = document.implementation.createHTMLDocument()
+  doc.documentElement.dataset.platform = platform
   markWindowsTitlebar(doc)
+  expect(doc.documentElement.dataset.platform).toBe(platform)
   expect(doc.documentElement.hasAttribute('data-windows-titlebar')).toBe(true)
   expect(doc.documentElement.style.getPropertyValue('--dsh-windows-titlebar-height')).toBe(`${WINDOWS_TITLEBAR_HEIGHT}px`)
   if (!collapsedWidthSource) throw new Error('Harness collapsed sidebar width is unavailable')
