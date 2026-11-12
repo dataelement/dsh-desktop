@@ -4,11 +4,27 @@
 
 资源从当前 Desktop 的 `resources/office-runtime` 读取；开发时读取 `.build/office-runtime`。技能和 Python 必须在 ASAR 外，不能从中立 launch-root、Profile 或用户项目查找。依赖查询直接返回当前安装携带的只读 Python 路径，不复制到用户 Profile，不修改 PATH；升级后重新查询即使用新安装路径。LibreOffice CLI 使用 #646 的 Electron Helper / Electron executable 的 Node 模式与固定 CLI 入口，保留引擎物理路径解析。
 
-Python 和 wheel 的固定 URL/SHA-256 来源：[上游固定提交的 primary-runtime lock](https://github.com/deepseek-ai/deepseek-harness/blob/639ed015397290b3745d163aafe02ffee4aa3f84/scripts/primary-runtime/lock.json)。本仓库仅保留 Windows x64、macOS arm64/x64 的 Python 相关输入；不携带第二份 Node 或 pnpm。新增 tar / fflate 为构建时提取工具，不增加 renderer 依赖。
+Python 和 wheel 的固定 URL/SHA-256 来源：[上游固定提交的 primary-runtime lock](https://github.com/deepseek-ai/deepseek-harness/blob/639ed015397290b3745d163aafe02ffee4aa3f84/scripts/primary-runtime/lock.json)。本仓库保留 Windows x64、macOS arm64/x64 和 Linux x64 的 Python 相关输入；不携带第二份 Node 或 pnpm。Linux x64 追加项保持同一 Python / wheel 版本，来源为 [python-build-standalone 20260901 发布元数据](https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20260901) 中的 SHA-256 digest，以及 PyPI 的 [numpy 2.3.5](https://pypi.org/pypi/numpy/2.3.5/json)、[pandas 3.0.1](https://pypi.org/pypi/pandas/3.0.1/json)、[Pillow 12.3.0](https://pypi.org/pypi/pillow/12.3.0/json)、[lxml 6.1.3](https://pypi.org/pypi/lxml/6.1.3/json) 文件 URL / SHA-256。选择通用 `x86_64-unknown-linux-gnu` Python（不使用 x86_64_v2/v3/v4 或 musl），二进制 wheel 的 manylinux 基线不高于目标 UOS 20 的 glibc 2.28。新增 tar / fflate 为构建时提取工具，不增加 renderer 依赖。
 
-构建阶段下载并校验固定资源、离线解包 wheel，不运行 pip install，不依赖系统 Python。生成物位于忽略目录 `.build`；构建失败不能继续消费旧 payload。包内验证必须实际调用 Python 创建、重新读取 DOCX/PPTX/XLSX、检查 ZIP 正斜杠路径，执行技能结构检查及 LibreOffice 转换。Windows 和 Intel Mac 的执行验收须在对应原生 runner 完成；其他平台的成功不可替代。
+构建阶段下载并校验固定资源、离线解包 wheel，不运行 pip install，不依赖系统 Python。生成物位于忽略目录 `.build`；构建失败不能继续消费旧 payload。包内验证必须实际调用 Python 创建、重新读取 DOCX/PPTX/XLSX、检查 ZIP 正斜杠路径，执行技能结构检查及 LibreOffice 转换。Windows、Intel Mac 和 Linux x64 的执行验收须在对应原生 runner 完成；其他平台的成功不可替代。
 
 本地 macOS arm64 开发目录包实测 Office 资源约 205 MiB（包含 Python、numpy/pandas 与 Office 库）；这不是 DMG/NSIS 压缩增量。首次运行不做联网安装或 Profile 复制；安装时间增量取决于目标安装器的解压，需要原生产物对照测量。
+
+## Linux x64 Office 引擎与验收
+
+当前锁定的 LibreOffice Kit 0.1.5 在 Linux 上优先探测开发用的 native glibc 引擎（兼容版本 0.1.1），没有安装兼容 native 包时使用它正式声明的 `wasm` 0.1.5 引擎；这不是调用系统 `soffice` 的兜底。其 worker 实现提供 PDF 转换、表格重算和图片渲染，但源码具有实现不等于目标机器已验收。发布包必须携带 `@deepseek-ai/libreoffice-kit-wasm` 的 loader / wasm / data / metadata，且与 native 引擎一样从 ASAR 外的物理目录解析。只携带 Python 不足以启用 Office/PPT 预览。
+
+LibreOffice Kit 0.1.5 的 API 与 CLI bundle 各自内联安装探测，二者均需应用 Electron ASAR 兼容补丁：[kit patch](../patches/@deepseek-ai+libreoffice-kit+0.1.5.patch) 将 `lstatSync(..., { throwIfNoEntry: false }) !== undefined` 改为同时排除 `null` / `undefined`。Electron 对 ASAR 中不存在的路径返回 `null`，普通 Node 返回 `undefined`；旧逻辑会把完全未安装的 native 引擎误报为 incomplete。这不是 builder 残留目录，不应通过排除所有 native 包或无条件 WASM fallback 绕过。真实存在但丢失 package.json 的 native 目录、无效 manifest 仍须 fail closed 并保留原始 cause。上游发布在 API 与 CLI 中同时处理这两种缺失值的版本后可移除这两处 hunk；其他图像进度补丁需独立评估。
+
+[真实 ASAR 回归](../test/office-engine-asar.test.ts) 使用 Electron Node 模式、实际 kit 的 index.js / cli.js 两份 engine selection 源码及真实 ASAR 文件，覆盖未安装 native 时解析 unpacked WASM、损坏 native 目录、无效 native manifest；不替代完整 WASM 转换/PPT 门禁或重打包验收。该测试已登记 Windows serial；Windows 原生执行结果仍需独立验证。
+
+在 UOS 20 x64 / glibc 2.28 上应运行：
+
+1. `npm run office:prepare`：下载并校验本平台锁定资源，生成 manifest 的 `platform: linux`；模板重算和预览仍走固定 Office CLI。
+2. `npm test -- test/office-runtime.test.mjs test/office-engine-resolution.test.ts`：Python 创建/重读 DOCX/PPTX/XLSX、依赖闭包、插件实际激活、物理引擎解析和三种格式 PDF 转换。
+3. 原生打包后运行 Office/PPT 门禁及安装应用预览，核对重算值、中文字体和图片。WASM 冷启动时间/内存必须实际测量；不能通过跳过门禁、放宽超时或改用系统 LibreOffice 声称支持。
+
+Linux arm64、musl 及低于 glibc 2.28 的系统不在此次支持范围。跨平台只下载/解包不执行目标 Python；例如 `prepareOfficeRuntime({ target: 'linux-x64', output: '.build/office-runtime-linux-x64' })` 可用于独立载荷核查，不能替代上述原生执行。
 
 ## 通用 PPT 与模板 PPT
 

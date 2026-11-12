@@ -12,11 +12,24 @@ import { setupDesktopStoragePersistence } from './desktop-storage'
 import { createSidebarBrowserBridge } from './sidebar-browser'
 import { markDesktopPlatform } from './desktop-platform'
 import { mountDesktopUpdateUi } from './desktop-update-ui'
+import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'
 import { mountSafeModeFrame } from './safe-mode-frame'
 import { isSafeModeRenderer } from '../main/shell/mobile-pairing'
 
 const appDocument = location.protocol === `${SCHEME}:` && location.hostname === 'app'
 const webImportDocument = location.protocol === 'file:' && location.pathname.endsWith('/web-import.html')
+
+if (process.platform === 'win32') {
+  // This preload runs before <html> exists. Harness reads the marker while
+  // creating its first frame, so the attribute has to land as soon as the
+  // element appears. The caption menu itself waits until the body exists.
+  markWindowsTitlebar(document)
+  const mountCaption = (): void => {
+    mountWindowsTitlebarLayout({ document, ipcRenderer })
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountCaption, { once: true })
+  else mountCaption()
+}
 
 if (webImportDocument) {
   contextBridge.exposeInMainWorld('dshWebImport', {

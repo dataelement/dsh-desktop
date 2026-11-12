@@ -1,3 +1,5 @@
+import { desktopMenuMessages } from './menu-messages'
+
 export const ENTERPRISE_URL = 'https://dshdesktop.com/zh/enterprise/'
 
 export interface DesktopMenuItem {
@@ -12,69 +14,34 @@ export interface DesktopMenuItem {
 }
 
 export function enterpriseMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '了解企业版' : 'Explore Enterprise'
+  return desktopMenuMessages(locale).enterprise
 }
 
 export function updateMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '检查更新…' : 'Check for Updates…'
+  return desktopMenuMessages(locale).update
 }
 
 export function aboutMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '关于 DSH Desktop' : 'About DSH Desktop'
+  return desktopMenuMessages(locale).about
 }
 
 export function safeModeMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '以安全模式重启…' : 'Restart as Safe Mode…'
+  return desktopMenuMessages(locale).safeMode
 }
 
 export function restartMenuLabel(locale: string): string {
-  return locale.toLowerCase().startsWith('zh') ? '重启' : 'Restart'
+  return desktopMenuMessages(locale).restart
 }
 
 export function shortcutFileMenuLabels(locale: string): { fileMenu: string, closePage: string } {
-  return locale.toLowerCase().startsWith('zh')
-    ? { fileMenu: '文件', closePage: '关闭页面或窗口' }
-    : { fileMenu: 'File', closePage: 'Close Page or Window' }
+  const { fileMenu, closePage } = desktopMenuMessages(locale)
+  return { fileMenu, closePage }
 }
 
-/** Edit and Window titles. Role actions stay; their visible text follows the Desktop language. */
-export function standardMenuLabels(locale: string): {
-  edit: string
-  undo: string
-  redo: string
-  cut: string
-  copy: string
-  paste: string
-  selectAll: string
-  window: string
-  minimize: string
-  close: string
-} {
-  return locale.toLowerCase().startsWith('zh')
-    ? {
-      edit: '编辑',
-      undo: '撤销',
-      redo: '重做',
-      cut: '剪切',
-      copy: '拷贝',
-      paste: '粘贴',
-      selectAll: '全选',
-      window: '窗口',
-      minimize: '最小化',
-      close: '关闭'
-    }
-    : {
-      edit: 'Edit',
-      undo: 'Undo',
-      redo: 'Redo',
-      cut: 'Cut',
-      copy: 'Copy',
-      paste: 'Paste',
-      selectAll: 'Select All',
-      window: 'Window',
-      minimize: 'Minimize',
-      close: 'Close'
-    }
+/** Role actions remain native; their labels follow the Desktop language. */
+export function standardMenuLabels(locale: string) {
+  const { edit, undo, redo, cut, copy, paste, selectAll, window, minimize, close } = desktopMenuMessages(locale)
+  return { edit, undo, redo, cut, copy, paste, selectAll, window, minimize, close }
 }
 
 /** Keep About first. The file menu follows the application menu when shortcuts are installed. */
@@ -112,7 +79,8 @@ export function externalUrlToOpen(url: string): string | undefined {
  * Enterprise opens the product site.
  * Restart starts the current Host again. Safe Mode relaunches into the core profile when that action is supplied.
  * Phone pairing stays out of this menu.
- * Other platforms keep Electron's menu; their enterprise entry is the settings footer.
+ * Windows keeps a hidden copy of this command set so accelerators survive; the visible
+ * caption is the in-page 应用 / 编辑 menu.
  */
 export function buildDarwinDesktopMenu(options: {
   locale: string
@@ -127,7 +95,7 @@ export function buildDarwinDesktopMenu(options: {
   unhideAll: () => void
   quit: () => void
 }): DesktopMenuItem[] {
-  const chinese = options.locale.toLowerCase().startsWith('zh')
+  const text = desktopMenuMessages(options.locale)
   const standard = standardMenuLabels(options.locale)
   return [
     {
@@ -144,15 +112,15 @@ export function buildDarwinDesktopMenu(options: {
           : [{ label: safeModeMenuLabel(options.locale), click: options.restartSafeMode }]),
         { type: 'separator' },
         {
-          label: chinese ? `隐藏 ${options.appName}` : `Hide ${options.appName}`,
+          label: text.hide.replace('{app}', options.appName),
           accelerator: 'Command+H',
           click: options.hide
         },
-        { label: chinese ? '隐藏其他' : 'Hide Others', accelerator: 'Command+Alt+H', click: options.hideOthers },
-        { label: chinese ? '全部显示' : 'Show All', click: options.unhideAll },
+        { label: text.hideOthers, accelerator: 'Command+Alt+H', click: options.hideOthers },
+        { label: text.showAll, click: options.unhideAll },
         { type: 'separator' },
         {
-          label: chinese ? `退出 ${options.appName}` : `Quit ${options.appName}`,
+          label: text.quitApp.replace('{app}', options.appName),
           accelerator: 'Command+Q',
           click: options.quit
         }
@@ -168,6 +136,84 @@ export function buildDarwinDesktopMenu(options: {
         { role: 'copy', label: standard.copy },
         { role: 'paste', label: standard.paste },
         { role: 'selectAll', label: standard.selectAll }
+      ]
+    },
+    {
+      label: standard.window,
+      submenu: [
+        { role: 'minimize', label: standard.minimize },
+        { role: 'close', label: standard.close }
+      ]
+    }
+  ]
+}
+
+/**
+ * Hidden Windows application menu. The bar stays invisible; roles and the
+ * Harness accelerators remain registered. The page caption draws 应用 / 编辑
+ * and does not register those accelerators again.
+ */
+export function buildWindowsApplicationMenu(options: {
+  locale: string
+  connectPhone: () => void
+  restart: () => void
+  restartSafeMode?: () => void
+  showHarnessLog: () => void
+  checkForUpdates: () => void
+  quit: () => void
+}): DesktopMenuItem[] {
+  const text = desktopMenuMessages(options.locale)
+  const standard = standardMenuLabels(options.locale)
+  return [
+    {
+      label: text.application,
+      submenu: [
+        {
+          label: text.phone,
+          accelerator: 'CmdOrCtrl+Shift+M',
+          click: options.connectPhone
+        },
+        {
+          label: restartMenuLabel(options.locale),
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: options.restart
+        },
+        ...(options.restartSafeMode === undefined
+          ? []
+          : [{ label: safeModeMenuLabel(options.locale), click: options.restartSafeMode }]),
+        {
+          label: text.log,
+          click: options.showHarnessLog
+        },
+        { type: 'separator' },
+        { label: updateMenuLabel(options.locale), accelerator: 'CmdOrCtrl+U', click: options.checkForUpdates },
+        { type: 'separator' },
+        { role: 'quit', label: text.exit, click: options.quit }
+      ]
+    },
+    {
+      label: standard.edit,
+      submenu: [
+        { role: 'undo', label: standard.undo },
+        { role: 'redo', label: standard.redo },
+        { type: 'separator' },
+        { role: 'cut', label: standard.cut },
+        { role: 'copy', label: standard.copy },
+        { role: 'paste', label: standard.paste },
+        { role: 'selectAll', label: standard.selectAll }
+      ]
+    },
+    {
+      label: text.view,
+      submenu: [
+        { role: 'reload', label: text.reload },
+        { role: 'toggleDevTools', label: text.devtools },
+        { type: 'separator' },
+        { role: 'resetZoom', label: text.actualSize },
+        { role: 'zoomIn', label: text.zoomIn },
+        { role: 'zoomOut', label: text.zoomOut },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: text.fullscreen }
       ]
     },
     {

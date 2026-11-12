@@ -24,14 +24,16 @@ export interface ProfileStartupMaintenanceDeps {
   recoverInterruptedMigration: () => Promise<MigrationRecoveryOutcome>
   incompletePluginRestoreId: () => Promise<string | undefined>
   preparePackageStore: () => Promise<void>
-  demoteMarketGeneration: () => Promise<boolean>
+  /** @deprecated Legacy injection accepted for callers; startup never demotes market generations. */
+  demoteMarketGeneration?: () => Promise<boolean>
   enforcePendingPluginRemovals: () => Promise<void>
   prepareGenerationsForLaunch: () => Promise<void>
   shouldDeferProfileMaintenance: () => Promise<boolean>
   migrateProfileToGenerations: () => Promise<MigrationOutcome>
-  ensureMarketBaseline: () => Promise<void>
-  /** Whether the market already installed can carry this boot on its own. */
-  marketUsableWithoutBaseline: () => Promise<boolean>
+  /** @deprecated Legacy injection accepted for callers; startup never installs a market baseline. */
+  ensureMarketBaseline?: () => Promise<void>
+  /** @deprecated Market health is inspected through ordinary plugin recovery. */
+  marketUsableWithoutBaseline?: () => Promise<boolean>
   reportProfileConsistency: () => Promise<void>
   inspectProfileBootInputs: () => Promise<ProfileBootInputProblem | undefined>
   /**
@@ -55,12 +57,6 @@ export interface ProfileStartupMaintenanceDeps {
  * Bundle reconciliation still runs: missing installed layers are added and
  * duplicate PPT layers owned by Desktop are removed from the
  * manifest only. Package files, user patches and plugin data remain intact.
- * The market's verified baseline is the targeted exception: dshmarket is a
- * core bundle, never a generation, and the app cannot boot without a working
- * one — so it is demoted out of any generation and brought to the baseline in
- * the shared tree ahead of projection and ahead of the removal-verification
- * gate, while Harness is stopped. A baseline that cannot be installed only
- * blocks startup when the market already present is unusable.
  */
 export async function runProfileStartupMaintenance(
   deps: ProfileStartupMaintenanceDeps
@@ -160,32 +156,6 @@ export async function runProfileStartupMaintenance(
     return { outcome: 'safe-recovery', reason }
   }
 
-  /**
-   * dshmarket is never a generation, and a stray generation for it is
-   * re-linked by projection on *every* launch — so it is demoted back to the
-   * shared tree and brought to the verified baseline before projection runs.
-   *
-   * This deliberately runs even when a pending plugin removal has deferred
-   * the rest: a market that cannot load stops Harness from booting, and boot
-   * is what marks the removal verified. Leaving it behind that gate is what
-   * turned one incompatible market build into a permanent boot loop — the
-   * repair needed a successful boot to be allowed, and the boot needed the
-   * repair. Establish the baseline before starting the migration, so its
-   * snapshot and any rollback retain the compatible market as their starting
-   * state. Interrupted recovery and incomplete restores still block all writes.
-   */
-  const establishMarketBaseline = async (): Promise<string | undefined> => {
-    try {
-      await deps.demoteMarketGeneration()
-      await deps.ensureMarketBaseline()
-      return undefined
-    } catch (error) {
-      return `market baseline could not be established: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    }
-  }
-
   let deferRemovalMaintenance: boolean
   try {
     await deps.enforcePendingPluginRemovals()
@@ -196,28 +166,6 @@ export async function runProfileStartupMaintenance(
     }`
     deps.note(`[desktop] normal profile maintenance blocked: ${reason}`)
     return { outcome: 'safe-recovery', reason }
-  }
-  const marketFailure = await establishMarketBaseline()
-  if (marketFailure !== undefined) {
-    // An install that cannot reach the registry is common and must not cost the
-    // user their normal Profile while the market they already have still loads.
-    // The pending marker keeps the repair queued for the next launch.
-    let marketStillUsable = false
-    try {
-      marketStillUsable = await deps.marketUsableWithoutBaseline()
-    } catch (error) {
-      deps.note(
-        `[desktop] could not inspect the installed market: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
-    }
-    if (marketStillUsable) {
-      deps.note(`[desktop] market baseline deferred, keeping the installed market: ${marketFailure}`)
-    } else {
-      deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
-      return { outcome: 'safe-recovery', reason: marketFailure, repairable: true }
-    }
   }
   if (deferRemovalMaintenance) {
     // Projection is required to make a durable generation tombstone visible,

@@ -1,4 +1,7 @@
 import { BrowserWindow, dialog, nativeTheme } from 'electron'
+import type { DesktopLocale } from '../../shared/desktop-locale'
+import { desktopDailyText } from '../../shared/desktop-daily-messages'
+import { updateText } from '../../shared/desktop-update-messages'
 import { LanMobileBridge } from '../mobile/lan-mobile-bridge'
 import { secureWindow } from '../security'
 import { shouldOpenInternetTunnel } from './mobile-pairing'
@@ -7,27 +10,27 @@ export async function presentMobilePairing(options: {
   bridge: LanMobileBridge
   parent?: BrowserWindow
   current?: BrowserWindow
-  locale: 'zh' | 'en'
+  locale: DesktopLocale
   iconPath?: string
   hostReady: boolean
 }): Promise<BrowserWindow | undefined> {
-  const chinese = options.locale === 'zh'
+  const t = (key: Parameters<typeof desktopDailyText>[1]) => desktopDailyText(options.locale, key)
   const parent = options.parent !== undefined && !options.parent.isDestroyed() ? options.parent : undefined
   if (!options.hostReady) {
-    await showNotice(parent, {
+    await showNotice(parent, options.locale, {
       type: 'info',
-      message: chinese ? '桌面服务还在启动。' : 'Harness is still starting.',
-      detail: chinese ? '等 DSH Desktop 就绪后再连接手机。' : 'Wait until DSH Desktop is ready, then connect your phone again.'
+      message: t('mobileStarting'),
+      detail: t('mobileWait')
     })
     return undefined
   }
   let snapshot = await options.bridge.start()
   if (snapshot.desktopUrl === undefined) {
     await options.bridge.stop()
-    await showNotice(parent, {
+    await showNotice(parent, options.locale, {
       type: 'warning',
-      message: chinese ? '手机桥没有启动。' : 'Failed to start mobile bridge.',
-      detail: chinese ? '请再试一次。' : 'Please try again.'
+      message: t('mobileFailed'),
+      detail: t('tryAgain')
     })
     return undefined
   }
@@ -58,14 +61,15 @@ export async function presentMobilePairing(options: {
   return window
 }
 
-function pairingTitle(locale: 'zh' | 'en'): string {
-  return locale === 'zh' ? '连接移动设备' : 'Connect Mobile Device'
+function pairingTitle(locale: DesktopLocale): string {
+  return desktopDailyText(locale, 'mobileWindowTitle')
 }
 
 async function showNotice(
   parent: BrowserWindow | undefined,
+  locale: DesktopLocale,
   notice: { type: 'info' | 'warning'; message: string; detail: string }
 ): Promise<void> {
-  const box = { ...notice, buttons: ['OK'] }
+  const box = { ...notice, buttons: [updateText(locale, 'ok')] }
   await (parent === undefined ? dialog.showMessageBox(box) : dialog.showMessageBox(parent, box))
 }

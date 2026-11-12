@@ -354,6 +354,11 @@ export interface HostFailureActions {
   restartHost: () => Promise<void>
   presentPluginRecovery: (failure: unknown) => Promise<boolean>
   reportFatal: (failure: unknown) => Promise<void>
+  /**
+   * End a harness-restart session before leaving the retry path.
+   * Retry keeps the session so a later successful start can restore the page.
+   */
+  finishRestart?: () => void
 }
 
 /**
@@ -361,15 +366,23 @@ export interface HostFailureActions {
  * Safe Mode has no plugin page, so a declined repair still uses the short dialog.
  */
 export async function handleDesktopHostFailure(failure: unknown, actions: HostFailureActions): Promise<void> {
-  if (actions.quitting()) return
+  if (actions.quitting()) {
+    actions.finishRestart?.()
+    return
+  }
   const outcome = await actions.recoverConfiguration()
-  if (actions.quitting()) return
+  if (actions.quitting()) {
+    actions.finishRestart?.()
+    return
+  }
   if (outcome === 'retry') {
     // A failed restart publishes another host failure. The caller queues that
-    // attempt; reporting it here would open a second dialog.
+    // attempt; reporting it here would open a second dialog. The restart
+    // session stays open for that attempt.
     await actions.restartHost()
     return
   }
+  actions.finishRestart?.()
   if (actions.safeMode) {
     await actions.reportFatal(failure)
     return

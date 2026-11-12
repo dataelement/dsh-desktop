@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { packagedLayout } = require('./packaged-layout.cjs')
 const os = require('node:os')
 const { createRequire } = require('node:module')
 const { execFile } = require('node:child_process')
@@ -90,23 +91,17 @@ async function verifyRuntime(appRoot) {
 }
 
 module.exports = async function verifyPackagedPptRuntime(context) {
-  const product = context.packager.appInfo.productFilename
-  const macContents = path.join(context.appOutDir, product + '.app', 'Contents')
+  const { resources, executable } = packagedLayout(context)
   // Verify through the path the Desktop loads packages from: app.asar, read by
   // the Electron runtime, with native files served from app.asar.unpacked.
   const candidates = [
-    path.join(context.appOutDir, 'resources', 'app.asar'),
-    path.join(macContents, 'Resources', 'app.asar'),
-    path.join(context.appOutDir, 'resources', 'app'),
-    path.join(macContents, 'Resources', 'app')
+    path.join(resources, 'app.asar'),
+    path.join(resources, 'app')
   ]
   const appRoot = candidates.find(candidate => require('node:fs').existsSync(candidate))
   if (!appRoot) throw new Error('Cannot locate the packaged application runtime')
   // The packaged Electron executable is the only Node runtime the app ships;
   // macOS runs Node work through its Helper, as the Desktop does.
-  const executable = process.platform === 'win32'
-    ? path.join(context.appOutDir, product + '.exe')
-    : path.join(macContents, 'Frameworks', product + ' Helper.app', 'Contents', 'MacOS', product + ' Helper')
   if (!require('node:fs').existsSync(executable)) throw new Error('Cannot locate the packaged Electron executable')
   await execFileAsync(executable, [__filename, '--verify-runtime', appRoot], {
     cwd: path.dirname(appRoot),

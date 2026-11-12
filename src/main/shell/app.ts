@@ -8,6 +8,7 @@ import { DesktopStorageManager } from '../profile/desktop-storage'
 import { prepareGenerationsForLaunch } from '../profile/generation-launch'
 import { FATAL_REPORT_NAME, recordFatalFailure, redactFatalText } from '../recovery/fatal-entry'
 import { migrateWebProfile } from '../profile/profile-rename'
+import { initializeDesktopUpdateService } from '../desktop-service'
 import { appBundlePathFromExecutable, quarantineAppBundleLaunchAgents } from '../desktop-service/launch-agent-audit'
 import { DESKTOP_SCHEME, installDesktopProtocol } from '../desktop-protocol'
 import { normalRelaunchArguments, relaunchArguments, shouldStartInSafeMode } from '../safe-mode'
@@ -20,34 +21,39 @@ import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../recovery/safe-mode-
 import { checkForUpdates, getUpdateStatus, registerUpdateHandlers, startUpdateManager } from '../update/update-manager'
 import { aboutDetail, bundledHarnessVersion } from '../version-info'
 import {
-  chosenHarnessLocale,
-  explicitHarnessLocale,
-  localePreferenceFromProfilePatch,
-  localePreferenceFromSettings,
   resolveHarnessLocale,
-  selectHarnessLocale,
   type HarnessLocale
 } from '../application-locale'
 import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
-import { developmentEnvironment } from '../development-environment'
+import { developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
 import { resolveDesktopIdentity } from './product-identity'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
-import { desktopWindowChrome } from './window-chrome'
+import { clearNativeLocaleAttempt, confirmNativeLocaleRestart, NativeDirectoryPicker, nativeLocaleRelaunchArguments, shouldCalibrateNativeLocale } from './native-locale'
+import { nativeLocaleMessages } from './native-locale-messages'
+import { savedDesktopLocaleValue } from './desktop-locale-preference'
+import { desktopLocale as matchDesktopLocale, desktopLanguageState, effectiveNativeLocale, legacyLocale } from '../../shared/desktop-locale'
+import { updateText } from '../../shared/desktop-update-messages'
+import { desktopDailyText } from '../../shared/desktop-daily-messages'
+import { desktopMenuMessages } from './menu-messages'
+import { type DesktopMenuCommand } from '../../shared/desktop-menu'
+import { parseWindowsMenuRequest, windowsMenuTemplate } from '../windows-menu'
+import { desktopWindowChrome, windowsChromeBackground, windowsTitleBarOverlay } from './window-chrome'
 import { buildWebImportViewModel } from '../web-import-view'
 import { DesktopBackendController } from './backend/backend-controller'
 import { DesktopBootSession, retainDesktopBoot } from './backend/boot-session'
 import { DesktopHostFatalError, DesktopHostProcess } from './backend/host-process'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './backend/login-shell-environment'
 import { attachDesktopStorage } from './desktop-storage-bridge'
-import { ENTERPRISE_URL, aboutUsesPage, buildDarwinDesktopMenu, externalUrlToOpen, insertFileMenu, shortcutFileMenuLabels } from './enterprise-menu'
+import { ENTERPRISE_URL, aboutUsesPage, buildDarwinDesktopMenu, buildWindowsApplicationMenu, externalUrlToOpen, insertFileMenu, shortcutFileMenuLabels } from './enterprise-menu'
 import { installDesktopShortcuts, type DesktopShortcutController } from './keyboard'
 import { installDesktopFileDrag } from './file-drag'
 import { runQuitSteps } from './quit-steps'
 import { SidebarBrowserGuests } from '../sidebar-browser'
 import { SIDEBAR_BROWSER_IPC } from '../../shared/sidebar-browser'
-import { officeLaunchPaths } from './office-launch'
+import { officeLaunchPaths, resolvePrimaryRuntime } from './office-launch'
 import { isSplashPageUrl } from './splash-page'
+import { HarnessRestartSessions, resumeHarnessRestart, runHarnessRestart, type HarnessRestartSteps } from './harness-restart'
 import { isWebImportPageUrl, offerWebHomeImport, readWebImportAction, type WebImportChoice } from './web-import-offer'
 import { resolveDesktopPaths } from './paths'
 import { writeDesktopProductPatch } from './product-patch'
@@ -75,7 +81,7 @@ import {
   snapshotPluginRemovalLedger
 } from '../profile/plugin-removal'
 import { electronNodeExecutable } from './backend/electron-node-executable'
-import { installedPluginVersion, pnpmEntryPath, upgradeTargets } from './plugin-maintenance'
+import { installedPluginVersion, pluginPnpmRunnerPath, pnpmEntryPath, upgradeTargets } from './plugin-maintenance'
 import { applyRepairNavigation, safeModeRepairPrompt, sidebarRepairPrompt } from './repair-session'
 import { runSafeModeManager } from './safe-mode-manager'
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME, assertDesktopSender } from './window/ipc'
@@ -253,13 +259,13 @@ function officeEnvironment(primaryRuntime: string): Record<string, string> {
 }
 
 function restartInSafeMode(): void {
-  app.relaunch({ args: relaunchArguments(process.argv) })
+  app.relaunch({ args: relaunchArguments(clearNativeLocaleAttempt(process.argv)) })
   app.quit()
 }
 
 function exitSafeMode(): void {
   delete process.env.DSH_DESKTOP_SAFE_MODE
-  app.relaunch({ args: normalRelaunchArguments(process.argv) })
+  app.relaunch({ args: normalRelaunchArguments(clearNativeLocaleAttempt(process.argv)) })
   app.quit()
 }
 
@@ -282,7 +288,8 @@ function createWindow(
     minWidth: 520,
     minHeight: 600,
     show: false,
-    ...desktopWindowChrome(process.platform),
+    title: app.getName(),
+    ...desktopWindowChrome(process.platform, nativeTheme.shouldUseDarkColors),
     webPreferences: {
       preload,
       nodeIntegration: false,
@@ -294,6 +301,11 @@ function createWindow(
       additionalArguments: [...extraArguments]
     }
   })
+  window.on('page-title-updated', event => {
+    event.preventDefault()
+    window.setTitle(app.getName())
+  })
+  if (process.platform === 'win32') window.setMenuBarVisibility(false)
   window.webContents.on('console-message', details => {
     if (details.level !== 'error') return
     rendererConsole.push(`${details.sourceId}:${String(details.lineNumber)} ${details.message}`)
@@ -338,7 +350,7 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
   if (aboutUsesPage(window.webContents.getURL(), SCHEME)) {
     window.webContents.send('desktop:show-about', {
       desktopVersion,
-      harnessVersion: harnessVersion ?? (locale === 'zh' ? '未知' : 'Unknown'),
+      harnessVersion,
       locale
     })
     return
@@ -346,9 +358,9 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
   const result = await dialog.showMessageBox(window, {
     type: 'info',
     title: app.name,
-    message: locale === 'zh' ? `关于 ${app.name}` : `About ${app.name}`,
+    message: updateText(locale, 'about').replace('DSH Desktop', app.name),
     detail: aboutDetail(desktopVersion, harnessVersion, locale),
-    buttons: [locale === 'zh' ? '检查更新' : 'Check for Updates', locale === 'zh' ? '关闭' : 'Close'],
+    buttons: [updateText(locale, 'checkForUpdates'), updateText(locale, 'close')],
     defaultId: 1,
     cancelId: 1,
     noLink: true
@@ -423,21 +435,18 @@ function askWebImport(
 async function savedDesktopMenuLocale(
   dshHome: string,
   safeMode: boolean,
-  reported: HarnessLocale | undefined
+  reported: string | undefined
 ): Promise<HarnessLocale> {
-  const profileName = safeMode ? SAFE_MODE_PROFILE : 'desktop'
-  const profilePreference = await readFile(join(dshHome, 'profiles', profileName, 'cordis.patch.yml'), 'utf8')
-    .then(localePreferenceFromProfilePatch)
-    .catch(() => undefined)
-  const settingsPreference = await readFile(join(dshHome, 'settings.yaml'), 'utf8')
-    .then(localePreferenceFromSettings)
-    .catch(() => undefined)
-  return selectHarnessLocale({
-    reported,
-    profilePreference,
-    settingsPreference,
-    preferredSystemLanguages: app.getPreferredSystemLanguages()
+  if (reported !== undefined) return matchDesktopLocale(reported) ?? 'en'
+  const preference = await savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop').catch(error => {
+    console.warn('[desktop-locale] unable to read saved language', error)
+    return undefined
   })
+  // Unknown explicit languages use English copy, not an older saved choice.
+  if (typeof preference === 'string' && preference.trim() !== '' && preference !== 'auto') {
+    return matchDesktopLocale(preference) ?? 'en'
+  }
+  return resolveHarnessLocale(undefined, app.getPreferredSystemLanguages())
 }
 
 async function main(): Promise<void> {
@@ -449,7 +458,37 @@ async function main(): Promise<void> {
     app.quit()
     return
   }
-  // Overlap the GUI-session read with Electron startup and the splash. Windows keeps the registry environment.
+  await app.whenReady()
+  // Cocoa has already consumed its argument domain. A saved choice therefore
+  // needs one fresh process on a Dock/Finder launch, not a late --lang switch.
+  const startupSafeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
+  const nativeLocaleValue = app.getLocale()
+  const nativeLocale = matchDesktopLocale(nativeLocaleValue)
+  if (process.platform === 'darwin') {
+    try {
+      // Use Electron's resolved locale, not merely the Cocoa preference array.
+      const preference = effectiveNativeLocale(
+        await savedDesktopLocaleValue(harnessHome(), startupSafeMode ? SAFE_MODE_PROFILE : 'desktop'),
+        app.getPreferredSystemLanguages()
+      )
+      if (shouldCalibrateNativeLocale({ platform: process.platform, preference, actual: nativeLocaleValue, argv: process.argv }) && preference !== undefined) {
+        app.relaunch({ args: nativeLocaleRelaunchArguments(process.argv, preference) })
+        app.quit()
+        return
+      }
+      if (preference !== undefined && preference !== nativeLocale) {
+        console.warn('[native-locale] language calibration did not take effect; continuing with the current native language')
+      }
+    } catch (error) {
+      // Language presentation is optional; preserve the normal boot and recovery path.
+      console.warn('[native-locale] unable to calibrate language; continuing', error)
+    }
+  }
+  // User data is already selected. A locale relaunch returns above, so this
+  // process does not create the service and then exit. Development packages
+  // stay without an update service; only the official package asks the policy.
+  if (app.isPackaged && !desktopDevelopmentBuild()) initializeDesktopUpdateService()
+  // Only the final GUI process starts shell discovery and the Host.
   const loginShellAbort = new AbortController()
   const loginShell = readDesktopLoginShellEnvironment(
     process.env,
@@ -457,9 +496,8 @@ async function main(): Promise<void> {
     { signal: loginShellAbort.signal }
   )
   app.on('will-quit', () => { loginShellAbort.abort() })
-  await app.whenReady()
   let desktopWindow: BrowserWindow | undefined
-  let reportedLocale: HarnessLocale | undefined
+  let reportedLocale: string | undefined
   let menuLocale: HarnessLocale = 'en'
   let restartDesktop = async (): Promise<boolean> => false
   registerUpdateHandlers({ locale: () => menuLocale })
@@ -467,7 +505,23 @@ async function main(): Promise<void> {
   const dshHome = harnessHome()
   const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   menuLocale = await savedDesktopMenuLocale(dshHome, safeMode, reportedLocale)
-  const refreshDarwinMenu = (): void => {
+  const refreshApplicationMenu = (): void => {
+    if (process.platform === 'win32') {
+      const template = buildWindowsApplicationMenu({
+        locale: menuLocale,
+        connectPhone: () => { void openMobilePairing().catch((error: unknown) => { console.error(error) }) },
+        restart: () => { void restartDesktop() },
+        ...(shouldStartInSafeMode(process.argv) || process.env.DSH_DESKTOP_SAFE_MODE === '1'
+          ? {}
+          : { restartSafeMode: () => { restartInSafeMode() } }),
+        showHarnessLog: () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
+        checkForUpdates: () => { void checkForUpdates(true).catch((error: unknown) => { console.error(error) }) },
+        quit: () => { app.quit() }
+      })
+      Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
+      if (desktopWindow !== undefined && !desktopWindow.isDestroyed()) desktopWindow.setMenuBarVisibility(false)
+      return
+    }
     if (process.platform !== 'darwin') return
     const template = insertFileMenu(buildDarwinDesktopMenu({
       locale: menuLocale,
@@ -494,15 +548,10 @@ async function main(): Promise<void> {
     }), shortcuts?.fileMenu(shortcutFileMenuLabels(menuLocale)))
     Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
   }
-  refreshDarwinMenu()
-  const development = !app.isPackaged
-  // Product packages place the primary runtime at Resources/office-runtime/primary-runtime.
-  const primaryRuntime = development
-    ? process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
-    : join(process.resourcesPath, 'office-runtime', 'primary-runtime')
-  if (primaryRuntime === undefined || primaryRuntime === '') {
-    throw new Error('dsh desktop: DSH_DESKTOP_PRIMARY_RUNTIME_DIR is required for an unpackaged launch')
-  }
+  refreshApplicationMenu()
+  const primaryRuntime = resolvePrimaryRuntime(
+    app.getAppPath(), process.resourcesPath, app.isPackaged, process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
+  )
   const preload = fileURLToPath(new URL('../preload/app.cjs', import.meta.url))
   const importPage = packagedPagePath('web-import.html')
   const splashPage = packagedPagePath('splash.html')
@@ -515,13 +564,13 @@ async function main(): Promise<void> {
     platform: process.platform,
     userData: app.getPath('userData'),
     quitting: () => quitting,
-    locale: () => menuLocale,
+    locale: () => legacyLocale(menuLocale),
     note: line => { console.error(line) },
     stopHost: () => stopRecoveredHost(),
     releasePage: () => releaseRecoveredPage(),
     showMessageBox: options => window.isDestroyed() ? dialog.showMessageBox(options) : dialog.showMessageBox(window, options),
     flushDiagnostics: async () => { await activeOperationJournal?.drain(500) },
-    relaunch: () => { app.relaunch() },
+    relaunch: () => { app.relaunch({ args: clearNativeLocaleAttempt(process.argv).slice(1) }) },
     quit: () => { app.quit() },
     probePage: async () => {
       const contents = window.webContents
@@ -553,9 +602,9 @@ async function main(): Promise<void> {
     }
     windowsTray.setToolTip(app.name)
     windowsTray.setContextMenu(Menu.buildFromTemplate([
-      { label: menuLocale === 'zh' ? `显示 ${app.name}` : `Show ${app.name}`, click: showMainWindow },
+      { label: desktopDailyText(menuLocale, 'trayShow').replace('DSH Desktop', app.name), click: showMainWindow },
       { type: 'separator' },
-      { label: menuLocale === 'zh' ? '退出' : 'Exit', click: () => { app.quit() } }
+      { label: desktopMenuMessages(menuLocale).exit, click: () => { app.quit() } }
     ]))
   }
   refreshWindowsTray()
@@ -572,10 +621,10 @@ async function main(): Promise<void> {
     () => mainWindow,
     app.getPath('userData'),
     process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux',
-    refreshDarwinMenu
+    refreshApplicationMenu
   )
   shortcuts.attach(window)
-  refreshDarwinMenu()
+  refreshApplicationMenu()
   app.on('will-quit', () => { shortcuts?.dispose() })
   app.on('window-all-closed', () => { app.quit() })
   if (!safeMode) {
@@ -596,7 +645,9 @@ async function main(): Promise<void> {
     if (imported !== 'not-offered') await showSplash(window, splashPage)
   }
   await migrateWebProfile(dshHome)
-  const productPatch = await writeDesktopProductPatch(dshHome, safeMode ? 'safe' : 'desktop')
+  const productPatch = await writeDesktopProductPatch(dshHome, safeMode ? 'safe' : 'desktop', {
+    skipBlockingHmr: skipBlockingWindowsDevHmr(app.isPackaged, process.platform)
+  })
   const paths = resolveDesktopPaths(dshHome)
   const projectDir = safeMode ? await ensureSafeModeProfile(dshHome, 'desktop') : paths.profile
   const desktopStorage = new DesktopStorageManager(projectDir, {
@@ -651,7 +702,7 @@ async function main(): Promise<void> {
     const plugins = startupRecoveryTargets(message, await listInstalledProfilePlugins(dshHome, DESKTOP_PROFILE))
     if (plugins.length === 0 || owner.isDestroyed()) return false
     await persistCrashReport(error, 'host')
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const operationLines = await readRecentPluginOperations(pluginOperationDirectory(app.getPath('userData')), 12)
       .catch(() => [])
     owner.show()
@@ -669,7 +720,7 @@ async function main(): Promise<void> {
       },
       nextAction: () => new Promise(resolve => { acceptRecoveryNavigation = resolve }),
       relaunch: () => {
-        app.relaunch({ args: normalRelaunchArguments(process.argv) })
+        app.relaunch({ args: normalRelaunchArguments(clearNativeLocaleAttempt(process.argv)) })
         app.quit()
       },
       quit: () => { app.quit() },
@@ -689,6 +740,7 @@ async function main(): Promise<void> {
   let hostEnvironment: NodeJS.ProcessEnv = process.env
   const pendingHostFailures: unknown[] = []
   let drainingHostFailures = false
+  const harnessRestarts = new HarnessRestartSessions()
   async function drainHostFailures(): Promise<void> {
     drainingHostFailures = true
     try {
@@ -710,7 +762,15 @@ async function main(): Promise<void> {
               await backend.start(async () => {})
             } catch (error: unknown) {
               console.error(error)
+              return
             }
+            const current = harnessRestarts.current()
+            if (current === undefined) return
+            await resumeHarnessRestart(harnessRestartSteps(current.id))
+          },
+          finishRestart: () => {
+            const current = harnessRestarts.current()
+            if (current !== undefined) harnessRestarts.end(current.id)
           },
           presentPluginRecovery: async current => {
             if (startupRecoveryOpen) return true
@@ -799,37 +859,35 @@ async function main(): Promise<void> {
   }
   const iconPath = existsSync(packagedPagePath('app-icon.png')) ? packagedPagePath('app-icon.png') : undefined
   const brandLogos = desktopBrandLogoPaths([runtimeDir, primaryRuntime])
-  async function explicitDesktopLocale(): Promise<HarnessLocale | undefined> {
-    const profileName = safeMode ? SAFE_MODE_PROFILE : 'desktop'
-    const profilePreference = await readFile(join(dshHome, 'profiles', profileName, 'cordis.patch.yml'), 'utf8')
-      .then(localePreferenceFromProfilePatch)
-      .catch(() => undefined)
-    const settingsPreference = await readFile(join(dshHome, 'settings.yaml'), 'utf8')
-      .then(localePreferenceFromSettings)
-      .catch(() => undefined)
-    return chosenHarnessLocale([reportedLocale, profilePreference, settingsPreference])
-  }
-  async function desktopLocale(): Promise<HarnessLocale> {
-    return await explicitDesktopLocale()
-      ?? resolveHarnessLocale(undefined, app.getPreferredSystemLanguages())
+  async function explicitDesktopLocale(): Promise<string | undefined> {
+    if (reportedLocale !== undefined) return reportedLocale
+    return savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop').catch(error => {
+      console.warn('[desktop-locale] unable to read language preference', error)
+      return undefined
+    })
   }
   ipcMain.handle(DESKTOP_IPC.localeBootstrap, async event => {
     assertMain(event)
     return {
       languages: [...app.getPreferredSystemLanguages()],
-      preference: await explicitDesktopLocale() ?? null
+      preference: await savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop').catch(error => {
+        console.warn('[desktop-locale] unable to read language preference', error)
+        return undefined
+      }) ?? null
     }
   })
+  const directoryPicker = new NativeDirectoryPicker()
   ipcMain.on(DESKTOP_IPC.localeChanged, (event, locale: unknown) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return
-    const resolved = explicitHarnessLocale(locale)
-    if (resolved === undefined || resolved === menuLocale) {
-      if (resolved !== undefined) reportedLocale = resolved
-      return
-    }
-    reportedLocale = resolved
+    const state = desktopLanguageState(locale)
+    if (state === undefined) return
+    const changed = state.active !== reportedLocale
+    reportedLocale = state.active
+    if (changed) directoryPicker.languageChanged()
+    const resolved = state.display
+    if (resolved === menuLocale) return
     menuLocale = resolved
-    refreshDarwinMenu()
+    refreshApplicationMenu()
     refreshWindowsTray()
     if (!window.isDestroyed()) {
       window.webContents.send('desktop:ui-locale', menuLocale)
@@ -838,20 +896,53 @@ async function main(): Promise<void> {
   })
   ipcMain.handle(DESKTOP_IPC.directoryPick, async event => {
     assertMain(event)
-    const locale = await desktopLocale()
-    const prompt = workspaceDirectoryPrompt(locale)
-    const result = await dialog.showOpenDialog(window, {
-      title: prompt,
-      message: prompt,
-      properties: ['openDirectory', 'createDirectory']
+    const active = await explicitDesktopLocale()
+    const target = effectiveNativeLocale(active, app.getPreferredSystemLanguages())
+    const locale = target ?? 'en'
+    return directoryPicker.pick({
+      locale, target: target ?? active,
+      nativeLocale, native: process.platform === 'darwin',
+      confirmRestart: () => confirmNativeLocaleRestart({
+        locale,
+        confirm: async prompt => {
+          const choice = await dialog.showMessageBox(window, {
+            type: 'info', ...prompt, defaultId: 0, cancelId: 0, noLink: true
+          })
+          return choice.response === 1
+        },
+        savedLocale: async () => effectiveNativeLocale(
+          await savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop'),
+          app.getPreferredSystemLanguages()
+        ),
+        notSaved: async () => {
+          await dialog.showMessageBox(window, {
+            type: 'warning',
+            message: nativeLocaleMessages[locale].notSaved,
+            buttons: [nativeLocaleMessages[locale].close]
+          })
+        },
+        restart: () => {
+          app.relaunch({ args: nativeLocaleRelaunchArguments(process.argv, locale) })
+          app.quit()
+        }
+      }),
+      open: async panelLocale => {
+        // Unknown actual native languages use system-provided text rather than
+        // claiming an English title matches controls in another language.
+        const prompt = panelLocale === undefined ? undefined : workspaceDirectoryPrompt(panelLocale)
+        const result = await dialog.showOpenDialog(window, {
+          ...(prompt === undefined ? {} : { title: prompt, message: prompt }),
+          properties: ['openDirectory', 'createDirectory']
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      }
     })
-    return result.canceled ? null : result.filePaths[0] ?? null
   })
   let mobileWindow: BrowserWindow | undefined
   const mobileBridge = safeMode ? undefined : new LanMobileBridge({
     harnessUrl: () => loopbackHarnessOrigin(hostUrl()),
     harnessCookie: () => hostSessionCookie(hostCookie()),
-    locale: () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+    locale: () => legacyLocale(menuLocale),
     ...(iconPath === undefined ? {} : { appIconPath: iconPath }),
     ...(brandLogos === undefined ? {} : { brandLogoPaths: brandLogos }),
     cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
@@ -887,7 +978,7 @@ async function main(): Promise<void> {
       bridge: mobileBridge,
       parent: window.isDestroyed() ? undefined : window,
       ...(mobileWindow === undefined ? {} : { current: mobileWindow }),
-      locale: app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+      locale: menuLocale,
       ...(iconPath === undefined ? {} : { iconPath }),
       hostReady: hostUrl() !== undefined
     })
@@ -917,7 +1008,7 @@ async function main(): Promise<void> {
     workspaceDirectory: dshHome,
     harnessLogPath: join(app.getPath('logs'), 'harness.log'),
     ...(existsSync(presetsDirectory) ? { shippedPresetsDirectory: presetsDirectory } : {}),
-    locale: () => app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+    locale: () => legacyLocale(menuLocale),
     appVersion: () => app.getVersion()
   })
   let repairOpening: Promise<{ ok: boolean; error?: string }> | undefined
@@ -926,9 +1017,9 @@ async function main(): Promise<void> {
     return repairOpening
   }
   async function openRepairAgentNow(prompt: string, fresh: boolean): Promise<{ ok: boolean; error?: string }> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = menuLocale
     if (hostUrl() === undefined) {
-      return { ok: false, error: locale === 'zh' ? '维修核心服务尚未就绪。' : 'The repair core is not ready yet.' }
+      return { ok: false, error: desktopDailyText(locale, 'repairNotReady') }
     }
     const previous = safeMode ? undefined : await repairSessions.load('normal')
     const session = await repairAgent.initSession({ fresh })
@@ -936,9 +1027,7 @@ async function main(): Promise<void> {
       const detail = (session.error ?? '').split('\n').map(line => line.trim()).filter(line => line.length > 0).slice(0, 2).join(' ').slice(0, 240)
       return {
         ok: false,
-        error: locale === 'zh'
-          ? `无法打开智能修复 Agent 会话${detail.length > 0 ? `：${detail}` : '。'}`
-          : `The repair agent session could not be opened${detail.length > 0 ? `: ${detail}` : '.'}`
+        error: `${desktopDailyText(locale, 'repairOpenFailed')}${detail.length > 0 ? `: ${detail}` : '.'}`
       }
     }
     try {
@@ -959,7 +1048,7 @@ async function main(): Promise<void> {
   }
   ipcMain.handle(DESKTOP_IPC.repairOpen, event => {
     assertMain(event)
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     return openRepairAgent(sidebarRepairPrompt(locale), true)
   })
   ipcMain.handle(DESKTOP_IPC.repairDraftGet, (event, sessionId: unknown) => {
@@ -974,28 +1063,154 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['app'])
     return bootSession.readBoot()
   })
-  let restartingHarness = false
   restartDesktop = async () => {
-    if (restartingHarness || quitting) return false
-    restartingHarness = true
+    if (quitting || window.isDestroyed()) return false
+    let currentUrl = ''
+    try { currentUrl = window.webContents.getURL() } catch { return false }
+    const session = harnessRestarts.begin(currentUrl)
+    if (session === undefined) return false
     try {
-      await backend.stop()
-      await backend.start(async () => {})
-      setImmediate(() => {
-        if (!window.isDestroyed()) void loadDesktopPage(window, window.webContents.getURL()).catch((error: unknown) => { console.error(error) })
-      })
-      return true
+      return await runHarnessRestart(harnessRestartSteps(session.id))
     } catch (error: unknown) {
       console.error(error)
+      if (harnessRestarts.isCurrent(session.id)) harnessRestarts.end(session.id)
       return false
-    } finally {
-      restartingHarness = false
     }
+  }
+  function harnessRestartSteps(sessionId: number): HarnessRestartSteps {
+    return {
+      sessionId,
+      isCurrent: id => harnessRestarts.isCurrent(id),
+      end: id => harnessRestarts.end(id),
+      cancelled: () => quitting || window.isDestroyed() || window.webContents.isDestroyed(),
+      blocked: () => stability.blocksNavigation(),
+      showWaiting: showHarnessRestartWaiting,
+      stop: () => backend.stop(),
+      start: async () => {
+        try {
+          await backend.start(async () => {})
+        } catch (error: unknown) {
+          console.error(error)
+          throw error
+        }
+      },
+      resume: async id => {
+        if (!harnessRestarts.isCurrent(id)) return false
+        const url = harnessRestarts.resumeUrl(id)
+        if (url === undefined) return false
+        return loadDesktopPage(window, url)
+      },
+      recoverDocument: () => {
+        if (!quitting && !stability.blocksNavigation()) stability.processRecovery.start('window')
+      },
+      reportStopFailure: reportHarnessStopFailure
+    }
+  }
+  async function showHarnessRestartWaiting(): Promise<boolean> {
+    if (window.isDestroyed()) return false
+    if (isSplashPageUrl(window.webContents.getURL(), splashPage)) {
+      window.show()
+      return true
+    }
+    const loaded = await loadDesktopPage(window, pathToFileURL(splashPage).href)
+    if (!window.isDestroyed()) window.show()
+    return loaded
+  }
+  async function reportHarnessStopFailure(error: unknown): Promise<void> {
+    console.error(error)
+    const box = {
+      type: 'error' as const,
+      message: desktopDailyText(menuLocale, 'harnessStopFailed'),
+      buttons: [updateText(menuLocale, 'ok')],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    }
+    const shown = window.isDestroyed() ? dialog.showMessageBox(box) : dialog.showMessageBox(window, box)
+    await shown.catch((failure: unknown) => { console.error(failure) })
   }
   ipcMain.handle(DESKTOP_IPC.restartHarness, async event => {
     assertMain(event)
     return { ok: await restartDesktop() }
   })
+  ipcMain.removeHandler('desktop-titlebar:popup-menu')
+  ipcMain.handle('desktop-titlebar:popup-menu', (event, name: unknown, x: unknown, y: unknown) => {
+    const owner = assertMain(event)
+    if (process.platform !== 'win32') throw new Error('The caption menu is only available on Windows.')
+    const request = parseWindowsMenuRequest(name, x, y)
+    const zoomFactor = owner.webContents.getZoomFactor()
+    const template = windowsMenuTemplate(request.name, menuLocale, zoomFactor, {
+      run: command => { void runWindowsCaptionCommand(owner, command).catch((error: unknown) => { console.error(error) }) },
+      sendEditingKey: key => { shortcuts?.sendEditingKey(key.keyCode, key.modifiers) }
+    })
+    return new Promise<void>(resolve => {
+      Menu.buildFromTemplate(template).popup({
+        window: owner,
+        x: Math.round(request.x * zoomFactor),
+        y: Math.round(request.y * zoomFactor),
+        callback: () => resolve()
+      })
+    })
+  })
+  ipcMain.removeHandler('desktop-titlebar:set-theme')
+  ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
+    const owner = assertMain(event)
+    if (typeof isDark !== 'boolean') throw new Error('The DSH Desktop titlebar theme must be a boolean.')
+    if (process.platform === 'win32') {
+      owner.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
+      owner.setBackgroundColor(windowsChromeBackground(isDark))
+    }
+    return { ok: true }
+  })
+  async function runWindowsCaptionCommand(owner: BrowserWindow, command: DesktopMenuCommand): Promise<void> {
+    const contents = owner.webContents
+    switch (command) {
+      case 'connect-phone':
+        await openMobilePairing()
+        return
+      case 'restart-harness':
+        await restartDesktop()
+        return
+      case 'safe-mode':
+        restartInSafeMode()
+        return
+      case 'show-harness-log':
+        shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
+        return
+      case 'check-for-updates':
+        await checkForUpdates(true)
+        return
+      case 'reload':
+        contents.reload()
+        return
+      case 'toggle-devtools':
+        contents.toggleDevTools()
+        return
+      case 'zoom-reset':
+        contents.setZoomLevel(0)
+        return
+      case 'zoom-in':
+        contents.setZoomLevel(Math.min(3, contents.getZoomLevel() + 0.5))
+        return
+      case 'zoom-out':
+        contents.setZoomLevel(Math.max(-3, contents.getZoomLevel() - 0.5))
+        return
+      case 'toggle-fullscreen':
+        owner.setFullScreen(!owner.isFullScreen())
+        return
+      case 'about':
+        await presentAbout(owner, menuLocale)
+        return
+      case 'explore-enterprise':
+        await shell.openExternal(ENTERPRISE_URL)
+        return
+      case 'quit':
+        app.quit()
+        return
+      default:
+        return
+    }
+  }
   let waitForSafeModeAction: ((value: { action: unknown; selection: unknown }) => void) | undefined
   if (safeMode) {
     ipcMain.handle(DESKTOP_IPC.safeModeAction, (event, action: unknown, selection: unknown) => {
@@ -1069,11 +1284,10 @@ async function main(): Promise<void> {
       },
       installFailed: async () => {
         quitting = false
-        const chinese = app.getLocale().toLowerCase().startsWith('zh')
         await dialog.showMessageBox({
           type: 'error',
-          message: chinese ? '应用安装未完成。' : 'Application installation did not finish.',
-          buttons: [chinese ? '知道了' : 'OK']
+          message: desktopDailyText(menuLocale, 'appInstallFailed'),
+          buttons: [updateText(menuLocale, 'ok')]
         })
       }
     })
@@ -1113,7 +1327,7 @@ async function main(): Promise<void> {
   let desktopHealthLoaded = false
   async function loadDesktopHealthReports(): Promise<readonly PluginHealthReport[]> {
     if (desktopHealthLoaded) return desktopHealthReports
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const runtimeVersion = bundledHarnessVersion(app.getAppPath()) ?? app.getVersion()
     const names = await listInstalledProfilePlugins(dshHome, DESKTOP_PROFILE)
     desktopHealthReports = await Promise.all(names.map(async name => evaluatePluginMarketCompatibility({
@@ -1132,7 +1346,7 @@ async function main(): Promise<void> {
     return { ok: true, notice: success }
   }
   async function confirmMaintenance(message: string, confirmLabel: string): Promise<boolean> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const result = await dialog.showMessageBox(window, {
       type: 'warning',
       message,
@@ -1144,7 +1358,7 @@ async function main(): Promise<void> {
     return result.response === 1
   }
   async function upgradeDesktopPlugins(plugins: readonly string[]): Promise<{ ok: boolean; notice: string }> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const targets = upgradeTargets(plugins, await loadDesktopHealthReports())
     if (targets.length === 0) {
       return {
@@ -1165,6 +1379,8 @@ async function main(): Promise<void> {
         profile: DESKTOP_PROFILE,
         nodeExecutablePath: electronNodeExecutable(process.execPath),
         pnpmEntryPath: pnpm,
+        pnpmRunnerPath: pluginPnpmRunnerPath(app.getAppPath()),
+        hideConsoleBootstrapPath: packagedPagePath('windows-hide-console-import.mjs'),
         note: line => { console.info(line) }
       })
       if (!result.ok) failed.push(target.name)
@@ -1184,7 +1400,7 @@ async function main(): Promise<void> {
     }
   }
   async function changeBackup(removalId: string, kind: 'restore' | 'delete'): Promise<{ ok: boolean; notice: string }> {
-    const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    const locale = legacyLocale(menuLocale)
     const backup = await resolvePluginRemovalBackup(dshHome, removalId)
     if (backup === undefined) {
       return { ok: false, notice: locale === 'zh' ? '这份恢复备份已不存在。' : 'This recovery backup no longer exists.' }
@@ -1249,7 +1465,7 @@ async function main(): Promise<void> {
         ? '已打开 Profile 恢复材料目录。'
         : 'Opened the Profile recovery material folder.'),
       openBackup: async removalId => {
-        const locale = app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+        const locale = legacyLocale(menuLocale)
         const backup = await resolvePluginRemovalBackup(dshHome, removalId)
         if (backup === undefined) {
           return { ok: false, notice: locale === 'zh' ? '这份恢复备份已不存在。' : 'This recovery backup no longer exists.' }

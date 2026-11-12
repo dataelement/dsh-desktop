@@ -88,8 +88,8 @@ it('maintained Desktop clients inject only slots declared by the installed Harne
   }
 })
 
-it('preserves the native hero options outlet alongside Desktop mode actions', () => {
+it('uses a single native hero options outlet without private mode actions', () => {
   const client = readFileSync('node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js', 'utf8')
   expect(client.match(/renderSlot\("conversation\.hero\.options", \{\}\)/g)).toHaveLength(1)
-  expect(client.match(/renderSlot\("conversation\.hero\.modeActions", zone \?\? \{\}\)/g)).toHaveLength(1)
+  expect(client).not.toContain('conversation.hero.modeActions')
 })

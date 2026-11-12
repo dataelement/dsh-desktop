@@ -36,8 +36,7 @@ async function stop(child) {
   await exited
 }
 
-async function main() {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-electron-node-probe-'))
+export async function prepareProbeProfile(home) {
   const profile = join(home, 'harness', 'profiles', 'desktop')
   await mkdir(profile, { recursive: true })
   await writeFile(join(profile, 'package.json'), JSON.stringify({
@@ -46,6 +45,15 @@ async function main() {
   }))
   await writeFile(join(profile, 'cordis.yml'), '[]\n')
   await writeFile(join(profile, 'cordis.patch.yml'), '[]\n')
+  // Match the product telemetry opt-out without adding optional Desktop plugins.
+  const patchFile = join(home, 'harness', 'desktop-product.patch.yml')
+  await writeFile(patchFile, '- id: desktop-product-telemetry\n  disabled: true\n- id: product-analytics\n  disabled: true\n')
+  return { profile, patchFile }
+}
+
+async function main() {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-electron-node-probe-'))
+  const { profile, patchFile } = await prepareProbeProfile(home)
   const child = spawn(electron, [
     '--expose-internals',
     join(root, 'out', 'main', 'host.js'),
@@ -54,7 +62,7 @@ async function main() {
     join(home, 'unused-runtime')
   ], {
     cwd: profile,
-    env: { ...process.env, DSH_HOME: join(home, 'harness'), DSH_DESKTOP_PROFILE: 'desktop', ELECTRON_RUN_AS_NODE: '1' },
+    env: { ...process.env, DSH_HOME: join(home, 'harness'), DSH_DESKTOP_PROFILE: 'desktop', DSH_DESKTOP_PATCH_FILE: patchFile, ELECTRON_RUN_AS_NODE: '1' },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     windowsHide: true,
     detached: process.platform === 'win32'
@@ -99,7 +107,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exitCode = 1
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+}

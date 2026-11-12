@@ -843,7 +843,7 @@ window.__ModuleLoader__.load({
 				loadTemplates: false
 			});
 		}
-		/** PPT mode control beside the blank-session agent preset. */
+		/** PPT mode control in the native session-scoped hero options. */
 		function OfficePptStandardModeAction(props) {
             const state = useMode(props.mode, props.sessionId);
             (0, react.useEffect)(() => {
@@ -1118,8 +1118,8 @@ window.__ModuleLoader__.load({
 		*/
 		function applyStandard(ctx) {
 			const injectHero = officePptHeroInjection(ctx);
-			ctx.slots.inject("conversation.hero.modeActions", () => ctx.slots.register({
-				name: "conversation.hero.modeActions",
+			ctx.slots.inject("conversation.hero.options", () => ctx.slots.register({
+				name: "conversation.hero.options",
 				id: "dsh-ppt",
 				order: 20,
 				locale: NS,

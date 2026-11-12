@@ -197,6 +197,43 @@ describe('safe mode manager', () => {
   })
 })
 
+it.each(['zh', 'en'] as const)('keeps recovery available after an upgrade throws (%s)', async locale => {
+  const home = join(tmpdir(), `dsh-safe-mode-failure-${locale}-${Date.now()}`)
+  temporary.push(home)
+  await writeProfile(home, 'desktop', 'example-plugin')
+  const urls: string[] = []
+  const actions = [
+    { action: 'upgrade', selection: { plugins: ['example-plugin'] } },
+    { action: 'restart', selection: undefined }
+  ]
+  let exited = false
+  const error = new Error('generation-aware runner unavailable')
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await runSafeModeManager({
+      dshHome: home, profile: 'desktop', locale, theme: 'light',
+      show: url => { urls.push(url) },
+      nextAction: async () => {
+        const next = actions.shift()
+        if (next === undefined) throw new Error('unexpected extra action')
+        return next
+      },
+      upgradePlugins: async () => { throw error },
+      quit: () => { throw new Error('unexpected quit') },
+      exitSafeMode: () => { exited = true },
+      isQuitting: () => false
+    })
+    expect(exited).toBe(true)
+    expect(urls).toHaveLength(2)
+    const state = new URL(urls[1] ?? '').searchParams.get('state')
+    expect(state).toContain('generation-aware runner unavailable')
+    expect(state).toContain(locale === 'zh' ? '操作失败' : 'Operation failed')
+    expect(logged).toHaveBeenCalledWith('[safe-mode] upgrade failed', error)
+  } finally {
+    logged.mockRestore()
+  }
+})
+
 async function writeProfile(home: string, profile: string, plugin: string): Promise<void> {
   const directory = join(home, 'profiles', profile)
   await mkdir(join(directory, 'node_modules', plugin), { recursive: true })

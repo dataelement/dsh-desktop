@@ -129,6 +129,16 @@ describe('profile plugin disable', () => {
     expect(await readFile(patchPath, 'utf8')).toBe(layer)
   })
 
+  it('can disable and re-enable the market itself without loading its broken bundle', async () => {
+    await writeProfileManifest(['dshmarket'])
+    await plugin('dshmarket', '- insert:\n    - id: market\n      name: dshmarket\n')
+    await rm(join(profile, 'node_modules', 'dshmarket', 'cordis.patch.yml'))
+    expect(await disableProfilePlugin(dshHome, 'dshmarket')).toEqual({ ok: true, rows: [] })
+    expect(await listDisabledProfilePlugins(dshHome, ['dshmarket'])).toEqual(['dshmarket'])
+    expect(await enableProfilePlugin(dshHome, 'dshmarket')).toEqual({ ok: true })
+    expect(await listDisabledProfilePlugins(dshHome, ['dshmarket'])).toEqual([])
+  })
+
   it('switches a client-only plugin off through the market state alone', async () => {
     const before = await readFile(patchPath, 'utf8')
     expect(await disableProfilePlugin(dshHome, 'dsh-client-only')).toEqual({ ok: true, rows: [] })

@@ -18,6 +18,8 @@ import {
 
 const generationMetaReadFault: {
   matches?: (path: string) => boolean
+  renameDestination?: string
+  symlinkDestination?: string
 } = vi.hoisted(() => ({}))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -25,6 +27,21 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actualReadFile = actual.readFile as (...args: any[]) => Promise<any>
   return {
     ...actual,
+    symlink: async (...args: Parameters<typeof actual.symlink>) => {
+      const destination = generationMetaReadFault.symlinkDestination
+      if (destination && (String(args[1]) === destination || String(args[1]).startsWith(destination + '.dsh-next-'))) {
+        generationMetaReadFault.symlinkDestination = undefined
+        throw Object.assign(new Error('EPERM: simulated projection publication failure'), { code: 'EPERM' })
+      }
+      return actual.symlink(...args)
+    },
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      if (String(args[1]) === generationMetaReadFault.renameDestination) {
+        generationMetaReadFault.renameDestination = undefined
+        throw Object.assign(new Error('EPERM: simulated projection publication failure'), { code: 'EPERM' })
+      }
+      return actual.rename(...args)
+    },
     readFile: async (path: Parameters<typeof actual.readFile>[0], ...args: any[]) => {
       if (
         generationMetaReadFault.matches &&
@@ -91,6 +108,8 @@ describe('generation projection onto the app-boot contract', () => {
 
   afterEach(async () => {
     generationMetaReadFault.matches = undefined
+    generationMetaReadFault.renameDestination = undefined
+    generationMetaReadFault.symlinkDestination = undefined
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
   })
@@ -289,7 +308,7 @@ describe('generation projection onto the app-boot contract', () => {
     expect(manifest.dsh.desktop?.generationProjection?.plugins?.['plugin-b']).toBeUndefined()
   })
 
-  it('unlinks the junction and drops the bundle entry when a desired plugin is disabled in state.json', async () => {
+  it('keeps installed inventory and the junction when a desired plugin is disabled in state.json', async () => {
     const home = await freshHome()
     await ensureRegistryDirectories(home)
     await initProfile(home)
@@ -307,14 +326,57 @@ describe('generation projection onto the app-boot contract', () => {
 
     const result = await projectGenerations(home)
 
-    expect(result.unlinked).toEqual(['plugin-b'])
-    expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'plugin-b'))).toBe(false)
+    expect(result.unlinked).toEqual([])
+    expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'plugin-b'))).toBe(true)
     const manifest = JSON.parse(
       await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
     )
     expect(manifest.dsh.profile.bundles).not.toContain('plugin-b')
-    expect(manifest.dependencies['plugin-b']).toBeUndefined()
-    expect(manifest.pnpm?.overrides?.['plugin-b']).toBeUndefined()
+    expect(manifest.dependencies['plugin-b']).toBe('2.0.0')
+    expect(manifest.pnpm?.overrides?.['plugin-b']).toMatch(/^link:/u)
+    expect(manifest.dsh.desktop.generationProjection.plugins['plugin-b'].visibleVersion).toBe('2.0.0')
+    await writeFile(stateFile, JSON.stringify({ disabled: [] }))
+    await projectGenerations(home)
+    const reenabled = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(reenabled.dsh.profile.bundles).toContain('plugin-b')
+  })
+
+  it.each(['manifest', 'package-root', 'patch'])('retains a disabled package with a broken %s for repair or removal', async broken => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await initProfile(home)
+    await fakeGeneration(home, 'broken+1+x', 'plugin-broken', '1.0.0')
+    await writeDesired(home, ['broken+1+x'])
+    await projectGenerations(home)
+    const profile = join(home, 'profiles', 'web')
+    const packageRoot = join(registryLayout(home).generations, 'broken+1+x', 'node_modules', 'plugin-broken')
+    const publicPath = join(profile, 'node_modules', 'plugin-broken')
+    const previousLink = await readlink(publicPath)
+    if (broken === 'package-root') await rm(packageRoot, { recursive: true })
+    else if (broken === 'manifest') await writeFile(join(packageRoot, 'package.json'), '{invalid')
+    else await writeFile(join(packageRoot, 'cordis.patch.yml'), '[invalid')
+    const stateFile = join(profile, '.dsh-market', 'state.json')
+    await mkdir(dirname(stateFile), { recursive: true })
+    await writeFile(stateFile, JSON.stringify({ disabled: ['plugin-broken'] }))
+
+    await projectGenerations(home)
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(manifest.dsh.profile.bundles).not.toContain('plugin-broken')
+    expect(manifest.dependencies['plugin-broken']).toBe('1.0.0')
+    expect(manifest.dsh.desktop.generationProjection.plugins['plugin-broken'].generationId).toBe('broken+1+x')
+    expect(await readlink(publicPath)).toBe(previousLink)
+
+    await fakeGeneration(home, 'broken+1+x', 'plugin-broken', '1.0.0')
+    await writeFile(stateFile, JSON.stringify({ disabled: [] }))
+    await projectGenerations(home)
+    expect(JSON.parse(await readFile(join(profile, 'package.json'), 'utf8')).dsh.profile.bundles).toContain('plugin-broken')
+    // Removal must also work while the disabled package remains damaged.
+    await writeFile(join(packageRoot, 'package.json'), '{broken again')
+    await writeFile(stateFile, JSON.stringify({ disabled: ['plugin-broken'] }))
+    await writeDesired(home, [])
+    await projectGenerations(home)
+    expect(JSON.parse(await readFile(join(profile, 'package.json'), 'utf8')).dependencies['plugin-broken']).toBeUndefined()
+    await expect(lstat(publicPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('restores a profile-owned pnpm override after the generation is disabled', async () => {
@@ -465,6 +527,45 @@ describe('generation projection onto the app-boot contract', () => {
     expect((await lstat(fixture.linkPath)).isSymbolicLink()).toBe(true)
     expect(await readlink(fixture.linkPath)).toBe(fixture.linkTarget)
   }
+
+  it.each(['manifest', 'later-link'])('restores every old package and retains stale links after a %s failure', async phase => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await initProfile(home)
+    await fakeGeneration(home, 'a+1+x', 'plugin-a', '1.0.0')
+    await fakeGeneration(home, 'stale+1+x', 'plugin-stale', '1.0.0')
+    await writeDesired(home, ['a+1+x', 'stale+1+x'])
+    await projectGenerations(home)
+    const profile = join(home, 'profiles', 'web')
+    const modules = join(profile, 'node_modules')
+    const manifestPath = join(profile, 'package.json')
+    const beforeManifest = await readFile(manifestPath, 'utf8')
+    const oldLink = await readlink(join(modules, 'plugin-a'))
+    const staleLink = await readlink(join(modules, 'plugin-stale'))
+    const oldMarket = await readFile(join(modules, 'dshmarket', 'package.json'), 'utf8')
+    await fakeGeneration(home, 'market+2+x', 'dshmarket', '2.0.0')
+    await fakeGeneration(home, 'a+2+x', 'plugin-a', '2.0.0')
+    await fakeGeneration(home, 'new+1+x', 'plugin-new', '1.0.0')
+    await writeDesired(home, ['market+2+x', 'a+2+x', 'new+1+x'])
+    if (phase === 'manifest') generationMetaReadFault.renameDestination = manifestPath
+    else generationMetaReadFault.symlinkDestination = join(modules, 'plugin-new')
+
+    await expect(projectGenerations(home)).rejects.toThrow('simulated projection publication failure')
+    expect(await readFile(manifestPath, 'utf8')).toBe(beforeManifest)
+    expect((await lstat(join(modules, 'dshmarket'))).isDirectory()).toBe(true)
+    expect(await readFile(join(modules, 'dshmarket', 'package.json'), 'utf8')).toBe(oldMarket)
+    expect(await readlink(join(modules, 'plugin-a'))).toBe(oldLink)
+    expect(await readlink(join(modules, 'plugin-stale'))).toBe(staleLink)
+    await expect(lstat(join(modules, 'plugin-new'))).rejects.toMatchObject({ code: 'ENOENT' })
+
+    // The authoritative pending selection survives failure and can be retried.
+    await projectGenerations(home)
+    expect((await lstat(join(modules, 'dshmarket'))).isSymbolicLink()).toBe(true)
+    expect(JSON.parse(await readFile(join(modules, 'dshmarket', 'package.json'), 'utf8')).version).toBe('2.0.0')
+    expect(JSON.parse(await readFile(join(modules, 'plugin-a', 'package.json'), 'utf8')).version).toBe('2.0.0')
+    expect((await lstat(join(modules, 'plugin-new'))).isSymbolicLink()).toBe(true)
+    await expect(lstat(join(modules, 'plugin-stale'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 
   it('preserves the existing projection when desired generation metadata is temporarily unreadable', async () => {
     const fixture = await projectedProfileForMetadataFailure('locked')

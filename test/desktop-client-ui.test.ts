@@ -34,6 +34,7 @@ describe('DSH Desktop client slot occupants', () => {
       document,
       navigator: { language: 'en-US' },
       window: {
+        dshDesktop: { getRepairDraft: vi.fn(), openRepairAgent: vi.fn() },
         __ModuleLoader__: {
           load: (value: typeof definition) => {
             definition = value
@@ -69,6 +70,7 @@ describe('DSH Desktop client slot occupants', () => {
     })
 
     const registrations: Registration[] = []
+    const registerLocale = vi.fn((_namespace: string, _messages: Record<string, unknown>) => () => undefined)
     const slots = {
       inject: (_name: string, callback: () => unknown): unknown => {
         const result = callback()
@@ -87,7 +89,7 @@ describe('DSH Desktop client slot occupants', () => {
     }
     plugin.apply({
       slots,
-      locale: { register: () => () => undefined, bind: () => (key: string) => key },
+      locale: { register: registerLocale, bind: () => (key: string) => key },
       remote: { session: { openWorkspacePath: () => Promise.resolve({ ok: true, value: { opened: true } }) } },
       sessions: { list: { getSnapshot: () => ({ byId: {} }) } },
       uiWorkspace: {},
@@ -103,6 +105,8 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.workspaces.title',
       'desktop.mode.content',
       'sidebar.workspaces.collection',
+      'conversation.input.dock',
+      'sidebar.settings.action',
       'sidebar.brand.mark',
       'sidebar.brand.name',
       'conversation.hero.brand.mark',
@@ -112,6 +116,18 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item'
     ])
+
+    // Local BISHENG seats and incoming utilities coexist without duplicate owners.
+    const ids = registrations.map(({ config }) => config.id).filter(Boolean)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids.filter(id => id === 'desktop-repair-draft')).toHaveLength(1)
+    expect(ids.filter(id => id === 'desktop-utilities')).toHaveLength(1)
+    expect(registrations.some(({ config }) => config.name === 'settings.sidebar.footer')).toBe(false)
+    for (const namespace of ['dsh-desktop-repair', 'dsh-desktop-actions']) {
+      const messages = registerLocale.mock.calls.filter(([name]) => name === namespace)
+      expect(messages).toHaveLength(1)
+      expect(Object.keys(messages[0]?.[1] ?? {}).sort()).toEqual(['de', 'en', 'es', 'fr', 'ja', 'pt', 'ru', 'zh'])
+    }
 
     // Style injections include both layout navigation styles and gear icon hiding
     expect(appended.length).toBeGreaterThanOrEqual(1)

@@ -8,6 +8,7 @@ import { attachDiagnostics } from './diagnostics'
 
 let gpuInfo = 'not-yet-available'
 let service: DesktopService | undefined
+let updateServiceFailure: string | undefined
 export let desktopDiagnostics: ReturnType<typeof attachDiagnostics> | undefined
 
 export function createAggregatedUploadConfirmation(options: {
@@ -85,22 +86,43 @@ export function createAggregatedUploadConfirmation(options: {
   }
 }
 
+function rememberUpdateServiceFailure(error: unknown): void {
+  service = undefined
+  updateServiceFailure = error instanceof Error ? error.message : String(error)
+  console.warn('[desktop-service] update service initialization failed', updateServiceFailure)
+}
+
+function openDesktopService(): DesktopService {
+  const confirmation = createAggregatedUploadConfirmation({
+    showMessageBox: opts => dialog.showMessageBox(opts),
+    getPendingCount: () => service?.pending().length ?? 0
+  })
+  return new DesktopService({
+    stateDir: join(app.getPath('userData'), 'desktop-service'),
+    logPath: join(app.getPath('logs'), 'harness.log'),
+    version: app.getVersion(), platform: process.platform, arch: process.arch,
+    // Chromium networking uses the same proxy configuration as the desktop app.
+    request: (url, init) => net.fetch(url, init),
+    confirmUpload: confirmation.confirmUpload
+  })
+}
+
+/** Official packages only. This does not attach crash diagnostics or open a diagnostic session. */
+export function initializeDesktopUpdateService(): void {
+  if (!app.isPackaged || service || updateServiceFailure) return
+  try {
+    service = openDesktopService()
+  } catch (error) {
+    rememberUpdateServiceFailure(error)
+  }
+}
+
 /** Call only after the single-instance lock, before bootstrap writes this session's log. */
 export function initializeDesktopService(options: { getExitContext?: () => GpuExitContext } = {}): void {
-  if (!app.isPackaged || service) return
+  if (!app.isPackaged || updateServiceFailure) return
   try {
-    const confirmation = createAggregatedUploadConfirmation({
-      showMessageBox: opts => dialog.showMessageBox(opts),
-      getPendingCount: () => service?.pending().length ?? 0
-    })
-    service = new DesktopService({
-      stateDir: join(app.getPath('userData'), 'desktop-service'),
-      logPath: join(app.getPath('logs'), 'harness.log'),
-      version: app.getVersion(), platform: process.platform, arch: process.arch,
-      // Chromium networking uses the same proxy configuration as the desktop app.
-      request: (url, init) => net.fetch(url, init),
-      confirmUpload: confirmation.confirmUpload
-    })
+    if (!service) service = openDesktopService()
+    if (desktopDiagnostics || !service) return
     void app.whenReady().then(async () => {
       gpuInfo = graphicsSnapshot(await app.getGPUInfo('basic'))
     }).catch(error => console.warn('[desktop-service] GPU metadata unavailable', error instanceof Error ? error.name : 'unknown'))
@@ -110,11 +132,11 @@ export function initializeDesktopService(options: { getExitContext?: () => GpuEx
       onError: error => console.warn('[desktop-service]', error instanceof Error ? error.name : 'Diagnostic failure')
     })
   } catch (error) {
-    service = undefined
-    console.warn('[desktop-service] initialization failed', error instanceof Error ? error.name : 'Unknown error')
+    desktopDiagnostics = undefined
+    rememberUpdateServiceFailure(error)
   }
 }
 export async function checkDesktopUpdate(manual = false) {
-  if (!service) throw new Error('Desktop update service is unavailable')
+  if (!service) throw new Error(updateServiceFailure ?? 'Desktop update service is unavailable')
   return service.checkUpdate(manual)
 }

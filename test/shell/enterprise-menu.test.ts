@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { ENTERPRISE_URL, aboutMenuLabel, aboutUsesPage, buildDarwinDesktopMenu, enterpriseMenuLabel, externalUrlToOpen, insertFileMenu, safeModeMenuLabel, shortcutFileMenuLabels, standardMenuLabels, updateMenuLabel } from '../../src/main/shell/enterprise-menu'
+import { ENTERPRISE_URL, aboutMenuLabel, aboutUsesPage, buildDarwinDesktopMenu, buildWindowsApplicationMenu, enterpriseMenuLabel, externalUrlToOpen, insertFileMenu, safeModeMenuLabel, shortcutFileMenuLabels, standardMenuLabels, updateMenuLabel } from '../../src/main/shell/enterprise-menu'
 
 describe('enterprise entry', () => {
   it('uses the product enterprise page for both languages', () => {
@@ -103,6 +103,37 @@ describe('enterprise entry', () => {
     expect(shortcutFileMenuLabels('en-US').closePage).toBe('Close Page or Window')
   })
 
+  it('keeps Windows accelerators on a hidden application menu', () => {
+    const calls: string[] = []
+    const menu = buildWindowsApplicationMenu({
+      locale: 'zh-CN',
+      connectPhone: () => { calls.push('phone') },
+      restart: () => { calls.push('restart') },
+      restartSafeMode: () => { calls.push('safe') },
+      showHarnessLog: () => { calls.push('log') },
+      checkForUpdates: () => { calls.push('update') },
+      quit: () => { calls.push('quit') }
+    })
+    const labels = menu.flatMap(item => [item.label, ...(item.submenu ?? []).map(child => child.label)])
+    expect(labels).toEqual(expect.arrayContaining(['应用', '连接手机…', '重启', '显示 Harness 日志', '编辑', '视图', '窗口']))
+    const accelerators = menu.flatMap(item => (item.submenu ?? []).map(child => child.accelerator))
+    expect(accelerators).toEqual(expect.arrayContaining(['CmdOrCtrl+Shift+M', 'CmdOrCtrl+Shift+R', 'CmdOrCtrl+U']))
+    const roles = menu.flatMap(item => (item.submenu ?? []).map(child => child.role))
+    expect(roles).toEqual(expect.arrayContaining(['undo', 'copy', 'reload', 'zoomIn', 'togglefullscreen', 'quit']))
+    menu[0]?.submenu?.[0]?.click?.()
+    expect(calls).toEqual(['phone'])
+    const withoutSafeMode = buildWindowsApplicationMenu({
+      locale: 'en',
+      connectPhone: () => {},
+      restart: () => {},
+      showHarnessLog: () => {},
+      checkForUpdates: () => {},
+      quit: () => {}
+    })
+    expect((withoutSafeMode[0]?.submenu ?? []).some(item => item.label === safeModeMenuLabel('en'))).toBe(false)
+    expect(withoutSafeMode[0]?.label).toBe('Application')
+  })
+
   it('installs the menu from the new shell', async () => {
     const source = await readFile(join(import.meta.dirname, '../../src/main/shell/app.ts'), 'utf8')
     expect(source.includes('buildDarwinDesktopMenu(')).toBe(true)
@@ -113,6 +144,8 @@ describe('enterprise entry', () => {
     expect(source.includes('externalUrlToOpen(')).toBe(true)
     expect(source.includes('registerUpdateHandlers(')).toBe(true)
     expect(source.includes('startUpdateManager(')).toBe(true)
+    expect(source.includes('if (app.isPackaged && !desktopDevelopmentBuild()) initializeDesktopUpdateService()')).toBe(true)
+    expect(source.includes('initializeDesktopService(')).toBe(false)
     expect(source.includes('checkForUpdates(true)')).toBe(true)
     expect(source.includes('desktop:show-about')).toBe(true)
     expect(source.includes('presentAbout(target, menuLocale)')).toBe(true)

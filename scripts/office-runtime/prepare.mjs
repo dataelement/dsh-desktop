@@ -19,6 +19,15 @@ export function officeTarget(platform = process.platform, arch = process.arch) {
   return target
 }
 
+/** Map only locked native targets into the installed runtime identity. */
+export function officeRuntimeIdentity(target) {
+  if (!Object.hasOwn(lock.targets, target)) throw new Error(`Office runtime: unknown target ${target}`)
+  return {
+    platform: target.startsWith('win-') ? 'win32' : target.startsWith('linux-') ? 'linux' : 'darwin',
+    arch: target.endsWith('arm64') ? 'arm64' : 'x64',
+  }
+}
+
 /** SHA-addressed cache; corrupt and partial downloads never become build input. */
 export async function downloadAsset(url, sha256, cache) {
   await mkdir(cache, { recursive: true })
@@ -131,8 +140,7 @@ export async function prepareOfficeRuntime({ target = officeTarget(), output = j
     await stripUnusedPythonPayload(dependencies, pythonLib, sitePackages)
     const manifest = {
       desktopVersion: version,
-      platform: windows ? 'win32' : 'darwin',
-      arch: target.endsWith('arm64') ? 'arm64' : 'x64',
+      ...officeRuntimeIdentity(target),
       payloadDigest: createHash('sha256').update(JSON.stringify({ format: 1, target, artifact, python: lock.pythonVersion, release: lock.pythonRelease, wheels: lock.wheels, packages: lock.pythonPackages })).digest('hex'),
       python: lock.pythonVersion,
       pythonPackages: lock.pythonPackages
