@@ -11,7 +11,7 @@ interface Registration {
 }
 
 describe('DSH Desktop client slot occupants', () => {
-  it('registers one occupant per brand seat and keeps the official name mark-free', async () => {
+  it.each([false, true])('keeps product seats and gates native content on the bridge: %s', async nativeBridge => {
     const source = await readFile(
       path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'),
       'utf8'
@@ -35,6 +35,7 @@ describe('DSH Desktop client slot occupants', () => {
       navigator: { language: 'en-US' },
       window: {
         dshDesktop: { getRepairDraft: vi.fn(), openRepairAgent: vi.fn() },
+        ...(nativeBridge ? { dshEnterpriseChat: { present: () => Promise.resolve() } } : {}),
         __ModuleLoader__: {
           load: (value: typeof definition) => {
             definition = value
@@ -115,7 +116,7 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item'
-    ])
+    ].filter(name => nativeBridge || name !== 'desktop.mode.content'))
 
     // Local BISHENG seats and incoming utilities coexist without duplicate owners.
     const ids = registrations.map(({ config }) => config.id).filter(Boolean)

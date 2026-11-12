@@ -1,16 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
-
-const require = createRequire(import.meta.url)
-
-function hasEnterprisePlugin(): boolean {
-  try {
-    require.resolve('dsh-desktop-enterprise/package.json')
-    return true
-  } catch {
-    return false
-  }
+/** Product metadata is authoritative; never discover a product through a parent checkout. */
+function hasEnterprisePlugin(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false
+  const plugins = (metadata as Record<string, unknown>).dshDesktopHostPlugins
+  return Array.isArray(plugins) && plugins.includes('dsh-desktop-enterprise')
 }
 
 /**
@@ -65,8 +59,8 @@ const DESKTOP_PPT_ROW = `    - id: dsh-ppt-composer
 
 export const DESKTOP_SAFE_PRODUCT_PATCH = DESKTOP_PRODUCT_PATCH_BASE
 
-export function buildDesktopProductPatch(): string {
-  const enterprise = hasEnterprisePlugin() ? DESKTOP_ENTERPRISE_ROW : ''
+export function buildDesktopProductPatch(metadata?: unknown): string {
+  const enterprise = hasEnterprisePlugin(metadata) ? DESKTOP_ENTERPRISE_ROW : ''
   return `${DESKTOP_PRODUCT_PATCH_BASE}${enterprise}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_PPT_ROW}`
 }
 
@@ -83,12 +77,16 @@ export type DesktopProductPatchMode = 'desktop' | 'safe'
 export async function writeDesktopProductPatch(
   dshHome: string,
   mode: DesktopProductPatchMode = 'desktop',
+  metadata?: unknown,
   options?: { skipBlockingHmr?: boolean }
 ): Promise<string> {
   await mkdir(dshHome, { recursive: true })
   const path = join(dshHome, 'desktop-product.patch.yml')
-  const base = mode === 'safe' ? DESKTOP_SAFE_PRODUCT_PATCH : buildDesktopProductPatch()
-  const text = options?.skipBlockingHmr === true ? `${base}${WINDOWS_DEV_HMR_DISABLE}` : base
+  const base = mode === 'safe' ? DESKTOP_SAFE_PRODUCT_PATCH : buildDesktopProductPatch(metadata)
+  // Preserve the original third-argument options API as well as product metadata.
+  const legacyOptions = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? metadata as { skipBlockingHmr?: boolean } : undefined
+  const text = (options?.skipBlockingHmr ?? legacyOptions?.skipBlockingHmr) === true ? `${base}${WINDOWS_DEV_HMR_DISABLE}` : base
   await writeFile(path, text)
   return path
 }

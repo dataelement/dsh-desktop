@@ -1,3 +1,4 @@
+import { attachDesktopProductWindow, disposeDesktopProduct, readDesktopProductEnvironment, startDesktopProduct } from './product-runtime'
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -645,7 +646,7 @@ async function main(): Promise<void> {
     if (imported !== 'not-offered') await showSplash(window, splashPage)
   }
   await migrateWebProfile(dshHome)
-  const productPatch = await writeDesktopProductPatch(dshHome, safeMode ? 'safe' : 'desktop', {
+  const productPatch = await writeDesktopProductPatch(dshHome, safeMode ? 'safe' : 'desktop', readDesktopPackageMetadata(), {
     skipBlockingHmr: skipBlockingWindowsDevHmr(app.isPackaged, process.platform)
   })
   const paths = resolveDesktopPaths(dshHome)
@@ -759,7 +760,7 @@ async function main(): Promise<void> {
           }),
           restartHost: async () => {
             try {
-              await backend.start(async () => {})
+              await backend.start(prepareDesktopHost)
             } catch (error: unknown) {
               console.error(error)
               return
@@ -808,6 +809,7 @@ async function main(): Promise<void> {
       profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
       environment: {
         ...hostEnvironment,
+        ...readDesktopProductEnvironment(),
         DSH_CLIENT_VERSION: app.getVersion(),
         DSH_DESKTOP_PATCH_FILE: productPatch,
         ...(safeMode ? {} : officeEnvironment(primaryRuntime))
@@ -839,13 +841,20 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['app'])
     return window
   }, (address, signal) => desktopHost?.resolveDragResource(address, signal) ?? Promise.resolve(null))
-  const startup = backend.start(async () => {
+  async function prepareDesktopHost(): Promise<void> {
     const result = await loginShell
     hostEnvironment = result.environment
+    await startDesktopProduct({ userDataPath: app.getPath('userData'), dshHome, safeMode, version: app.getVersion() })
+    attachDesktopProductWindow(window, {
+      checkForUpdates: async () => { await checkForUpdates(true) },
+      showLogs: async () => { shell.showItemInFolder(app.getPath('logs')) },
+      restartInSafeMode: () => { if (!safeMode) restartInSafeMode() }
+    })
     if (result.failures.length > 0) {
       console.error(`[desktop] login shell: ${result.failures.map(item => `${item.shell} (${item.reason})`).join('; ')}`)
     }
-  })
+  }
+  const startup = backend.start(prepareDesktopHost)
   bootSession.track(startup)
   installDesktopProtocol(name => packagedPagePath(name))
   protocol.handle(SCHEME, request => dispatchAppDocument(request, bootSession.documentTarget(frontend)))
@@ -1088,7 +1097,7 @@ async function main(): Promise<void> {
       stop: () => backend.stop(),
       start: async () => {
         try {
-          await backend.start(async () => {})
+          await backend.start(prepareDesktopHost)
         } catch (error: unknown) {
           console.error(error)
           throw error
@@ -1307,7 +1316,8 @@ async function main(): Promise<void> {
       () => stopOperationReports(),
       () => operationJournal.drain(500),
       () => mobileBridge?.stop(),
-      () => backend.close()
+      () => backend.close(),
+      () => disposeDesktopProduct()
     ]).finally(() => { app.quit() })
   })
   await startup

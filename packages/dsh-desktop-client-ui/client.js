@@ -773,16 +773,18 @@ active = false; deletion.reset(); revision++; historyRequest++; unsubscribe(); u
         typeof bridge.openRepairAgent === 'function' && React.createElement(Tooltip, {
           label: t(busy ? 'opening' : 'description'), side: 'top', align: 'end',
           portal: true, maxWidth: 280, delayMs: 0, focusDelayMs: 0
-        }, React.createElement('button', {
-          type: 'button', disabled: busy,
+        }, React.createElement(Button, {
+          type: 'button', variant: 'ghost', size: 'sm', className: 'dshDesktopUtilityButton', disabled: busy, 'aria-busy': busy,
           'aria-label': t(busy ? 'opening' : 'open'), 'aria-description': t('description'), 'data-dsh-repair-entry': true,
           onClick: () => { void open(() => bridge.openRepairAgent()) }
         }, icon('repair'))),
-        typeof bridge.openMobilePairing === 'function' && (wide || connected) && React.createElement('button', {
-          type: 'button', disabled: busy, title: t(connected ? 'phoneManage' : 'phone'),
+        typeof bridge.openMobilePairing === 'function' && (wide || connected) && React.createElement(Tooltip, {
+          label: t(connected ? 'phoneManage' : 'phone'), side: 'top', align: 'end', portal: true
+        }, React.createElement(Button, {
+          type: 'button', variant: 'ghost', size: 'sm', className: 'dshDesktopUtilityButton', disabled: busy, 'aria-busy': busy,
           'aria-label': t(connected ? 'phoneManage' : 'phone'), 'data-dsh-mobile-entry': true,
           onClick: () => { void open(() => bridge.openMobilePairing()) }
-        }, icon('phone'), connected && React.createElement('span', { 'data-connected': true, 'aria-hidden': true })),
+        }, icon('phone'), connected && React.createElement('span', { 'data-connected': true, 'aria-hidden': true }))),
         error && React.createElement('span', { role: 'alert', 'data-dsh-utility-error': true }, error.key ? t(error.key) : error.diagnostic))
     }
 
@@ -1272,7 +1274,7 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
       })
       ctx.slots.inject('sidebar.primaryNavigation', () => ctx.slots.register({ name: 'sidebar.primaryNavigation', id: 'desktop-primary-navigation', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS) }) }, PrimaryNavigation))
       ctx.slots.inject('sidebar.workspaces.title', () => ctx.slots.register({ name: 'sidebar.workspaces.title', inject: () => ({ t: ctx.locale.bind(MODES_NS) }) }, ({ flat, t }) => t(flat ? 'all' : 'projects')))
-      ctx.slots.inject('desktop.mode.content', () => ctx.slots.register({ name: 'desktop.mode.content', id: 'desktop-chat-work', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS), locale: ctx.locale }) }, DesktopModes))
+      if (typeof window.dshEnterpriseChat?.present === 'function') ctx.slots.inject('desktop.mode.content', () => ctx.slots.register({ name: 'desktop.mode.content', id: 'desktop-chat-work', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS), locale: ctx.locale }) }, DesktopModes))
       ctx.slots.inject('sidebar.workspaces.collection', () => ctx.slots.register({ name: 'sidebar.workspaces.collection', id: 'desktop-shared-collection', inject: () => ({ navigation, t: ctx.locale.bind(MODES_NS), deleteText: ctx.locale.bind(CLOUD_DELETE_NS) }) }, SharedCollection))
       return navigation
     }
@@ -1712,6 +1714,7 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
         return () => { unsubscribe(); unclick(); observed.clear() }
       })
     }
+
 
     const inject = ['slots', 'locale', 'remote', 'remote.session', 'sessions', 'uiWorkspace', 'layout']
     function apply(ctx) {

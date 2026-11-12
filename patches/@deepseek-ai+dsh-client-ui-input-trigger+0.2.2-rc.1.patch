@@ -1,0 +1,82 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/client.js
+index aba4914..ae51b65 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/client.js
+@@ -941,10 +941,10 @@ window.__ModuleLoader__.load({
+ 					const at = hl ? pos.findIndex((p) => p.source === hl.source && p.index === hl.index) : -1;
+ 					const next = pos[at < 0 ? ev.dir === 1 ? 0 : pos.length - 1 : (at + ev.dir + pos.length) % pos.length];
+ 					if (next === void 0) return state;
+-					if (hl && next.source === hl.source && next.index === hl.index) return state;
++					if (hl && next.source === hl.source && next.index === hl.index && hl.origin === "keyboard") return state;
+ 					return {
+ 						...state,
+-						highlight: next
++						highlight: { ...next, origin: "keyboard" }
+ 					};
+ 				}
+ 				case "hover": {
+@@ -955,10 +955,10 @@ window.__ModuleLoader__.load({
+ 					}, state.groups);
+ 					if (target === null) return state;
+ 					const hl = state.highlight;
+-					if (hl && hl.source === target.source && hl.index === target.index) return state;
++					if (hl && hl.source === target.source && hl.index === target.index && hl.origin === "pointer") return state;
+ 					return {
+ 						...state,
+-						highlight: target
++						highlight: { ...target, origin: "pointer" }
+ 					};
+ 				}
+ 				case "close": return closed(state);
+@@ -1710,8 +1710,14 @@ window.__ModuleLoader__.load({
+ 			]);
+ 			const highlight = state.open ? state.highlight : null;
+ 			(0, react.useEffect)(() => {
+-				if (highlight === null) return;
+-				document.getElementById(optionId(highlight.source, highlight.index))?.scrollIntoView({ block: "nearest" });
++				if (highlight?.origin !== "keyboard") return;
++				const viewport = viewportRef.current;
++				const option = document.getElementById(optionId(highlight.source, highlight.index));
++				if (viewport === null || option === null) return;
++				const frame = viewport.getBoundingClientRect();
++				const row = option.getBoundingClientRect();
++				if (row.top < frame.top) viewport.scrollTop -= frame.top - row.top;
++				else if (row.bottom > frame.bottom) viewport.scrollTop += row.bottom - frame.bottom;
+ 			}, [highlight]);
+ 			(0, react.useEffect)(() => {
+ 				if (!state.open) return;
+@@ -1815,7 +1821,7 @@ window.__ModuleLoader__.load({
+ 									className: MenuView_module_css_default.itemName,
+ 									children: item.label ?? item.name
+ 								}),
+-								item.label !== void 0 && item.label.toLowerCase() !== item.name.toLowerCase() && (0, react_jsx_runtime.jsx)("span", {
++								item.hideAlias !== true && item.label !== void 0 && item.label.toLowerCase() !== item.name.toLowerCase() && (0, react_jsx_runtime.jsx)("span", {
+ 									className: MenuView_module_css_default.itemAlias,
+ 									children: item.name
+ 								}),
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/core/contract.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/core/contract.d.ts
+index 783482c..d4aac4c 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/core/contract.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/core/contract.d.ts
+@@ -42,6 +42,8 @@ export interface MenuState {
+     readonly highlight: {
+         readonly source: string;
+         readonly index: number;
++        /** Only explicit keyboard movement scrolls the menu viewport. */
++        readonly origin?: 'keyboard' | 'pointer';
+     } | null;
+ }
+ /** Menu reduction events. Source failure = silent group removal (log only; no error UI tier). */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/types.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/types.d.ts
+index ffc64db..b8fcc98 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/types.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/types/types.d.ts
+@@ -42,6 +42,8 @@ export interface InputTriggerCandidate {
+      * findable by its command name).
+      */
+     readonly label?: string;
++    /** Hide an internal invocation alias when an explicit label is provided. */
++    readonly hideAlias?: boolean;
+     readonly description?: string;
+     /** Reference glyph token, or an icon component from the shared icon set. */
+     readonly icon?: InputTriggerCandidateIcon | ComponentType<IconProps>;

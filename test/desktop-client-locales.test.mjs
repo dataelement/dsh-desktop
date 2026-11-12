@@ -107,7 +107,10 @@ async function mountUtilities(bridge) {
   })
   const plugin = definition.factory(id => {
     if (id === 'react') return React
-    if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Tooltip: ({ children }) => children }
+    if (id === '@deepseek-ai/dsh-client-ui-primitives') return {
+      Tooltip: ({ children }) => children,
+      Button: ({ variant, size, ...props }) => React.createElement('button', props)
+    }
     throw new Error(id)
   })
   plugin.apply({

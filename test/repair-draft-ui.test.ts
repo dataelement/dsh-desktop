@@ -19,7 +19,7 @@ async function load(bridge: unknown) {
     createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({ type, props, children }),
     useEffect: (effect: () => unknown) => { effects.push(effect) },
     useState: (initial: unknown) => [initial, vi.fn()], useRef: (current: unknown) => ({ current })
-  } : { Tooltip: 'Tooltip' })
+  } : { Tooltip: 'Tooltip', Button: 'Button' })
   plugin.apply({
     slots: {
       inject: (_name: string, callback: () => unknown) => {
@@ -100,9 +100,15 @@ describe('repair draft admission', () => {
     const view = registrations.get('desktop-utilities')!({ t: (key: string) => key, wide: true }) as {
       children: Array<{ type: string; props: Record<string, unknown>; children: unknown[] }>
     }
-    const [tooltip, phone] = view.children
-    const repair = tooltip?.children[0] as typeof phone
+    const [tooltip, phoneTooltip] = view.children
+    const repair = tooltip?.children[0] as typeof tooltip
+    const phone = phoneTooltip?.children[0] as typeof tooltip
     expect(tooltip?.type).toBe('Tooltip')
+    expect(phoneTooltip?.type).toBe('Tooltip')
+    expect(phoneTooltip?.props).toMatchObject({ label: 'phone', side: 'top', portal: true })
+    expect(repair?.type).toBe('Button')
+    expect(phone?.type).toBe('Button')
+    for (const button of [repair, phone]) expect(button?.props).toMatchObject({ variant: 'ghost', size: 'sm', className: 'dshDesktopUtilityButton' })
     expect(tooltip?.props).toMatchObject({ label: 'description', side: 'top', align: 'end', portal: true, maxWidth: 280, delayMs: 0, focusDelayMs: 0 })
     expect(repair?.props['data-dsh-repair-entry']).toBe(true)
     expect(phone?.props['data-dsh-mobile-entry']).toBe(true)
