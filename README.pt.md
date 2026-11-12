@@ -129,3 +129,7 @@ O DeepSeek Harness e suas dependências continuam sujeitos às respectivas licen
 A edição empresarial combina o cliente de desktop BISHENG com o servidor da plataforma empresarial BISHENG. Baseado no DSH Desktop, o cliente permite trabalhar com arquivos locais e modelos, conhecimento, ferramentas e habilidades autorizados por meio de uma conta empresarial. O servidor configura recursos e permissões de forma centralizada e gerencia créditos e uso. O cliente e o servidor BISHENG da edição empresarial são de código aberto; o código-fonte está disponível nos repositórios abaixo.
 
 [Código da plataforma de gestão empresarial](https://github.com/dataelement/bisheng) · [Repositório do cliente empresarial](https://github.com/dataelement/bisheng-desktop) · [Sobre a edição empresarial](https://www.dshdesktop.com/pt/enterprise/)
+
+Ambiente de execução: `@deepseek-ai/dsh@0.2.2-alpha.2`。 O acesso remoto pelo celular usa Cloudflare Quick Tunnel.
+
+Versões de teste: [**Pre-release**](https://github.com/dataelement/dsh-desktop/releases)。

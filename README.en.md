@@ -134,3 +134,7 @@ DeepSeek Harness and its dependencies remain subject to their respective upstrea
 The enterprise edition combines the BISHENG desktop client with the BISHENG enterprise platform server. Built on DSH Desktop, the client works with local files and enterprise-authorized models, knowledge, tools and skills through an enterprise account. The server centrally configures resources and permissions and manages credits and usage. Both the BISHENG client and server for the enterprise edition are open source; their source code is available in the repositories below.
 
 [Enterprise management platform source](https://github.com/dataelement/bisheng) · [Enterprise client repository](https://github.com/dataelement/bisheng-desktop) · [About the enterprise edition](https://www.dshdesktop.com/en/enterprise/)
+
+Runtime: `@deepseek-ai/dsh@0.2.2-alpha.2`。 Mobile remote access uses Cloudflare Quick Tunnel.
+
+Preview builds: [**Pre-release**](https://github.com/dataelement/dsh-desktop/releases)。

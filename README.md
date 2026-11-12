@@ -134,3 +134,7 @@ DeepSeek Harness 及其依赖仍遵循各自的上游许可证与商标规则。
 企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。企业版的 BISHENG 客户端与服务端均已开源，可通过下方仓库获取源码。
 
 [企业管理平台开源仓库](https://github.com/dataelement/bisheng) · [企业版客户端仓库](https://github.com/dataelement/bisheng-desktop) · [企业版介绍](https://www.dshdesktop.com/zh/enterprise/)
+
+运行时：`@deepseek-ai/dsh@0.2.2-alpha.2`。 手机远程访问使用 Cloudflare Quick Tunnel。
+
+测试版本：[**Pre-release**](https://github.com/dataelement/dsh-desktop/releases)。
