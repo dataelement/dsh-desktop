@@ -230,11 +230,15 @@ async function selectArchive(archive) {
 }
 
 async function installedCard(title) {
-  await waitFor(`${title} installed and enabled`, () => evaluate(`(() => {
+  const outcome = await waitFor(`${title} installed and enabled`, () => evaluate(`(() => {
+    const retry = [...document.querySelectorAll('.dshWbInstallModal button')].some(button => /^(重试安装|Retry installation)$/.test(button.innerText.trim()));
+    const diagnostic = document.querySelector('.dshWbInstallDiagnostic')?.textContent;
+    if (retry && diagnostic) return {error:diagnostic};
     const selected = document.getElementById('dsh-workbench-mine-tab')?.getAttribute('aria-selected') === 'true';
     const card = [...document.querySelectorAll('.dshWbCard')].find(card => card.querySelector('h2')?.innerText === ${JSON.stringify(title)});
     return selected && card?.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'true';
   })()`), 120_000)
+  if (outcome.error) throw new Error(`Package installation failed: ${outcome.error}`)
 }
 
 try {
@@ -302,8 +306,9 @@ try {
 } catch (error) {
   results.push({ stage: 'failure', message: error.stack })
   if (page) {
+    await evaluate("document.querySelectorAll('.dshWbInstallModal details').forEach(element => { element.open = true })").catch(() => {})
     await screenshot('failure').catch(() => {})
-    const text = await evaluate('document.body.innerText').catch(() => '')
+    const text = await evaluate("document.body.innerText + '\\n' + (document.querySelector('.dshWbInstallDiagnostic')?.textContent || '')").catch(() => '')
     console.error(text.slice(-12_000))
   }
   throw error
