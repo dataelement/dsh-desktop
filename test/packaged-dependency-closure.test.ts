@@ -6,8 +6,8 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import { rollup } from 'rollup'
 
 const require = createRequire(import.meta.url)
-const { verifyDependencyClosure } = require('../scripts/verify-packaged-harness.cjs') as { verifyDependencyClosure(root: string): number }
-const { packagedImportsPlugin } = require('../scripts/packaged-imports.cjs') as { packagedImportsPlugin(dependencies: Record<string, string>): import('rollup').Plugin }
+const { verifyDependencyClosure } = require('../scripts/verify/verify-packaged-harness.cjs') as { verifyDependencyClosure(root: string): number }
+const { packagedImportsPlugin } = require('../scripts/release/packaged-imports.cjs') as { packagedImportsPlugin(dependencies: Record<string, string>): import('rollup').Plugin }
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'dsh-packaged-closure-')) })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })

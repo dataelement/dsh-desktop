@@ -6,7 +6,7 @@ import {
   classifyDesktopInstall,
   desktopInstallStatePath,
   type DesktopInstallState
-} from '../src/main/state/desktop-install-state'
+} from '../src/main/profile/desktop-install-state'
 
 const roots: string[] = []
 

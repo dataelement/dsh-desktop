@@ -7,9 +7,8 @@ window.__ModuleLoader__.load({
     const React = require('react')
 
     const NS = 'settings.desktopMarketInstaller'
-    const STATUS_PATH = '/dsh-desktop/market-installer/status'
-    const INSTALL_PATH = '/dsh-desktop/market-installer/install'
-    const UNINSTALL_PATH = '/dsh-desktop/market-installer/uninstall'
+    const MARKET_PACKAGE = 'dshmarket'
+    const RECOMMENDED_MARKET_VERSION = '^1.66.47'
     const MARKET_REPOSITORY = 'https://github.com/dsh-market/dsh-market'
 
     const en = {
@@ -19,6 +18,14 @@ window.__ModuleLoader__.load({
       community: 'dsh-market is maintained by its community; installing and using community plugins requires network access, those plugins are not reviewed by DSH Desktop, and after installation dsh-market will notify you when its own updates are available.',
       version: 'Recommended version',
       install: 'Install plugin market',
+      enable: 'Enable plugin market',
+      update: 'Update/reinstall recommended version',
+      updateFailed: 'Recommended plugin market update failed.',
+      updateRestartHint: 'Recommended version saved. Restart Harness to apply the replacement; the enabled setting is preserved.',
+      updateAppliedHint: 'Recommended version updated; the enabled setting is preserved.',
+      updateBlocked: 'The installed version is outside the recommended major version or unknown. Replacement is unavailable to avoid a downgrade.',
+      appliedHint: 'Plugin market is enabled.',
+      removedAppliedHint: 'dsh-market has been removed.',
       installing: 'Installing plugin market…',
       installingHint: 'This can take a few minutes. Keep DSH Desktop open while pnpm downloads and configures the plugin.',
       installed: 'Plugin market installed',
@@ -55,6 +62,14 @@ window.__ModuleLoader__.load({
       community: 'dsh-market 由社区维护，安装和使用社区插件需要联网且不由 DSH Desktop 审核，安装后有新版本时会提示并提供升级。',
       version: '推荐版本',
       install: '安装插件市场',
+      enable: '启用插件市场',
+      update: '更新/重新安装推荐版本',
+      updateFailed: '推荐插件市场版本更新失败。',
+      updateRestartHint: '推荐版本已保存，重启 Harness 后应用替换；当前启用设置保持不变。',
+      updateAppliedHint: '推荐版本已更新，当前启用设置保持不变。',
+      updateBlocked: '当前版本不属于推荐主版本或版本未知，为避免降级，不能替换为推荐版本。',
+      appliedHint: '插件市场已启用。',
+      removedAppliedHint: 'dsh-market 已移除。',
       installing: '正在安装插件市场…',
       installingHint: '下载和配置可能需要几分钟，请保持 DSH Desktop 处于打开状态。',
       installed: '插件市场已安装',
@@ -144,6 +159,7 @@ window.__ModuleLoader__.load({
       style.dataset.pluginCss = 'dsh-desktop-market-installer'
       style.textContent = css
       document.head.appendChild(style)
+      return () => style.remove()
     }
 
     function marketAlreadyComposed() {
@@ -197,15 +213,115 @@ window.__ModuleLoader__.load({
         restart && React.createElement('button', { className: 'dshDesktopMarketButton dshDesktopMarketSecondary', type: 'button', disabled: busy, onClick: restartHarness }, t('builtInImageRestart')))
     }
 
-    async function readStatus() {
-      const response = await fetch(STATUS_PATH, {
-        method: 'GET',
-        credentials: 'same-origin',
-        cache: 'no-store'
-      })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`)
-      return payload
+    // Keep the ordinary manager's inventory and application outcome separate:
+    // a persisted selection may still need a restart, or fail to apply.
+    function canUpdateRecommendation(status) {
+      return status?.installed && /^1[.]\d+[.]\d+(?:[-+].*)?$/.test(status.installedVersion || '')
+    }
+
+    function createMarketController(ctx) {
+      let disposed = false
+      let ticket = 0
+      let busy = false
+      let snapshot = { status: undefined, error: undefined }
+      const listeners = new Set()
+      const publish = (patch) => {
+        if (disposed) return
+        snapshot = { ...snapshot, ...patch }
+        for (const listener of listeners) listener()
+      }
+      const message = (failure) => failure?.diagnostic || failure?.message || failure?.code || String(failure)
+      const unwrap = (result) => {
+        if (!result?.ok) throw new Error(message(result?.error || 'Plugin manager unavailable'))
+        return result.value
+      }
+      const refresh = async () => {
+        if (disposed) return
+        const current = ++ticket
+        try {
+          const bundles = unwrap(await ctx.remote.pluginManager.listBundles())
+          if (!Array.isArray(bundles)) throw new Error('Invalid plugin inventory')
+          if (disposed || current !== ticket) return
+          const bundle = bundles.find(item => item?.name === MARKET_PACKAGE)
+          const previous = snapshot.status
+          const phase = bundle?.availability === 'missing' ? 'incomplete'
+            : bundle?.installed || bundle?.availability === 'installation' ? 'installed' : 'absent'
+          publish({ status: { ...previous, phase: busy ? previous?.phase : phase,
+            recommendedVersion: RECOMMENDED_MARKET_VERSION, installedVersion: bundle?.version,
+            enabled: bundle?.enabled === true, removable: bundle?.removable === true,
+            installed: phase === 'installed', detail: bundle?.error?.diagnostic }, error: undefined })
+        } catch (failure) {
+          if (current === ticket) publish({ error: message(failure) })
+        }
+      }
+      const change = async (operation) => {
+        if (disposed || busy) return
+        if (operation === 'update' && !canUpdateRecommendation(snapshot.status)) {
+          publish({ error: ctx.locale.bind(NS)('updateBlocked') })
+          return
+        }
+        const selected = snapshot.status?.enabled === true
+        busy = true
+        ++ticket // Invalidate inventory reads started before this operation.
+        publish({ error: undefined, status: { ...snapshot.status,
+          phase: operation === 'remove' ? 'uninstalling' : 'installing', operation } })
+        let failure
+        let value
+        try {
+          const manager = ctx.remote.pluginManager
+          const result = operation === 'remove' ? await manager.removeBundle(MARKET_PACKAGE)
+            : operation === 'enable' ? await manager.setBundleEnabled(MARKET_PACKAGE, true)
+            : operation === 'update' ? await manager.installBundle(MARKET_PACKAGE + '@' + RECOMMENDED_MARKET_VERSION,
+              { expectedName: MARKET_PACKAGE, replace: true, enabled: selected })
+            : await manager.installBundle(MARKET_PACKAGE + '@' + RECOMMENDED_MARKET_VERSION, { enabled: true })
+          value = unwrap(result)
+          if (!['applied', 'restart-required'].includes(value?.application) ||
+              (operation === 'remove' && value.changed === false)) {
+            throw new Error(message(value?.error || value?.application || 'Invalid plugin change result'))
+          }
+        } catch (error) {
+          failure = message(error)
+        }
+        if (disposed) { busy = false; return }
+        // Show an actionable terminal state even when the inventory refresh fails.
+        publish({ status: { ...snapshot.status,
+          phase: failure ? 'error' : operation === 'remove' ? 'uninstalled' : 'installed',
+          application: failure ? undefined : value.restartRequired ? 'restart-required' : value.application,
+          enabled: operation === 'update' ? selected : !failure && operation !== 'remove',
+          installedVersion: value?.version || snapshot.status?.installedVersion } })
+        await refresh()
+        if (failure) publish({ error: failure })
+        busy = false
+      }
+      return {
+        getSnapshot: () => snapshot,
+        subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
+        refresh,
+        install: () => change(snapshot.status?.installed && !snapshot.status.enabled ? 'enable' : 'install'),
+        uninstall: () => change('remove'),
+        update: () => change('update'),
+        start: () => {
+          const offChanged = ctx.remote.$on('plugin-manager/changed', refresh)
+          const offReset = ctx.on('connection/reset', refresh)
+          void refresh()
+          return () => { disposed = true; ++ticket; offChanged(); offReset(); listeners.clear() }
+        }
+      }
+    }
+
+    function useMarket(controller) {
+      return React.useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+    }
+
+    function UpdateRecommendedButton({ t, status, controller, restarting }) {
+      if (!status?.installed) return null
+      const allowed = canUpdateRecommendation(status)
+      return React.createElement(React.Fragment, null,
+        React.createElement('button', { type: 'button',
+          className: 'dshDesktopMarketButton dshDesktopMarketSecondary',
+          disabled: !allowed || restarting || status.phase === 'installing' || status.phase === 'uninstalling',
+          onClick: () => void controller.update() }, t('update') + ' · ' + MARKET_PACKAGE + '@' + RECOMMENDED_MARKET_VERSION),
+        !allowed && React.createElement('p', { className: 'dshDesktopMarketStatusDetail' }, t('updateBlocked')))
     }
 
     function UninstallConfirm({ t, busy, onCancel, onConfirm }) {
@@ -281,79 +397,15 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function MarketManagementTab({ t }) {
-      const [status, setStatus] = React.useState()
-      const [error, setError] = React.useState()
+    function MarketManagementTab({ t, controller }) {
+      const { status, error: managerError } = useMarket(controller)
       const [confirming, setConfirming] = React.useState(false)
       const [restarting, setRestarting] = React.useState(false)
-
-      React.useEffect(() => {
-        let disposed = false
-        const load = async () => {
-          try {
-            const next = await readStatus()
-            if (disposed) return
-            setStatus(next)
-            setError(undefined)
-          } catch (failure) {
-            if (!disposed) setError(failure instanceof Error ? failure.message : String(failure))
-          }
-        }
-        void load()
-        return () => {
-          disposed = true
-        }
-      }, [])
-
-      React.useEffect(() => {
-        if (status?.phase !== 'uninstalling') return
-        let disposed = false
-        let timer
-        const poll = async () => {
-          try {
-            const next = await readStatus()
-            if (disposed) return
-            setStatus(next)
-            setError(undefined)
-            if (next.phase === 'uninstalling') timer = setTimeout(poll, 850)
-            else setConfirming(false)
-          } catch (failure) {
-            if (disposed) return
-            setError(failure instanceof Error ? failure.message : String(failure))
-            timer = setTimeout(poll, 1_500)
-          }
-        }
-        timer = setTimeout(poll, 850)
-        return () => {
-          disposed = true
-          clearTimeout(timer)
-        }
-      }, [status?.phase])
-
+      const [restartError, setError] = React.useState()
+      const error = managerError || restartError
       const uninstall = async () => {
-        setError(undefined)
-        setStatus((current) => ({ ...current, phase: 'uninstalling' }))
-        try {
-          const bridge = globalThis.dshDesktop
-          if (bridge && typeof bridge.uninstallMarket === 'function') {
-            await bridge.uninstallMarket()
-            return
-          }
-          const response = await fetch(UNINSTALL_PATH, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { accept: 'application/json' }
-          })
-          const payload = await response.json()
-          if (!response.ok && response.status !== 409) {
-            throw new Error(payload?.error || `HTTP ${response.status}`)
-          }
-          setStatus(payload)
-          if (payload.phase !== 'uninstalling') setConfirming(false)
-        } catch (failure) {
-          setConfirming(false)
-          setError(failure instanceof Error ? failure.message : String(failure))
-        }
+        await controller.uninstall()
+        setConfirming(false)
       }
 
       const restart = async () => {
@@ -365,7 +417,11 @@ window.__ModuleLoader__.load({
         setRestarting(true)
         setError(undefined)
         try {
-          await bridge.restartHarness()
+          const result = await bridge.restartHarness()
+          if (!result?.ok) {
+            setRestarting(false)
+            setError(t('uninstallFailed'))
+          }
         } catch (failure) {
           setRestarting(false)
           setError(failure instanceof Error ? failure.message : String(failure))
@@ -374,7 +430,7 @@ window.__ModuleLoader__.load({
 
       const phase = status?.phase
       const uninstalling = phase === 'uninstalling'
-      const removed = phase === 'uninstalled' || phase === 'absent'
+      const removed = (phase === 'uninstalled' || phase === 'absent') && !error
       const failed = phase === 'error' || phase === 'incomplete' || Boolean(error)
       const installedVersion = status?.installedVersion || status?.dependency
 
@@ -413,7 +469,7 @@ window.__ModuleLoader__.load({
                   : null
               )
             ),
-            uninstalling
+            (uninstalling || phase === 'installing')
               ? React.createElement(
                   'div',
                   { className: 'dshDesktopMarketStatus' },
@@ -427,13 +483,13 @@ window.__ModuleLoader__.load({
                     React.createElement(
                       'span',
                       { className: 'dshDesktopMarketStatusTitle' },
-                      t('uninstalling')
+                      t(uninstalling ? 'uninstalling' : 'installing')
                     )
                   ),
                   React.createElement(
                     'p',
                     { className: 'dshDesktopMarketStatusDetail' },
-                    status?.detail || t('uninstallingHint')
+                    status?.detail || t(uninstalling ? 'uninstallingHint' : 'installingHint')
                   )
                 )
               : removed
@@ -448,7 +504,7 @@ window.__ModuleLoader__.load({
                     React.createElement(
                       'p',
                       { className: 'dshDesktopMarketStatusDetail' },
-                      t('removedHint')
+                      t(status?.application === 'applied' ? 'removedAppliedHint' : 'removedHint')
                     )
                   )
                 : failed
@@ -458,7 +514,7 @@ window.__ModuleLoader__.load({
                       React.createElement(
                         'span',
                         { className: 'dshDesktopMarketStatusTitle dshDesktopMarketError' },
-                        t('uninstallFailed')
+                        t(status?.operation === 'update' ? 'updateFailed' : 'uninstallFailed')
                       ),
                       error || status?.detail
                         ? React.createElement(
@@ -472,6 +528,26 @@ window.__ModuleLoader__.load({
             React.createElement(
               'div',
               { className: 'dshDesktopMarketActions' },
+              UpdateRecommendedButton({ t, status, controller, restarting }),
+              status?.operation === 'update' && phase === 'installed' && !error
+                ? React.createElement('p', { className: 'dshDesktopMarketStatusDetail', role: 'status' },
+                    t(status.application === 'restart-required' ? 'updateRestartHint' : 'updateAppliedHint'))
+                : null,
+              status?.operation === 'update' && phase === 'installed' && status.application === 'restart-required' && !error
+                ? React.createElement('button', { type: 'button', className: 'dshDesktopMarketButton dshDesktopMarketPrimary',
+                    disabled: restarting, onClick: () => void restart() }, t(restarting ? 'restarting' : 'restart'))
+                : null,
+              status?.installed && !status.enabled
+                ? React.createElement('button', { type: 'button',
+                    className: 'dshDesktopMarketButton dshDesktopMarketPrimary',
+                    disabled: uninstalling || phase === 'installing',
+                    onClick: () => void controller.install() }, t('enable'))
+                : null,
+              !status && error
+                ? React.createElement('button', { type: 'button',
+                    className: 'dshDesktopMarketButton dshDesktopMarketSecondary',
+                    onClick: () => void controller.refresh() }, t('retry'))
+                : null,
               removed
                 ? React.createElement(
                     'button',
@@ -488,7 +564,7 @@ window.__ModuleLoader__.load({
                     {
                       type: 'button',
                       className: 'dshDesktopMarketButton dshDesktopMarketSecondary',
-                      disabled: uninstalling || !status,
+                      disabled: uninstalling || phase === 'installing' || !status?.removable,
                       onClick: () => setConfirming(true)
                     },
                     t('uninstall')
@@ -518,75 +594,12 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function MarketInstallerSection({ t }) {
-      const [status, setStatus] = React.useState()
-      const [error, setError] = React.useState()
+    function MarketInstallerSection({ t, controller }) {
+      const { status, error: managerError } = useMarket(controller)
       const [restarting, setRestarting] = React.useState(false)
-
-      React.useEffect(() => {
-        let disposed = false
-        const load = async () => {
-          try {
-            const next = await readStatus()
-            if (disposed) return
-            setStatus(next)
-            setError(undefined)
-          } catch (failure) {
-            if (!disposed) setError(failure instanceof Error ? failure.message : String(failure))
-          }
-        }
-        void load()
-        return () => {
-          disposed = true
-        }
-      }, [])
-
-      React.useEffect(() => {
-        if (status?.phase !== 'installing') return
-        let disposed = false
-        let timer
-        const poll = async () => {
-          try {
-            const next = await readStatus()
-            if (disposed) return
-            setStatus(next)
-            setError(undefined)
-            if (next.phase === 'installing') timer = setTimeout(poll, 850)
-          } catch (failure) {
-            if (disposed) return
-            setError(failure instanceof Error ? failure.message : String(failure))
-            timer = setTimeout(poll, 1_500)
-          }
-        }
-        timer = setTimeout(poll, 850)
-        return () => {
-          disposed = true
-          clearTimeout(timer)
-        }
-      }, [status?.phase])
-
-      const install = async () => {
-        setError(undefined)
-        setStatus((current) => ({
-          ...current,
-          phase: 'installing',
-          recommendedVersion: current?.recommendedVersion || 'latest'
-        }))
-        try {
-          const response = await fetch(INSTALL_PATH, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { accept: 'application/json' }
-          })
-          const payload = await response.json()
-          if (!response.ok && response.status !== 409) {
-            throw new Error(payload?.error || `HTTP ${response.status}`)
-          }
-          setStatus(payload)
-        } catch (failure) {
-          setError(failure instanceof Error ? failure.message : String(failure))
-        }
-      }
+      const [restartError, setError] = React.useState()
+      const error = managerError || restartError
+      const install = () => controller.install()
 
       const restart = async () => {
         const bridge = globalThis.dshDesktop
@@ -597,7 +610,11 @@ window.__ModuleLoader__.load({
         setRestarting(true)
         setError(undefined)
         try {
-          await bridge.restartHarness()
+          const result = await bridge.restartHarness()
+          if (!result?.ok) {
+            setRestarting(false)
+            setError(t('failed'))
+          }
         } catch (failure) {
           setRestarting(false)
           setError(failure instanceof Error ? failure.message : String(failure))
@@ -606,7 +623,7 @@ window.__ModuleLoader__.load({
 
       const phase = status?.phase
       const busy = phase === 'installing'
-      const installed = phase === 'installed'
+      const installed = phase === 'installed' && status.enabled && !error
       const failed = phase === 'error' || phase === 'incomplete' || Boolean(error)
       const version = status?.recommendedVersion || 'latest'
 
@@ -675,7 +692,7 @@ window.__ModuleLoader__.load({
                   React.createElement(
                     'p',
                     { className: 'dshDesktopMarketStatusDetail' },
-                    t('installedHint')
+                    t(status?.application === 'applied' ? 'appliedHint' : 'installedHint')
                   )
                 )
               : failed
@@ -685,7 +702,7 @@ window.__ModuleLoader__.load({
                     React.createElement(
                       'span',
                       { className: 'dshDesktopMarketStatusTitle dshDesktopMarketError' },
-                      phase === 'incomplete' ? t('incomplete') : t('failed')
+                      phase === 'incomplete' ? t('incomplete') : t(status?.operation === 'update' ? 'updateFailed' : 'failed')
                     ),
                     error || status?.detail
                       ? React.createElement(
@@ -699,6 +716,15 @@ window.__ModuleLoader__.load({
           React.createElement(
             'div',
             { className: 'dshDesktopMarketActions' },
+            UpdateRecommendedButton({ t, status, controller, restarting }),
+            status?.operation === 'update' && phase === 'installed' && !error
+              ? React.createElement('p', { className: 'dshDesktopMarketStatusDetail', role: 'status' },
+                  t(status.application === 'restart-required' ? 'updateRestartHint' : 'updateAppliedHint'))
+              : null,
+            status?.operation === 'update' && phase === 'installed' && !status.enabled && status.application === 'restart-required' && !error
+              ? React.createElement('button', { type: 'button', className: 'dshDesktopMarketButton dshDesktopMarketPrimary',
+                  disabled: restarting, onClick: () => void restart() }, t(restarting ? 'restarting' : 'restart'))
+              : null,
             installed
               ? React.createElement(
                   'button',
@@ -718,7 +744,7 @@ window.__ModuleLoader__.load({
                     disabled: busy || (!status && !error),
                     onClick: () => void install()
                   },
-                  failed ? t('retry') : t('install')
+                  status?.installed && !status.enabled ? t('enable') : failed ? t('retry') : t('install')
                 ),
             React.createElement(
               'a',
@@ -738,9 +764,11 @@ window.__ModuleLoader__.load({
       )
     }
 
-    const inject = ['slots', 'locale']
+    const inject = ['slots', 'locale', 'remote', 'remote.pluginManager']
     function apply(ctx) {
-      installStyles()
+      ctx.effect(installStyles, 'dsh-desktop-market-installer: styles')
+      const controller = createMarketController(ctx)
+      ctx.effect(controller.start, 'dsh-desktop-market-installer: manager status')
       ctx.effect(
         () => ctx.locale.register(NS, { zh, en }),
         'dsh-desktop-market-installer: copy dictionaries'
@@ -750,7 +778,7 @@ window.__ModuleLoader__.load({
         ctx.slots.register(
           { name: 'settings.plugins.tab', id: 'desktop-host-plugins', order: 20,
             label: () => t('builtInImageTitle'), locale: NS,
-            inject: () => ({ t }) },
+            inject: () => ({ t, controller }) },
           BuiltInImageControl
         )
       )
@@ -762,7 +790,7 @@ window.__ModuleLoader__.load({
               id: 'desktop-market-management',
               order: 30,
               label: () => t('managementTab'),
-              inject: () => ({ t })
+              inject: () => ({ t, controller })
             },
             MarketManagementTab
           )
@@ -776,7 +804,7 @@ window.__ModuleLoader__.load({
             id: 'market',
             order: 40,
             label: () => t('nav'),
-            inject: () => ({ t })
+            inject: () => ({ t, controller })
           },
           MarketInstallerSection
         )

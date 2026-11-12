@@ -2,7 +2,7 @@
 
 > 状态：已实现（2026-09-14）。
 > 范围：把桌面「允许 / 拒绝」改成按连接模式授权；Cloudflare 保活；免费 Pinggy 过期体验做诚实。配对中转见文末附录，**不在本次实现**。
-> 相关代码：[`src/main/mobile/lan-mobile-bridge.ts`](../src/main/mobile/lan-mobile-bridge.ts)、[`src/main/mobile/lan-mobile-pages.ts`](../src/main/mobile/lan-mobile-pages.ts)、[`src/main/index.ts`](../src/main/index.ts)。
+> 相关代码：[`src/main/mobile/lan-mobile-bridge.ts`](../src/main/mobile/lan-mobile-bridge.ts)、[`src/main/mobile/lan-mobile-pages.ts`](../src/main/mobile/lan-mobile-pages.ts)、[`src/main/shell/app.ts`](../src/main/shell/app.ts)。
 
 ## 1. 结论摘要
 

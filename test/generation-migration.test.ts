@@ -8,7 +8,7 @@ import {
   isProfileMigrated,
   migrateProfileToGenerations,
   rollBackMigration
-} from '../src/main/state/generation-migration'
+} from '../src/main/profile/generation-migration'
 import {
   listGenerations,
   readDesired,
@@ -69,7 +69,7 @@ describe('one-time profile migration to generations', () => {
     homes.push(home)
     const dir = join(home, 'profiles', 'web')
     await mkdir(join(dir, 'node_modules'), { recursive: true })
-    const dependencies: Record<string, string> = { dshmarket: '^1.35.0' }
+    const dependencies: Record<string, string> = {}
     const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
     for (const [name, version] of Object.entries(plugins)) {
       dependencies[name] = specs[name] ?? `^${version}`
@@ -159,6 +159,16 @@ describe('one-time profile migration to generations', () => {
     expect(installCalls).toHaveLength(attempts)
   })
 
+  it('migrates a declared market like any ordinary plugin and preserves its version', async () => {
+    const home = await preUpgradeProfile({ dshmarket: '1.15.0' })
+    expect(await migrateProfileToGenerations(deps(home))).toEqual({ outcome: 'migrated' })
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(manifest.dependencies.dshmarket).toBe('1.15.0')
+    expect(manifest.pnpm.overrides.dshmarket).toMatch(/^link:/u)
+    expect(manifest.dsh.profile.bundles).toContain('dshmarket')
+    expect((await readDesired(home)).some(id => id.startsWith('dshmarket+1.15.0+'))).toBe(true)
+  })
+
   it('moves community plugins to generations and trims the manifest', async () => {
     const home = await preUpgradeProfile({ 'dsh-vision-router': '2.0.1', 'plugin-two': '1.4.0' })
 
@@ -172,7 +182,7 @@ describe('one-time profile migration to generations', () => {
     )
     // generation dependencies expose installed versions while pnpm resolves
     // them through private local overrides.
-    expect(manifest.dependencies.dshmarket).toBe('^1.35.0')
+    expect(manifest.dependencies.dshmarket).toBeUndefined()
     expect(manifest.dependencies['dsh-vision-router']).toBe('2.0.1')
     expect(manifest.pnpm.overrides['dsh-vision-router']).toMatch(/^link:/u)
     // bundles carry the in-box set plus the migrated plugin names

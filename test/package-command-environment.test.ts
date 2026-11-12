@@ -4,8 +4,8 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { electronNodeExecutable } from '../src/main/runtime/electron-node-executable'
-import { packageCommandEnvironment } from '../src/main/runtime/profile-plugin-command'
+import { electronNodeExecutable } from '../src/main/shell/backend/electron-node-executable'
+import { packageCommandEnvironment } from '../src/main/profile/profile-plugin-command'
 
 const electron = electronNodeExecutable(createRequire(import.meta.url)('electron') as string)
 const pnpmEntryPath = join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')

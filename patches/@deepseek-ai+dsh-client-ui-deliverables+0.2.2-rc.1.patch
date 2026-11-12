@@ -1,0 +1,148 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
+index 01c9531..88f6402 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
+@@ -1272,21 +1272,80 @@ window.__ModuleLoader__.load({
+ 		* @returns The resolver MarkdownText consumes; the full path rides `title`,
+ 		* the same disambiguator the row's chips carry.
+ 		*/
++		function fileMention(path, kind, openFile, label, line, contextMenuProps) {
++			return {
++				open: () => {
++					if (kind === "folder") openFile(path, { revealInFileManager: true });
++					else if (line !== void 0) openFile(path, { line });
++					else openFile(path);
++				},
++				label: label(path, kind),
++				title: path,
++				kind,
++				...contextMenuProps === void 0 ? {} : { contextMenuProps }
++			};
++		}
++		function splitLineSuffix(candidate) {
++			const hash = /^(.*?)#L(\d+)(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/.exec(candidate);
++			if (hash !== null) {
++				const line = Number(hash[2]);
++				return line >= 1 && Number.isSafeInteger(line) ? { path: hash[1], line } : { path: hash[1] };
++			}
++			const colon = /^(.*?):(\d+)(?::\d+)?(?:-\d+(?::\d+)?)?$/.exec(candidate);
++			if (colon !== null && colon[1] !== "" && !/^[a-z]:$/i.test(colon[1])) {
++				const line = Number(colon[2]);
++				return line >= 1 && Number.isSafeInteger(line) ? { path: colon[1], line } : { path: colon[1] };
++			}
++			return { path: candidate };
++		}
++		function localPathReference(value) {
++			const candidate = value.trim();
++			if (candidate === "" || /[\r\n]/.test(candidate)) return void 0;
++			const { path, line } = splitLineSuffix(candidate);
++			if (path === "") return void 0;
++			if (/^[a-z][a-z\d+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path)) return void 0;
++			if (/^@[^\\/@\s]+\/[^\\/@\s]+(?:@[^\\/\s]+)?$/.test(path)) return void 0;
++			if (/^[^@\s\\/]+@[^@\s\\/]+\.[A-Za-z]{2,}$/.test(path)) return void 0;
++			if (/^v?\d+(?:\.\d+){1,4}(?:-[A-Za-z0-9.-]+)?$/.test(path)) return void 0;
++			const segments = path.split(/[\\/]/).filter((segment) => segment !== "");
++			const last = segments[segments.length - 1] ?? "";
++			const extension = fileExtensionOf(last);
++			const explicit = /^(?:\/|~[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path);
++			const trailingDir = /[\\/]$/.test(path);
++			const separated = /[\\/]/.test(path);
++			const worktree = segments.some((segment) => /[A-Z]/.test(rawSuffix(segment)));
++			if (!explicit && !trailingDir && !(separated && extension !== "") && !worktree) return void 0;
++			const kind = !trailingDir && extension !== "" ? "file" : "folder";
++			return {
++				path,
++				kind,
++				...kind === "file" && line !== void 0 ? { line } : {}
++			};
++		}
++		function rawSuffix(name) {
++			const dot = name.lastIndexOf(".");
++			if (dot <= 0 || dot === name.length - 1) return "";
++			return name.slice(dot + 1);
++		}
++		function fileExtensionOf(name) {
++			const extension = rawSuffix(name);
++			return /^[a-z0-9]{1,10}$/.test(extension) ? extension : "";
++		}
++		function onlyPathWithBasename(paths, value) {
++			const matches = paths.filter((path) => basename(path) === value);
++			return matches.length === 1 ? matches[0] : void 0;
++		}
+ 		function producedFileMentions(paths, openFile, label, operations = [], getFileTriggerProps) {
+ 			return { resolve(value) {
+-				const matches = new Set(paths.filter((path) => path === value || basename(path) === value));
+-				for (const operation of operations) if (operation.argumentPath === value) matches.add(operation.path);
+-				const path = matches.size === 1 ? matches.values().next().value : void 0;
+-				if (path === void 0) return void 0;
+-				const contextMenuProps = getFileTriggerProps?.(path);
+-				return {
+-					open: () => {
+-						openFile(path);
+-					},
+-					label: label(path),
+-					title: path,
+-					...contextMenuProps === void 0 ? {} : { contextMenuProps }
+-				};
++				const suffix = splitLineSuffix(value.trim());
++				const target = suffix.path;
++				const matches = new Set(paths.filter((path) => path === value || basename(path) === value || path === target || basename(path) === target));
++				for (const operation of operations) if (operation.argumentPath === value || operation.argumentPath === target) matches.add(operation.path);
++				const known = matches.size === 1 ? matches.values().next().value : void 0;
++				if (known !== void 0) return fileMention(known, "file", openFile, label, suffix.line, getFileTriggerProps?.(known));
++				const local = localPathReference(value);
++				if (local === void 0) return void 0;
++				return fileMention(local.path, local.kind, openFile, label, local.line, getFileTriggerProps?.(local.path));
+ 			} };
+ 		}
+ 		//#endregion
+@@ -2116,6 +2175,7 @@ window.__ModuleLoader__.load({
+ 			"presented.hostError": "无法读取主机桌面信息",
+ 			"presented.preview": "在侧边栏预览",
+ 			"presented.previewButton": "在侧边栏打开 {name}",
++			"presented.openFolder": "在文件管理器中打开 {name}",
+ 			"presented.previewCard": "在侧边栏预览 {name}",
+ 			"presented.all": "全部 {count} 个文件",
+ 			"presented.expandAria": "展开全部 {count} 个交付文件",
+@@ -2176,6 +2236,7 @@ window.__ModuleLoader__.load({
+ 			"presented.hostError": "Could not read the Host desktop information",
+ 			"presented.preview": "Preview in sidebar",
+ 			"presented.previewButton": "Open {name} in sidebar",
++			"presented.openFolder": "Open {name} in file manager",
+ 			"presented.previewCard": "Preview {name} in sidebar",
+ 			"presented.all": "All {count} files",
+ 			"presented.expandAria": "Show all {count} delivered files",
+@@ -2684,8 +2745,7 @@ window.__ModuleLoader__.load({
+ 			ctx.provide("chatFileMentions", { forClosing(owner, _sessionId, getFileTriggerProps) {
+ 				const paths = selectProducedFiles(owner);
+ 				const presented = presentedForClosing(owner);
+-				if (paths === null && presented.length === 0) return void 0;
+-				return producedFileMentions([...new Set([...paths ?? [], ...presented.map((file) => file.path)])], owner.openFile, (path) => t("presented.previewButton", { name: path }), owner.turn.data.get("deliverables")?.produced, getFileTriggerProps);
++				return producedFileMentions([...new Set([...paths ?? [], ...presented.map((file) => file.path)])], owner.openFile, (path, kind) => t(kind === "folder" ? "presented.openFolder" : "presented.previewButton", { name: path }), owner.turn.data.get("deliverables")?.produced, getFileTriggerProps);
+ 			} });
+ 		}
+ 		//#endregion
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
+index 5972530..6ae6fbb 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
+@@ -13,6 +13,7 @@ export declare const zh: {
+     'presented.hostError': string;
+     'presented.preview': string;
+     'presented.previewButton': string;
++    'presented.openFolder': string;
+     'presented.previewCard': string;
+     'presented.all': string;
+     'presented.expandAria': string;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
+index a2f9cc6..3edae6a 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
+@@ -83,5 +83,5 @@ export { basename } from '../presented.ts';
+  * @returns The resolver MarkdownText consumes; the full path rides `title`,
+  * the same disambiguator the row's chips carry.
+  */
+-export declare function producedFileMentions(paths: readonly string[], openFile: (path: string) => void, label: (path: string) => string, operations?: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[], getFileTriggerProps?: (path: string) => NonNullable<ReturnType<MarkdownFileMentions['resolve']>>['contextMenuProps']): MarkdownFileMentions;
++export declare function producedFileMentions(paths: readonly string[], openFile: (path: string, options?: { readonly line?: number; readonly revealInFileManager?: boolean }) => void, label: (path: string, kind?: 'file' | 'folder') => string, operations?: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[]): MarkdownFileMentions;
+ //# sourceMappingURL=turn-deliverables.d.ts.map
+\ No newline at end of file

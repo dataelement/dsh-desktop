@@ -438,13 +438,58 @@ describe('LAN mobile page', () => {
     expect(elements.tunnelLoadingText?.textContent).toBe('Creating a global network link')
     expect(elements.tunnelProgressValue?.textContent).toBe('0%')
     expect(elements.tunnelProgressBar?.style.width).toBe('0%')
+    expect(elements.url?.textContent).toBe('https://example.trycloudflare.com/pair?token=test')
 
     await api.switchMode(false)
     expect(elements.qrCode?.innerHTML).toBe('<svg id="lan"></svg>')
     expect(elements.qrLoading).toBe(loadingNode)
     expect(elements.qrLoading?.classList.contains('show')).toBe(false)
     expect(elements.tunnelLoadingText?.textContent).toBe('Switching to WiFi connection mode')
+    expect(elements.url?.textContent).toBe('http://192.168.1.2/pair?token=next')
     expect(toggleResults).toHaveLength(0)
+  })
+
+  it('does not offer the LAN address as the internet pairing link', async () => {
+    const desktop = renderDesktopPairingPage({
+      qrSvg: '<svg id="lan"></svg>',
+      pairingUrl: 'http://192.168.1.2/pair?token=test',
+      expiresAt: Date.now() + 60_000,
+      locale: 'zh',
+      connected: false
+    })
+    expect(desktop).toContain('公网链接生成后会显示在这里')
+    const script = /<script>([\s\S]*?)<\/script>/.exec(desktop)?.[1]
+    expect(script).toBeTruthy()
+    const elements = pairingPageElements()
+    elements.url.textContent = 'http://192.168.1.2/pair?token=test'
+    elements.qrCode.innerHTML = '<svg id="lan"></svg>'
+    let release: (value: { ok: boolean; error?: string }) => void = () => undefined
+    const fetch = async (input: string) => {
+      if (input === '/desktop/tunnel/toggle') {
+        const value = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+          release = resolve
+        })
+        return { ok: true, json: async () => value }
+      }
+      if (input === '/desktop/status') {
+        return { ok: true, json: async () => ({ connected: false }) }
+      }
+      if (input === '/desktop/tunnel/status') {
+        return { ok: true, json: async () => ({ active: false }) }
+      }
+      throw new Error(`Unexpected request: ${input}`)
+    }
+    const api = runPairingScript(script ?? '', elements, fetch)
+
+    const switching = api.switchMode(true)
+    expect(elements.url.textContent).toBe('公网链接生成后会显示在这里')
+    expect(elements.qrCode.innerHTML).toBe('')
+    expect(elements.url.textContent).not.toContain('192.168')
+    release({ ok: false, error: 'Unable to create an internet tunnel.' })
+    await switching
+    expect(elements.url.textContent).toBe('公网链接生成后会显示在这里')
+    expect(elements.tunnelError.textContent).toContain('隧道建立失败')
+    expect(elements.url.textContent).not.toContain('192.168')
   })
 
   it('localizes both pairing surfaces from the desktop preference', () => {
@@ -805,3 +850,104 @@ describe('desktop pairing page expiry copy', () => {
     expect(html).not.toContain('Reopen this window')
   })
 })
+
+interface PairingElement {
+  id: string
+  classList: {
+    add: (...names: string[]) => void
+    remove: (...names: string[]) => void
+    toggle: (name: string, force?: boolean) => boolean
+    contains: (name: string) => boolean
+  }
+  disabled: boolean
+  hidden: boolean
+  checked: boolean
+  textContent: string
+  innerHTML: string
+  offsetWidth: number
+  style: { width: string }
+}
+
+function pairingPageElements(): {
+  get(id: string): PairingElement
+  url: PairingElement
+  qrCode: PairingElement
+  tunnelError: PairingElement
+} {
+  const store = new Map<string, PairingElement>()
+  const get = (id: string): PairingElement => {
+    const existing = store.get(id)
+    if (existing) return existing
+    const values = new Set<string>()
+    const element: PairingElement = {
+      id,
+      classList: {
+        add: (...names: string[]) => names.forEach((name) => values.add(name)),
+        remove: (...names: string[]) => names.forEach((name) => values.delete(name)),
+        toggle: (name: string, force?: boolean) => {
+          const next = force ?? !values.has(name)
+          if (next) values.add(name)
+          else values.delete(name)
+          return next
+        },
+        contains: (name: string) => values.has(name)
+      },
+      disabled: false,
+      hidden: false,
+      checked: false,
+      textContent: '',
+      innerHTML: '',
+      offsetWidth: 152,
+      style: { width: '' }
+    }
+    store.set(id, element)
+    return element
+  }
+  return { get, url: get('url'), qrCode: get('qrCode'), tunnelError: get('tunnelError') }
+}
+
+function runPairingScript(
+  script: string,
+  elements: { get(id: string): PairingElement },
+  fetch: (input: string) => Promise<{ ok: boolean; json: () => Promise<unknown> }>
+): { switchMode: (enabled: boolean) => Promise<void> } {
+  const classList = () => {
+    const values = new Set<string>()
+    return {
+      add: (...names: string[]) => names.forEach((name) => values.add(name)),
+      remove: (...names: string[]) => names.forEach((name) => values.delete(name)),
+      toggle: (name: string, force?: boolean) => {
+        const next = force ?? !values.has(name)
+        if (next) values.add(name)
+        else values.delete(name)
+        return next
+      },
+      contains: (name: string) => values.has(name)
+    }
+  }
+  const run = new Function(
+    'document',
+    'fetch',
+    'navigator',
+    'setInterval',
+    'setTimeout',
+    'location',
+    'window',
+    `${script};return {switchMode}`
+  )
+  return run(
+    {
+      body: { classList: classList() },
+      getElementById: (id: string) => elements.get(id)
+    },
+    fetch,
+    { clipboard: { writeText: () => undefined } },
+    () => 0,
+    (callback: () => void) => {
+      callback()
+      return 0
+    },
+    { reload: () => undefined },
+    { close: () => undefined }
+  ) as { switchMode: (enabled: boolean) => Promise<void> }
+}

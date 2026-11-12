@@ -1,10 +1,10 @@
 diff --git a/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js b/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js
-index e206984..5319312 100644
+index e206984..faef836 100644
 --- a/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js
 +++ b/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js
 @@ -17,12 +17,16 @@ class LegacyHandlerWrapper {
    }
-
+ 
    onRequestUpgrade (controller, statusCode, headers, socket) {
 -    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
 +    const rawHeaders = Array.isArray(controller?.rawHeaders)
@@ -12,18 +12,18 @@ index e206984..5319312 100644
 +      : toRawHeaders(controller?.rawHeaders ?? headers ?? {})
      this.#handler.onUpgrade?.(statusCode, rawHeaders, socket)
    }
-
+ 
    onResponseStart (controller, statusCode, headers, statusMessage) {
 -    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
 +    const rawHeaders = Array.isArray(controller?.rawHeaders)
 +      ? controller.rawHeaders
 +      : toRawHeaders(controller?.rawHeaders ?? headers ?? {})
-
+ 
      if (this.#handler.onHeaders?.(statusCode, rawHeaders, () => controller.resume(), statusMessage) === false) {
        controller.pause()
-@@ -36,6 +40,8 @@ class LegacyHandlerWrapper {
+@@ -36,7 +40,9 @@ class LegacyHandlerWrapper {
    }
-
+ 
    onResponseEnd (controller, trailers) {
 -    const rawTrailers = controller?.rawTrailers ?? toRawHeaders(trailers ?? {})
 +    const rawTrailers = Array.isArray(controller?.rawTrailers)
@@ -31,3 +31,59 @@ index e206984..5319312 100644
 +      : toRawHeaders(controller?.rawTrailers ?? trailers ?? {})
      this.#handler.onComplete?.(rawTrailers)
    }
+ 
+@@ -61,6 +67,42 @@ class LegacyHandlerWrapper {
+   }
+ }
+ 
++function rawHeaderList (controller, field, fallback) {
++  const current = controller?.[field]
++  if (Array.isArray(current)) return current
++  const raw = toRawHeaders(current ?? fallback ?? {})
++  if (controller != null && typeof controller === 'object') controller[field] = raw
++  return raw
++}
++
++function normalizeModernHandler (handler) {
++  return new Proxy(handler, {
++    get (target, prop, receiver) {
++      if (prop === 'onResponseStart') {
++        return (controller, statusCode, headers, statusMessage) => {
++          const rawHeaders = rawHeaderList(controller, 'rawHeaders', headers)
++          return target.onResponseStart(controller, statusCode, rawHeaders, statusMessage)
++        }
++      }
++      if (prop === 'onRequestUpgrade') {
++        return (controller, statusCode, headers, socket) => {
++          const rawHeaders = rawHeaderList(controller, 'rawHeaders', headers)
++          return target.onRequestUpgrade(controller, statusCode, rawHeaders, socket)
++        }
++      }
++      if (prop === 'onResponseEnd') {
++        return (controller, trailers) => {
++          if (controller?.rawTrailers != null && !Array.isArray(controller.rawTrailers)) {
++            controller.rawTrailers = toRawHeaders(controller.rawTrailers)
++          }
++          return target.onResponseEnd(controller, trailers)
++        }
++      }
++      return Reflect.get(target, prop, receiver)
++    }
++  })
++}
++
+ class Dispatcher1Wrapper extends Dispatcher {
+   #dispatcher
+ 
+@@ -82,7 +124,10 @@ class Dispatcher1Wrapper extends Dispatcher {
+     }
+ 
+     if (typeof handler.onRequestStart === 'function') {
+-      return handler
++      // Node's fetch already speaks the current handler shape, so the legacy
++      // wrapper is skipped. Object raw headers from an older dispatcher still
++      // have to be flattened before that handler reads them.
++      return normalizeModernHandler(handler)
+     }
+ 
+     return new LegacyHandlerWrapper(handler)

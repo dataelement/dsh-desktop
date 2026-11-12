@@ -34,6 +34,7 @@ describe('DSH Desktop client slot occupants', () => {
       document,
       navigator: { language: 'en-US' },
       window: {
+        dshDesktop: { getRepairDraft: vi.fn(), openRepairAgent: vi.fn() },
         __ModuleLoader__: {
           load: (value: typeof definition) => {
             definition = value
@@ -88,9 +89,9 @@ describe('DSH Desktop client slot occupants', () => {
 
     expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
-      'settings.sidebar.footer',
-      'sidebar.settings.action',
       'conversation.input.dock',
+      'sidebar.settings.action',
+      'settings.sidebar.footer',
       'sidebar.brand.mark',
       'sidebar.brand.name',
       'conversation.hero.brand.mark',
@@ -110,6 +111,8 @@ describe('DSH Desktop client slot occupants', () => {
     // Desktop toolbar styles have an owned lifetime; branding stays in currentColor.
     expect(appended).toHaveLength(1)
     expect(appended[0]?.textContent).toContain("[data-dsh-preset-search]")
+    expect(appended[0]?.textContent).toContain("[data-dsh-market-nav-icon] span[class*=\"navIcon\"]")
+    expect(appended[0]?.textContent).toContain("[data-dsh-better-sidebar-settings-nav] span[class*=\"navIcon\"]")
     disposeStyle?.()
     expect(removeStyle).toHaveBeenCalledOnce()
 

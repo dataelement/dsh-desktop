@@ -102,7 +102,7 @@ describe('release CI scheduling', () => {
       expect(enabled(probe.if, { event: 'push', checks: 'extended' })).toBe(false)
     }
     expect(jobs['windows-x64'].steps.some(candidate => candidate.run?.includes('probe-electron-node-runtime'))).toBe(false)
-    const afterPack = readFileSync('scripts/after-pack.cjs', 'utf8')
+    const afterPack = readFileSync('scripts/release/after-pack.cjs', 'utf8')
     for (const gate of ['verifyPackagedHarness', 'verifyOfficeRuntime', 'verifyPackagedPptRuntime']) {
       expect(afterPack).toContain(`await ${gate}(context)`)
     }

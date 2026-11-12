@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
-import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
-import { setHostPluginEnabled } from '../src/main/state/host-plugin-state'
+import { inspectProfileBootInputs } from '../src/main/profile/profile-boot-preflight'
+import { setHostPluginEnabled } from '../src/main/profile/host-plugin-state'
 import { projectRoot } from './patch-path'
 
 const homes: string[] = []

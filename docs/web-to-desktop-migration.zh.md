@@ -22,7 +22,7 @@
 - **复制，不共用**：不把桌面 `DSH_HOME` 指到 `~/.dsh`。官方桌面端选择共用 home、隔离 `profiles/desktop`（见第 8 节）；我们仍用 `profiles/web` + generation，共用会改写网页版 profile，也不适合长期双开。
 - **只问一次**：仅当桌面端尚未产生用户数据时弹出。跳过或导入后都写决策标记，不再打扰。
 - **不破坏网页版**：只读 `~/.dsh`，不移动、不删除。用户仍可继续用 `dsh web`，只是之后数据不再同步。
-- **插件不整树拷贝**：不复制完整 `node_modules` / `pnpm-lock.yaml`。只带上清单和每个社区插件已安装的 `package.json`，交给现有 `src/main/state/generation-migration.ts` 从 registry 装成 generation。
+- **插件不整树拷贝**：不复制完整 `node_modules` / `pnpm-lock.yaml`。只带上清单和每个社区插件已安装的 `package.json`，交给现有 `src/main/profile/generation-migration.ts` 从 registry 装成 generation。
 
 ## 3. 用户路径
 
@@ -92,7 +92,7 @@ $DSH_HOME/
 | `profiles/web/package.json`、`cordis.patch.yml`、`.npmrc` | |
 | 每个社区插件的 `profiles/web/node_modules/<name>/package.json` | |
 
-社区插件判定与 generation 迁移相同：`package.json` 的 `dependencies` ∪ `dsh.profile.bundles`，排除 `dshmarket`、`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`。本地 / `file:` / `git:` 规格额外复制该插件目录，供 `sourceDirectory` 使用。
+社区插件判定与 generation 迁移相同：`package.json` 的 `dependencies` ∪ `dsh.profile.bundles`，仅排除 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`。`dshmarket` 是推荐的普通可选插件，参与预览、导入和 generation 迁移；迁移不补装市场，也不将已有市场 generation 拆回共享目录。本地 / `file:` / `git:` 规格额外复制该插件目录，供 `sourceDirectory` 使用。
 
 ### 4.3 明确不承诺
 
@@ -105,7 +105,7 @@ $DSH_HOME/
 
 ### 5.1 导入逻辑
 
-新增纯逻辑模块 `src/main/state/web-home-import.ts`：
+新增纯逻辑模块 `src/main/profile/web-home-import.ts`：
 
 - `defaultWebHome()` → `~/.dsh`
 - `inspectWebHome(path)`：是否像 Harness home（存在 `settings.yaml` / `sessions` / `profiles/web/package.json` 任一）
@@ -122,7 +122,7 @@ $DSH_HOME/
 
 ### 5.3 启动插入点
 
-在 `src/main/index.ts` 的 `launchHarness()` 里，`await runtime.stop()` 之后、`runProfileStartupMaintenance` 之前插入：
+正式壳在 `src/main/shell/app.ts` 里、复制 profile 之前询问。当时计划插在旧启动函数里的位置是：
 
 ```ts
 if (await shouldOfferWebHomeImport(dshHome)) {
@@ -162,7 +162,9 @@ if (await shouldOfferWebHomeImport(dshHome)) {
 
 ## 8. 官方桌面端对照
 
-上游仓库 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 自带官方 Electron 桌面端：[`apps/desktop`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop) 与私有 Host [`apps/desktop-host`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop-host)。说明见 [`apps/desktop/README.zh.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.zh.md)。
+> 本节写于 2026-09，描述的是当时官方「无端口、分帧管道」启动链。2026-11-03 的上游 `master`（`8bd073392eef6f54e921a093b95076248eb08cbb`）已改为共享 Web HTTP、系统分配的回环端口，以及 `dsh-app://app/` 静态壳。架构差异和改造方案以 [三套 Desktop 架构对照与迁移方案](three-desktop-architecture.zh.md) 为准。下面保留的是本导入方案当时的数据归属理由。
+
+上游仓库 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 自带官方 Electron 桌面端：[`apps/desktop`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop) 与仓库内 Host [`apps/desktop-host`](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/desktop-host)。说明见 [`apps/desktop/README.zh.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.zh.md)。
 
 官方**没有**「从网页版导入」向导，也没有把 `~/.dsh` 拷到另一份 home。数据同步方式是：**共用同一个 `$DSH_HOME`，只隔离可执行 profile 和包管理器**。
 

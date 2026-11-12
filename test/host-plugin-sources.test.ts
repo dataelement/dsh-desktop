@@ -7,8 +7,8 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
-import { hostInsertedPluginNames, prepareHostPluginSourcesPatch } from '../src/main/state/host-plugin-sources'
-import { setHostPluginEnabled } from '../src/main/state/host-plugin-state'
+import { hostInsertedPluginNames, prepareHostPluginSourcesPatch } from '../src/main/profile/host-plugin-sources'
+import { setHostPluginEnabled } from '../src/main/profile/host-plugin-state'
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })

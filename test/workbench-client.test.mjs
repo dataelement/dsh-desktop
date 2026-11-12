@@ -631,6 +631,21 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('does not restore the market after navigating to an ordinary session', async () => {
+    const { service, ctx, request, list } = await fixture()
+    service.showMarket()
+    selectIn(list, 'old')
+    service.selectionChanged()
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBeNull()
+    expect(service.getSnapshot().marketOpen).toBe(false)
+
+    const reloaded = new Workbenches(ctx, request)
+    await reloaded.load()
+    expect(reloaded.getSnapshot().marketOpen).toBe(false)
+    service.dispose()
+    reloaded.dispose()
+  })
+
   it('refreshes the catalog without changing navigation or persisted workbench state', async () => {
     const { service, request } = await fixture(boundState())
     service.setMarketOpen(true)
@@ -648,6 +663,64 @@ describe('desktop workbench client navigation', () => {
     expect(service.state).toEqual(before)
     expect(service.getSnapshot()).toMatchObject({ marketOpen: true, catalogRefreshing: false, catalogError: '' })
     expect(service.getSnapshot().catalog.some(entry => entry.catalogId === 'owner/new')).toBe(true)
+  })
+
+  it('prioritizes a matching repair intent over both active workbench and market on reload', async () => {
+    const first = await fixture({ ...boundState(), active: 'writer' })
+    first.service.showMarket()
+    selectIn(first.list, 'old') // Native startup restored the repair session.
+    clientWindow.localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: 'old' }))
+    clientWindow.localStorage.setItem('dsh.desktop.repair-navigation.v1', JSON.stringify({ sessionId: 'old', createdAt: Date.now() }))
+    first.ctx.uiWorkspace.openSession.mockClear()
+    const reloaded = new Workbenches(first.ctx, first.request)
+    await reloaded.load()
+    expect(reloaded.state.active).toBeNull()
+    expect(first.saved().state.active).toBeNull()
+    expect(reloaded.getSnapshot().marketOpen).toBe(false)
+    expect(first.ctx.layout.selectPanel).toHaveBeenLastCalledWith(null)
+    expect(first.ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    expect(currentOf(first.list)).toBe('old')
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBeNull()
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).toBeNull()
+    first.service.dispose()
+    reloaded.dispose()
+  })
+
+  it.each(['malformed', 'expired', 'future', 'different-target', 'different-selection'])('ignores and removes %s repair intent without changing normal reload restoration', async kind => {
+    const first = await fixture({ ...boundState(), active: 'writer' })
+    first.service.showMarket()
+    selectIn(first.list, kind === 'different-selection' ? 'writer-1' : 'old')
+    clientWindow.localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: kind === 'different-target' ? 'other' : 'old' }))
+    clientWindow.localStorage.setItem('dsh.desktop.repair-navigation.v1', kind === 'malformed' ? '{' : JSON.stringify({ sessionId: 'old', createdAt: Date.now() + (kind === 'expired' ? -300001 : kind === 'future' ? 60000 : 0) }))
+    const reloaded = new Workbenches(first.ctx, first.request)
+    await reloaded.load()
+    expect(reloaded.getSnapshot().marketOpen).toBe(true)
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).toBeNull()
+    first.service.dispose()
+    reloaded.dispose()
+  })
+
+  it('retains repair intent after a failed write and consumes it on retry', async () => {
+    const first = await fixture({ ...boundState(), active: 'writer' })
+    first.service.showMarket()
+    selectIn(first.list, 'old')
+    clientWindow.localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: 'old' }))
+    clientWindow.localStorage.setItem('dsh.desktop.repair-navigation.v1', JSON.stringify({ sessionId: 'old', createdAt: Date.now() }))
+    const failingRequest = (url, options = {}) => options.method === 'POST' ? Promise.resolve(Response.json({ error: 'write failed' }, { status: 500 })) : first.request(url, options)
+    const reloaded = new Workbenches(first.ctx, failingRequest)
+    first.ctx.uiWorkspace.openSession.mockClear()
+    await reloaded.load()
+    expect(reloaded.error).toContain('write failed')
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).not.toBeNull()
+    expect(first.ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    const retried = new Workbenches(first.ctx, first.request)
+    await retried.load()
+    expect(first.saved().state.active).toBeNull()
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).toBeNull()
+    expect(first.ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    first.service.dispose()
+    reloaded.dispose()
+    retried.dispose()
   })
 
   it('restores the market after a renderer reload and clears the marker after leaving it', async () => {
@@ -2668,6 +2741,16 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ pendingRestart: false, pendingReload: false, failureKind: 'load' })
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper').loadFailure).not.toBe('')
     expect(service.getSnapshot().restartNeeded).toBe(false)
+  })
+
+  it('shows a hidden operation diagnostic when the response only names the error code', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    lifecycleMarket(service)
+    const result = { changed: false, application: 'failed', error: { code: 'operation-error', diagnostic: 'staging log\nERR_PNPM_GIT_NOT_FOUND: git is not installed' } }
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ ...changeEnvelope('failed'), result, error: 'operation-error', code: 'operation-error' }, { status: 409 }) })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('ERR_PNPM_GIT_NOT_FOUND: git is not installed')
+    expect(service.installFailures.get('o/helper')).toMatchObject({ kind: 'install', message: 'ERR_PNPM_GIT_NOT_FOUND: git is not installed' })
   })
 
   it.each(['failed', 'cancelled'])('preserves the full HTTP 409 %s result without changing local state or navigation', async application => {

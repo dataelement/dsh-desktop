@@ -36,6 +36,29 @@ describe('RepairAgentService', () => {
     expect(await service.initSession()).toMatchObject({ sessionId: first.sessionId, created: false, needsBriefing: false })
   })
 
+  it('uses a provided session cookie without spending the launch token', async () => {
+    const urls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: URL | string, init?: RequestInit) => {
+      urls.push(String(url))
+      const headers = new Headers(init?.headers)
+      expect(headers.get('cookie')).toBe('sid=ready')
+      const endpoint = new URL(String(url)).pathname.replace('/api/', '')
+      const value = endpoint === 'session/create' ? { sessionId: 'cookie-repair' } : { workspaceId: 'repair-home' }
+      return Response.json({ result: { ok: true, value } })
+    }))
+    const service = new RepairAgentService({
+      harnessUrl: () => 'http://127.0.0.1:9/?token=secret',
+      harnessAuthToken: () => 'secret',
+      harnessCookie: () => 'sid=ready',
+      environment: () => 'normal',
+      ensureHarnessReady: async () => {},
+      workspaceDirectory: '/data/harness',
+      locale: () => 'en'
+    })
+    expect((await service.initSession()).sessionId).toBe('cookie-repair')
+    expect(urls.some(url => url.includes('token='))).toBe(false)
+  })
+
   it('does not start a Safe Mode runtime when normal repair has no running Harness', async () => {
     const ensureHarnessReady = vi.fn()
     const service = new RepairAgentService({

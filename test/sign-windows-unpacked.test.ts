@@ -6,7 +6,7 @@ import {
   buildJsignArgs,
   findSignableBinaries,
   hasAuthenticodeCertificateTable
-} from '../scripts/sign-windows-unpacked.mjs'
+} from '../scripts/release/sign-windows-unpacked.mjs'
 
 function minimalPe(): Buffer {
   const bytes = Buffer.alloc(132)

@@ -59,6 +59,26 @@ describe('cloudflared download lifecycle', () => {
     expect(isRetryableDownloadError(error)).toBe(true)
     expect(request.destroy).toHaveBeenCalledOnce()
   })
+
+  it('stops a download that keeps receiving bytes past the deadline', async () => {
+    const response = new PassThrough() as PassThrough & Partial<IncomingMessage>
+    response.statusCode = 200
+    response.headers = {}
+    const request = fakeRequest()
+    httpsMocks.get.mockImplementation((_url, callback) => {
+      callback(response as IncomingMessage)
+      return request as unknown as ClientRequest
+    })
+    const destination = await tempDestination()
+
+    const download = downloadFileWithRedirects('https://example.test/cloudflared', destination, 5, 20)
+    response.write('partial')
+
+    const error = await download.catch((reason: unknown) => reason)
+    expect((error as Error).message).toBe('cloudflared download exceeded 0.06s')
+    expect(isRetryableDownloadError(error)).toBe(true)
+    response.destroy()
+  })
 })
 
 function fakeRequest(): EventEmitter & {

@@ -21,6 +21,14 @@ window.__ModuleLoader__.load({
     function confirmationRisk(error) {
       return error?.code === 'confirmation_required' && (error.updateRisk === 'local' || error.updateRisk === 'modified') ? error.updateRisk : null
     }
+    function operationDiagnostic(data) {
+      const diagnostic = data?.result?.error?.diagnostic
+      if (typeof diagnostic !== 'string') return ''
+      const lines = diagnostic.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+      const coded = lines.find(line => /\bERR_[A-Z][A-Z0-9_]*\b/.test(line))
+      const named = lines.filter(line => /EPERM|EBUSY|EEXIST|ENOENT|error/i.test(line))
+      return (coded || named.at(-1) || lines.at(-1) || '').slice(0, 400)
+    }
     function installErrorMessage(ctx, data, status) {
       if ((data?.code === 'invalid_download_url' || data?.code === 'unsafe_download_url') && ctx.locale?.bind && data.params === undefined) {
         return ctx.locale.bind(DOWNLOAD_NS)(data.code)
@@ -29,7 +37,11 @@ window.__ModuleLoader__.load({
       if ((data?.code === 'download_failed' || data?.code === 'download_interrupted') && ctx.locale?.bind && typeof diagnostic === 'string' && /^(?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR)(?:, (?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR))*$/.test(diagnostic)) {
         return `${ctx.locale.bind(DOWNLOAD_NS)(data.code)}: ${diagnostic}`
       }
-      return data?.error || `HTTP ${status}`
+      const reported = typeof data?.error === 'string' ? data.error.trim() : ''
+      const code = typeof data?.code === 'string' ? data.code : ''
+      if (reported !== '' && reported !== code) return reported
+      const cause = operationDiagnostic(data)
+      return cause || reported || `HTTP ${status}`
     }
     // The host locale is observable. Keep catalog IDs and search/filter state
     // independent of translated labels so switching languages is immediate.
@@ -158,6 +170,26 @@ window.__ModuleLoader__.load({
     const ACCEPTANCE_EN_READING = `First read and follow the Workbench Market Acceptance Standard: ${ACCEPTANCE_EN_DOC_URL}. It covers GitHub publication, installation sources, listing materials, the listing PR, and the acceptance checklist.`
     const WORKBENCH_PREF = 'dsh-workbench-enabled'
     const MARKET_OPEN_SESSION = 'dsh-desktop-workbenches.market-open.v1'
+    const REPAIR_NAVIGATION = 'dsh.desktop.repair-navigation.v1'
+    const REPAIR_NAVIGATION_MAX_AGE = 5 * 60 * 1000
+    // Keep a valid intent until the active workbench has been durably cleared,
+    // so a failed state write can be retried without returning to the old session.
+    function pendingRepairNavigation(currentSession) {
+      const storage = window.localStorage
+      const raw = storage?.getItem(REPAIR_NAVIGATION)
+      if (!raw) return null
+      let marker, current
+      try {
+        marker = JSON.parse(raw)
+        current = JSON.parse(storage.getItem('dsh.sessions.current') || 'null')
+      } catch { /* Invalid or obsolete intent must not suppress normal reload. */ }
+      const age = Date.now() - marker?.createdAt
+      if (typeof marker?.sessionId === 'string' && marker.sessionId.length > 0
+        && Number.isFinite(marker.createdAt) && age >= 0 && age <= REPAIR_NAVIGATION_MAX_AGE
+        && current?.sessionId === marker.sessionId && currentSession === marker.sessionId) return raw
+      storage.removeItem(REPAIR_NAVIGATION)
+      return null
+    }
     const NATIVE_LOCATION = 'dsh-desktop-workbenches.native-location.v1'
     const storedMarketOpen = () => { try { return window.sessionStorage?.getItem(MARKET_OPEN_SESSION) === 'true' } catch { return false } }
     const storeMarketOpen = (open) => { try { if (open) window.sessionStorage?.setItem(MARKET_OPEN_SESSION, 'true'); else window.sessionStorage?.removeItem(MARKET_OPEN_SESSION) } catch {} }
@@ -940,16 +972,29 @@ window.__ModuleLoader__.load({
           this.migrateLegacyWorkbenchIds()
           this.reconcileMarketInstalls()
           this.reconcileLocalProviders()
-          const active = this.state.active
-          if (active && this.activationFor(this.catalog.get(active) || { id: active }) === 'off') await this.leave()
-          const restoreMarket = this.restoreMarketOnLoad || this.marketOpen
-          this.restoreMarketOnLoad = false
-          if (restoreMarket) {
-            this.setMarketOpen(true)
-            this.ctx.layout.selectPanel(PANEL)
+          const repairNavigation = pendingRepairNavigation(this.lastSession)
+          if (repairNavigation) {
+            this.restoreMarketOnLoad = false
+            this.setMarketOpen(false)
+            this.rememberNativeSession(this.lastSession)
+            this.ctx.layout.selectPanel(null)
+            if (this.state.active) await this.commit(state => { state.active = null })
+            if (!this.disposed && ticket === this.navigation
+              && window.localStorage.getItem(REPAIR_NAVIGATION) === repairNavigation) {
+              window.localStorage.removeItem(REPAIR_NAVIGATION)
+            }
+          } else {
+            const active = this.state.active
+            if (active && this.activationFor(this.catalog.get(active) || { id: active }) === 'off') await this.leave()
+            const restoreMarket = this.restoreMarketOnLoad || this.marketOpen
+            this.restoreMarketOnLoad = false
+            if (restoreMarket) {
+              this.setMarketOpen(true)
+              this.ctx.layout.selectPanel(PANEL)
+            }
+            else if (active && this.catalog.has(active) && this.state.added.includes(active) && this.activationFor(this.catalog.get(active)) !== 'off') await this.open(active)
+            else this.selectionChanged()
           }
-          else if (active && this.catalog.has(active) && this.state.added.includes(active) && this.activationFor(this.catalog.get(active)) !== 'off') await this.open(active)
-          else this.selectionChanged()
           for (const id of this.draftNotes.keys()) this.run(this.saveNote(id))
         } catch (error) { this.report(error) }
       }
@@ -1406,6 +1451,7 @@ window.__ModuleLoader__.load({
         const current = this.currentSession()
         if (current === this.lastSession) return
         this.lastSession = current
+        if (current) this.setMarketOpen(false)
         ++this.navigation
         const owner = workbenchPreference.getSnapshot() && current && this.state.sessionBindings[current]
         if (!owner) this.rememberNativeSession(current)

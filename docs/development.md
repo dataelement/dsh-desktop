@@ -8,7 +8,7 @@ This guide covers local development, validation, patch maintenance, and target-n
 - npm
 - macOS on Apple Silicon or Intel, or Windows x64
 
-This baseline pins `@deepseek-ai/dsh@0.2.2-alpha.2`. Windows packages run Harness in Electron Node mode, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
+This baseline pins `@deepseek-ai/dsh@0.2.2-rc.1`. Windows packages run Harness in Electron Node mode, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
 
 ## Local setup
 
@@ -20,6 +20,8 @@ npm run dev
 ```
 
 `npm ci` runs the repository's `postinstall` hook. It reapplies the tracked `patch-package` patches, installs DSH brand assets into the pinned Harness frontend, and installs Electron.
+
+`npm run dev` prepares the Office runtime and templates, prepares PPT, then starts the Electron shell and Host. Unpackaged launches default to `<repository>/.build/office-runtime/primary-runtime`, the output of `office:prepare`; `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` is optional and only needed to test a different runtime. Installed packages always use `Resources/office-runtime/primary-runtime` and ignore that development override.
 
 Development builds use the separate application name `DSH Desktop Dev` and the separate user-data directory `dsh-desktop-dev`, so they do not reuse production DSH Desktop data. Multiple development worktrees still share that development profile by default; avoid running them at the same time when testing profile, plugin, migration, or recovery changes.
 
@@ -77,17 +79,20 @@ Automatic fallback still happens only when Cloudflare fails to start. If a Cloud
 ## Project map
 
 ```text
-src/main/                 Electron main process and application orchestration
-src/main/runtime/         Harness process lifecycle and diagnostics
-src/main/state/           Profile consistency, repair, recovery, and Safe Mode
+src/main/shell/           Official Electron main process
+src/host/                 Harness child process, spawned with ELECTRON_RUN_AS_NODE
+src/main/profile/         Profile copy, generation projection, and plugin maintenance
+src/main/recovery/        Fatal reports, Safe Mode profile, and repair state
 src/main/mobile/          Paired phone bridge and optional Cloudflare tunnel
 src/main/update/          Installed-build update state and lifecycle
-src/preload/              Narrow renderer-to-main IPC and desktop UI seams
+src/preload/app.ts        Packaged preload
 src/shared/               Shared contracts and desktop menu definitions
 packages/                 Bundled desktop support packages
 patches/                  Reproducible patches for the pinned Harness packages
-build/                    Packaged HTML, icons, loaders, and Harness entry files
-scripts/                  Build, signing, metadata, and target verification tools
+build/                    Packaged HTML, icons, Office CLI, and pnpm invocation
+scripts/release/          Packaging, signing, notarization, and release assets
+scripts/ppt/              PPT runtime and template generation
+scripts/verify/           Target, package, and smoke checks
 test/                     Unit and source-contract regression coverage
 .github/workflows/        Native CI, signing, release, and publication workflows
 ```
@@ -122,11 +127,22 @@ npm run package:mac:x64
 
 # Windows x64 NSIS installer, on a Windows x64 machine or runner
 npm run package:win
+
+# UOS V20 x86_64 / Linux x64 deb, on the target Linux machine
+npm run package:linux:x64
+# Separate development identity and profile
+npm run package:dev:linux:x64
 ```
 
 Do not invoke `electron-builder --win` from macOS or Linux for a distributable Windows package. The target verification scripts intentionally reject host/target mismatches.
 
-For local unsigned development packages, use the corresponding `package:dev:*` command. Packages run Harness and package commands through the packaged Electron runtime (a utility process and the Helper in Node mode on macOS, the executable in Node mode on Windows); no standalone `node_modules/node` may be present under `app.asar.unpacked`. Verify the packaged native-module, pnpm and Harness smokes, then the final signed installer's separate installed-app smoke before handoff. Office preparation is included in dev, build and test: it fetches hash-locked native Python and wheels into `.build/office-runtime`, outside ASAR, and ships no second Node runtime. See [Office runtime](office-runtime.md). The locked Electron 44.7.0 must remain compatible with the native loader: `scripts/verify-target.mjs` fails packaging when Electron in Node mode cannot load it, and changing Electron still requires a new Windows package qualification. Before packaging, `node scripts/probe-electron-node-runtime.mjs` boots Harness from the repository through Electron Node mode with a disposable `DSH_HOME` and checks an authenticated HTTP response; the Windows CI job runs it on every build.
+For local unsigned development packages, use the corresponding `package:dev:*` command. Packages run Host and package commands through the packaged Electron runtime (the Helper in Node mode on macOS, the executable in Node mode on Windows); no standalone `node_modules/node` may be present under `app.asar.unpacked`. Verify the packaged native-module, pnpm and Harness smokes, then the final signed installer's separate installed-app smoke before handoff. Office preparation is included in dev, build and test: it fetches hash-locked native Python and wheels into `.build/office-runtime`, outside ASAR, and ships no second Node runtime. See [Office runtime](office-runtime.md). The locked Electron 44.7.0 must remain compatible with the native loader: `scripts/verify/verify-target.mjs` fails packaging when Electron in Node mode cannot load it, and changing Electron still requires a new Windows package qualification. Before packaging, `node scripts/verify/probe-electron-node-runtime.mjs` boots Harness from the repository through Electron Node mode with a disposable `DSH_HOME` and checks an authenticated HTTP response; the Windows CI job runs it on every build.
+
+Linux packaging is currently a local, target-native qualification path, not part of the macOS/Windows release workflow. UOS V20 must allow the downloaded build tools and locally built ELF files to execute under its application policy. Keep Chromium sandboxing enabled; do not use `--no-sandbox` or disable system-wide security to get a passing build. If a verified tool exits before initialization, collect read-only mapping evidence with `python3 scripts/verify/probe-linux-exec-policy.py /path/to/tool /bin/ls`. A successful read mapping paired with an executable mapping returning `EPERM`, while a trusted system ELF succeeds, indicates an execution-policy boundary; it does not identify the rejecting policy by itself. Ask the administrator to approve the toolchain using the organization's supported process and retain the audit evidence. Do not copy integrity attributes from trusted programs or alter ELF verification settings.
+
+For a VM without a working GLES context, run the opt-in navigation qualification with `DISPLAY=:0 DSH_NAVIGATION_SOFTWARE_RENDERING=1 node scripts/verify/verify-desktop-navigation.mjs` under the desktop session authority. This adds only `--disable-gpu`, retains renderer sandboxing, and qualifies software rendering rather than the default GPU path. A failed default GPU probe must still be reported.
+
+Linux uses native window decorations and manual deb upgrades; automatic update/application rollback remains unsupported. The locked LibreOfficeKit uses its bundled WASM engine on Linux when no compatible native engine is installed. Qualification must execute the same packaged Harness, terminal, PPT and Office afterPack gates, then install and launch the deb in a disposable test environment. A generated deb alone is not evidence of successful UI activation or model requests.
 
 Formal release artifacts are built, signed, and published by the tag workflow. A local build or pull-request check is not formal release evidence.
 

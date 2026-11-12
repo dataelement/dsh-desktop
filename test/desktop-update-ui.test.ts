@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 type TestDom = { window: Window & typeof globalThis }
 const { JSDOM } = createRequire(import.meta.url)('jsdom') as { JSDOM: new (html: string) => TestDom }
 import type { UpdateStatus } from '../src/shared/contracts'
+import { updateText } from '../src/shared/desktop-update-messages'
 
 const ipc = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, payload: unknown) => void>(),
@@ -62,6 +63,48 @@ afterEach(() => {
 const status = (phase: UpdateStatus['phase'], extra: Partial<UpdateStatus> = {}): UpdateStatus => ({ phase, currentVersion: '1.0.0', manual: true, presentationId: 7, ...extra })
 
 describe('desktop update presentation at the IPC boundary', () => {
+  it('redraws an open update and About panel when the live language changes to a non-legacy locale', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.emit(status('available', { locale: 'en', availableVersion: '1.1.0', presentationId: 8 }))
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'ja')
+    expect(ui.shadow.querySelector('.title')?.textContent).toContain('新しいバージョン')
+    expect(ui.shadow.querySelector('.primary')?.textContent).toBe('更新')
+    ui.showAbout()
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'fr')
+    expect(ui.aboutShadow.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('À propos de DSH Desktop')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toBe('Changer de version')
+    expect(ui.aboutShadow.querySelector('.tooltip')?.textContent).toBe('Harness est mis à jour avec DSH Desktop.')
+  })
+  it('translates a missing Harness version at render time when About changes language', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ipc.handlers.get('desktop:show-about')?.({}, { desktopVersion: '1.0.0', locale: 'en' })
+    expect(ui.aboutShadow.querySelector('.about-line')?.textContent).toContain(`Harness ${updateText('en', 'unknown')}`)
+    for (const locale of ['ja', 'zh', 'fr'] as const) {
+      ipc.handlers.get('desktop:ui-locale')?.({}, locale)
+      expect(ui.aboutShadow.querySelector('.about-line')?.textContent).toContain(`Harness ${updateText(locale, 'unknown')}`)
+      expect(ui.aboutShadow.querySelector('.about-line')?.textContent).not.toContain('Harness Unknown')
+      expect(ui.aboutShadow.querySelector('.about-line')?.textContent).not.toContain('undefined')
+    }
+  })
+
+  it('retranslates a generic non-Error action failure without retaining the original language', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ipc.invoke.mockImplementation(async channel => {
+      if (channel === 'updates:download') throw { reason: 'non-Error rejection' }
+      return undefined
+    })
+    ui.emit(status('available', { locale: 'zh', availableVersion: '1.1.0', presentationId: 8 }))
+    ui.shadow.querySelector<HTMLButtonElement>('.primary')?.click()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(ui.shadow.querySelector('.description')?.textContent).toBe(updateText('zh', 'actionFailed'))
+    for (const locale of ['ja', 'en', 'fr'] as const) {
+      ipc.handlers.get('desktop:ui-locale')?.({}, locale)
+      expect(ui.shadow.querySelector('.description')?.textContent).toBe(updateText(locale, 'actionFailed'))
+      expect(ui.shadow.textContent).not.toContain('dsh-desktop:update-action-failed')
+    }
+  })
+
   it.each(['zh', 'en'] as const)('renders safe Markdown notes in %s with a keyboard-scrollable region', async locale => {
     const ui = await mount(Promise.resolve(status('idle', { manual: false })))
     ui.emit(status('checking', { locale, presentationId: 8 }))
@@ -267,5 +310,51 @@ describe('desktop update presentation at the IPC boundary', () => {
     expect(ui.aboutShadow.querySelector('style')?.textContent).toContain('button:focus-visible { outline:2px')
     confirm.click()
     expect(document.activeElement?.id).toBe('origin')
+  })
+
+  it('closes either dialog from the corner and keeps only one open', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.showAbout()
+    const aboutClose = required(ui.aboutShadow.querySelector<HTMLButtonElement>('.dialog-close'))
+    expect(aboutClose.getAttribute('aria-label')).toBe('关闭')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toContain('版本切换')
+    aboutClose.click()
+    expect(ui.aboutShadow.querySelector('.about-card')).toBeNull()
+
+    ui.showAbout()
+    ui.emit(status('checking', { locale: 'zh', presentationId: 12 }))
+    expect(ui.aboutShadow.querySelector('.about-card')).toBeNull()
+    expect(ui.shadow.querySelector('[role="dialog"]')?.textContent).toContain('正在检查更新')
+    expect(ui.shadow.activeElement?.classList.contains('dialog-close')).toBe(false)
+    expect(ui.shadow.querySelector('style')?.textContent).toContain('.dialog-close:focus, .dialog-close:focus-visible { outline:none; }')
+    ui.emit(status('error', {
+      locale: 'zh',
+      presentationId: 12,
+      message: 'Desktop update service is unavailable'
+    }))
+    const updateDialog = required(ui.shadow.querySelector<HTMLElement>('[role="dialog"]'))
+    expect(updateDialog.textContent).toContain('更新失败')
+    expect(updateDialog.textContent).toContain('桌面更新服务不可用。')
+    expect(updateDialog.textContent).not.toContain('Desktop update service is unavailable')
+    expect(updateDialog.tabIndex).toBe(-1)
+    expect(ui.shadow.activeElement).toBe(updateDialog)
+    required(updateDialog.querySelector<HTMLButtonElement>('.dialog-close')).click()
+    expect(ui.host.style.display).toBe('none')
+
+    ui.emit(status('error', { locale: 'en', presentationId: 13, message: 'Manual check failed' }))
+    expect(ui.shadow.querySelector('[role="dialog"]')).not.toBeNull()
+    ui.showAbout()
+    expect(ui.host.style.display).toBe('none')
+    expect(ui.aboutShadow.querySelector('.about-card')).not.toBeNull()
+  })
+
+  it('switches an open dialog when the desktop language changes', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    ui.showAbout()
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'en')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toContain('Switch version')
+    expect(ui.aboutShadow.querySelector('.dialog-close')?.getAttribute('aria-label')).toBe('Close')
+    ipc.handlers.get('desktop:ui-locale')?.({}, 'zh')
+    expect(ui.aboutShadow.querySelector('.version-switch')?.textContent).toContain('版本切换')
   })
 })
