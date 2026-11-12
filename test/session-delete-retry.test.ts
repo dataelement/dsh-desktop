@@ -10,16 +10,15 @@ type SessionCommandControllerConstructor = new (
   defaultCwd: string
 ) => {
   delete(request: { sessionId: string }): Promise<{ deleted: true }>
-  readSessionState(sessionId: string): Promise<{ header: { origin: string } }>
 }
 
 async function loadSessionCommandController(): Promise<SessionCommandControllerConstructor> {
   const modulePath = path.resolve('node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js')
   const source = await readFile(modulePath, 'utf8')
   const testModulePath = path.join(path.dirname(modulePath), `.session-command-controller-test-${randomUUID()}.mjs`)
-  const exportLine = 'export { ApiSessionNotFound, SessionController, SessionController as default, SessionFileReferences, SessionSkillCatalog, buildModelCatalog };'
-
-  await writeFile(testModulePath, source.replace(exportLine, 'export { ApiSessionNotFound, SessionCommandController, SessionController, SessionController as default, SessionFileReferences, SessionSkillCatalog, buildModelCatalog };'))
+  await writeFile(testModulePath, `${source}
+export { SessionCommandController };
+`)
   try {
     const module = await import(pathToFileURL(testModulePath).href)
     return module.SessionCommandController as SessionCommandControllerConstructor
@@ -49,15 +48,15 @@ describe('session deletion transaction', () => {
       agents: { get: () => undefined },
       sessions: { get: () => undefined },
       workspaceRegistry: { forgetSession },
+      sessionQuery: { readSession: vi.fn(async () => {
+        if (!persisted) throw new Error('session should not be inspected after a successful delete')
+        return { session: { origin: 'user' } }
+      }) },
       get: (name: string) => name === 'sessionPersistence' ? { delete: removePersistedSession } : undefined,
       emit: vi.fn()
     }, {
       disposeOwned: vi.fn(async () => false)
     }, process.cwd())
-    controller.readSessionState = vi.fn(async () => {
-      if (!persisted) throw new Error('session should not be inspected after a successful delete')
-      return { header: { origin: 'user' } }
-    })
 
     await expect(controller.delete({ sessionId })).rejects.toThrow('failed to delete session')
     expect(order).toEqual(['forget', 'delete'])

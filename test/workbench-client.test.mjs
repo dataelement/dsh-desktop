@@ -122,7 +122,7 @@ function interactiveMarket(service, tab = 'market', clipboard) {
   return {
     render: () => { stateIndex = 0; return renderMarket({ service }) },
     find,
-    button: (tree, label) => find(tree, node => node.type?.name === 'Button' && node.props.children.flat().filter(child => typeof child === 'string').join('') === label)[0],
+    button: (tree, label) => find(tree, node => (node.type?.name === 'Button' || node.type === 'button') && node.props.children.flat().filter(child => typeof child === 'string').join('') === label)[0],
     modal: tree => find(tree, node => node.type?.name === 'ConfirmRemoveModal')[0]
   }
 }
@@ -631,6 +631,21 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('does not restore the market after navigating to an ordinary session', async () => {
+    const { service, ctx, request, list } = await fixture()
+    service.showMarket()
+    selectIn(list, 'old')
+    service.selectionChanged()
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBeNull()
+    expect(service.getSnapshot().marketOpen).toBe(false)
+
+    const reloaded = new Workbenches(ctx, request)
+    await reloaded.load()
+    expect(reloaded.getSnapshot().marketOpen).toBe(false)
+    service.dispose()
+    reloaded.dispose()
+  })
+
   it('refreshes the catalog without changing navigation or persisted workbench state', async () => {
     const { service, request } = await fixture(boundState())
     service.setMarketOpen(true)
@@ -648,6 +663,64 @@ describe('desktop workbench client navigation', () => {
     expect(service.state).toEqual(before)
     expect(service.getSnapshot()).toMatchObject({ marketOpen: true, catalogRefreshing: false, catalogError: '' })
     expect(service.getSnapshot().catalog.some(entry => entry.catalogId === 'owner/new')).toBe(true)
+  })
+
+  it('prioritizes a matching repair intent over both active workbench and market on reload', async () => {
+    const first = await fixture({ ...boundState(), active: 'writer' })
+    first.service.showMarket()
+    selectIn(first.list, 'old') // Native startup restored the repair session.
+    clientWindow.localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: 'old' }))
+    clientWindow.localStorage.setItem('dsh.desktop.repair-navigation.v1', JSON.stringify({ sessionId: 'old', createdAt: Date.now() }))
+    first.ctx.uiWorkspace.openSession.mockClear()
+    const reloaded = new Workbenches(first.ctx, first.request)
+    await reloaded.load()
+    expect(reloaded.state.active).toBeNull()
+    expect(first.saved().state.active).toBeNull()
+    expect(reloaded.getSnapshot().marketOpen).toBe(false)
+    expect(first.ctx.layout.selectPanel).toHaveBeenLastCalledWith(null)
+    expect(first.ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    expect(currentOf(first.list)).toBe('old')
+    expect(sessionStorage.getItem('dsh-desktop-workbenches.market-open.v1')).toBeNull()
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).toBeNull()
+    first.service.dispose()
+    reloaded.dispose()
+  })
+
+  it.each(['malformed', 'expired', 'future', 'different-target', 'different-selection'])('ignores and removes %s repair intent without changing normal reload restoration', async kind => {
+    const first = await fixture({ ...boundState(), active: 'writer' })
+    first.service.showMarket()
+    selectIn(first.list, kind === 'different-selection' ? 'writer-1' : 'old')
+    clientWindow.localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: kind === 'different-target' ? 'other' : 'old' }))
+    clientWindow.localStorage.setItem('dsh.desktop.repair-navigation.v1', kind === 'malformed' ? '{' : JSON.stringify({ sessionId: 'old', createdAt: Date.now() + (kind === 'expired' ? -300001 : kind === 'future' ? 60000 : 0) }))
+    const reloaded = new Workbenches(first.ctx, first.request)
+    await reloaded.load()
+    expect(reloaded.getSnapshot().marketOpen).toBe(true)
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).toBeNull()
+    first.service.dispose()
+    reloaded.dispose()
+  })
+
+  it('retains repair intent after a failed write and consumes it on retry', async () => {
+    const first = await fixture({ ...boundState(), active: 'writer' })
+    first.service.showMarket()
+    selectIn(first.list, 'old')
+    clientWindow.localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: 'old' }))
+    clientWindow.localStorage.setItem('dsh.desktop.repair-navigation.v1', JSON.stringify({ sessionId: 'old', createdAt: Date.now() }))
+    const failingRequest = (url, options = {}) => options.method === 'POST' ? Promise.resolve(Response.json({ error: 'write failed' }, { status: 500 })) : first.request(url, options)
+    const reloaded = new Workbenches(first.ctx, failingRequest)
+    first.ctx.uiWorkspace.openSession.mockClear()
+    await reloaded.load()
+    expect(reloaded.error).toContain('write failed')
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).not.toBeNull()
+    expect(first.ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    const retried = new Workbenches(first.ctx, first.request)
+    await retried.load()
+    expect(first.saved().state.active).toBeNull()
+    expect(clientWindow.localStorage.getItem('dsh.desktop.repair-navigation.v1')).toBeNull()
+    expect(first.ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    first.service.dispose()
+    reloaded.dispose()
+    retried.dispose()
   })
 
   it('restores the market after a renderer reload and clears the marker after leaving it', async () => {
@@ -971,6 +1044,24 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('prepares the original development instruction through the primary action and keeps clipboard available', async () => {
+    const { service } = await fixture()
+    service.createWorkbench = vi.fn(async () => {})
+    const clipboard = { writeText: vi.fn(async () => {}) }
+    const market = interactiveMarket(service, 'submit', clipboard)
+    const tree = market.render()
+    const create = market.button(tree, '创建工作台')
+    const copy = market.button(tree, '复制指令给其他 AI 助手')
+    expect(create.props.primary).toBe(true)
+    create.props.onClick()
+    await service.queue
+    expect(service.createWorkbench).toHaveBeenCalledWith(developmentWorkbenchAgentPrompt())
+    await copy.props.onClick()
+    expect(clipboard.writeText.mock.calls[0][0]).toContain(developmentWorkbenchAgentPrompt())
+    expect(clipboard.writeText.mock.calls[0][0]).toContain('【工作台名称或用途】')
+    service.dispose()
+  })
+
   it('renders workbench creation as a separate action instead of a collection tab', () => {
     const source = Market.toString()
     expect(source).not.toContain("'aria-selected': tab === 'submit'")
@@ -981,10 +1072,9 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain("'aria-selected': tab === 'favorites'")
     expect(source).toContain('我的收藏')
     expect(source).toContain('已安装')
-    expect(source).toContain('把开发指令发给你的 AI 助手')
-    expect(source).toContain('发给你常用的 AI 助手（DSH、WorkBuddy、Codex 等）')
+    expect(source).toContain("createText('title')")
+    expect(source).toContain("createText('hint')")
     expect(source).toContain('重启 Harness，试试你的工作台')
-    expect(source).toContain('来开发并安装到本机')
     expect(source).toContain('安装完成后，仅当提示需要重启时')
     expect(source).toContain('试试你平时会用到的功能，看看是否符合预期')
     expect(source).toContain('想上架？把提交指令发给 AI 助手')
@@ -992,7 +1082,8 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain('href: developmentPageUrl()')
     expect(source).toContain('href: acceptancePageUrl()')
     expect(source).not.toContain('离线查看')
-    expect(source).toContain('复制开发指令')
+    expect(source).toContain('service.createWorkbench(developmentPrompt)')
+    expect(source).toContain("createText('copy')")
     expect(source).toContain('复制提交指令')
     // Self-use must not read as a parallel alternative to submitting.
     expect(source).not.toContain('选择交付方式')
@@ -1146,7 +1237,7 @@ describe('desktop workbench client navigation', () => {
     expect(code).toContain('.dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}')
   })
 
-  it.each([['复制开发指令', '本地开发'], ['复制提交指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
+  it.each([['复制指令给其他 AI 助手', '本地开发'], ['复制提交指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
     const { service } = await fixture()
     const writeText = vi.fn(async () => {})
     const ui = interactiveMarket(service, 'submit', { writeText })
@@ -1165,7 +1256,7 @@ describe('desktop workbench client navigation', () => {
   it('shows failure feedback when copying a workbench instruction fails', async () => {
     const { service } = await fixture()
     const ui = interactiveMarket(service, 'submit', { writeText: vi.fn(async () => { throw new Error('denied') }) })
-    await ui.button(ui.render(), '复制开发指令').props.onClick()
+    await ui.button(ui.render(), '复制指令给其他 AI 助手').props.onClick()
     const toast = ui.find(ui.render(), node => node.type?.name === 'Toast')[0]
     expect(toast.props.text).toContain('复制失败')
     expect(toast.props.tone).toBeUndefined()
@@ -2678,6 +2769,16 @@ describe('workbench market screenshot and metadata display', () => {
     await expect(service.installFromMarket('o/helper')).rejects.toThrow('工作台服务暂时无法响应，请稍后重试。 (HTTP 502)')
     expect(service.getSnapshot().installing).toBeNull()
     expect(service.installFailures.get('o/helper')).toMatchObject({ kind: 'install' })
+  })
+
+  it('shows a hidden operation diagnostic when the response only names the error code', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    lifecycleMarket(service)
+    const result = { changed: false, application: 'failed', error: { code: 'operation-error', diagnostic: 'staging log\nERR_PNPM_GIT_NOT_FOUND: git is not installed' } }
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ ...changeEnvelope('failed'), result, error: 'operation-error', code: 'operation-error' }, { status: 409 }) })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('ERR_PNPM_GIT_NOT_FOUND: git is not installed')
+    expect(service.installFailures.get('o/helper')).toMatchObject({ kind: 'install', message: 'ERR_PNPM_GIT_NOT_FOUND: git is not installed' })
   })
 
   it.each(['failed', 'cancelled'])('preserves the full HTTP 409 %s result without changing local state or navigation', async application => {
@@ -4214,7 +4315,7 @@ describe('workbench host localization', () => {
     ui.button(tree, 'Build my workbench').props.onClick()
     tree = ui.render()
     expect(ui.find(tree, node => node.type === 'h1')[0].props.children).toEqual(['Build your own workbench'])
-    expect(ui.button(tree, 'Copy development instructions')).toBeDefined()
+    expect(ui.button(tree, 'Create workbench')).toBeDefined()
     expect(ui.button(tree, 'Copy submission instructions')).toBeDefined()
     ui.button(tree, 'Back to Workbench Market').props.onClick()
     ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-mine-tab')[0].props.onClick()

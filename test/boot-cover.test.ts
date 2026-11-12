@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  BOOT_COVER_DARK_MARK_URL,
   BOOT_COVER_ID,
-  BOOT_COVER_LIGHT_MARK_URL,
+  BOOT_COVER_MARK_URL,
   BOOT_COVER_STYLE_ID,
   isHarnessBootCoverTarget,
   mountBootCover,
@@ -38,29 +37,9 @@ function createTimers(): {
   }
 }
 
-interface ThemeQuery extends MediaQueryList {
-  listenerCount(): number
-}
-
-function createThemeQuery(matches: boolean): ThemeQuery {
-  const listeners = new Set<EventListenerOrEventListenerObject>()
-  return {
-    matches,
-    media: '(prefers-color-scheme: dark)',
-    addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
-      listeners.add(listener)
-    },
-    removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
-      listeners.delete(listener)
-    },
-    listenerCount: () => listeners.size
-  } as ThemeQuery
-}
-
 function mountHarnessCover(options: Partial<BootCoverOptions> = {}) {
   const doc = document.implementation.createHTMLDocument()
   const timers = createTimers()
-  const theme = createThemeQuery(false)
   const unsubscribePageHide = vi.fn()
   let pageHide: (() => void) | undefined
   const cover = mountBootCover('dsh-desktop://harness/', {
@@ -68,14 +47,13 @@ function mountHarnessCover(options: Partial<BootCoverOptions> = {}) {
     locale: 'en',
     schedule: timers.schedule,
     cancel: timers.cancel,
-    matchMedia: () => theme,
     subscribePageHide: (listener) => {
       pageHide = listener
       return unsubscribePageHide
     },
     ...options
   })
-  return { doc, timers, theme, cover, pageHide: () => pageHide?.(), unsubscribePageHide }
+  return { doc, timers, cover, pageHide: () => pageHide?.(), unsubscribePageHide }
 }
 
 describe('boot cover target', () => {
@@ -97,6 +75,19 @@ describe('boot cover target', () => {
 })
 
 describe('boot cover lifecycle', () => {
+  it('relabels startup and stalled text from the current Harness document language', async () => {
+    const { doc, timers, cover } = mountHarnessCover()
+    doc.documentElement.lang = 'ja'
+    await Promise.resolve()
+    const root = doc.getElementById(BOOT_COVER_ID)?.shadowRoot
+    expect(root?.querySelector('h1')?.textContent).toBe('DSH Desktop を起動中')
+    timers.fire()
+    expect(root?.querySelector('h1')?.textContent).toBe('起動に通常より時間がかかっています')
+    doc.documentElement.lang = 'de'
+    await Promise.resolve()
+    expect(root?.querySelector('h1')?.textContent).toBe('Der Start dauert länger als gewöhnlich')
+    cover?.dispose()
+  })
   afterEach(() => {
     document.getElementById(BOOT_COVER_ID)?.remove()
     document.getElementById(BOOT_COVER_STYLE_ID)?.remove()
@@ -114,8 +105,9 @@ describe('boot cover lifecycle', () => {
     expect(repeat).toBe(harness.cover)
     const shadow = first?.shadowRoot
     expect(shadow?.querySelector('h1')?.textContent).toBe('Starting DSH Desktop')
-    expect(shadow?.querySelector('img.markLight')?.getAttribute('src')).toBe(BOOT_COVER_LIGHT_MARK_URL)
-    expect(shadow?.querySelector('img.markDark')?.getAttribute('src')).toBe(BOOT_COVER_DARK_MARK_URL)
+    expect(shadow?.querySelector('img.mark')?.getAttribute('src')).toBe(BOOT_COVER_MARK_URL)
+    expect(shadow?.querySelectorAll('img')).toHaveLength(1)
+    expect(BOOT_COVER_MARK_URL).toBe('dsh-desktop://desktop/startup-whale.gif')
     expect(shadow?.querySelector('.markFrame')?.getAttribute('aria-hidden')).toBe('true')
 
     const desktop = document.implementation.createHTMLDocument()
@@ -138,7 +130,7 @@ describe('boot cover lifecycle', () => {
     expect(doc.body).toBeNull()
     const painted = doc.getElementById(BOOT_COVER_ID)
     expect(painted?.shadowRoot?.querySelector('h1')?.textContent).toBe('正在启动 DSH Desktop')
-    expect(painted?.shadowRoot?.querySelector('img.markLight')?.getAttribute('src')).toBe(BOOT_COVER_LIGHT_MARK_URL)
+    expect(painted?.shadowRoot?.querySelector('img.mark')?.getAttribute('src')).toBe(BOOT_COVER_MARK_URL)
     expect(doc.getElementById(BOOT_COVER_STYLE_ID)?.textContent).toContain('body, body *')
 
     painted?.remove()
@@ -162,24 +154,28 @@ describe('boot cover lifecycle', () => {
     cover?.dispose()
   })
 
-  it('follows the dark color scheme and reserves the splash mark', () => {
-    const { doc, cover } = mountHarnessCover({
-      matchMedia: () => createThemeQuery(true)
-    })
+  it('matches the supplied splash animation without pixelation or theme recoloring', () => {
+    const { doc, cover } = mountHarnessCover()
     const root = doc.getElementById(BOOT_COVER_ID)
     const css = root?.shadowRoot?.querySelector('style')?.textContent ?? ''
-    expect(root?.dataset.theme).toBe('dark')
-    expect(css).toContain(':host([data-theme="dark"]) .markLight { display:none; }')
-    expect(css).toContain('brightness(2.4) saturate(0.72)')
-    expect(css).toContain('aspect-ratio:640 / 360')
+    expect(root?.style.background).toBe('rgb(251, 251, 251)')
+    expect(css).toContain('aspect-ratio:480 / 276')
+    expect(css).toContain('width:min(280px, 100%)')
+    expect(css).toContain('translateY(-80px)')
+    expect(css).not.toContain('pixelated')
+    expect(css).not.toContain('brightness')
+    expect(root?.hasAttribute('data-stalled')).toBe(false)
+    expect(root?.shadowRoot?.querySelector('.startupCopy h1')?.textContent).toBe('Starting DSH Desktop')
     cover?.dispose()
   })
 
-  it('insets the splash below the Windows caption, matching the startup page', () => {
-    const { doc, cover } = mountHarnessCover({ platform: 'win32' })
+  it('does not push the splash below a Windows caption the startup page no longer reserves', () => {
+    const { doc, cover } = mountHarnessCover()
     const root = doc.getElementById(BOOT_COVER_ID)
-    expect(root?.dataset.platform).toBe('windows')
-    expect(root?.shadowRoot?.querySelector('style')?.textContent).toContain('padding-top:70px')
+    const css = root?.shadowRoot?.querySelector('style')?.textContent ?? ''
+    expect(root?.dataset.platform).toBeUndefined()
+    expect(css).not.toContain('data-platform')
+    expect(css).not.toContain('padding-top:70px')
     cover?.dispose()
   })
 
@@ -201,6 +197,7 @@ describe('boot cover lifecycle', () => {
     timers.fire()
     const root = doc.getElementById(BOOT_COVER_ID)
     expect(root).not.toBeNull()
+    expect(root?.hasAttribute('data-stalled')).toBe(true)
     expect(root?.shadowRoot?.querySelector('h1')?.textContent).toBe('启动时间较长')
     expect(root?.shadowRoot?.querySelector('p')?.textContent)
       .toBe('仍在加载，可以继续等待；准备就绪后会自动进入。')
@@ -261,7 +258,6 @@ describe('boot cover lifecycle', () => {
     hidden.pageHide()
     expect(hidden.unsubscribePageHide).toHaveBeenCalledOnce()
     expect(hidden.timers.pending()).toBe(0)
-    expect(hidden.theme.listenerCount?.()).toBe(0)
     expect(hidden.doc.getElementById(BOOT_COVER_ID)).toBeNull()
 
     const ready = mountHarnessCover()
@@ -270,7 +266,6 @@ describe('boot cover lifecycle', () => {
     expect(ready.timers.pending()).toBe(0)
     ready.pageHide()
     expect(ready.unsubscribePageHide).toHaveBeenCalledOnce()
-    expect(ready.theme.listenerCount?.()).toBe(0)
   })
 
   it('clears the timer when the real page is hidden', () => {

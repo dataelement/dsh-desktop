@@ -181,6 +181,8 @@ describe('native Workspace navigation with workbench routing', () => {
       expect(document.defaultView.getComputedStyle(button).display).toBe('none')
       service.startSession('project')
       service.startSession()
+      service.startSession('project', { clearPreviousDraft: false })
+      service.startSession(undefined, { agentPreset: 'cordis', prompt: 'Create a plugin', whenDraftExists: 'append' })
       expect(service.sessions.create).not.toHaveBeenCalled()
     }
     controller.state.active = null
@@ -439,7 +441,7 @@ describe('native Workspace navigation with workbench routing', () => {
     await vi.waitFor(() => expect(mainViewOf(sessionState)).toBe(id))
     expect(service.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project', sessionId: id, ...(options?.agentPreset ? { agentPreset: options.agentPreset } : {}) })
     expect(service.prepareDraft).not.toHaveBeenCalled()
-    expect(starter).toHaveBeenCalledTimes(options === undefined ? 1 : 0)
+    expect(starter).toHaveBeenCalledExactlyOnceWith('project')
   })
 
   it.each(['cordis', undefined])('combines Desktop visibility and reuse exclusions with preset matching for %s', async (listed) => {
@@ -465,9 +467,9 @@ describe('native Workspace navigation with workbench routing', () => {
     [{ whenDraftExists: 'keep', clearPreviousDraft: true }, false],
     [{ whenDraftExists: 'append' }, false],
     [{ prompt: 'Follow up', whenDraftExists: 'append' }, true]
-  ])('prepares draft options %j without passing explicit initialization to the Desktop starter', async (options, prepares) => {
+  ])('preserves draft options %j when the Desktop starter permits native creation', async (options, prepares) => {
     const { service } = fixture()
-    const starter = vi.fn(() => true)
+    const starter = vi.fn(() => false)
     service.registerSessionStarter(starter)
     const binding = { sessionId: 'blank' }
     service.sessions.binding = vi.fn(() => binding)
@@ -478,7 +480,7 @@ describe('native Workspace navigation with workbench routing', () => {
     service.startSession('project', options)
 
     await vi.waitFor(() => expect(service.openWorkspace).toHaveBeenCalledOnce())
-    expect(starter).not.toHaveBeenCalled()
+    expect(starter).toHaveBeenCalledExactlyOnceWith('project')
     if (prepares) expect(requestDraftInitialization).toHaveBeenCalledWith(binding, options)
     else expect(requestDraftInitialization).not.toHaveBeenCalled()
   })

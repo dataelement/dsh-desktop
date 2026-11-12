@@ -1,0 +1,194 @@
+{
+  "repository": "deepseek-ai/deepseek-harness",
+  "commit": "66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db",
+  "dshVersion": "0.2.2-rc.1",
+  "modules": [
+    {
+      "path": "src/main/shell/app.ts",
+      "upstream": ["apps/desktop/src/main.ts"],
+      "divergences": [
+        "数据目录是 userData/harness，不用 ~/.dsh",
+        "不接入官方强制更新、欢迎窗、托盘和官方更新；启动页用现有鲸鱼页 splash.html",
+        "最小壳只接启动、协议、窗口安全和后端生命周期",
+        "启动前复制 profiles/web，关闭产品分析、官方账号界面和官方品牌，侧边栏品牌改挂 dsh-desktop-client-ui，普通 profile 再挂 dsh-desktop-workbenches、dsh-desktop-market-installer、dsh-desktop-office 和 dsh-ppt-composer；Safe Mode 不挂工作台、市场、Office 和 PPT，且不把账号会话接到用量页或充值页",
+        "页面脚本之前把当前 profile 的 desktop-storage.json 交给 localStorage，官方界面打开已记住的会话，不在已有工作区新建空会话",
+        "复制 profile 前询问是否导入网页版家目录；已有桌面数据、Safe Mode 或关闭窗口都不导入，网页版目录只读",
+        "macOS 应用菜单依次是关于 DSH Desktop、检查产品更新、企业版；普通启动下一项以 --safe-mode 重启。Safe Mode 用现有 safe-mode.html 管理 desktop profile 的第三方插件。手机配对走侧边栏，不放进这个菜单。修复代理走侧边栏和 Safe Mode 页，不放进应用菜单，也不使用官方强制更新",
+        "致命失败写入 DSH_HOME/fatal-report.json。普通 profile 上能点名的第三方插件进入现有 plugin-recovery.html，只停用并重启；其它失败仍是短对话框。不使用官方 DesktopFatalRecovery",
+        "安装包中的 primary runtime 位于 Resources/office-runtime/primary-runtime",
+        "侧边栏浏览器沿用现有客人策略，不另写一份官方 browser-guests",
+        "文件拖放只接受 Host 授权过的会话文件；渲染进程不能提交本机路径",
+        "Host 离开就绪后清掉启动注入和认证 Cookie；boot 只返回仍处于就绪的那一次，失败的刷新不交回上一次",
+        "启动 Host 前读取 POSIX 登录 shell 环境；Windows 使用继承的注册表环境，不读 PowerShell profile",
+        "账号视图接收真实运行平台；Linux 不冒充 macOS，也不启用未支持的上游账号页面协议"
+      ]
+    },
+    {
+      "path": "src/main/shell/paths.ts",
+      "upstream": ["apps/desktop/src/paths.ts"],
+      "divergences": ["数据目录用产品的 DSH_HOME，不用 ~/.dsh"]
+    },
+    {
+      "path": "src/main/shell/backend/backend-controller.ts",
+      "upstream": ["apps/desktop/src/backend-controller.ts"],
+      "divergences": []
+    },
+    {
+      "path": "src/main/shell/backend/host-process.ts",
+      "upstream": ["apps/desktop/src/host-process.ts"],
+      "divergences": [
+        "启动 Host 时设置 DSH_HOME",
+        "Host 入口是本仓库构建的 host.js，启动参数用对象",
+        "新壳继续用 ELECTRON_RUN_AS_NODE。旧壳的 macOS UtilityProcess 保留，这次没有做隐私权限实测",
+        "不把 Host 标准输出接到父进程，认证 URL 先去掉 token 再留在失败诊断里"
+      ]
+    },
+    {
+      "path": "src/main/shell/backend/host-protocol.ts",
+      "upstream": ["apps/desktop/src/host-protocol.ts"],
+      "divergences": []
+    },
+    {
+      "path": "src/main/shell/backend/node-environment.ts",
+      "upstream": ["apps/desktop/src/node-environment.ts"],
+      "divergences": []
+    },
+    {
+      "path": "src/main/shell/backend/login-shell-environment.ts",
+      "upstream": ["apps/desktop/src/login-shell-environment.ts"],
+      "divergences": [
+        "Windows 不读 PowerShell profile，直接使用继承的注册表环境",
+        "超时只解析 DSH_DESKTOP_LOGIN_SHELL_TIMEOUT_MS，不依赖官方 duration-env.ts",
+        "测试可以替换子进程创建；产品启动不传"
+      ]
+    },
+    {
+      "path": "src/main/shell/backend/startup-error.ts",
+      "upstream": ["apps/desktop/src/startup-error.ts"],
+      "divergences": []
+    },
+    {
+      "path": "src/main/shell/window/web-document.ts",
+      "upstream": ["apps/desktop/src/web-document.ts"],
+      "divergences": ["静态路径拒绝 ..、反斜杠和编码斜线"]
+    },
+    {
+      "path": "src/main/shell/window/platform-view.ts",
+      "upstream": ["apps/desktop/src/platform-view.ts"],
+      "divergences": ["Linux 和其它未支持平台在创建分区、窗口或凭据请求前明确拒绝账号视图"]
+    },
+    {
+      "path": "src/main/shell/window/ipc.ts",
+      "upstream": ["apps/desktop/src/ipc.ts"],
+      "divergences": ["Platform 通道先放在这个文件；文件、快捷键和浏览器 API 等对应模块移植"]
+    },
+    {
+      "path": "src/host/index.ts",
+      "upstream": ["apps/desktop-host/src/index.ts"],
+      "divergences": [
+        "profile 名读取 DSH_DESKTOP_PROFILE，缺省 desktop",
+        "不安装官方更新任务、Office、文件拖放和 Platform 会话发布",
+        "启动后订阅插件操作事件，经 IPC 交给壳",
+        "响应壳的 file-drag-resource，用会话文件系统授权本地文件",
+        "DSH_DESKTOP_PATCH_FILE 指向的补丁会附加到 runProfile",
+        "不注册旧壳的 @deepseek-ai host fallback；缺少宿主 peer 保留原始模块错误"
+      ]
+    },
+    {
+      "path": "src/host/operation-diagnostics.ts",
+      "upstream": ["apps/desktop-host/src/operation-diagnostics.ts"],
+      "divergences": ["事件订阅和卸载经过 src/host/upstream-api.ts"]
+    },
+    {
+      "path": "src/main/shell/operation-journal.ts",
+      "upstream": ["apps/desktop/src/operation-journal.ts"],
+      "divergences": ["文件句柄用 try/finally 关闭", "调用方决定目录，新壳使用 userData/plugin-operations"]
+    },
+    {
+      "path": "src/main/shell/keyboard.ts",
+      "upstream": ["apps/desktop/src/keyboard.ts"],
+      "divergences": ["侧边栏浏览器客人可以接收快捷键", "没有强制更新遮罩，所以不按遮罩挡住按键", "Linux 使用已有 desktop:linux 协议分派原生桌面快捷键"]
+    },
+    {
+      "path": "src/host/file-drag.ts",
+      "upstream": ["apps/desktop-host/src/file-drag.ts"],
+      "divergences": ["会话地址解析经过 src/host/upstream-api.ts"]
+    },
+    {
+      "path": "src/main/shell/file-drag.ts",
+      "upstream": ["apps/desktop/src/file-drag.ts"],
+      "divergences": ["请求字段用属性读取校验，不用类型断言"]
+    },
+    {
+      "path": "src/main/shell/file-drag-files.ts",
+      "upstream": ["apps/desktop/src/file-drag-files.ts"],
+      "divergences": ["准备句柄的品牌转换集中在一个函数"]
+    },
+    {
+      "path": "src/main/shell/crash-report.ts",
+      "upstream": ["apps/desktop/src/crash-report.ts"],
+      "divergences": ["报告正文里的 token 查询参数先抹掉", "渲染控制台超限时用空值判断丢掉最旧一行"]
+    },
+    {
+      "path": "src/main/shell/operation-history.ts",
+      "upstream": ["apps/desktop/src/operation-history.ts"],
+      "divergences": ["文件句柄用 try/finally 关闭"]
+    },
+    {
+      "path": "src/main/shell/operation-report.ts",
+      "upstream": ["apps/desktop/src/operation-report.ts"],
+      "divergences": []
+    },
+    {
+      "path": "src/main/shell/operation-report-job.ts",
+      "upstream": ["apps/desktop/src/operation-report-job.ts"],
+      "divergences": ["Worker 由壳构建单独产出 operation-report-worker.js"]
+    },
+    {
+      "path": "src/main/shell/operation-report-worker.ts",
+      "upstream": ["apps/desktop/src/operation-report-worker.ts"],
+      "divergences": ["输入用字段读取校验，不增加 zod 依赖"]
+    },
+    {
+      "path": "src/main/shell/keybindings.ts",
+      "upstream": ["apps/desktop/src/keybindings.ts"],
+      "divergences": ["缺文件用错误码判断，不用类型断言"]
+    },
+    {
+      "path": "src/preload/app.ts",
+      "upstream": ["apps/desktop/src/preload-app.ts"],
+      "divergences": ["不安装强制更新遮罩；应用页挂上现有 desktop storage、快捷键桥和侧边栏浏览器，Safe Mode 时再盖上现有安全模式页"]
+    }
+  ],
+  "skipped": [
+    "apps/desktop-host/src/cli.ts",
+    "apps/desktop-host/src/update-tasks.ts",
+    "apps/desktop/src/account-backend.ts",
+    "apps/desktop/src/command-installation.ts",
+    "apps/desktop/src/command-management.ts",
+    "apps/desktop/src/command-manager-entry.ts",
+    "apps/desktop/src/mandatory-update-ipc.ts",
+    "apps/desktop/src/mandatory-update-policy.ts",
+    "apps/desktop/src/mandatory-update-window.ts",
+    "apps/desktop/src/policy-test-auth.ts",
+    "apps/desktop/src/preload-mandatory-overlay.ts",
+    "apps/desktop/src/preload-mandatory.ts",
+    "apps/desktop/src/preload-platform-account.ts",
+    "apps/desktop/src/preload-update-dialog.ts",
+    "apps/desktop/src/preload-welcome.ts",
+    "apps/desktop/src/update-attention.ts",
+    "apps/desktop/src/update-channel.ts",
+    "apps/desktop/src/update-coordinator.ts",
+    "apps/desktop/src/update-dialog.ts",
+    "apps/desktop/src/update-error.ts",
+    "apps/desktop/src/update-http-executor.ts",
+    "apps/desktop/src/update-journal.ts",
+    "apps/desktop/src/update-overlay.ts",
+    "apps/desktop/src/update-presentation.ts",
+    "apps/desktop/src/update-schedule.ts",
+    "apps/desktop/src/update-window.ts",
+    "apps/desktop/src/welcome-api.ts",
+    "apps/desktop/src/welcome-backend.ts",
+    "apps/desktop/src/welcome-window.ts"
+  ]
+}

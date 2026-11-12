@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerOfficeEngineResolution } from './office-engine-resolution.mjs'
 
-// Agent shells inherit Node mode from harness-node-entry. Declare it again for
+// Host and agent shells already set Node mode. Declare it again for
 // LibreOffice's children; this CLI must be launched with ELECTRON_RUN_AS_NODE=1.
 process.env.ELECTRON_RUN_AS_NODE = '1'
 const archive = join(import.meta.dirname, 'app.asar')

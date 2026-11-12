@@ -40,6 +40,7 @@ function managerFor(home, dir) {
     ownerContext: { get: name => services.get(name) },
     managementBundles: new Set(),
     protectsManager: () => false,
+    readBundles: PluginManager.prototype.readBundles,
     declaredRows: () => ({ rows: [], overrides: [] }),
     bundleRows: () => [{ id: 'demo-row', name: 'demo-plugin' }]
   }

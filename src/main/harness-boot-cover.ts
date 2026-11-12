@@ -1,10 +1,7 @@
 import { isHarnessBootPage } from '../shared/harness-boot'
 
 export const HARNESS_BOOT_COVER_CSS = `
-  html { background: #f8f8f6 !important; }
-  @media (prefers-color-scheme: dark) {
-    html { background: #141416 !important; }
-  }
+  html { background: #fbfbfb !important; }
   body, body * { visibility: hidden !important; }
   #dsh-desktop-boot-cover, #dsh-desktop-boot-cover * { visibility: visible !important; }
 `

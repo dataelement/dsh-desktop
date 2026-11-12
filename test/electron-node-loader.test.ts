@@ -7,7 +7,7 @@ import {
   electronExecutable,
   harnessLoaderAnchor,
   probeElectronNodeLoader
-} from '../scripts/electron-node-loader.mjs'
+} from '../scripts/verify/electron-node-loader.mjs'
 
 /** A project whose only package is a stand-in for the Harness native loader. */
 async function fixtureProject(loaderSource: string): Promise<{ root: string; anchor: string }> {

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { DesktopStorageManager, STORAGE_FILENAME } from '../src/main/state/desktop-storage'
+import { DesktopStorageManager, STORAGE_FILENAME } from '../src/main/profile/desktop-storage'
 
 const lockedDirectoryCodes = new Set(['EBUSY', 'EPERM', 'EACCES'])
 

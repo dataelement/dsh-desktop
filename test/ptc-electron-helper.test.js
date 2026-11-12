@@ -20,7 +20,8 @@ describe.runIf(process.platform === 'darwin' && existsSync(helper))('PTC Electro
     })
     const runtime = JSON.parse(stdout)
     expect(runtime.node).toMatch(/^v\d+/)
-    expect(runtime.electron).toBe('43.0.0')
+    const manifest = JSON.parse(await readFile(join(process.cwd(), 'package.json'), 'utf8'))
+    expect(runtime.electron).toBe(manifest.devDependencies.electron)
   })
 
   it('keeps Node mode available to the PTC child runtime', async () => {

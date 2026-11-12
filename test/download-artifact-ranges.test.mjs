@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { downloadInRanges } from '../scripts/download-artifact-ranges.mjs'
+import { downloadInRanges } from '../scripts/release/download-artifact-ranges.mjs'
 
 const roots = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {recursive:true,force:true}))) })

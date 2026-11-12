@@ -1,15 +1,15 @@
 <h1 align="center">
-  <img src="docs/images/readme-logo-black-rounded.svg" width="64" alt="DSH Desktop logo" valign="middle" />
+  <img src="docs/images/readme-logo-black-rounded.svg" width="64" alt="DSH Desktop Logo" valign="middle" />
   DSH Desktop
 </h1>
 
 <p align="center">
-  <strong>DSH Desktop by Dataelem</strong> is a desktop Agent application built by the Dataelem team on the DeepSeek Harness framework, available in open-source and enterprise editions.<br />
-  Website: <a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · Open-source repository: <a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
+  <strong>DSH Desktop by Dataelem</strong>（DSH 客户端）是 Dataelem 团队基于 DeepSeek Harness 框架打造的桌面 Agent 应用，提供开源版与<a href="https://www.dshdesktop.com/zh/enterprise/">企业版</a>。<br />
+  官方网站：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
+  <a href="README.md">简体中文</a> · <a href="README.en.md">English</a> · <a href="README.ja.md">日本語</a> · <a href="README.ru.md">Русский</a> · <a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a>
 </p>
 
 <p align="center">
@@ -18,117 +18,119 @@
   <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-171513.svg" />
 </p>
 
-![DSH Desktop overview with portable presets, model providers, phone control, and editable PPT generation](docs/images/dsh-desktop-hero-v021.png)
+![DSH Desktop 的 Preset、模型提供方、手机控制与可编辑 PPT 生成功能](docs/images/dsh-desktop-hero-v021.png)
 
-<p align="center"><strong>Use official DeepSeek models or mainstream third-party providers, manage portable Agent presets, continue Harness sessions from your phone, and turn source material into editable PPTX decks.</strong></p>
+基于 DeepSeek Harness，增强主流模型适配、Word / Excel / PPT 模板、启动异常恢复与工作台，提供开箱即用的桌面体验。
 
-DSH Desktop packages the local DeepSeek Harness experience as an installed desktop application. It starts Harness automatically, keeps profiles, plugins, workspaces, model settings, and sessions outside the application directory, and opens the full Harness interface as soon as the local runtime is ready.
+## 下载安装
 
-> [!IMPORTANT]
-> DSH Desktop is an early preview built on the rapidly evolving `@deepseek-ai/dsh@0.2.1-rc.3`. macOS releases are code-signed and notarized by Apple. Windows x64 installers are code-signed; Windows security warnings may still decrease gradually as the publisher builds download and installation reputation.
+请前往[官方网站](https://www.dshdesktop.com/zh/)下载 DSH Desktop。
 
-## Download
+DSH Desktop 会自动检查更新。新版本会先进行灰度测试，确认稳定后再向所有用户全量推送。
 
-We offer stable and preview releases: download the **stable release**, recommended for everyday use, from our [official website](https://www.dshdesktop.com/#download). To try a **preview release**, choose a version marked **Pre-release** on [GitHub Releases](https://github.com/dataelement/dsh-desktop/releases).
-
-Preview releases include our newest features and closely track the latest official DeepSeek Harness versions. They may be incompatible with community plugins and are **not recommended for general users**. Early adopters are welcome to try them and share feedback in our community; we roll out updates to the wider community only after validation by early adopters.
-
-Installed builds check for updates shortly after startup and every six hours. When a new version is available, DSH Desktop asks before downloading it; installation begins only after you choose **Restart and install**. You can also check manually from the application menu or skip one version without hiding future releases.
-
-## Community
+## 加入社区
 
 <p align="center">
-  Scan the QR code below with WeChat to join the DSH Desktop community group.<br />
-  <img src="docs/images/wechat-group-20260815.png" width="220" alt="DSH Desktop WeChat group QR code" /><br />
-  Prefer Discord? <a href="https://discord.gg/7Xgf3qe3Qp">Join the DSH Desktop Discord community</a>.
+  使用微信扫描下方二维码，加入 DSH Desktop 微信交流群。<br />
+  <img src="docs/images/wechat-group-20260815.png" width="220" alt="DSH Desktop 微信群二维码" /><br />
+  也可以加入 <a href="https://discord.gg/7Xgf3qe3Qp">DSH Desktop Discord 社区</a>。
 </p>
 
-## What DSH Desktop adds
+## DSH Desktop 带来了什么
 
-DeepSeek Harness already provides the Agent runtime and Web UI. DSH Desktop adds the native host capabilities needed for a practical desktop product:
+DeepSeek Harness 提供 Agent Runtime、Web UI 和基础模型接入能力。DSH Desktop 复用这些基础，重点增强以下体验：
 
-- Starts and stops Harness without requiring a separate CLI or browser tab
-- Uses the native system directory picker to add and manage project workspaces
-- Supports official DeepSeek models and mainstream third-party model providers
-- Imports and exports complete custom Agent presets as portable [`.dshpreset` packages](docs/preset-packages.md), with conflict checks and a trust warning before installation
-- Turns source material into editable PPTX decks through the built-in PPT mode
-- Includes offline DOCX, PPTX and XLSX skills with bundled Python libraries on macOS and Windows
-- Preserves profiles, plugins, workspaces, sessions, and model settings across app upgrades
-- Detects startup and frontend plugin failures, keeps diagnostics in `harness.log`, and offers guided recovery actions
-- Provides a non-destructive Safe Mode that temporarily blocks third-party plugins
-- Lets a paired phone continue sessions over the local network or an optional temporary public tunnel
-- Checks for desktop updates and keeps download and installation under user control
-- Adapts native menus, titlebar behavior, window focus, theme, and application branding for macOS and Windows
+- **主流模型适配**：优化模型提供方配置与首次接入，补充模型搜索、图片输入及推理能力配置，并改善第三方模型兼容性。
+- **Office 三件套模板**：提供 Word 原生套版、Excel 案例工作簿及 PPT 可编辑模板，结合业务技能生成 DOCX、XLSX、PPTX；桌面端随附 Python 和 Office 处理依赖。
+- **启动异常与插件故障恢复**：结合启动和前端诊断定位问题，提供引导恢复、安全模式及修复 Agent 入口，尽量保留用户会话与配置。
+- **工作台**：集中浏览、安装和打开工作台应用，支持市场安装与本地导入，并复用 Harness 会话交互。
+- **Agent Preset 迁移**：通过 [`.dshpreset` 包](docs/preset-packages.md)导入导出自定义 Preset，安装前检查冲突并提示信任风险。
+- **手机连接**：扫码配对后，通过局域网或可选公网隧道在手机上继续会话。
+- **原生桌面体验**：自动管理 Harness 启停，集成系统目录选择、原生菜单与窗口；应用升级保留用户数据，并提供自动更新检查。
 
-## PPT generation
+## Office 三件套
 
-Enable the **PPT** button, choose a template, and describe the deck you need. The built-in catalog includes **16 templates and 192 layouts** with editable PPTX output. Previews use English; decks can use English or Chinese, with corresponding font settings. Preview language does not determine output language.
+提供 Word、Excel、PPT 三种制作模式。选择模板并提供材料，即可让 Agent 按模板制作可继续编辑的文件。
 
-PPT is preinstalled, and its automatic instructions apply only to sessions where the PPT button is enabled. See the [PPT runtime guide](packages/ppt-runtime/README.md) for templates, validation, and source acknowledgments.
+- **Word**：沿用原生模板的版式与样式，适合通知、纪要、报告等文档，输出 DOCX。
+- **Excel**：基于案例工作簿整理数据、制作分析与图表，输出 XLSX。
+- **PPT**：内置 **16 套模板、192 种版式**，输出可编辑 PPTX，也支持导入个人模板。内置模板预览使用英文，生成内容支持中文和英文；预览语言不决定输出语言。
 
-## Phone access
+桌面端随附 Python 和 Office 处理依赖，无需另行安装这些运行环境。PPT 模板模式的自动提示词仅在当前会话启用该模式时生效。
 
-Choose **Connect Phone…** from the `Harness` menu and scan the pairing code.
+## 工作台
 
-- On Wi-Fi, scanning connects immediately.
-- Over the internet tunnel, the phone enters a 6-digit pairing password shown only on the computer. By default the password is temporary (5 minutes, memory only). A durable password is created only after you opt in on the Connect Phone window.
+工作台把面向具体业务的操作界面与 Agent 会话结合起来，让常用任务不再只有聊天入口。
 
-Harness itself remains on a random `127.0.0.1` port. Phone access uses a separate paired bridge. Cloudflare Quick Tunnel is the usual long-lived remote path. Free Pinggy is the fallback when Cloudflare is unavailable (for example in mainland China) and expires after about 60 minutes. Disconnecting the phone from the desktop invalidates the mobile session.
+你可以在工作台市场浏览、收藏和安装应用，也可以导入本地开发的工作台。打开后，在业务界面中操作，并结合关联的 Agent 会话完成任务；安装或更新后，按界面提示重启即可加载。移除工作台不会删除已有会话和项目文件。
 
-If Cloudflare fails to start, the app tries Pinggy. If a Cloudflare pairing link appears but your phone cannot open it, choose **Can’t open? Try another link** to switch to Pinggy.
+## 手机连接
 
-## Safe Mode and recovery
+从 `Harness` 菜单选择“连接手机…”，再扫描配对二维码。
 
-If a third-party plugin interferes with startup or rendering, DSH Desktop can identify the implicated plugin from runtime and frontend evidence and open a guided recovery surface.
+- WiFi 下扫码即可连接。
+- 互联网隧道需要再输入电脑上显示的 6 位连接密码。默认是 5 分钟、只存在内存里的临时密码；只有在「连接手机」窗口勾选同意后，才会在本机生成长效密码。
 
-Choose **Restart as Safe Mode…** from the `Harness` menu to start an isolated profile containing only official core bundles. The Agent, sessions, model settings, and workspaces remain available while third-party plugins from the normal profile stay blocked. You can remove selected plugins or return to a normal launch from the Safe Mode banner.
+Harness 本身始终运行在随机的 `127.0.0.1` 端口。手机访问由独立的配对 Bridge 提供。Cloudflare Quick Tunnel 是常态长连接路径；免费 Pinggy 是 Cloudflare 不可用时（如中国大陆）的备用通道，大约 60 分钟后失效。桌面端断开连接后，手机会话随即失效。
 
-Recovery screens check for compatible plugin updates. When available, you can upgrade an affected plugin; Safe Mode also offers batch upgrades. For help, hover over **WeChat group** to display its QR code, or click **Discord** to open the community.
+Cloudflare 启动失败时会尝试 Pinggy。若已显示 Cloudflare 配对链接，但手机无法打开，可点击“**扫码打不开？换一条线路**”切换到 Pinggy。
 
-If the normal interface cannot be reached, start DSH Desktop with `--safe-mode`. On macOS:
+## 安全模式与故障恢复
+
+如果第三方插件导致启动或页面渲染异常，DSH Desktop 会结合 Runtime 与前端证据定位相关插件，并打开引导式恢复界面。
+
+从 `Harness` 菜单选择“以安全模式重启…”，可暂时屏蔽第三方插件，同时保留 Agent、会话、模型配置和工作区。你可以在管理界面停用问题插件，再重启正常模式验证；停用不会删除插件和用户数据，之后可以重新启用。
+
+恢复页面会检查插件是否有兼容更新；有可用版本时，可升级对应插件，安全模式还支持批量升级。需要帮助时，鼠标悬停“**微信群**”即可显示二维码，点击 **Discord** 则会打开社区链接。
+
+当正常界面无法进入时，也可以通过 `--safe-mode` 启动。例如 macOS：
 
 ```sh
 open -a "DSH Desktop" --args --safe-mode
 ```
 
-## Local data and security
+## 本地数据与安全边界
 
-- The Harness Web UI is served only on a random loopback port.
-- The renderer has no Node.js privileges and uses context isolation and sandboxing.
-- Webviews, untrusted in-app navigation, and unexpected permission requests are blocked.
-- External web links open in the system browser.
-- User profiles and sessions live under Electron's per-user application data directory, not inside the installed app.
-- Phone access requires a short-lived pairing token. Wi-Fi connects on scan; the internet tunnel also requires the pairing password shown on the computer.
+- 会话与配置保存在本机用户数据目录，应用升级不会覆盖这些数据。
+- 内置侧栏浏览器与应用权限隔离；普通外链交由系统浏览器打开。
+- 手机通过扫码配对连接；互联网连接还需要输入电脑上显示的连接密码。
+- Agent 的文件与命令操作受权限控制，请谨慎批准敏感操作，并只安装可信插件。
 
-## Platform support
+## 平台支持
 
-| Platform | Distribution | Status |
+| 平台 | 分发形式 | 状态 |
 | --- | --- | --- |
-| macOS Apple Silicon | Signed and notarized DMG/ZIP | Supported |
-| macOS Intel | Signed and notarized DMG/ZIP | Supported |
-| Windows x64 | Code-signed NSIS installer | Supported |
-| Windows ARM64 | — | Not currently supported |
-| Linux | — | Not currently supported |
+| macOS Apple Silicon | 已签名并通过公证的 DMG/ZIP | 支持 |
+| macOS Intel | 已签名并通过公证的 DMG/ZIP | 支持 |
+| Windows x64 | 已完成代码签名的 NSIS 安装包 | 支持 |
+| Windows ARM64 | — | 当前不支持 |
+| Linux | — | 当前不支持 |
 
-Harness includes target-native dependencies, so every release artifact is built on the matching operating system and architecture.
+Harness 包含目标平台原生依赖，因此每一种正式安装包都在对应操作系统与架构上构建。
 
-## Development and architecture
+## 开发与架构
 
-Contributions are welcome. Start with the public engineering documentation:
+欢迎参与贡献。工程说明已拆分为独立文档：
 
-- [Development guide](docs/development.md) — setup, validation, patch maintenance, and target-native packaging
-- [Architecture](docs/architecture.md) — runtime flow, persistent data, security boundaries, recovery, mobile access, and updates
-- [Release runbook](docs/release-runbook.md) — signing and publication controls
-- [Preset package format](docs/preset-packages.md) — portable Agent preset contract
+- [开发指南](docs/development.md) — 本地环境、验证、补丁维护与原生平台打包
+- [运行架构](docs/architecture.md) — 启动流程、持久化数据、安全边界、故障恢复、手机连接与更新
+- [发布手册](docs/release-runbook.md) — 签名与正式发布控制
+- [Preset 包格式](docs/preset-packages.md) — 可移植 Agent Preset 契约
 
-Before submitting a change, run `npm test`, `npm run typecheck`, and `npm run build`, then exercise the affected real application flow. Never include real API keys in issues, logs, screenshots, or test data.
+提交修改前请运行 `npm test`、`npm run typecheck` 和 `npm run build`，并实际操作受影响的应用流程。请勿在 Issue、日志、截图或测试数据中提交真实 API Key。
 
-## Friends
+## 友情链接
 
-[dsh-market](https://github.com/dsh-market/dsh-market) is the community plugin market for DeepSeek Harness. Browse and search plugins, preview screenshots, install or update packages, enable or disable plugins, and switch themes from the Harness interface.
+[dsh-market](https://github.com/dsh-market/dsh-market) 是 DeepSeek Harness 社区插件市场，可在 Harness 界面中浏览和搜索插件、查看截图、安装或更新包、启停插件以及切换主题。
 
-## License
+## 许可证
 
-DSH Desktop is open source under the [MIT License](LICENSE).
+DSH Desktop 采用 [MIT License](LICENSE) 开源。
 
-DeepSeek Harness and its dependencies remain subject to their respective upstream licenses and trademark policies. DSH Desktop is an independent community desktop application.
+DeepSeek Harness 及其依赖仍遵循各自的上游许可证与商标规则。DSH Desktop 是独立的社区桌面应用。
+
+## 了解企业版
+
+企业版由 BISHENG 桌面客户端与 BISHENG 企业平台服务端组成。客户端基于 DSH Desktop，员工通过企业账号结合本地文件使用获准的模型、知识、工具和技能；服务端集中配置资源与权限，管理积分和用量。企业版的 BISHENG 客户端与服务端均已开源，可通过下方仓库获取源码。
+
+[企业管理平台开源仓库](https://github.com/dataelement/bisheng) · [企业版客户端仓库](https://github.com/dataelement/bisheng-desktop) · [企业版介绍](https://www.dshdesktop.com/zh/enterprise/)

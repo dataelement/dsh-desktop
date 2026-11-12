@@ -38,6 +38,9 @@ it('uses the upstream zero-width column after the Windows preload marks the page
   const createColumns = new Function('document', `
     ${functionSource('clampWidth')}
     ${functionSource('computeColumns')}
+    const viewport = 1200
+    const windowsTitlebar = document.documentElement.hasAttribute('data-windows-titlebar')
+    const drawer = viewport < 768 && !windowsTitlebar
     const darwin = document.documentElement.dataset.platform === 'darwin'
     ${collapsedWidthSource}
     return () => computeColumns(1200, 0, 0, collapsedWidth)

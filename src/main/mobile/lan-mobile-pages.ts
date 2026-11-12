@@ -311,6 +311,7 @@ export function renderDesktopPairingPage(options: {
       ? '请确认移动设备已联网。打开相机扫描下方二维码，或在移动设备上打开链接。'
       : 'Connect your phone to the internet, then scan the QR code or open the link on your phone.',
     tunnelLoading: zh ? '正在创建全球网络链接' : 'Creating a global network link',
+    tunnelPendingUrl: zh ? '公网链接生成后会显示在这里' : 'The public link will appear here',
     lanLoading: zh ? '正在切换至 WiFi 连接模式' : 'Switching to WiFi connection mode',
     modeLan: zh ? 'WiFi连接模式' : 'WiFi Connection Mode',
     modeTunnel: zh ? '互联网连接模式' : 'Internet Connection Mode',
@@ -424,7 +425,8 @@ export function renderDesktopPairingPage(options: {
   let pinConsent=${Boolean(options.pinConsent)},pinExpiresAt=${options.pinExpiresAt ?? 'null'},pinRevealed=${showPin},pinBusy=false,reopeningDeadPinggy=false;
   let polling=false,mutation=0;
   const byId=id=>document.getElementById(id);
-  async function copyUrl(){try{await navigator.clipboard.writeText(pairingUrl)}catch{return}const btn=document.getElementById('copyBtn'),tip=document.getElementById('copyTip');btn.classList.add('copied');tip.textContent=T.copied;clearTimeout(copyFeedbackTimer);copyFeedbackTimer=setTimeout(()=>{btn.classList.remove('copied');tip.textContent=T.copy},1800)}
+  function showPendingTunnelLink(){pairingUrl='';const url=document.getElementById('url');if(url)url.textContent=T.tunnelPendingUrl;const qr=document.getElementById('qrCode');if(qr)qr.innerHTML=''}
+  async function copyUrl(){if(!pairingUrl)return;try{await navigator.clipboard.writeText(pairingUrl)}catch{return}const btn=document.getElementById('copyBtn'),tip=document.getElementById('copyTip');btn.classList.add('copied');tip.textContent=T.copied;clearTimeout(copyFeedbackTimer);copyFeedbackTimer=setTimeout(()=>{btn.classList.remove('copied');tip.textContent=T.copy},1800)}
   function syncFallbackLink(){const link=document.getElementById('fallbackLink');if(!link)return;link.classList.toggle('hide',!(tunnelActive&&tunnelProvider==='cloudflare'&&!phoneConnected&&!modeSwitching&&!tunnelLoading&&!pinRevealed))}
   function syncModeControls(connected){phoneConnected=connected;const disabled=connected||modeSwitching||tunnelLoading||pinBusy;document.getElementById('btnLan').disabled=disabled;document.getElementById('btnTunnel').disabled=disabled;syncFallbackLink()}
   function syncModeSelection(active){document.getElementById('btnLan').classList.toggle('active',!active);document.getElementById('btnTunnel').classList.toggle('active',active);byId('btnLan').setAttribute('aria-pressed',String(!active));byId('btnTunnel').setAttribute('aria-pressed',String(active))}
@@ -432,7 +434,7 @@ export function renderDesktopPairingPage(options: {
   function setTunnelProgress(value){const progress=Math.max(0,Math.min(100,Math.round(value)));document.getElementById('tunnelProgressBar').style.width=progress+'%';document.getElementById('tunnelProgressValue').textContent=progress+'%'}
   function startTunnelProgress(enableTunnel){const loading=document.getElementById('qrLoading'),duration=enableTunnel?4500:800;clearInterval(tunnelProgressTimer);tunnelProgressStartedAt=Date.now();document.getElementById('tunnelLoadingText').textContent=enableTunnel?T.tunnelLoading:T.lanLoading;setTunnelProgress(0);loading.classList.add('show');tunnelProgressTimer=setInterval(()=>{setTunnelProgress(Math.min(99,(Date.now()-tunnelProgressStartedAt)/duration*100))},50);return duration}
   async function finishTunnelProgress(completed,duration){const loading=document.getElementById('qrLoading');if(completed){const remaining=Math.max(0,duration-(Date.now()-tunnelProgressStartedAt));if(remaining)await new Promise(resolve=>setTimeout(resolve,remaining));setTunnelProgress(100);await new Promise(resolve=>setTimeout(resolve,180))}clearInterval(tunnelProgressTimer);tunnelProgressTimer=null;loading.classList.remove('show');setTunnelProgress(0)}
-  async function switchMode(enableTunnel){if(phoneConnected||modeSwitching||tunnelLoading||pinBusy)return;if(selectedTunnelTab===enableTunnel&&tunnelActive===enableTunnel)return;const previous=tunnelActive;const previousProvider=tunnelProvider;let completed=false;modeSwitching=true;mutation++;selectedTunnelTab=enableTunnel;syncModeControls(phoneConnected);syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;syncTunnelError();syncPairingView();const progressDuration=startTunnelProgress(enableTunnel);try{const r=await fetch('/desktop/tunnel/toggle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({enable:enableTunnel})});const j=await r.json();if(j.ok){applyTunnelPayload(j);selectedTunnelTab=enableTunnel;syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;if(j.active)document.getElementById('tunnelError').textContent='';syncTunnelError();completed=true}else{throw new Error(j.error||'Tunnel failed')}}catch(e){tunnelActive=previous;tunnelProvider=previousProvider;syncModeSelection(selectedTunnelTab);document.getElementById('modeHint').textContent=selectedTunnelTab?T.tunnelHint:T.lanHint;document.getElementById('tunnelError').textContent=T.tunnelError+(e.message||e);syncTunnelError()}finally{await finishTunnelProgress(completed,progressDuration);modeSwitching=false;syncPairingView();syncModeControls(phoneConnected)}}
+  async function switchMode(enableTunnel){if(phoneConnected||modeSwitching||tunnelLoading||pinBusy)return;if(selectedTunnelTab===enableTunnel&&tunnelActive===enableTunnel)return;const previous=tunnelActive;const previousProvider=tunnelProvider;let completed=false;modeSwitching=true;mutation++;selectedTunnelTab=enableTunnel;if(enableTunnel)showPendingTunnelLink();syncModeControls(phoneConnected);syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;syncTunnelError();syncPairingView();const progressDuration=startTunnelProgress(enableTunnel);try{const r=await fetch('/desktop/tunnel/toggle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({enable:enableTunnel})});const j=await r.json();if(j.ok){applyTunnelPayload(j);selectedTunnelTab=enableTunnel;syncModeSelection(enableTunnel);document.getElementById('modeHint').textContent=enableTunnel?T.tunnelHint:T.lanHint;if(j.active)document.getElementById('tunnelError').textContent='';syncTunnelError();completed=true}else{throw new Error(j.error||'Tunnel failed')}}catch(e){tunnelActive=previous;tunnelProvider=previousProvider;syncModeSelection(selectedTunnelTab);document.getElementById('modeHint').textContent=selectedTunnelTab?T.tunnelHint:T.lanHint;document.getElementById('tunnelError').textContent=T.tunnelError+(e.message||e);syncTunnelError()}finally{await finishTunnelProgress(completed,progressDuration);modeSwitching=false;syncPairingView();syncModeControls(phoneConnected)}}
   async function switchFallback(){if(phoneConnected||modeSwitching||tunnelLoading||pinBusy||!tunnelActive||tunnelProvider!=='cloudflare')return;let completed=false;modeSwitching=true;mutation++;syncPairingView();syncModeControls(phoneConnected);const progressDuration=startTunnelProgress(true);document.getElementById('tunnelLoadingText').textContent=T.fallbackLoading;try{const r=await fetch('/desktop/tunnel/fallback',{method:'POST'});const j=await r.json();        if(j.ok){applyTunnelPayload(j);selectedTunnelTab=true;document.getElementById('tunnelError').textContent='';syncTunnelError();completed=true}else{throw new Error(j.error||'Tunnel failed')}}catch(e){document.getElementById('tunnelError').textContent=T.tunnelError+(e.message||e);syncTunnelError()}finally{await finishTunnelProgress(completed,progressDuration);modeSwitching=false;syncPairingView();syncModeControls(phoneConnected)}}
   function syncPairingView(){
     const loading=modeSwitching||tunnelLoading;
@@ -455,12 +457,14 @@ export function renderDesktopPairingPage(options: {
     tunnelLoading=!!j.loading;
     if(wasLoading&&!tunnelLoading&&!modeSwitching)void finishTunnelProgress(false,0);
     tunnelProvider=j.provider||null;
-    if('pairingUrl' in j){
-      pairingUrl=j.pairingUrl||'';
+    const tunnelLink=selectedTunnelTab&&j.active&&j.pairingUrl;
+    const lanLink=!selectedTunnelTab&&j.pairingUrl;
+    if(tunnelLink||lanLink){
+      pairingUrl=j.pairingUrl;
       byId('url').textContent=pairingUrl;
-    }
-    if(j.qrSvg)byId('qrCode').innerHTML=j.qrSvg;
-    if(j.expiresAt)end=j.expiresAt;
+      if(j.qrSvg)byId('qrCode').innerHTML=j.qrSvg;
+      if(j.expiresAt)end=j.expiresAt;
+    }else if(selectedTunnelTab)showPendingTunnelLink();
     syncPin(j);
     if(j.unexpectedlyClosed&&!j.active){
       byId('tunnelError').textContent=T.pinClosed;

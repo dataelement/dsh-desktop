@@ -13,7 +13,7 @@ const conversationPath = new URL('../node_modules/@deepseek-ai/dsh-client-ui-con
 function loadSidebar() {
   let exports
   const document = {
-    documentElement: { hasAttribute: () => false },
+    documentElement: { hasAttribute: (name) => name === 'data-platform' },
     querySelector: () => null,
     createElement: () => ({ dataset: {} }),
     head: { appendChild: () => {} }
@@ -38,13 +38,13 @@ function loadSidebar() {
   })
 }
 
-describe('rc.3 workbench patch slots', () => {
+describe('0.2.2 workbench patch slots', () => {
   it.each([
     { panels: [], unpinned: [], hasActions: false, collapsed: true },
     { panels: [], unpinned: [], hasActions: false, collapsed: false },
     { panels: [{ id: 'plugins', label: 'Plugins' }], unpinned: [], hasActions: false },
     { panels: [{ id: 'plugins', label: 'Plugins' }, { id: 'schedules', label: 'Schedules' }, { id: 'custom', label: 'Custom panel' }], unpinned: ['plugins', 'schedules'], hasActions: true }
-  ])('keeps one quick switcher and its native action alongside rc3 panel pinning: $hasActions / $unpinned', async ({ panels, unpinned, hasActions, collapsed = false }) => {
+  ])('keeps one quick switcher and its native action alongside upstream panel pinning: $hasActions / $unpinned', async ({ panels, unpinned, hasActions, collapsed = false }) => {
     const sidebar = await loadSidebar()
     const registrations = []
     const startSession = vi.fn()
@@ -63,7 +63,7 @@ describe('rc.3 workbench patch slots', () => {
     sidebar.apply(ctx)
     const leading = registrations.find(item => item.options.name === 'shell.leading')
     const headerMarkup = renderToStaticMarkup(React.createElement(leading.Component, {
-      toggleSidebar: () => {}, startSession, trackEntryClick: () => {}, useShortcuts: () => [], t: key => key
+      toggleSidebar: () => {}, startSession, trackEntryClick: () => {}, useRemoteAccess: () => true, useShortcuts: () => [], t: key => key
     }))
     expect(headerMarkup.match(/data-dsh-sidebar-new-session=""/g)).toHaveLength(1)
     const shell = registrations.find(item => item.options.name === 'sidebar')
@@ -78,13 +78,14 @@ describe('rc.3 workbench patch slots', () => {
     const markup = renderToStaticMarkup(React.createElement(shell.Component, {
       collapsed, width: 250, startSession, toggleSidebar: () => {}, selectPanel, setPinned, trackEntryClick,
       usePanels: () => panels, useEntryPins: () => unpinned, useEntryActions: () => hasActions,
+      useRemoteAccess: () => true,
       useShortcuts: () => [], usePanelInfo: selector => selector({ activePanelId: 'schedules' }), t: key => key,
-      renderSlot: (name, owner) => {
+      renderSlot: (name, owner, options) => {
         rendered.push({ name, owner })
         if (name === 'sidebar.quickSwitcher') return React.createElement('span', null, 'Workbench switcher')
         if (name === 'sidebar.settings') return React.createElement('button', null, 'Settings contribution')
         if (name === 'sidebar.settings.action') return React.createElement('button', null, 'Recovery contribution')
-        return null
+        return options?.fallback ?? null
       }
     }))
     expect(markup.match(/data-dsh-sidebar-new-session=""/g)).toHaveLength(1)

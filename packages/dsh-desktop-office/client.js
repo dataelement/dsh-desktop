@@ -275,8 +275,8 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
     ctx.effect(() => { if (document.querySelector('style[data-plugin-css="desktop-office/styles"]')) return; const tag = document.createElement('style'); tag.dataset.plugin = NS; tag.dataset.pluginCss = 'desktop-office/styles'; tag.textContent = css; document.head.append(tag); return () => tag.remove() }, 'Office styles')
     ctx.effect(() => { const listener = event => store.syncPpt(event.detail ?? {}); window.addEventListener(EVENT, listener); return () => { window.removeEventListener(EVENT, listener); store.dispose() } }, 'Office mode synchronization')
     ctx.on('connection/reset', () => store.reset())
-    for (const [seat, component] of [['conversation.hero.modeActions', ModeActions], ['conversation.input.accessory', Accessory], ['conversation.chat.userMessageFooter', OpeningTemplate], ['conversation.hero.dock', Dock], ['conversation.composer.dock', Dock]]) {
-      ctx.slots.inject(seat, () => ctx.slots.register({ name: seat, id: NS, order: seat === 'conversation.hero.modeActions' ? 30 : 10, locale: NS, inject: () => ({ store }) }, component))
+    for (const [seat, component] of [['conversation.hero.options', ModeActions], ['conversation.input.accessory', Accessory], ['conversation.chat.userMessageFooter', OpeningTemplate], ['conversation.hero.dock', Dock], ['conversation.composer.dock', Dock]]) {
+      ctx.slots.inject(seat, () => ctx.slots.register({ name: seat, id: NS, order: seat === 'conversation.hero.options' ? 30 : 10, locale: NS, inject: () => ({ store }) }, component))
     }
   }
   return { apply, inject: ['slots', 'locale', 'connection'] }

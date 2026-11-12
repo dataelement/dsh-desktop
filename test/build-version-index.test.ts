@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildVersionIndex } from '../scripts/build-version-index.mjs'
+import { buildVersionIndex } from '../scripts/release/build-version-index.mjs'
 
 const execFile = promisify(execFileCallback)
 const projectRoot = path.resolve(import.meta.dirname, '..')
@@ -72,7 +72,7 @@ describe('buildVersionIndex', () => {
     const outFile = path.join(root, 'versions.json')
     await writeFile(namesFile, JSON.stringify(['1.0.0', '1.1.0']), 'utf8')
     await execFile(process.execPath, [
-      path.join(projectRoot, 'scripts', 'build-version-index.mjs'),
+      path.join(projectRoot, 'scripts', 'release', 'build-version-index.mjs'),
       namesFile,
       outFile
     ])

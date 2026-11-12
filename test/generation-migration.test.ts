@@ -8,7 +8,7 @@ import {
   isProfileMigrated,
   migrateProfileToGenerations,
   rollBackMigration
-} from '../src/main/state/generation-migration'
+} from '../src/main/profile/generation-migration'
 import {
   listGenerations,
   readDesired,
@@ -69,7 +69,7 @@ describe('one-time profile migration to generations', () => {
     homes.push(home)
     const dir = join(home, 'profiles', 'web')
     await mkdir(join(dir, 'node_modules'), { recursive: true })
-    const dependencies: Record<string, string> = { dshmarket: '^1.35.0' }
+    const dependencies: Record<string, string> = {}
     const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
     for (const [name, version] of Object.entries(plugins)) {
       dependencies[name] = specs[name] ?? `^${version}`
@@ -159,6 +159,16 @@ describe('one-time profile migration to generations', () => {
     expect(installCalls).toHaveLength(attempts)
   })
 
+  it('migrates a declared market like any ordinary plugin and preserves its version', async () => {
+    const home = await preUpgradeProfile({ dshmarket: '1.15.0' })
+    expect(await migrateProfileToGenerations(deps(home))).toEqual({ outcome: 'migrated' })
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(manifest.dependencies.dshmarket).toBe('1.15.0')
+    expect(manifest.pnpm.overrides.dshmarket).toMatch(/^link:/u)
+    expect(manifest.dsh.profile.bundles).toContain('dshmarket')
+    expect((await readDesired(home)).some(id => id.startsWith('dshmarket+1.15.0+'))).toBe(true)
+  })
+
   it('moves community plugins to generations and trims the manifest', async () => {
     const home = await preUpgradeProfile({ 'dsh-vision-router': '2.0.1', 'plugin-two': '1.4.0' })
 
@@ -172,7 +182,7 @@ describe('one-time profile migration to generations', () => {
     )
     // generation dependencies expose installed versions while pnpm resolves
     // them through private local overrides.
-    expect(manifest.dependencies.dshmarket).toBe('^1.35.0')
+    expect(manifest.dependencies.dshmarket).toBeUndefined()
     expect(manifest.dependencies['dsh-vision-router']).toBe('2.0.1')
     expect(manifest.pnpm.overrides['dsh-vision-router']).toMatch(/^link:/u)
     // bundles carry the in-box set plus the migrated plugin names
@@ -345,5 +355,59 @@ describe('one-time profile migration to generations', () => {
     // The pre-upgrade tree is still intact so the launch flow has something
     // to start from on the next run.
     expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'staging-fail'))).toBe(true)
+  })
+})
+
+describe('plain runtime dependencies stay in the shared tree', () => {
+  const homes: string[] = []
+  const silent = (): void => undefined
+  afterEach(async () => {
+    await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
+    homes.length = 0
+    installCalls.length = 0
+    failingInstallOutput = undefined
+  })
+
+  async function profileWithPlainDependency(): Promise<string> {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-migrate-plain-'))
+    homes.push(home)
+    const dir = join(home, 'profiles', 'web')
+    await mkdir(join(dir, 'node_modules', 'node-pty'), { recursive: true })
+    await mkdir(join(dir, 'node_modules', 'real-plugin'), { recursive: true })
+    await writeFile(
+      join(dir, 'node_modules', 'node-pty', 'package.json'),
+      JSON.stringify({ name: 'node-pty', version: '1.2.0-beta.15' })
+    )
+    await writeFile(
+      join(dir, 'node_modules', 'real-plugin', 'package.json'),
+      JSON.stringify({ name: 'real-plugin', version: '1.0.0', dsh: { bundle: { patch: 'p.yml' } } })
+    )
+    await writeFile(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'dsh-profile-web',
+        private: true,
+        dependencies: { dshmarket: '^1.35.0', 'node-pty': '1.2.0-beta.15', 'real-plugin': '^1.0.0' },
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'real-plugin'] } }
+      })
+    )
+    await writeFile(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    await mkdir(join(home, 'profiles', 'node_modules'), { recursive: true })
+    return home
+  }
+
+  it('migrates only declared plugins and leaves a dsh-less dependency like node-pty in place', async () => {
+    const home = await profileWithPlainDependency()
+    const result = await migrateProfileToGenerations({
+      dshHome: home,
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      dshEntryPath: 'bin.js',
+      note: silent,
+      reinstallSharedTree: async () => ({ ok: true })
+    })
+    expect(result).not.toBeNull()
+    expect(installCalls).toContain('real-plugin')
+    expect(installCalls).not.toContain('node-pty')
   })
 })

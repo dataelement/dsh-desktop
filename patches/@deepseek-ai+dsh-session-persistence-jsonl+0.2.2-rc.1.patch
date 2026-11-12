@@ -1,0 +1,81 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+index aeb4b36..b019da1 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+@@ -1,7 +1,7 @@
+ import z from "@deepseek-ai/schemastery";
+ import { SessionFormatUnsupportedMigrationError, createSessionFormatCatalogWithChildren, historicalSessionFormatCatalog, sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
+ import { readdirSync } from "node:fs";
+-import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from "node:fs/promises";
++import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from "node:fs/promises";
+ import { basename, dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from "node:path";
+ import { performance } from "node:perf_hooks";
+ import { scheduler } from "node:timers/promises";
+@@ -2560,6 +2560,40 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 	flush() {
+ 		return this.tracker.flushAll();
+ 	}
++	/** Remove one durable session while holding its write claim and directory lease. */
++	async delete(id, options) {
++		options?.signal?.throwIfAborted();
++		await this.ensureRootEncoding();
++		options?.signal?.throwIfAborted();
++		if (this.tracker.hasPending(id)) throw new Error(`cannot delete session "${id}" while its unmaterialized create is live`);
++		this.tracker.claimWrite(id);
++		let lease;
++		try {
++			const resolved = await this.findLog(id, options?.signal);
++			if (resolved === void 0) return false;
++			const path = resolved.currentPath;
++			lease = await this.acquireLease(id, void 0, dirname(path));
++			try {
++				await rm(path);
++			} catch (error) {
++				if (isENOENT(error)) return false;
++				throw error;
++			}
++			if (process.platform !== "win32") await this.syncDirPosix(dirname(path));
++			return true;
++		} finally {
++			this.coldLogMemo.delete(id);
++			this.migrationPreparations.delete(id);
++			let releaseFailure;
++			try {
++				await lease?.release();
++			} catch (raw) {
++				releaseFailure = raw instanceof Error ? raw : new Error(String(raw));
++			}
++			this.tracker.releaseClaim(id);
++			if (releaseFailure !== void 0) throw releaseFailure;
++		}
++	}
+ 	/**
+ 	* Observe one stored session without reading its event log.
+ 	* @param id - the stored session to observe.
+@@ -3120,7 +3154,7 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 					metadata: await this.readGenerationHeader(selected, void 0, signal)
+ 				};
+ 			} catch (error) {
+-				if (error instanceof SessionFormatUnsupportedError || error instanceof SessionPersistenceCorruptionError) return {
++				if (error instanceof SessionFormatUnsupportedError || error instanceof SessionPersistenceCorruptionError || String(error?.message).includes("corrupt session log")) return {
+ 					selected,
+ 					metadata: void 0
+ 				};
+@@ -3475,14 +3509,14 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 	/** Reject metadata that does not identify the selected physical log. */
+ 	async assertStoredIdentity(path, storedVersion, meta, expectedId, signal) {
+ 		signal?.throwIfAborted();
+-		if (expectedId !== void 0 && meta.id !== expectedId) throw new Error(`corrupt session log "${path}": requested id "${expectedId}" does not match header id "${meta.id}"`);
++		if (expectedId !== void 0 && meta.id !== expectedId) throw new SessionPersistenceCorruptionError(`corrupt session log "${path}": requested id "${expectedId}" does not match header id "${meta.id}"`);
+ 		let expectedPath;
+ 		try {
+ 			expectedPath = generationLogPath(this.root, meta.cwd, meta.id, storedVersion, this.compression);
+ 		} catch (error) {
+-			throw new Error(`corrupt session log "${path}": header id cannot name a storage path`, { cause: error });
++			throw new SessionPersistenceCorruptionError(`corrupt session log "${path}": header id cannot name a storage path`, { cause: error });
+ 		}
+-		if (path !== expectedPath && !await this.sameFile(path, expectedPath, signal)) throw new Error(`corrupt session log "${path}": header id "${meta.id}" and cwd identify "${expectedPath}"`);
++		if (path !== expectedPath && !await this.sameFile(path, expectedPath, signal)) throw new SessionPersistenceCorruptionError(`corrupt session log "${path}": header id "${meta.id}" and cwd identify "${expectedPath}"`);
+ 		signal?.throwIfAborted();
+ 	}
+ 	/** Validate a supported historical header against the selected source path. */

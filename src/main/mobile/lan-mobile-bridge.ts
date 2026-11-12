@@ -91,6 +91,11 @@ const RPC_ALLOWLIST = new Set([...Object.keys(HARNESS_ENDPOINTS), 'session.histo
 
 export interface LanMobileBridgeOptions {
   harnessUrl(): string | undefined
+  /**
+   * Session cookie the shell already traded for the launch token.
+   * When this returns a cookie, the bridge does not spend the token again.
+   */
+  harnessCookie?(): string | undefined
   /** Per-process Harness launch token, traded once for a session cookie. */
   harnessAuthToken?(): string | undefined
   locale?: 'en' | 'zh' | (() => 'en' | 'zh')
@@ -1288,6 +1293,11 @@ export class LanMobileBridge {
   private harnessCookie?: { base: string; cookie: string }
 
   private async harnessSession(base: string): Promise<string | undefined> {
+    const supplied = this.options.harnessCookie?.()
+    if (typeof supplied === 'string' && supplied.length > 0 && !/[\r\n]/u.test(supplied)) {
+      this.harnessCookie = { base, cookie: supplied }
+      return supplied
+    }
     if (this.harnessCookie?.base === base) return this.harnessCookie.cookie
     const token = this.options.harnessAuthToken?.()
     if (token === undefined) return undefined

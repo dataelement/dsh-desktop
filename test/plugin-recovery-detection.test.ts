@@ -2,11 +2,11 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { detectPluginRecovery } from '../src/main/plugin-recovery-detection'
-import { extractSlotConflictName } from '../src/main/runtime/harness-runtime'
+import { extractPluginFailureReferences, extractSlotConflictName } from '../src/main/recovery/harness-log'
 import {
   profilePackageJsonPath,
   resolveProfileRecoveryPlugins
-} from '../src/main/state/plugin-recovery'
+} from '../src/main/recovery/plugin-recovery'
 
 describe('plugin recovery detection', () => {
   const testDir = join(__dirname, '.temp-plugin-recovery-detection-test')
@@ -255,5 +255,14 @@ describe('plugin recovery detection', () => {
     })
 
     expect(detection.plugins).toEqual(['@xmanrui/dsh-im'])
+  })
+
+  it('reads activate loader entries as well as apply and import', () => {
+    const activate = '[stderr] failed to activate loader entry better-sidebar (dsh-better-sidebar): pending (waiting for service: webRuntime)'
+    const apply = '[stderr] failed to apply loader entry better-sidebar (dsh-better-sidebar): boom'
+    const imported = '[stderr] failed to import loader entry better-sidebar (dsh-better-sidebar): boom'
+    expect(extractPluginFailureReferences([activate])).toEqual(['dsh-better-sidebar'])
+    expect(extractPluginFailureReferences([apply])).toEqual(['dsh-better-sidebar'])
+    expect(extractPluginFailureReferences([imported])).toEqual(['dsh-better-sidebar'])
   })
 })

@@ -56,7 +56,7 @@ async function fixture(bound = true) {
     ...props, key: meta.name + meta.id, sessionId, session: { blank: true }, t: key => dictionaries.get(meta.locale)?.zh[key] ?? key
   }))
   await act(async () => root.render(React.createElement(React.Fragment, null,
-    React.createElement('div', { 'data-mode-actions': '' }, renderSeats('conversation.hero.modeActions')),
+    React.createElement('div', { 'data-mode-actions': '' }, renderSeats('conversation.hero.options')),
     ...renderSeats('conversation.hero.dock'))))
   const officeStore = seats.find(({ meta }) => meta.id === 'desktop-office').props.store
   const history = []; disposers.push(officeStore.subscribe(sessionId, () => history.push(officeStore.snapshot(sessionId).mode)))

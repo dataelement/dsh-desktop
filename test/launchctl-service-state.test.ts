@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { launchServiceIsStoppedAfterBootout } from '../src/main/state/launchctl-service-state'
+import { launchServiceIsStoppedAfterBootout } from '../src/main/desktop-service/launchctl-service-state'
 
 const serviceTarget = 'gui/501/com.example.worker'
 const domainTarget = 'gui/501'

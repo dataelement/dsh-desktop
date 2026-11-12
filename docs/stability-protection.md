@@ -28,10 +28,10 @@
 npm run typecheck
 npm run build
 npm test
-node scripts/verify-stability-runtime.mjs
+node scripts/verify/probe-electron-node-runtime.mjs
 ```
 
-原生脚本使用临时 userData/DSH_HOME，启动实际 renderer 和 Harness 子进程并记录默认堆大小；输出 `customHeapLimit: false`，不人为降低内存上限。Windows 原生环境可手动运行同一脚本与相关回归。它们不执行系统注销，也不能代替正式安装包中的注销/取消注销、远程桌面、睡眠唤醒、低内存长任务和真实用户 Profile 验收。
+`probe-electron-node-runtime.mjs` 用临时目录启动打包前的 Host，确认 Electron 的 Node 模式能把 profile 拉起来。它不执行系统注销，也不能代替正式安装包中的注销/取消注销、远程桌面、睡眠唤醒、低内存长任务和真实用户 Profile 验收。
 
 ## 恢复职责边界
 

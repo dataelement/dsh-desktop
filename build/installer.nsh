@@ -67,7 +67,13 @@
     !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DshEnsureInstDirExists
 
     Function DshEnsureInstDirExists
+      dsh_target_mkdir_retry:
+      ClearErrors
       CreateDirectory "$INSTDIR"
+      ${If} ${Errors}
+        !insertmacro dshRetryInstallError "Could not create the installation directory:$\r$\n$INSTDIR$\r$\n$\r$\nCheck write permissions or select another directory. Retry tries again; Cancel returns to directory selection." "无法创建目标安装目录：$\r$\n$INSTDIR$\r$\n$\r$\n请检查写入权限或选择其他目录。“重试”将再次创建；“取消”将返回目录选择。" dsh_target_mkdir_retry
+        Abort
+      ${EndIf}
     FunctionEnd
 
     ; Accept any directory path the user types, even if it does not exist yet.
@@ -81,6 +87,9 @@
 
     !macro customInstall
       !insertmacro dshFinishDirectories
+      ; Ensure Chromium AppContainer sandbox (GPU and Renderer processes) can read installed
+      ; files even when the installer was executed with elevated Administrator permissions.
+      nsExec::Exec 'icacls "$INSTDIR" /grant "*S-1-15-2-1:(OI)(CI)(RX)" /grant "*S-1-15-2-2:(OI)(CI)(RX)" /T /C /Q'
       ; CHECK_APP_RUNNING force-kills the previous process, so will-quit never
       ; clears the session marker. Same-version overwrite would otherwise look
       ; like an unclean-exit. Delete is a no-op when the file is absent.

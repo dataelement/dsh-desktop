@@ -18,8 +18,8 @@ The host does not bundle a separate catalog or third-party workbench packages. I
 修改来源后：
 
 ```bash
-node scripts/build-workbench-guide.mjs                          # 更新 Desktop 离线副本
-node scripts/build-workbench-guide.mjs --site <官网仓库>/workbench  # 更新官网的两份文档和阅读页
+node scripts/verify/build-workbench-guide.mjs                          # 更新 Desktop 离线副本
+node scripts/verify/build-workbench-guide.mjs --site <官网仓库>/workbench  # 更新官网的两份文档和阅读页
 ```
 
 两个命令都支持 `--check` / `--site-check` 检查是否一致。官网文档随官网部署发布；生成副本勿单独修改。收录 YAML 的字段以 GitHub 工作台市场仓库为准。

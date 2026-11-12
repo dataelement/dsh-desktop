@@ -1,0 +1,30 @@
+diff --git a/node_modules/@deepseek-ai/dsh-llm/lib/index.js b/node_modules/@deepseek-ai/dsh-llm/lib/index.js
+index a66228c..db680f1 100644
+--- a/node_modules/@deepseek-ai/dsh-llm/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-llm/lib/index.js
+@@ -2010,7 +2010,9 @@ let LlmRuntime = (() => {
+ 					...model.name === void 0 ? {} : { name: model.name },
+ 					...model.contextWindow === void 0 ? {} : { contextWindow: model.contextWindow },
+ 					...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens },
+-					...model.inputModalities === void 0 ? {} : { inputModalities: [...model.inputModalities] }
++					...model.inputModalities === void 0 ? {} : { inputModalities: [...model.inputModalities] },
++					...model.reasoningEfforts === void 0 ? {} : { reasoningEfforts: model.reasoningEfforts === false ? false : { ...model.reasoningEfforts } },
++					...model.reasoningCompat === void 0 ? {} : { reasoningCompat: { ...model.reasoningCompat } }
+ 				});
+ 			}
+ 			return models;
+diff --git a/node_modules/@deepseek-ai/dsh-llm/lib/types/types.d.ts b/node_modules/@deepseek-ai/dsh-llm/lib/types/types.d.ts
+index 46cfbe0..7c1e0c8 100644
+--- a/node_modules/@deepseek-ai/dsh-llm/lib/types/types.d.ts
++++ b/node_modules/@deepseek-ai/dsh-llm/lib/types/types.d.ts
+@@ -323,6 +323,10 @@ export interface LlmDiscoveredModel {
+     maxTokens?: number;
+     /** Accepted input types when disclosed by the catalog or endpoint; absent means unknown. */
+     inputModalities?: readonly ModelModality[];
++    /** Explicit selectable levels and wire values; absent means unknown, false means non-reasoning. Null is valid only for off (no wire value). */
++    reasoningEfforts?: false | Partial<Record<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max', string | null>>;
++    /** Minimal pi-ai switches needed to dispatch the disclosed effort values accurately. */
++    reasoningCompat?: { forceAdaptiveThinking?: true; thinkingFormat?: 'openrouter' };
+ }
+ /**
+  * Emphasis of a model badge: `neutral` states a plain fact, `info` highlights
