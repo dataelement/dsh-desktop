@@ -503,8 +503,11 @@ Start by asking for the first piece of information still missing.`,
       localInstallBusy() {
         return ['installing', 'querying'].includes(this.localInstall.phase)
       }
+      localInstallUnresolved() {
+        return this.localInstallBusy() || this.localInstall.phase === 'unknown'
+      }
       selectWorkbenchPackage(file) {
-        if (!file || this.localInstallBusy()) return
+        if (!file || this.localInstallUnresolved()) return
         const t = this.ctx.locale.bind(INSTALL_NS)
         try {
           if (!/\.(?:tgz|tar\.gz)$/iu.test(file.name)) throw new Error(t('invalidFile'))
@@ -516,7 +519,7 @@ Start by asking for the first piece of information still missing.`,
         }
       }
       async installWorkbenchPackage(approvedBuilds) {
-        if (this.localInstallBusy() || !this.localInstall.file) return
+        if (this.localInstallUnresolved() || !this.localInstall.file) return
         const manager = this.ctx.remote?.pluginManager
         if (!manager?.installBundle) {
           this.updateLocalInstall({ phase: 'error', error: this.ctx.locale.bind(INSTALL_NS)('unavailable') })
@@ -2455,10 +2458,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const [dragging, setDragging] = React.useState(false)
       const fileInput = React.useRef(null)
       const busy = service.localInstallBusy()
+      const selectionLocked = service.localInstallUnresolved()
       const canInstall = install.file && ['selected', 'error', 'cancelled'].includes(install.phase)
       const dismiss = () => { if (!busy) onClose() }
       const chooseFiles = files => {
-        if (busy || !files?.length) return
+        if (selectionLocked || !files?.length) return
         if (files.length > 1) {
           service.updateLocalInstall({ phase: 'error', file: null, requestId: null, pendingBuilds: [], error: t('oneFile') })
           return
@@ -2474,11 +2478,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
           install.phase === 'unknown' && h(UiButton, { variant: 'primary', onClick: () => void service.queryWorkbenchPackageInstall() }, t('query')),
           install.phase !== 'unknown' && h(UiButton, { variant: 'primary', disabled: !canInstall || busy, onClick: () => void service.installWorkbenchPackage(install.pendingBuilds) }, t(install.pendingBuilds.length ? 'approve' : install.phase === 'error' ? 'retry' : 'confirm')))
       }, h('div', { 'aria-busy': busy },
-        h('input', { ref: fileInput, type: 'file', accept: '.tgz,.tar.gz', className: 'dshWbSrOnly', tabIndex: -1, 'aria-hidden': true, disabled: busy,
+        h('input', { ref: fileInput, type: 'file', accept: '.tgz,.tar.gz', className: 'dshWbSrOnly', tabIndex: -1, 'aria-hidden': true, disabled: selectionLocked,
           onChange: event => { const files = [...(event.currentTarget.files || [])]; event.currentTarget.value = ''; chooseFiles(files) } }),
-        h('button', { type: 'button', 'data-modal-autofocus': true, className: 'dshWbDropzone', 'data-dragging': dragging, disabled: busy,
+        h('button', { type: 'button', 'data-modal-autofocus': true, className: 'dshWbDropzone', 'data-dragging': dragging, disabled: selectionLocked,
           onClick: () => fileInput.current?.click(),
-          onDragOver: event => { event.preventDefault(); if (!busy) setDragging(true) },
+          onDragOver: event => { event.preventDefault(); if (!selectionLocked) setDragging(true) },
           onDragLeave: event => { if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false) },
           onDrop: event => { event.preventDefault(); setDragging(false); chooseFiles(event.dataTransfer.files) } },
           h(MarketIcon, { name: 'upload', size: 30 }), h('strong', null, install.file ? install.file.name : t('drop')), h('span', null, t('formats'))),
