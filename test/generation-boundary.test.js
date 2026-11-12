@@ -219,7 +219,7 @@ describe('the market install boundary', () => {
       ['add', 'demo@1.0.0'], join(home, 'profiles', 'web')))
     expect(failed.exitCode).toBe(1)
     expect(failed.stderr).toContain('ERR_PNPM_IGNORED_BUILDS')
-    expect(policies[0]).not.toContain('strict-dep-builds=')
+    expect(policies[0]).toContain('strict-dep-builds=true')
     expect(policies[0]).toContain('minimum-release-age=1440')
     await drainHandle(svc.runExternalMarketPluginInstall(
       ['add', '--config.minimumReleaseAge=0', 'demo@1.0.0'], join(home, 'profiles', 'web')))
