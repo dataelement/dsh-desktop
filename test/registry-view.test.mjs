@@ -6,10 +6,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { stagePnpmRunner } from '../packages/dsh-desktop-market-installer/index.js'
+import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'
 
 const execute = promisify(execFile)
 const pnpm = resolve('node_modules/pnpm/bin/pnpm.cjs')
-let directory, server, registry, calls, environment, runner, redirectTo
+let directory, server, registry, calls, environment, runner, redirectTo, primaryStatus
 const manifest = (name, version) => ({ name, version, description: 'Fixture plugin',
   engines: { dsh: '^0.2.2' }, peerDependencies: { '@deepseek-ai/dsh': '^0.2.2' },
   dsh: { client: { entry: 'client.js' } }, dist: { integrity: 'sha512-fixture' } })
@@ -20,9 +21,15 @@ beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'dsh registry view '))
   calls = []
   redirectTo = undefined
+  primaryStatus = undefined
   server = createServer((request, response) => {
     calls.push({ url: request.url, authorization: request.headers.authorization })
     const pathname = new URL(request.url, 'http://fixture.invalid').pathname
+    if (pathname.startsWith('/unavailable/')) {
+      response.writeHead(primaryStatus)
+      response.end('private server error fixture-token')
+      return
+    }
     const name = decodeURIComponent(pathname.replace(/^\/private\//u, '/').slice(1))
     if (name === 'redirect') { response.writeHead(302, { location: redirectTo }); response.end(); return }
     if (name === 'missing') { response.writeHead(404); response.end('private server error'); return }
@@ -122,6 +129,38 @@ describe('registry metadata without system npm or node on PATH', () => {
       expect(error.stderr).not.toContain('private server error')
       expect(error.stdout).toBe('')
     }
+  })
+
+  // Use the shipped manager's query loop and classifier, plus real pnpm and
+  // HTTP responses, so a change in the adapter's error contract is observable.
+  const askRegistries = async () => {
+    const manager = Object.assign(Object.create(PluginManager.prototype), {
+      profile: { dir: directory, packageManager: {
+        command: process.execPath, args: [runner, pnpm], env: environment
+      } },
+      inspectTimeoutMs: 10000
+    })
+    return manager.askRegistries('plugin', ['name', 'version'],
+      [registry + 'unavailable/', registry], { kind: 'registry', name: 'plugin' })
+  }
+
+  it.each([500, 503])('tries the fallback registry when the primary returns HTTP %i', async status => {
+    primaryStatus = status
+    const result = await askRegistries()
+    expect(result).toMatchObject({ status: 'answered', registry,
+      answer: { name: 'plugin', version: '2.0.0' },
+      attempts: [{ registry: registry + 'unavailable/', problem: 'network' }, { registry }] })
+    expect(result.attempts[0].reason).toContain(`ERR_PNPM_FETCH_${status}`)
+    expect(result.attempts[0].reason).not.toMatch(/private server error|fixture-token/u)
+    expect(calls.map(call => call.url)).toEqual(['/unavailable/plugin', '/plugin'])
+  })
+
+  it.each([401, 403])('does not try another registry after HTTP %i', async status => {
+    primaryStatus = status
+    const result = await askRegistries()
+    expect(result).toMatchObject({ status: 'refused', problem: 'unknown',
+      attempts: [{ registry: registry + 'unavailable/', problem: 'unknown' }] })
+    expect(calls.map(call => call.url)).toEqual(['/unavailable/plugin'])
   })
 
   it('bounds a nonresponding registry request without npm fallback', async () => {

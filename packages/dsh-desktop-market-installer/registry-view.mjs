@@ -92,7 +92,11 @@ export async function registryView(args, { loadConfig, createFetch, createAuth, 
     })
     if (response.status !== 200) {
       response.body?.destroy()
-      throw failure(`E${response.status}`, `Registry metadata request for ${request.name} returned HTTP ${response.status}.`)
+      // Preserve pnpm's failure contract: Plugin Manager retries another
+      // registry for FETCH_5xx, while authentication failures stay terminal.
+      const code = response.status >= 500 && response.status < 600
+        ? `ERR_PNPM_FETCH_${response.status}` : `E${response.status}`
+      throw failure(code, `Registry metadata request for ${request.name} returned HTTP ${response.status}.`)
     }
     metadata = await response.json()
   } catch (error) {
