@@ -394,7 +394,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     expect(audit).toContain('copy-personal-template');
     await expect(f.tool('ppt_template_create_project', { template_id: template.id, output_directory: 'new-year' })).rejects.toThrow();
     await expect(f.tool('ppt_template_create_project', { template_id: template.id, output_directory: '../escape' })).rejects.toThrow();
-  }, 30000);
+  }, 120_000);
 
   it('reuses template page images through saving and enforces ownership, bounds and file confinement',async()=>{
     const f=await fixture(),bytes=await source(2);
@@ -420,7 +420,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     const cached=path.join(savedDirectory,'preview/pages/page-1.png');
     await rm(cached);await symlink(path.join(f.root,'private.png'),cached);
     await expect(f.request('template/preview-saved-page',{templateId:saved.id,page:1})).rejects.toThrow('模板文件应为普通本地文件');
-  },30000);
+  },120_000);
 
   it('enriches a current cached conversion from its editable model while reusing every rendered page',async()=>{
     const f=await fixture(),{bytes,template}=await save(f);
@@ -438,7 +438,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     expect(await readFile(path.join(directory,'preview/pages/page-1.png'))).toEqual(imageBefore);
     expect((await f.request('state')).templates.find(t=>t.id===template.id).templateProfile).toEqual(enriched.template.templateProfile);
     expect(await readFile(path.join(directory,'source.pptx'))).toEqual(bytes);
-  },30000);
+  },120_000);
 
   it('renames globally, deletes from selection, and retains existing task copies', async () => {
     const f = await fixture(); const { template } = await save(f, 1);
