@@ -572,21 +572,19 @@ describe('GitHub release contract', () => {
     expect(installer).not.toMatch(/RequestExecutionLevel\s+highest/)
   })
 
-  it('routes stable downloads through the website and previews through GitHub', async () => {
+  it('routes README downloads through the website without direct asset links', async () => {
     const readmes = await Promise.all(
-      ['README.md', 'README.zh.md', 'README.ja.md', 'README.ru.md', 'README.es.md', 'README.pt.md'].map((file) =>
+      ['README.md', 'README.zh.md', 'README.en.md', 'README.ja.md', 'README.ru.md', 'README.es.md', 'README.pt.md'].map((file) =>
         readFile(path.join(projectRoot, file), 'utf8')
       )
     )
 
     for (const readme of readmes) {
-      expect(readme).toMatch(/https:\/\/(?:www\.)?dshdesktop\.com\/(?:#download|zh\/)/)
+      expect(readme).toMatch(/\[[^\]]+\]\(https:\/\/(?:www\.)?dshdesktop\.com\/(?:[a-z]{2}\/)?(?:#download)?\)/)
       expect(readme).not.toContain('| Platform | Package | Download |')
       expect(readme).not.toContain('| 平台 | 安装包 | 下载 |')
       expect(readme).not.toContain('Coming soon')
       expect(readme).not.toContain('即将发布')
-      expect(readme).toContain('https://github.com/dataelement/dsh-desktop/releases')
-      expect(readme).toContain('**Pre-release**')
       for (const asset of releaseAssets) {
         expect(readme).not.toContain(`releases/latest/download/${asset}`)
       }

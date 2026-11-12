@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const readmes = [
   'README.md',
   'README.zh.md',
+  'README.en.md',
   'README.ja.md',
   'README.ru.md',
   'README.es.md',
@@ -13,18 +14,24 @@ const readmes = [
 
 const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as { dependencies: Record<string, string> }
 const requiredFacts = [
-  `@deepseek-ai/dsh@${manifest.dependencies['@deepseek-ai/dsh']}`,
   'DOCX',
   'PPTX',
   'XLSX',
   '--safe-mode',
-  'Cloudflare Quick Tunnel',
+  'Cloudflare',
+  'Pinggy',
   'NSIS',
   'docs/development.md',
   'docs/architecture.md'
 ]
 
 describe('localized README parity', () => {
+  it('documents the pinned Harness version in the linked development guide', () => {
+    // READMEs explain the product; the development guide owns version details.
+    const guide = readFileSync('docs/development.md', 'utf8')
+    expect(guide).toContain(`@deepseek-ai/dsh@${manifest.dependencies['@deepseek-ai/dsh']}`)
+  })
+
   for (const path of readmes) {
     it(`${path} carries the current product facts`, () => {
       const content = readFileSync(path, 'utf8')
