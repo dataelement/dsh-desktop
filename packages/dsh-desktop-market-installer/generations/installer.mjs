@@ -36,6 +36,7 @@ const PACKAGE_NAME_PATTERN = /^(?:@[A-Za-z0-9-~][A-Za-z0-9._~-]*\/)?[A-Za-z0-9-~
 const GIT_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@git\+https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/u
 const CODELOAD_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@https:\/\/codeload\.github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/tar\.gz\/[0-9a-f]{40}$/u
 const PINNED_GITHUB_TARGET_PATTERN = /^github:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
+const FILE_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@file:[^\0\r\n*?]+$/u
 const PINNED_GIT_APPROVAL_PATTERN = /@git\+ssh:\/\/git@github\.com\//u
 const GENERATION_INSTALL_TIMEOUT_MS = 90 * 1000
 
@@ -107,7 +108,7 @@ function installationClosureDir(dshHome) {
 }
 
 function safeBuildApprovalKey(key) {
-  return PACKAGE_NAME_PATTERN.test(key) ||
+  return FILE_ALLOW_BUILD_PATTERN.test(key) || PACKAGE_NAME_PATTERN.test(key) ||
     GIT_ALLOW_BUILD_PATTERN.test(key) ||
     CODELOAD_ALLOW_BUILD_PATTERN.test(key)
 }
@@ -133,7 +134,9 @@ export function generationBuildApprovals(workspaceYaml) {
         ((key.startsWith("'") && key.endsWith("'")) ||
           (key.startsWith('"') && key.endsWith('"')))
       ) {
-        key = key.slice(1, -1)
+        if (key.startsWith('"')) {
+          try { key = JSON.parse(key) } catch { continue }
+        } else key = key.slice(1, -1).replaceAll("''", "'")
       }
       if (safeBuildApprovalKey(key)) approved.add(key)
     }

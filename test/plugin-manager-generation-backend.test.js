@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -497,3 +498,27 @@ describe('Plugin Manager generation package backend', () => {
     expect(await readDisabledPlugins(profile)).toEqual([])
   })
 })
+
+it('requires approval before publishing a generation with blocked installation scripts', async () => {
+  const home = await freshHome()
+  const fixture = join(home, 'fixture')
+  await mkdir(fixture)
+  await writeFile(join(fixture, 'package.json'), JSON.stringify({
+    name: 'script-approval-fixture', version: '1.0.0',
+    scripts: { postinstall: `node -e "require('node:fs').writeFileSync('build-proof.txt','approved')"` }
+  }))
+  const pnpmEntryPath = join(process.cwd(), 'node_modules/pnpm/bin/pnpm.cjs')
+  execFileSync(process.execPath, [pnpmEntryPath, 'pack', '--pack-destination', home], { cwd: fixture, stdio: 'pipe' })
+  const backend = createGenerationPackageBackend({ dshHome: home, nodeExecutablePath: process.execPath, pnpmEntryPath })
+  const request = { spec: join(home, 'script-approval-fixture-1.0.0.tgz'), kind: 'tarball' }
+  const blocked = await backend.install(request)
+  expect(blocked.packageResult.exitCode).not.toBe(0)
+  expect(blocked.packageResult.output).toContain('script-approval-fixture')
+  expect((await listGenerations(home))).toHaveLength(0)
+  const pending = /Ignored build scripts: ([^\r\n]+)/u.exec(blocked.packageResult.output)[1].trim()
+  await writeFile(join(home, 'profiles/web/pnpm-workspace.yaml'), `allowBuilds:\n  ${JSON.stringify(pending)}: true\n`)
+  const approved = await backend.install(request)
+  expect(approved.packageResult.exitCode, approved.packageResult.output).toBe(0)
+  expect(await readFile(join(approved.bundleDirectory, 'build-proof.txt'), 'utf8')).toBe('approved')
+  await approved.commit()
+}, 120_000)
