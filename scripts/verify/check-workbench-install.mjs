@@ -153,6 +153,33 @@ async function stopDesktop() {
   await waitFor('owned desktop process to exit', () => desktop.exitCode !== null || desktop.signalCode !== null, 15_000)
 }
 
+async function verifyHostSession() {
+  const workspacePath = join(fixtureRoot, '数据项素-工作区')
+  await mkdir(workspacePath, { recursive: true })
+  const rpc = (method, request) => evaluate(`(async () => {
+    const rpcId = crypto.randomUUID();
+    const response = await fetch('/api/' + ${JSON.stringify(method)}, {
+      method: 'POST', headers: {'content-type':'application/json'},
+      body: JSON.stringify({type:'client-request',rpcId,method:${JSON.stringify(method)},payload:{args:{request:${JSON.stringify(request)}}}})
+    });
+    if (!response.ok) throw new Error('Harness RPC HTTP ' + response.status);
+    const reply = await response.json();
+    if (reply.rpcId !== rpcId || !reply.result?.ok) throw new Error(JSON.stringify(reply.result?.error || reply));
+    return reply.result.value;
+  })()`)
+  const workspace = await rpc('workspace/create', { path: workspacePath })
+  assert(workspace.workspace?.workspaceId, 'Workspace creation must return a workspace ID')
+  const session = await rpc('session/create', { workspaceId: workspace.workspace.workspaceId })
+  assert(session.sessionId, 'Session creation must return a session ID')
+  await new Promise(resolve => setTimeout(resolve, 20_000))
+  // V0.14.0 publishes readiness through the current Host generation's IPC boot
+  // bridge. The older stdout URL and "Harness is ready" markers no longer exist.
+  const boot = await evaluate('window.dshDesktopBoot.ready()')
+  assert(Array.isArray(boot.injections) && boot.streamBaseUrl, 'The current Host must remain ready after workspace/session creation')
+  results.push({ stage: 'host-session', workspaceCreated: true, sessionCreated: true, readyAfter20Seconds: true })
+  console.log('Packaged Windows Harness smoke test passed.')
+}
+
 async function makeFixture(name, title, scripts) {
   const directory = join(fixtureRoot, name)
   await mkdir(directory, { recursive: true })
@@ -218,6 +245,7 @@ try {
   const plainArchive = await makeFixture(plainName, plainTitle, false)
   const scriptArchive = await makeFixture(scriptName, scriptTitle, true)
   await startDesktop()
+  await verifyHostSession()
   await openMarket()
   await selectArchive(plainArchive)
   console.log('Selected plain package through native file input')
