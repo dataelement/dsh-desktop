@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, copyFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -13,6 +13,15 @@ it('real pnpm blocks undecided scripts, skips refused scripts, and executes appr
   // workspace root to a real path; keep every install path in that form.
   const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-build-approval-')))
   const run = promisify(execFile)
+  let buildExecutable = process.execPath
+  if (process.platform === 'win32') {
+    // A real executable in a path with spaces catches CMD removing the leading
+    // path quotes. Ordinary hosted Node paths omit spaces and miss this bug.
+    const runtime = join(root, 'Node runtime with spaces')
+    await mkdir(runtime)
+    buildExecutable = join(runtime, 'node.exe')
+    await copyFile(process.execPath, buildExecutable)
+  }
   let server
   // Stable publication time: a moving timestamp can appear in the future
   // relative to pnpm's resolution start even when the age limit is zero.
@@ -22,7 +31,7 @@ it('real pnpm blocks undecided scripts, skips refused scripts, and executes appr
     await writeFile(join(root, 'dependency/package/package.json'), JSON.stringify({
       name: 'dsh-test-build-dependency', version: '1.0.0', main: 'built.js',
       // Use the same executable that runs pnpm, not a PATH-selected node.cmd.
-      scripts: { install: `"${process.execPath}" build.cjs` }
+      scripts: { install: `"${buildExecutable}" build.cjs` }
     }))
     await writeFile(join(root, 'dependency/package/build.cjs'), "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'built.js'), 'module.exports = 42')")
     const dependencyTar = join(root, 'dependency.tgz')
