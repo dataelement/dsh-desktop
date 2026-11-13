@@ -1,13 +1,37 @@
 import { constants } from 'node:fs'
 import { cp, copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isSeq, parse, parseDocument } from 'yaml'
+import { isMap, isScalar, isSeq, parse, parseDocument, type YAMLMap } from 'yaml'
 import { writeTextAtomically } from './persona-prefix-migration'
 
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
 const START = '# dsh-desktop legacy presets begin'
 const END = '# dsh-desktop legacy presets end'
 const BUILT_IN_PRESETS = new Set(['standard', 'ptc', 'minimal', 'cordis'])
+const YAML_OPTIONS = {
+  customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }]
+}
+
+function collectExistingPresetIds(text: string): Set<string> {
+  const existing = new Set<string>()
+  const document = parseDocument(text, YAML_OPTIONS)
+  if (document.errors.length > 0 || !isSeq(document.contents)) return existing
+  const recordPresetId = (value: unknown): void => {
+    if (typeof value !== 'string' || !value.startsWith('preset-')) return
+    const id = value.slice('preset-'.length)
+    if (PRESET_ID.test(id)) existing.add(id)
+  }
+  for (const row of document.contents.items) {
+    if (!isMap(row)) continue
+    recordPresetId(row.get('id'))
+    const insert = row.get('insert', true)
+    if (!isSeq(insert)) continue
+    for (const entry of insert.items) {
+      if (isMap(entry)) recordPresetId(entry.get('id'))
+    }
+  }
+  return existing
+}
 
 function yamlString(value: string): string {
   return JSON.stringify(value)
@@ -81,9 +105,7 @@ export async function migrateLegacyAgentPresets(dshHome: string, note: (line: st
   }
   // A converted row belongs to the new Profile from now on. Preserve edits
   // made through the new editor; only append legacy IDs not yet present.
-  const existingIds = new Set(
-    [...base.matchAll(/^(?:- id:|    - id:) preset-([a-z0-9-]+)\s*$/gmu)].map((match) => match[1])
-  )
+  const existingIds = collectExistingPresetIds(base)
   const pending = sections.filter(({ id }) => !existingIds.has(id))
   if (pending.length === 0) return
   const generated = start === -1 ? '' : base.slice(start + START.length, end).trim()
@@ -152,21 +174,50 @@ export async function disableMigratedLegacyPreset(
   }
   if (blockStart === -1 || blockEnd === -1 || blockEnd < blockStart) return false
 
+  const blockText = lines.slice(blockStart + 1, blockEnd).join('\n')
+  const document = parseDocument(blockText, YAML_OPTIONS)
+  const contents = document.contents
+  if (document.errors.length > 0 || !isSeq(contents)) return false
+
   const wanted = `preset-${presetId}`
-  for (let index = blockStart; index <= blockEnd; index++) {
-    const match = /^(\s*)- id: (\S+)\s*$/.exec(lines[index] as string)
-    if (!match || match[2] !== wanted) continue
-    const fieldIndent = `${match[1]}  `
-    // The entry's own fields run until the next row at the entry indent.
-    for (let scan = index + 1; scan <= blockEnd; scan++) {
-      const later = lines[scan] as string
-      if (later && !later.startsWith(fieldIndent) && later.trimStart().startsWith('- ')) break
-      if (later.startsWith(`${fieldIndent}disabled:`)) return false
+  let target: YAMLMap | undefined
+  for (const row of contents.items) {
+    if (!isMap(row)) continue
+    const rowId: unknown = row.get('id')
+    if (rowId === wanted) {
+      target = row
+      break
     }
-    lines.splice(index + 1, 0, `${fieldIndent}disabled: true`)
-    await writeTextAtomically(profilePatch, lines.join('\n'))
-    note(`[desktop] disabled the migrated legacy preset row for "${presetId}"; a plugin registers it at runtime (#814)`)
-    return true
+    const insert = row.get('insert', true)
+    if (!isSeq(insert)) continue
+    for (const entry of insert.items) {
+      if (!isMap(entry)) continue
+      const entryId: unknown = entry.get('id')
+      if (entryId === wanted) {
+        target = entry
+        break
+      }
+    }
+    if (target !== undefined) break
   }
-  return false
+
+  if (target === undefined || target.has('disabled')) return false
+  const idPair = target.items.find((pair) => isScalar(pair.key) && pair.key.value === 'id')
+  const keyOffset = isScalar(idPair?.key) ? idPair.key.range?.[0] : undefined
+  const valueEnd = isScalar(idPair?.value) ? idPair.value.range?.[1] : undefined
+  if (keyOffset === undefined || valueEnd === undefined) return false
+
+  const lineStart = blockText.lastIndexOf('\n', keyOffset - 1) + 1
+  const fieldIndent = ' '.repeat(Math.max(0, keyOffset - lineStart))
+  const lineEndIndex = blockText.indexOf('\n', valueEnd)
+  const insertOffset = lineEndIndex === -1 ? blockText.length : lineEndIndex
+  const updatedBlock = `${blockText.slice(0, insertOffset)}\n${fieldIndent}disabled: true${blockText.slice(insertOffset)}`
+  const updatedLines = [
+    ...lines.slice(0, blockStart + 1),
+    updatedBlock,
+    ...lines.slice(blockEnd)
+  ]
+  await writeTextAtomically(profilePatch, updatedLines.join('\n'))
+  note(`[desktop] disabled the migrated legacy preset row for "${presetId}"; a plugin registers it at runtime (#814)`)
+  return true
 }
