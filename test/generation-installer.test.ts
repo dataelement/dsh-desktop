@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -133,9 +133,40 @@ nested:
     expect(await listGenerations(home)).toEqual([])
   })
 
-  it('preserves safe file-bound approvals without deriving broader package consent', () => {
-    const identity = 'native@file:/temporary/source/native'
-    expect(generationBuildApprovals(`allowBuilds: { '${identity}': true, native: false }`)).toEqual([identity])
+  it('only forwards content-bound file approvals without deriving broader package consent', () => {
+    const directory = `native@file:source/${'a'.repeat(64)}`
+    const archive = `native@file:source/${'b'.repeat(64)}.tgz`
+    expect(generationBuildApprovals(`allowBuilds:
+  '${directory}': true
+  '${archive}': true
+  'native@file:/temporary/source/native': true
+  'native@file:../../mutable.tgz': true
+  native: false
+`)).toEqual([directory, archive])
+  })
+
+  it('copies a linked archive before hashing and installing, isolating later source edits', async () => {
+    const home = await freshHome()
+    const archive = join(home, 'original.tgz')
+    const alias = join(home, 'alias.tar.gz')
+    await writeFile(archive, 'original archive bytes')
+    // File symlinks require elevated privileges on some Windows runners.
+    if (process.platform !== 'win32') await symlink(archive, alias)
+    const result = await installGeneration({
+      dshHome: home, pluginSpec: process.platform === 'win32' ? archive : alias, nodeExecutablePath: 'node', pnpmEntryPath: 'pnpm',
+      runInstall: async staging => {
+        const sources = await readdir(join(staging, 'source'))
+        expect(sources).toHaveLength(1)
+        expect(sources[0]).toMatch(/^[a-f0-9]{64}\.tgz$/u)
+        const snapshot = join(staging, 'source', sources[0] ?? '')
+        expect((await lstat(snapshot)).isSymbolicLink()).toBe(false)
+        await writeFile(archive, 'changed after staging')
+        expect(await readFile(snapshot, 'utf8')).toBe('original archive bytes')
+        return { code: 1, output: 'fixture stopped after snapshot inspection' }
+      }
+    })
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('fixture stopped after snapshot inspection')
   })
 
   it('derives pnpm 10 git prepare keys only from a matching repository approval', () => {

@@ -1,17 +1,74 @@
 import { describe, expect, it, vi } from 'vitest'
 import { spawn } from 'node:child_process'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { once } from 'node:events'
 import { win32 } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { connect, pauseInstallEntry, workbenchInstallIsolation, assertWorkbenchInstallPaths, prepareInstallInspector, inspectInstallPaths } from '../scripts/verify/workbench-install-isolation.mjs'
+import { connect, createWorkbenchInstallFixtureRoot, pauseInstallEntry, workbenchInstallIsolation, assertWorkbenchInstallPaths, prepareInstallInspector, inspectInstallPaths } from '../scripts/verify/workbench-install-isolation.mjs'
 
 const root = 'C:\\acceptance artifacts\\isolated run'
 const entryPause = () => ({ reason: 'Break on start', callFrames: [{ url: 'file:///fixture.cjs', location: { scriptId: '1' } }] })
 
 describe('packaged workbench acceptance isolation', () => {
+  it('creates unique physical temporary trees whose fixtures cannot resolve checkout packages', async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'dsh-acceptance-root-test-')))
+    const checkout = join(directory, 'checkout')
+    const runnerTemp = join(directory, 'runner temp')
+    await mkdir(join(checkout, 'node_modules', 'checkout-only'), { recursive: true })
+    await mkdir(runnerTemp)
+    await writeFile(join(checkout, 'node_modules', 'checkout-only', 'index.js'), 'module.exports = true\n')
+    try {
+      const first = await createWorkbenchInstallFixtureRoot(checkout, { RUNNER_TEMP: runnerTemp })
+      const second = await createWorkbenchInstallFixtureRoot(checkout, { RUNNER_TEMP: runnerTemp })
+      expect(first).not.toBe(second)
+      expect(relative(runnerTemp, first)).toMatch(/^dsh-workbench-install-/u)
+      for (const path of [first, join(first, 'fixture'), join(first, 'workspace'), join(first, 'user home', 'AppData', 'Roaming')]) {
+        const fromCheckout = relative(checkout, path)
+        expect(fromCheckout === '..' || fromCheckout.startsWith(`..${sep}`) || isAbsolute(fromCheckout)).toBe(true)
+        await mkdir(path, { recursive: true })
+        expect(() => createRequire(join(path, 'entry.cjs')).resolve('checkout-only')).toThrow('Cannot find module')
+      }
+    } finally {
+      // directory is the canonical mkdtemp-owned test tree, not a user profile.
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects checkout temp paths and their physical aliases, falling back outside checkout', async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'dsh-acceptance-alias-test-')))
+    const checkout = join(directory, 'checkout')
+    const internalTemp = join(checkout, 'artifacts')
+    const alias = join(directory, 'runner-alias')
+    await mkdir(internalTemp, { recursive: true })
+    await symlink(internalTemp, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      for (const candidate of [checkout, internalTemp, alias, 'relative-temp']) {
+        const actual = await createWorkbenchInstallFixtureRoot(checkout, { RUNNER_TEMP: candidate }, directory)
+        expect(relative(directory, actual)).toMatch(/^dsh-workbench-install-/u)
+      }
+      const fallback = await createWorkbenchInstallFixtureRoot(checkout, {}, directory)
+      expect(relative(directory, fallback)).toMatch(/^dsh-workbench-install-/u)
+      await expect(createWorkbenchInstallFixtureRoot(checkout, { RUNNER_TEMP: alias }, internalTemp)).rejects.toThrow('outside the checkout')
+    } finally {
+      // directory owns both the junction and target; never remove a resolved alias.
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('wires the acceptance driver to temporary fixtures/cwd and artifact-only output', async () => {
+    const driver = await readFile(fileURLToPath(new URL('../scripts/verify/check-workbench-install.mjs', import.meta.url)), 'utf8')
+    expect(driver).toContain('const fixtureRoot = await createWorkbenchInstallFixtureRoot(')
+    expect(driver).toContain('const isolationRoot = fixtureRoot')
+    expect(driver).toContain('cwd: fixtureRoot')
+    expect(driver).not.toContain('realpath(output)')
+    expect(driver).toContain("join(output, `${name}.png`)")
+    expect(driver).toContain("join(output, 'results.json')")
+  })
+
   it.each(['production', 'development'])('isolates %s child OS paths without changing the parent environment', channel => {
     const inherited = {
       APPDATA: 'C:\\real user\\AppData\\Roaming', AppData: 'C:\\other real user',

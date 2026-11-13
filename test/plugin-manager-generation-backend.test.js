@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -501,7 +501,7 @@ describe('Plugin Manager generation package backend', () => {
   })
 })
 
-it('requires approval before publishing a generation with blocked installation scripts', async () => {
+it.each(['.tgz', '.tar.gz'])('binds uploaded %s script approval to the consumed archive snapshot', async extension => {
   const home = await freshHome()
   const fixture = join(home, 'fixture')
   await mkdir(fixture)
@@ -513,15 +513,40 @@ it('requires approval before publishing a generation with blocked installation s
   const pnpmEntryPath = join(process.cwd(), 'node_modules/pnpm/bin/pnpm.cjs')
   execFileSync(process.execPath, [pnpmEntryPath, 'pack', '--pack-destination', home], { cwd: fixture, stdio: 'pipe' })
   const backend = createGenerationPackageBackend({ dshHome: home, nodeExecutablePath: process.execPath, pnpmEntryPath })
-  const request = { spec: join(home, 'script-approval-fixture-1.0.0.tgz'), kind: 'tarball' }
+  const packed = join(home, 'script-approval-fixture-1.0.0.tgz')
+  const upload = join(home, `upload with spaces${extension}`)
+  await copyFile(packed, upload)
+  const request = { spec: upload, kind: 'tarball', path: upload }
   const blocked = await backend.install(request)
   expect(blocked.packageResult.exitCode, blocked.packageResult.output).not.toBe(0)
   expect(blocked.packageResult.output).toContain('script-approval-fixture')
   expect((await listGenerations(home))).toHaveLength(0)
   const pending = /Ignored build scripts: ([^\r\n]+)/u.exec(blocked.packageResult.output)[1].trim()
-  await writeFile(join(home, 'profiles/web/pnpm-workspace.yaml'), `allowBuilds:\n  ${JSON.stringify(pending)}: true\n`)
+  expect(pending).toMatch(/^script-approval-fixture@file:source\/[a-f0-9]{64}\.tgz$/u)
+  const policyPath = join(home, 'profiles/web/pnpm-workspace.yaml')
+  await writeFile(policyPath, `allowBuilds:\n  ${JSON.stringify(pending)}: true\n`)
   const approved = await backend.install(request)
   expect(approved.packageResult.exitCode, approved.packageResult.output).toBe(0)
   expect(await readFile(join(approved.bundleDirectory, 'build-proof.txt'), 'utf8')).toBe('approved')
-  await approved.commit()
+  // Roll back publication so the next attempt exercises the same install flow.
+  await approved.rollback()
+  await writeFile(join(fixture, 'build.cjs'), "require('node:fs').writeFileSync('build-proof.txt', 'changed-without-reapproval')")
+  execFileSync(process.execPath, [pnpmEntryPath, 'pack', '--pack-destination', home], { cwd: fixture, stdio: 'pipe' })
+  await copyFile(packed, upload)
+  const changed = await backend.install(request)
+  expect(changed.packageResult.exitCode, changed.packageResult.output).not.toBe(0)
+  const changedPending = /Ignored build scripts: ([^\r\n]+)/u.exec(changed.packageResult.output)[1].trim()
+  expect(changedPending).not.toBe(pending)
+  // The original immutable generation has not executed the replacement script.
+  expect(await readFile(join(approved.bundleDirectory, 'build-proof.txt'), 'utf8')).toBe('approved')
+  await writeFile(policyPath, `allowBuilds:\n  ${JSON.stringify(changedPending)}: false\n`)
+  const refused = await backend.install(request)
+  expect(refused.packageResult.exitCode, refused.packageResult.output).toBe(0)
+  await expect(readFile(join(refused.bundleDirectory, 'build-proof.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  await refused.rollback()
+  await writeFile(policyPath, `allowBuilds:\n  ${JSON.stringify(changedPending)}: true\n`)
+  const reapproved = await backend.install(request)
+  expect(reapproved.packageResult.exitCode, reapproved.packageResult.output).toBe(0)
+  expect(await readFile(join(reapproved.bundleDirectory, 'build-proof.txt'), 'utf8')).toBe('changed-without-reapproval')
+  await reapproved.commit()
 }, 120_000)

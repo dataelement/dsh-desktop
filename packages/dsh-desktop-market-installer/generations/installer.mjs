@@ -37,7 +37,9 @@ const PACKAGE_NAME_PATTERN = /^(?:@[A-Za-z0-9-~][A-Za-z0-9._~-]*\/)?[A-Za-z0-9-~
 const GIT_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@git\+https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/u
 const CODELOAD_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@https:\/\/codeload\.github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/tar\.gz\/[0-9a-f]{40}$/u
 const PINNED_GITHUB_TARGET_PATTERN = /^github:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
-const FILE_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@file:[^\0\r\n*?]+$/u
+// Only our content-addressed snapshots carry transferable file consent. Legacy
+// path-only keys can refer to different bytes on the next installation.
+const FILE_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@file:source\/[a-f0-9]{64}(?:\.tgz)?$/u
 const PINNED_GIT_APPROVAL_PATTERN = /@git\+ssh:\/\/git@github\.com\//u
 const GENERATION_INSTALL_TIMEOUT_MS = 90 * 1000
 
@@ -430,6 +432,23 @@ export async function installGeneration(options) {
       // aliases or random staging UUID can drift pnpm's exact allowBuilds key.
       // Both true and false decisions stay exact in the staged buildPolicy.
       installSpec = `file:source/${identity}`
+    } else {
+      const archivePath = pluginSpec.replace(/^file:/u, '')
+      if (isAbsolute(archivePath) && /\.(?:tgz|tar\.gz)$/iu.test(archivePath)) {
+        const sourceRoot = join(stagingDir, 'source')
+        const snapshot = join(sourceRoot, 'snapshot.tgz')
+        await mkdir(sourceRoot, { recursive: true })
+        await cp(archivePath, snapshot, { dereference: true })
+        // Hash the private copy pnpm consumes, not the mutable upload path.
+        // Include the canonical origin so consent cannot move between sources.
+        const hash = createHash('sha256')
+        const canonical = await realpath(archivePath)
+        hash.update(`${JSON.stringify(['dsh-local-archive-v1', process.platform === 'win32' ? canonical.replace(/\\/gu, '/') : canonical])}\n`)
+        for await (const chunk of createReadStream(snapshot)) hash.update(chunk)
+        const identity = hash.digest('hex')
+        await rename(snapshot, join(sourceRoot, `${identity}.tgz`))
+        installSpec = `file:source/${identity}.tgz`
+      }
     }
     trace(`installing ${options.sourceSpec ?? pluginSpec} into staging`)
     // A git subpackage can declare a pnpm version different from its workspace

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawn, execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, writeFile, readdir, realpath } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, readdir, realpath } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { connect, workbenchInstallIsolation, assertWorkbenchInstallPaths, prepareInstallInspector, inspectInstallPaths } from './workbench-install-isolation.mjs'
+import { fileURLToPath } from 'node:url'
+import { connect, createWorkbenchInstallFixtureRoot, workbenchInstallIsolation, assertWorkbenchInstallPaths, prepareInstallInspector, inspectInstallPaths } from './workbench-install-isolation.mjs'
 
 const run = promisify(execFile)
 const executable = resolve(process.argv[2])
@@ -19,10 +20,13 @@ let page
 let mainInspector
 
 await mkdir(output, { recursive: true })
-const fixtureRoot = await realpath(output)
-// mkdtemp owns a fresh subtree even when an artifact directory is reused. Keep
-// it as failure evidence; cleanup below only stops this driver's child process.
-const isolationRoot = await realpath(await mkdtemp(join(fixtureRoot, 'isolated-install-')))
+// Artifacts contain only screenshots/results. Fixtures, cwd and profiles must
+// not inherit checkout node_modules through any ancestor, even on reused runs.
+const fixtureRoot = await createWorkbenchInstallFixtureRoot(fileURLToPath(new URL('../../', import.meta.url)))
+// Keep the unique temporary tree as failure evidence; cleanup below only stops
+// this driver's child process.
+const isolationRoot = fixtureRoot
+console.log(`Acceptance fixtures and profiles retained at ${fixtureRoot}`)
 const isolation = workbenchInstallIsolation(process.platform, isolationRoot, process.env)
 await mkdir(isolation.appData, { recursive: true })
 await mkdir(isolation.env.LOCALAPPDATA, { recursive: true })

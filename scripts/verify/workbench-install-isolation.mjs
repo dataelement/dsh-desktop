@@ -1,5 +1,22 @@
 import assert from 'node:assert/strict'
-import { win32 } from 'node:path'
+import { mkdtemp, realpath } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { isAbsolute, join, relative, sep, win32 } from 'node:path'
+
+/** Keep runtime/package resolution outside the checkout even when artifacts or
+ * RUNNER_TEMP point into it. Canonicalize first to reject junction/symlink aliases.
+ */
+export async function createWorkbenchInstallFixtureRoot(checkoutRoot, inherited = process.env, temporaryDirectory = tmpdir()) {
+  const checkout = await realpath(checkoutRoot)
+  for (const candidate of new Set([inherited.RUNNER_TEMP, temporaryDirectory])) {
+    if (!candidate || !isAbsolute(candidate)) continue
+    const directory = await realpath(candidate)
+    const fromCheckout = relative(checkout, directory)
+    if (!fromCheckout || (fromCheckout !== '..' && !fromCheckout.startsWith(`..${sep}`) && !isAbsolute(fromCheckout))) continue
+    return realpath(await mkdtemp(join(directory, 'dsh-workbench-install-')))
+  }
+  throw new Error('Acceptance fixtures require a temporary directory outside the checkout')
+}
 
 /** Child environment isolation complements the paused Electron app.setPath gate;
  * APPDATA alone does not prove native Electron appData isolation on Windows.
