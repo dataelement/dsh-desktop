@@ -33,6 +33,13 @@ function scheduled(job, name, input) {
 }
 
 describe('release CI scheduling', () => {
+  it('cancels superseded pull-request checks while retaining running release builds', () => {
+    const expression = workflow.concurrency['cancel-in-progress'].slice(3, -2).trim()
+    expect(enabled(expression, { event: 'pull_request' })).toBe(true)
+    expect(enabled(expression, { event: 'workflow_dispatch' })).toBe(false)
+    expect(enabled(expression, { event: 'push', ref: 'refs/tags/v1.0.0' })).toBe(false)
+  })
+
   it('shows only five fields with safe build defaults', () => {
     const inputs = workflow.on.workflow_dispatch.inputs
     expect(Object.keys(inputs)).toEqual(['mode', 'target', 'version', 'source_run_id', 'checks'])
@@ -89,7 +96,7 @@ describe('release CI scheduling', () => {
     expect(mac.with.key).toContain('hashFiles(')
   })
 
-  it('only schedules extra desktop probes when explicitly requested', () => {
+  it('runs native desktop acceptance on pull requests and explicit extended dispatches', () => {
     for (const name of [
       'Smoke test packaged Windows Harness',
       'Check recovery UI on native Windows at three display scales'
@@ -98,9 +105,16 @@ describe('release CI scheduling', () => {
       expect(workflow.on.workflow_dispatch.inputs.checks.default).toBe('standard')
       expect(enabled(probe.if)).toBe(false)
       expect(enabled(probe.if, { checks: 'extended' })).toBe(true)
-      expect(enabled(probe.if, { event: 'pull_request', checks: 'extended' })).toBe(false)
+      expect(enabled(probe.if, { event: 'pull_request' })).toBe(true)
       expect(enabled(probe.if, { event: 'push', checks: 'extended' })).toBe(false)
     }
+    const packaged = step('windows-x64', 'Smoke test packaged Windows Harness')
+    expect(packaged.run).toContain('check-workbench-install.mjs "$executable"')
+    expect(packaged.run.indexOf('Copy-Item')).toBeLessThan(packaged.run.indexOf('check-workbench-install.mjs'))
+    const evidence = step('windows-x64', 'Upload Windows workbench installation evidence')
+    expect(enabled(evidence.if, { event: 'pull_request' })).toBe(true)
+    expect(evidence.with.path).toContain('workbench-install/*.png')
+    expect(evidence.with.path).toContain('workbench-install/results.json')
     expect(jobs['windows-x64'].steps.some(candidate => candidate.run?.includes('probe-electron-node-runtime'))).toBe(false)
     const afterPack = readFileSync('scripts/release/after-pack.cjs', 'utf8')
     for (const gate of ['verifyPackagedHarness', 'verifyOfficeRuntime', 'verifyPackagedPptRuntime']) {
@@ -134,10 +148,10 @@ describe('release CI scheduling', () => {
     }
   })
 
-  it('archives release payloads and only opt-in development builds', () => {
+  it('archives pull-request payloads, release payloads and opt-in development builds', () => {
     const archive = step('windows-x64', 'Archive and verify unpacked Windows payload')
     expect(enabled(archive.if)).toBe(false)
-    expect(enabled(archive.if, { event: 'pull_request' })).toBe(false)
+    expect(enabled(archive.if, { event: 'pull_request' })).toBe(true)
     for (const input of [{ mode: 'signed' }, { mode: 'prerelease' }, { checks: 'extended' }, { event: 'push', ref: 'refs/tags/v1.0.0' }]) {
       expect(enabled(archive.if, input)).toBe(true)
     }

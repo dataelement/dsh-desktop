@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
-import { lstat, mkdir, mkdtemp, open, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, rm, writeFile } from 'node:fs/promises'
 
 function readInstalledVersion(_profile, name, explicitDir) {
   try {
@@ -219,7 +219,7 @@ describe('the market install boundary', () => {
       ['add', 'demo@1.0.0'], join(home, 'profiles', 'web')))
     expect(failed.exitCode).toBe(1)
     expect(failed.stderr).toContain('ERR_PNPM_IGNORED_BUILDS')
-    expect(policies[0]).not.toContain('strict-dep-builds=')
+    expect(policies[0]).toContain('strict-dep-builds=true')
     expect(policies[0]).toContain('minimum-release-age=1440')
     await drainHandle(svc.runExternalMarketPluginInstall(
       ['add', '--config.minimumReleaseAge=0', 'demo@1.0.0'], join(home, 'profiles', 'web')))
@@ -488,7 +488,9 @@ describe('the market install boundary', () => {
       nodeExecutablePath: process.execPath,
       pnpmEntryPath: 'unused',
       runInstall: async (stagingDir) => {
-        expect(await readFile(join(stagingDir, 'source', 'source-plugin', 'installed-marker.txt'), 'utf8'))
+        const [identity] = await readdir(join(stagingDir, 'source'))
+        expect(identity).toMatch(/^[a-f0-9]{64}$/)
+        expect(await readFile(join(stagingDir, 'source', identity, 'installed-marker.txt'), 'utf8'))
           .toBe('exact installed tree\n')
         return stubGenerationInstall('source-plugin', '1.2.3')(stagingDir)
       }

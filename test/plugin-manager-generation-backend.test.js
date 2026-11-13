@@ -1,4 +1,5 @@
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +11,9 @@ import { readDisabledPlugins } from '../packages/dsh-desktop-market-installer/pl
 const homes = []
 
 async function freshHome() {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-generation-backend-'))
+  // pnpm canonicalizes Windows TEMP (which can contain RUNNER~1). Use the
+  // same physical root for workspace discovery and source-bound build keys.
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'dsh-generation-backend-')))
   homes.push(home)
   const profile = join(home, 'profiles', 'web')
   await mkdir(profile, { recursive: true })
@@ -497,3 +500,53 @@ describe('Plugin Manager generation package backend', () => {
     expect(await readDisabledPlugins(profile)).toEqual([])
   })
 })
+
+it.each(['.tgz', '.tar.gz'])('binds uploaded %s script approval to the consumed archive snapshot', async extension => {
+  const home = await freshHome()
+  const fixture = join(home, 'fixture')
+  await mkdir(fixture)
+  await writeFile(join(fixture, 'package.json'), JSON.stringify({
+    name: 'script-approval-fixture', version: '1.0.0',
+    scripts: { postinstall: `"${process.execPath}" build.cjs` }
+  }))
+  await writeFile(join(fixture, 'build.cjs'), "require('node:fs').writeFileSync('build-proof.txt', 'approved')")
+  const pnpmEntryPath = join(process.cwd(), 'node_modules/pnpm/bin/pnpm.cjs')
+  execFileSync(process.execPath, [pnpmEntryPath, 'pack', '--pack-destination', home], { cwd: fixture, stdio: 'pipe' })
+  const backend = createGenerationPackageBackend({ dshHome: home, nodeExecutablePath: process.execPath, pnpmEntryPath })
+  const packed = join(home, 'script-approval-fixture-1.0.0.tgz')
+  const upload = join(home, `upload with spaces${extension}`)
+  await copyFile(packed, upload)
+  const request = { spec: upload, kind: 'tarball', path: upload }
+  const blocked = await backend.install(request)
+  expect(blocked.packageResult.exitCode, blocked.packageResult.output).not.toBe(0)
+  expect(blocked.packageResult.output).toContain('script-approval-fixture')
+  expect((await listGenerations(home))).toHaveLength(0)
+  const pending = /Ignored build scripts: ([^\r\n]+)/u.exec(blocked.packageResult.output)[1].trim()
+  expect(pending).toMatch(/^script-approval-fixture@file:source\/[a-f0-9]{64}\.tgz$/u)
+  const policyPath = join(home, 'profiles/web/pnpm-workspace.yaml')
+  await writeFile(policyPath, `allowBuilds:\n  ${JSON.stringify(pending)}: true\n`)
+  const approved = await backend.install(request)
+  expect(approved.packageResult.exitCode, approved.packageResult.output).toBe(0)
+  expect(await readFile(join(approved.bundleDirectory, 'build-proof.txt'), 'utf8')).toBe('approved')
+  // Roll back publication so the next attempt exercises the same install flow.
+  await approved.rollback()
+  await writeFile(join(fixture, 'build.cjs'), "require('node:fs').writeFileSync('build-proof.txt', 'changed-without-reapproval')")
+  execFileSync(process.execPath, [pnpmEntryPath, 'pack', '--pack-destination', home], { cwd: fixture, stdio: 'pipe' })
+  await copyFile(packed, upload)
+  const changed = await backend.install(request)
+  expect(changed.packageResult.exitCode, changed.packageResult.output).not.toBe(0)
+  const changedPending = /Ignored build scripts: ([^\r\n]+)/u.exec(changed.packageResult.output)[1].trim()
+  expect(changedPending).not.toBe(pending)
+  // The original immutable generation has not executed the replacement script.
+  expect(await readFile(join(approved.bundleDirectory, 'build-proof.txt'), 'utf8')).toBe('approved')
+  await writeFile(policyPath, `allowBuilds:\n  ${JSON.stringify(changedPending)}: false\n`)
+  const refused = await backend.install(request)
+  expect(refused.packageResult.exitCode, refused.packageResult.output).toBe(0)
+  await expect(readFile(join(refused.bundleDirectory, 'build-proof.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  await refused.rollback()
+  await writeFile(policyPath, `allowBuilds:\n  ${JSON.stringify(changedPending)}: true\n`)
+  const reapproved = await backend.install(request)
+  expect(reapproved.packageResult.exitCode, reapproved.packageResult.output).toBe(0)
+  expect(await readFile(join(reapproved.bundleDirectory, 'build-proof.txt'), 'utf8')).toBe('changed-without-reapproval')
+  await reapproved.commit()
+}, 120_000)

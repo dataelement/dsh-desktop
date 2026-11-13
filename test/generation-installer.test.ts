@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -60,6 +60,115 @@ describe('the generation installer', () => {
     ])
   })
 
+  it('reads flow YAML, comments, and exact registry version identities without widening consent', () => {
+    expect(generationBuildApprovals(`
+allowBuilds: { 'esbuild@0.25.12': true, '@scope/native@1.2.3-beta.1': true, refused: false } # decisions
+nested:
+  allowBuilds:
+    unsafe: true
+`)).toEqual(['esbuild@0.25.12', '@scope/native@1.2.3-beta.1'])
+    expect(generationBuildApprovals(`allowBuilds:
+  plain: true # explicit approval
+  'native@^1.0.0': true
+  'native@*': true
+  'native@latest': true
+  'native@v1.0.0': true
+  'native@1.0.0 || other': true
+  quoted: 'true'
+  numeric: 1
+  nested:
+    unsafe: true
+`)).toEqual(['plain'])
+    expect(generationBuildApprovals('nested:\n  allowBuilds:\n    unsafe: true\n')).toEqual([])
+  })
+
+  it.each([true, false])('preserves exact build-metadata registry decisions (%s) when staging', async allowed => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(profile, { recursive: true })
+    const identity = '@scope/native@1.0.0-beta.1+build.42'
+    const policy = `allowBuilds: { '${identity}': ${allowed}, 'native@v1.0.0+build.42': true }\n`
+    await writeFile(join(profile, 'pnpm-workspace.yaml'), policy)
+    expect(generationBuildApprovals(policy)).toEqual(allowed ? [identity] : [])
+    let stagedPolicy = ''
+    await installGeneration({
+      dshHome: home, pluginSpec: '@scope/native@1.0.0-beta.1+build.42',
+      nodeExecutablePath: 'node', pnpmEntryPath: 'pnpm',
+      runInstall: async directory => {
+        stagedPolicy = await readFile(join(directory, 'pnpm-workspace.yaml'), 'utf8')
+        return { code: 1, output: 'fixture stopped after policy inspection' }
+      }
+    })
+    expect(stagedPolicy).toContain(`  "${identity}": ${allowed}`)
+    expect(stagedPolicy).not.toContain('native@v1.0.0')
+    expect(stagedPolicy).not.toContain('"@scope/native":')
+  })
+
+  it.each([
+    'allowBuilds: { native: true, native: false }',
+    'allowBuilds: { native: true }\nallowBuilds: { other: true }',
+    'allowBuilds: [native]',
+    'allowBuilds: { native: true',
+    'allowBuilds: &policy { native: true }',
+    'policy: &policy { native: true }\nallowBuilds: *policy',
+    'allowBuilds: { native: &decision true }',
+    'allowBuilds:\n  native: true\n  nested:\n    inherited: *missing'
+  ])('rejects malformed or ambiguous build policy instead of forwarding consent (%s)', policy => {
+    expect(() => generationBuildApprovals(policy)).toThrow()
+  })
+
+  it('does not run pnpm or publish a generation when the Profile build policy is invalid', async () => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(profile, 'pnpm-workspace.yaml'), 'allowBuilds: &policy { native: true }\n')
+    let ran = false
+    const result = await installGeneration({
+      dshHome: home, pluginSpec: 'native@1.0.0', nodeExecutablePath: 'node', pnpmEntryPath: 'pnpm',
+      runInstall: async () => { ran = true; return { code: 0, output: '' } }
+    })
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('anchors or aliases')
+    expect(ran).toBe(false)
+    expect(await listGenerations(home)).toEqual([])
+  })
+
+  it('only forwards content-bound file approvals without deriving broader package consent', () => {
+    const directory = `native@file:source/${'a'.repeat(64)}`
+    const archive = `native@file:source/${'b'.repeat(64)}.tgz`
+    expect(generationBuildApprovals(`allowBuilds:
+  '${directory}': true
+  '${archive}': true
+  'native@file:/temporary/source/native': true
+  'native@file:../../mutable.tgz': true
+  native: false
+`)).toEqual([directory, archive])
+  })
+
+  it('copies a linked archive before hashing and installing, isolating later source edits', async () => {
+    const home = await freshHome()
+    const archive = join(home, 'original.tgz')
+    const alias = join(home, 'alias.tar.gz')
+    await writeFile(archive, 'original archive bytes')
+    // File symlinks require elevated privileges on some Windows runners.
+    if (process.platform !== 'win32') await symlink(archive, alias)
+    const result = await installGeneration({
+      dshHome: home, pluginSpec: process.platform === 'win32' ? archive : alias, nodeExecutablePath: 'node', pnpmEntryPath: 'pnpm',
+      runInstall: async staging => {
+        const sources = await readdir(join(staging, 'source'))
+        expect(sources).toHaveLength(1)
+        expect(sources[0]).toMatch(/^[a-f0-9]{64}\.tgz$/u)
+        const snapshot = join(staging, 'source', sources[0] ?? '')
+        expect((await lstat(snapshot)).isSymbolicLink()).toBe(false)
+        await writeFile(archive, 'changed after staging')
+        expect(await readFile(snapshot, 'utf8')).toBe('original archive bytes')
+        return { code: 1, output: 'fixture stopped after snapshot inspection' }
+      }
+    })
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('fixture stopped after snapshot inspection')
+  })
+
   it('derives pnpm 10 git prepare keys only from a matching repository approval', () => {
     const sha = 'a'.repeat(40)
     const spec = `github:zhu1090093659/dsh-web#${sha}&path:/packages/dsh-remote-web-ui`
@@ -97,7 +206,12 @@ describe('the generation installer', () => {
         runInstall: stubInstall(async (staging) => {
           const policy = await readFile(join(staging, 'pnpm-workspace.yaml'), 'utf8')
           expect(policy).toContain('packages:\n  - .\n')
-          expect(policy).not.toContain('allowBuilds:')
+          if (profileWorkspace?.includes('esbuild: false')) {
+            expect(policy).toContain('\"esbuild\": false')
+          } else {
+            expect(policy).not.toContain('allowBuilds:')
+          }
+          expect(policy).not.toContain('unsafe')
           const pkg = join(staging, 'node_modules', 'isolated-plugin')
           await mkdir(pkg, { recursive: true })
           await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'isolated-plugin', version: '1.0.0' }))
@@ -166,7 +280,7 @@ describe('the generation installer', () => {
           '"@linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git": true'
         )
         expect(stagedPolicy).not.toContain('git+ssh://')
-        expect(stagedPolicy).not.toContain('esbuild')
+        expect(stagedPolicy).toContain('\"esbuild\": false')
         expect(stagedPolicy).not.toContain('patchedDependencies')
 
         const pkg = join(staging, 'node_modules', '@linxin666', 'dsh-remote-web-ui')

@@ -618,9 +618,8 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
   if (isProfileMigrated(dshHome)) return noop()
   if (!existsSync(join(profileDir(dshHome), 'package.json'))) {
     // No profile yet — nothing to migrate; mark so a fresh install skips this.
-    await writeFile(join(profileDir(dshHome), MARKER), `${new Date().toISOString()}\n`, 'utf8').catch(
-      () => undefined
-    )
+    await mkdir(profileDir(dshHome), { recursive: true })
+    await writeFile(join(profileDir(dshHome), MARKER), `${new Date().toISOString()}\n`, 'utf8')
     return noop()
   }
 

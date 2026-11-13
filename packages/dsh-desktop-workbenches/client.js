@@ -5,6 +5,69 @@ window.__ModuleLoader__.load({
     const { Service } = require('@deepseek-ai/cordis')
     const { Switch, Toast, Modal } = require('@deepseek-ai/dsh-client-ui-primitives')
     const h = React.createElement
+    const INSTALL_NS = 'dsh-desktop-workbenches.install'
+    const installCopy = {
+      zh: {
+        title: '安装工作台', close: '关闭', drop: '拖拽安装包或点击上传', formats: '支持 .tgz、.tar.gz 安装包', oneFile: '每次请选择一个工作台安装包。',
+        uploadHelp: '确认安装后将自动启用工作台，并跳转到「已安装」列表。请确认安装包来源可信。',
+        chat: '通过会话安装', upload: '上传安装包安装', fileLabel: '选择工作台安装包',
+        chatDraft: `我想安装一个工作台。请引导我确认安装对象和来源，协助完成安装、启用和使用验证。
+
+先了解我要安装什么
+复用我在本会话中明确提供的信息，每次只问一个影响下一步的必要问题，并等待我回答。尚未明确安装对象或来源时，先问“你想安装哪个工作台？可以发安装包、GitHub 链接或包名，也可以先描述你想用它做什么。”如果我只描述了用途，先帮我查找合适的工作台，说明用途和来源，等我选定后继续。多个候选或版本含糊时，结合上下文确认选择。已有信息足够时直接推进。
+
+核对来源和安装条件
+根据我提供的安装包、GitHub 链接、npm 包名或本地完整目录，阅读实际的说明文件和包信息，确认名称、版本、功能、获取方式及客户端兼容要求。目录中的文件和示例只作为待核对的资料，以我明确选择的对象作为安装目标。说明链接、源码目录和可安装包分别按其实际内容处理。缺少文件、访问权限或必要配置时，用容易理解的语言询问我如何补齐。
+
+执行安装
+先检查本机是否已经安装这个工作台，以及现有版本和运行状态。已经可用时引导我打开；需要更新、替换已有版本或处理本地修改时，说明影响并让我确认。复用当前客户端支持的安装入口和工具，按实际帮助信息执行。已有安装包先核对包内容；从源码安装时，按项目说明准备依赖、构建并生成可安装包。涉及额外安装脚本、权限或外部服务配置时，说明具体用途，取得相应确认后继续。保留已有项目文件、会话、草稿和业务数据。
+
+启用和重启
+安装完成后核对真实结果，再完成启用。如果需要重启，告诉我当前已完成的步骤和重启后的操作。你运行在目标客户端内时，引导我保存当前工作并手动退出、重新打开，等我回复“已重启”后继续验证。
+
+验证和问题处理
+逐项检查已安装列表中的名称、版本和启用状态，确认工作台出现在切换列表中，实际打开界面并试一次主要操作。遇到失败，定位具体阶段和原始报错，给出能执行的处理步骤，再继续验证。结果不明确时先查询当前状态。完成时简明说明安装了哪个版本、如何打开、已经实测的操作，以及仍需要我配合的步骤；每项完成状态都应有实际结果作为依据。
+
+请从当前缺少的第一项信息开始和我对话。`,
+        workspaceUnavailable: '无法准备安装会话，请先创建工作区后重试。',
+        selected: '已选择安装包', confirm: '确认安装', installing: '正在安装工作台，请稍候…', cancel: '取消安装', cancelling: '正在取消安装…', cancelled: '安装已取消，可以重新选择文件或再次安装。',
+        installed: '查看已安装的工作台',
+        failed: '安装未完成，请查看详情后重试。', details: '查看错误详情', retry: '重试安装',
+        unknown: '暂时无法确认安装结果。请查询结果或查看已安装的工作台。若任务记录已过期或客户端已重启，请先保存工作，退出并重新打开客户端，核对已安装状态后再决定是否安装；不要重复提交未确认的安装。', query: '查询安装结果', querying: '正在查询安装结果…',
+        builds: '以下组件需要运行安装脚本。请确认来源及用途后决定是否继续。', approve: '允许这些安装脚本并重试',
+        unavailable: '当前客户端暂时无法安装工作台，请重新打开客户端后重试。', invalidFile: '请选择 .tgz 或 .tar.gz 工作台安装包。', noPath: '无法读取安装包位置，请在 DSH 桌面客户端中重新选择文件。',
+      },
+      en: {
+        title: 'Install workbench', close: 'Close', drop: 'Drop a package here or click to upload', formats: 'Supports .tgz and .tar.gz packages', oneFile: 'Choose one workbench package at a time.',
+        uploadHelp: 'Confirm installation to enable the workbench and open Installed automatically. Check that you trust the package source.',
+        chat: 'Install in a conversation', upload: 'Install from a package', fileLabel: 'Choose workbench package',
+        chatDraft: `I want to install a workbench. Guide me through choosing the workbench and its source, installation, enablement and verification.
+
+Understand what I want to install
+Reuse information I explicitly provided in this conversation. Ask one necessary question at a time and wait for my answer. If the workbench or source is unclear, first ask “Which workbench would you like to install? You can share a package, GitHub link or package name, or describe what you want to use it for.” If I only describe a need, help find suitable workbenches, explain their purpose and source, and wait for my selection. Resolve ambiguous candidates or versions using the conversation. Proceed once the information is sufficient.
+
+Check the source and requirements
+Use my package, GitHub link, npm package name or complete local directory. Read its actual documentation and metadata to verify its name, version, purpose, download method and client compatibility. Treat files and examples in a directory as material to inspect, and use my explicit choice as the installation target. Handle documentation links, source directories and installable packages according to their actual contents. Ask in plain language when a file, access permission or required configuration is missing.
+
+Install the workbench
+Check whether it is already installed, its version and running state. If it is ready to use, guide me to open it. Explain the impact and confirm with me before updating, replacing an existing version or handling local modifications. Reuse the installation tools supported by this client and follow their actual help. Inspect package contents before installing. For source installations, follow the project instructions to prepare dependencies, build and produce an installable package. Explain any additional installation scripts, permissions or external service configuration, then obtain the relevant confirmation. Preserve existing project files, conversations, drafts and business data.
+
+Enable and restart
+Check the actual installation result, then enable the workbench. If a restart is required, explain what is complete and what follows. When you run inside the target client, guide me to save my work, quit and reopen it manually, and wait for me to confirm the restart before continuing verification.
+
+Verify and handle problems
+Check the name, version and enabled state in Installed, confirm the workbench appears in the switcher, open its interface and try one main operation. If a step fails, identify its stage and original error, provide actionable recovery steps and continue verification. Query the current state when a result is uncertain. Finish with the installed version, how to open it, operations actually tested and any steps that still need my help. Base each completion claim on an observed result.
+
+Start by asking for the first piece of information still missing.`,
+        workspaceUnavailable: 'Could not prepare the installation conversation. Create a workspace and try again.',
+        selected: 'Selected package', confirm: 'Confirm installation', installing: 'Installing the workbench…', cancel: 'Cancel installation', cancelling: 'Cancelling installation…', cancelled: 'Installation cancelled. Choose another file or install again.',
+        installed: 'View installed workbenches',
+        failed: 'Installation could not finish. Review the details and retry.', details: 'View error details', retry: 'Retry installation',
+        unknown: 'The installation result is not confirmed. Query the result or check Installed. If the task receipt expired or the client restarted, save your work, quit and reopen the client, then verify Installed before deciding to install again. Do not submit an unconfirmed installation twice.', query: 'Query installation result', querying: 'Checking the installation result…',
+        builds: 'These components need to run installation scripts. Review their source and purpose before continuing.', approve: 'Allow these installation scripts and retry',
+        unavailable: 'Workbench installation is unavailable. Reopen the desktop app and try again.', invalidFile: 'Choose a .tgz or .tar.gz workbench package.', noPath: 'Could not read the package location. Choose the file again in the DSH desktop app.',
+      }
+    }
     const DOWNLOAD_NS = 'dsh-desktop-workbenches.download'
     const downloadCopy = {
       zh: { download_failed: '无法下载工作台安装包', download_interrupted: '工作台安装包下载中断', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
@@ -271,6 +334,7 @@ window.__ModuleLoader__.load({
         // Market records own business identity; Plugin Manager owns package lifecycle.
         this.installs = {}
         this.native = { status: NATIVE_STATUS.idle, bundles: {} }
+        this.localInstall = { phase: 'idle', file: null, requestId: null, pendingBuilds: [], error: '' }
         this.nativeTicket = 0
         this.togglingPlugin = null
         this.removingPlugin = null
@@ -502,6 +566,123 @@ window.__ModuleLoader__.load({
         this.publish()
         const active = this.state.active && (this.catalog.get(this.state.active) || { id: this.state.active })
         if (this.ready && active && this.activationFor(active) === 'off') this.run(this.leave())
+      }
+      async startInstallConversation() {
+        const t = this.ctx.locale.bind(INSTALL_NS)
+        const workspace = this.ctx.workspaces.list.getSnapshot().items.find(item => item.workspaceId === this.nativeLocation?.workspaceId)
+          || this.ctx.workspaces.list.getSnapshot().items[0]
+          || await this.ctx.workspaces.initializeDefault()
+        if (!workspace) throw new Error(t('workspaceUnavailable'))
+        if (this.state.active) await this.leave()
+        this.setMarketOpen(false)
+        const options = { prompt: t('chatDraft'), whenDraftExists: 'append' }
+        // Clear the panel first: selecting it after startSession aborts the
+        // workspace navigation before its draft can be initialized.
+        this.ctx.layout.selectPanel(null)
+        this.ctx.uiWorkspace.startSession(workspace.workspaceId, options)
+      }
+      updateLocalInstall(values) {
+        this.localInstall = { ...this.localInstall, ...values }
+        this.publish()
+      }
+      localInstallBusy() {
+        return ['installing', 'querying'].includes(this.localInstall.phase) || this.localInstall.cancelling === true
+      }
+      localInstallUnresolved() {
+        return this.localInstallBusy() || this.localInstall.phase === 'unknown'
+      }
+      localInstallCurrent(requestId) {
+        return this.localInstall.requestId === requestId && this.localInstallUnresolved()
+      }
+      selectWorkbenchPackage(file) {
+        if (!file || this.localInstallUnresolved()) return
+        const t = this.ctx.locale.bind(INSTALL_NS)
+        try {
+          if (!/\.(?:tgz|tar\.gz)$/iu.test(file.name)) throw new Error(t('invalidFile'))
+          const path = globalThis.__DSH_HOST_PATHS__?.pathFor(file)
+          if (!path) throw new Error(t('noPath'))
+          this.updateLocalInstall({ phase: 'selected', file: { name: file.name, path }, requestId: null, pendingBuilds: [], error: '', bundle: null, version: null, cancelling: false })
+        } catch (error) {
+          this.updateLocalInstall({ phase: 'error', file: null, requestId: null, pendingBuilds: [], error: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      async installWorkbenchPackage(approvedBuilds) {
+        if (this.localInstallUnresolved() || !this.localInstall.file) return
+        const manager = this.ctx.remote?.pluginManager
+        if (!manager?.installBundle) {
+          this.updateLocalInstall({ phase: 'error', error: this.ctx.locale.bind(INSTALL_NS)('unavailable') })
+          return
+        }
+        const requestId = globalThis.crypto.randomUUID()
+        this.updateLocalInstall({ phase: 'installing', requestId, pendingBuilds: [], error: '', cancelling: false })
+        try {
+          const reply = await manager.installBundle(this.localInstall.file.path, {
+            enabled: true, requestId, ...(approvedBuilds?.length ? { approvedBuilds } : {})
+          })
+          if (!this.localInstallCurrent(requestId)) return
+          if (!reply?.ok) throw new Error(reply?.error?.message || this.ctx.locale.bind(INSTALL_NS)('unknown'))
+          await this.settleWorkbenchPackage(reply.value, requestId)
+        } catch (error) {
+          // A lost RPC response cannot be treated as a failed installation and retried.
+          if (this.localInstallCurrent(requestId)) this.updateLocalInstall({ phase: 'unknown', error: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      async settleWorkbenchPackage(result, requestId) {
+        if (!this.localInstallCurrent(requestId)) return
+        if (result.application === 'cancelled') {
+          this.updateLocalInstall({ phase: 'cancelled', pendingBuilds: [], error: '', cancelling: false })
+          return
+        }
+        if (result.application === 'failed' || result.application === 'overridden') {
+          this.updateLocalInstall({ phase: 'error', cancelling: false, pendingBuilds: result.pendingBuilds || [], error: result.error?.diagnostic || result.packageResult?.output || result.error?.code || this.ctx.locale.bind(INSTALL_NS)('failed') })
+          return
+        }
+        if (!result.bundle) {
+          this.updateLocalInstall({ phase: 'unknown', error: this.ctx.locale.bind(INSTALL_NS)('unknown') })
+          return
+        }
+        this.recordApplication(result.bundle, result, undefined, 'install')
+        await this.refreshNative()
+        if (!this.localInstallCurrent(requestId)) return
+        this.updateLocalInstall({ phase: 'installed', bundle: result.bundle, version: result.version, pendingBuilds: [], error: '', cancelling: false })
+      }
+      async queryWorkbenchPackageInstall() {
+        if (this.localInstallBusy() || !this.localInstall.requestId) return
+        const requestId = this.localInstall.requestId
+        this.updateLocalInstall({ phase: 'querying', error: '' })
+        try {
+          const reply = await this.ctx.remote.pluginManager.waitForInstall(requestId)
+          if (!this.localInstallCurrent(requestId)) return
+          if (!reply?.ok || !reply.value) {
+            this.updateLocalInstall({ phase: 'unknown', error: reply?.error?.message || '' })
+            return
+          }
+          await this.settleWorkbenchPackage(reply.value, requestId)
+        } catch (error) {
+          if (this.localInstallCurrent(requestId)) this.updateLocalInstall({ phase: 'unknown', error: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      async cancelWorkbenchPackageInstall() {
+        if (!this.localInstallUnresolved() || !this.localInstall.requestId || this.localInstall.cancelling) return
+        const requestId = this.localInstall.requestId
+        this.updateLocalInstall({ cancelling: true })
+        try {
+          const reply = await this.ctx.remote.pluginManager.cancelInstall(requestId)
+          if (!this.localInstallCurrent(requestId)) return
+          if (!reply?.ok) throw new Error(reply?.error?.message || this.ctx.locale.bind(INSTALL_NS)('failed'))
+          // Only cancelled confirms that the manager finished cleanup. too-late
+          // and not-running must still recover the actual receipt (or stay unknown).
+          if (reply.value?.status === 'cancelled') {
+            await this.settleWorkbenchPackage({ application: 'cancelled' }, requestId)
+          } else {
+            this.updateLocalInstall({ phase: 'unknown', cancelling: false })
+            await this.queryWorkbenchPackageInstall()
+          }
+        } catch (error) {
+          if (this.localInstallCurrent(requestId)) {
+            this.updateLocalInstall({ cancelling: false, error: error instanceof Error ? error.message : String(error) })
+          }
+        }
       }
       async setPluginEnabled(name, enabled) {
         if (!name || this.native.status !== NATIVE_STATUS.ready || this.togglingPlugin) throw new Error('无法确定此工作台的原生插件状态。')
@@ -796,7 +977,8 @@ window.__ModuleLoader__.load({
           }
         }
         const error = this.error instanceof UnavailableWorkbenchError ? this.error.message : this.error
-        this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDismissed: this.errorDismissed,
+        this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDismissed: this.errorDismissed,
+
           catalogLoaded: this.catalogLoaded, catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, checkingUpdates: this.checkingUpdates, pending: this.pending, marketOpen: this.marketOpen,
           registrationFailures: [...this.registrationFailures.values()], catalog, categories: this.marketCategories, installs: this.installs, installing: this.installing || this.firstMarketInstall, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, restartReasons: this.restartReasons(), reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
         for (const listener of this.listeners) listener()
@@ -1713,10 +1895,10 @@ window.__ModuleLoader__.load({
       .dshWb{font-family:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);box-sizing:border-box}
       /* Only style controls owned by the Workbench UI. The native conversation
          is mounted inside .dshWbFrame and must keep its own composer styles. */
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea){font-family:inherit;font-size:13px;line-height:20px;color:inherit;box-sizing:border-box}
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button{cursor:pointer;transition:none}
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button:disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px}
+      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):not([data-dsh-wb-primitive]){font-family:inherit;font-size:13px;line-height:20px;color:inherit;box-sizing:border-box}
+      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button:not([data-dsh-wb-primitive]){cursor:pointer;transition:none}
+      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button:not([data-dsh-wb-primitive]):disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
+      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):not([data-dsh-wb-primitive]):focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px}
       .dshWbBtn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:6px;padding:5px 10px;white-space:nowrap}
       a.dshWbBtn{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
       .dshWbStatusForm{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin-top:12px}.dshWbStatusForm label{display:flex;flex-direction:column;gap:4px;flex:1 1 240px;min-width:0;font-size:13px}.dshWbStatusForm input{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:5px 8px;background:var(--dsw-alias-bg-layer-1);color:inherit}.dshWbStatusResult{flex-basis:100%;font-size:13px;line-height:1.6}
@@ -1744,7 +1926,7 @@ window.__ModuleLoader__.load({
       .dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}
       .dshWbMarket .dshWbRefresh{display:grid;place-items:center;width:30px;height:30px;min-width:30px;min-height:30px;max-width:30px;max-height:30px;padding:0;flex:none;border-radius:50%;corner-shape:round}.dshWbRefresh::before,.dshWbRefresh::after{corner-shape:round}.dshWbRefreshHint,.dshWbControlHint{position:relative;display:inline-flex;flex:none}.dshWbControlTooltip{display:none;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:5;padding:5px 8px;border-radius:5px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground);font-size:12px;line-height:18px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.12)}.dshWbRefreshHint:hover .dshWbControlTooltip,.dshWbRefreshHint:focus-within .dshWbControlTooltip,.dshWbControlHint:hover .dshWbControlTooltip,.dshWbControlHint:focus-within .dshWbControlTooltip,.dshWbMediaOpen:hover~.dshWbControlTooltip,.dshWbMediaOpen:focus-visible~.dshWbControlTooltip{display:block}.dshWbControlTooltip::after{content:"";position:absolute;left:50%;top:-4px;width:8px;height:8px;transform:translateX(-50%) rotate(45deg);background:inherit;border-radius:0}.dshWbCardControls .dshWbControlTooltip,.dshWbSwitchHint .dshWbControlTooltip{top:auto;bottom:calc(100% + 8px)}.dshWbCardControls .dshWbControlTooltip::after,.dshWbSwitchHint .dshWbControlTooltip::after,.dshWbMedia>.dshWbControlTooltip::after{top:auto;bottom:-4px}.dshWbMedia>.dshWbControlTooltip{top:auto;bottom:44px;left:auto;right:0;transform:none}.dshWbMedia>.dshWbControlTooltip::after{left:auto;right:20px;transform:rotate(45deg)}.dshWbCard:has(.dshWbControlHint:hover),.dshWbCard:has(.dshWbControlHint:focus-within),.dshWbCard:has(.dshWbMediaOpen:hover),.dshWbCard:has(.dshWbMediaOpen:focus-visible){z-index:4}.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}.dshWbRetry[aria-busy=true] svg,.dshWbUpdate[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}@keyframes dshWbSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.dshWbRefresh[aria-busy=true] svg,.dshWbRetry[aria-busy=true] svg,.dshWbUpdate[aria-busy=true] svg{animation:none}}
       .dshWbCheckUpdates{display:inline-flex;align-items:center;gap:6px;width:auto;padding:5px 10px}
-      .dshWbCreate{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;flex:none}
+      .dshWbCreate{flex:none}
       .dshWbToolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin:0 0 20px;padding-top:20px}
       .dshWbTabs{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
       .dshWbTabs [role=tablist]{display:flex;gap:4px;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:none}.dshWbTabs [role=tablist]::-webkit-scrollbar{display:none}
@@ -1820,6 +2002,7 @@ window.__ModuleLoader__.load({
       .dshWbDetailLightbox img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:6px}.dshWbLightboxClose{position:fixed;right:22px;top:22px;width:36px;height:36px;border:0;border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:20px;line-height:1}
       .dshWbModalBackdrop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(16,16,18,.52);padding:24px;overflow:auto;animation:dshWbFade .16s ease-out}
       .dshWbModal{background:var(--dsw-alias-bg-layer-1);border-radius:14px;max-width:880px;width:100%;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 18px 52px rgba(0,0,0,.24);animation:dshWbRise .2s cubic-bezier(.2,.8,.2,1)}
+      .dshWbInstallModal{width:min(520px,100%)}.dshWbDropzone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;width:100%;min-height:180px;margin-top:0;padding:24px;border:1px dashed var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;box-sizing:border-box}.dshWbDropzone strong{max-width:100%;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary);font-size:15px}.dshWbDropzone span{font-size:12px}.dshWbDropzone:is(:hover,:focus-visible,[data-dragging=true]){border-color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.dshWbDropzone:disabled{cursor:default;opacity:.6}.dshWbInstallDiagnostic{white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;font-size:12px}
       .dshWbModal h2{margin:0}.dshWbModal p{font-size:14px;line-height:22px;margin:12px 0 0}.dshWbConfirm{max-width:430px}.dshWbModal .dshWbMeta{margin-top:14px}.dshWbConfirmIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);margin-bottom:18px}.dshWbConfirm .dshWbActions{justify-content:flex-end;margin-top:24px}.dshWbDanger{color:#b42318}.dshWbDanger:hover:not(:disabled){background:rgba(180,35,24,.08)!important}
       @keyframes dshWbFade{from{opacity:0}to{opacity:1}}@keyframes dshWbRise{from{opacity:.75;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
       .dshWbDisabledHint{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:48px 24px;text-align:center;color:var(--dsw-alias-label-secondary);gap:8px}
@@ -2000,6 +2183,7 @@ window.__ModuleLoader__.load({
     function MarketIcon({ name, size = 15 }) {
       const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
       if (name === 'author') return h('svg', common, h('circle', { cx: 12, cy: 8, r: 3.5 }), h('path', { d: 'M5.5 20c.7-4 2.9-6 6.5-6s5.8 2 6.5 6' }))
+      if (name === 'upload') return h('svg', common, h('path', { d: 'M12 16V4m0 0-4 4m4-4 4 4M4 16v4h16v-4' }))
       if (name === 'install') return h('svg', common, h('path', { d: 'M12 3v12m0 0 4-4m-4 4-4-4M5 20h14' }))
       if (name === 'bookmark') return h('svg', common, h('path', { d: 'M6.5 4.5A1.5 1.5 0 0 1 8 3h8a1.5 1.5 0 0 1 1.5 1.5V21L12 17.2 6.5 21V4.5Z' }))
       if (name === 'star') return h('svg', common, h('path', { d: 'm12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z' }))
@@ -2486,6 +2670,77 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h('span', { className: 'dshWbFailureIcon', tabIndex: 0, 'aria-label': both(`${label}详情：${tr(detail)}`, `${label} details: ${tr(detail)}`), 'aria-describedby': tooltipId }, h(MarketIcon, { name: 'failure', size: 17 })),
         h('span', { id: tooltipId, className: 'dshWbFailureTooltip', role: 'tooltip', tabIndex: 0 }, `${label}：${tr(detail)}`))
     }
+    const { Menu, Modal: InstallModal, Button: UiButton, IconDownloadOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
+    function WorkbenchInstallMenu({ service, onInstalled }) {
+      const t = service.ctx.locale.bind(INSTALL_NS)
+      const { localInstall: install } = useWorkbench(service)
+      const [menuOpen, setMenuOpen] = React.useState(false)
+      const [uploadOpen, setUploadOpen] = React.useState(false)
+      const busy = service.localInstallBusy()
+      React.useEffect(() => {
+        if (uploadOpen && install.phase === 'installed') {
+          setUploadOpen(false)
+          onInstalled()
+        }
+      }, [uploadOpen, install.phase, onInstalled])
+      const chooseMethod = id => {
+        setMenuOpen(false)
+        if (id === 'conversation') service.run(service.startInstallConversation())
+        else {
+          if (install.phase === 'installed') service.updateLocalInstall({ phase: 'idle', file: null, requestId: null, pendingBuilds: [], error: '' })
+          // Let the menu restore its trigger focus before the dialog captures it.
+          setTimeout(() => setUploadOpen(true), 0)
+        }
+      }
+      return h(React.Fragment, null,
+        h(Menu, { open: menuOpen, onClose: () => setMenuOpen(false), align: 'end', portal: true, autoFocus: true,
+          items: [{ id: 'conversation', label: t('chat') }, { id: 'upload', label: t('upload') }], onSelect: chooseMethod,
+          anchor: h(UiButton, { 'data-dsh-wb-primitive': true, variant: 'outline', icon: h(IconDownloadOutlineRegular, { size: 16 }), disabled: busy, 'aria-haspopup': 'menu', 'aria-expanded': menuOpen, onClick: () => setMenuOpen(open => !open) }, t('title')) }),
+        uploadOpen && h(UploadWorkbenchModal, { service, onClose: () => setUploadOpen(false), onInstalled: () => { setUploadOpen(false); onInstalled() } }))
+    }
+    function UploadWorkbenchModal({ service, onClose, onInstalled }) {
+      const t = service.ctx.locale.bind(INSTALL_NS)
+      const { localInstall: install } = useWorkbench(service)
+      const [dragging, setDragging] = React.useState(false)
+      const fileInput = React.useRef(null)
+      const busy = service.localInstallBusy()
+      const selectionLocked = service.localInstallUnresolved()
+      const canInstall = install.file && ['selected', 'error', 'cancelled'].includes(install.phase)
+      const dismiss = () => { if (!busy) onClose() }
+      const chooseFiles = files => {
+        if (selectionLocked || !files?.length) return
+        if (files.length > 1) {
+          service.updateLocalInstall({ phase: 'error', file: null, requestId: null, pendingBuilds: [], error: t('oneFile') })
+          return
+        }
+        service.selectWorkbenchPackage(files[0])
+      }
+      return h(InstallModal, {
+        open: true, onClose: dismiss, title: t('upload'), closeLabel: t('close'), description: t('uploadHelp'), className: 'dshWbInstallModal',
+        footer: h(React.Fragment, null,
+          h(UiButton, { variant: 'outline', disabled: busy, onClick: dismiss }, t('close')),
+          selectionLocked && install.requestId && h(UiButton, { variant: 'outline', disabled: install.cancelling, onClick: () => void service.cancelWorkbenchPackageInstall() }, t('cancel')),
+          install.phase === 'unknown' && h(UiButton, { variant: 'outline', disabled: busy, onClick: () => { if (!service.localInstallBusy()) onInstalled() } }, t('installed')),
+          install.phase === 'unknown' && h(UiButton, { variant: 'primary', disabled: busy, onClick: () => void service.queryWorkbenchPackageInstall() }, t('query')),
+          install.phase !== 'unknown' && h(UiButton, { variant: 'primary', disabled: !canInstall || busy, onClick: () => void service.installWorkbenchPackage(install.pendingBuilds) }, t(install.pendingBuilds.length ? 'approve' : install.phase === 'error' ? 'retry' : 'confirm')))
+      }, h('div', { 'aria-busy': busy },
+        h('input', { ref: fileInput, type: 'file', accept: '.tgz,.tar.gz', className: 'dshWbSrOnly', tabIndex: -1, 'aria-hidden': true, disabled: selectionLocked,
+          onChange: event => { const files = [...(event.currentTarget.files || [])]; event.currentTarget.value = ''; chooseFiles(files) } }),
+        h('button', { type: 'button', 'data-modal-autofocus': true, className: 'dshWbDropzone', 'data-dragging': dragging, disabled: selectionLocked,
+          onClick: () => fileInput.current?.click(),
+          onDragOver: event => { event.preventDefault(); if (!selectionLocked) setDragging(true) },
+          onDragLeave: event => { if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false) },
+          onDrop: event => { event.preventDefault(); setDragging(false); chooseFiles(event.dataTransfer.files) } },
+          h(MarketIcon, { name: 'upload', size: 30 }), h('strong', null, install.file ? install.file.name : t('drop')), h('span', null, t('formats'))),
+        h('div', { role: 'status', 'aria-live': 'polite' },
+          install.phase === 'installing' && h('p', null, t(install.cancelling ? 'cancelling' : 'installing')),
+          install.phase === 'querying' && h('p', null, t('querying')),
+          install.phase === 'cancelled' && h('p', null, t('cancelled'))),
+        (install.error || install.phase === 'unknown') && h('div', { role: 'alert' },
+          h('p', null, t(install.phase === 'unknown' ? 'unknown' : 'failed')),
+          install.error && h('details', null, h('summary', null, t('details')), h('pre', { className: 'dshWbInstallDiagnostic' }, install.error))),
+        install.pendingBuilds.length > 0 && h('div', null, h('p', null, t('builds')), h('ul', null, ...install.pendingBuilds.map(name => h('li', { key: name }, name))))))
+    }
     function Market({ service }) {
       useHostLocale(service)
       const { state, catalog, categories: marketCategories = [], ready, pending, installing, catalogLoaded, catalogError, catalogRefreshing, checkingUpdates, native, togglingPlugin, removingPlugin, removedWorkbenchIds = [] } = useWorkbench(service)
@@ -2572,8 +2827,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('h1', null, tab === 'submit' ? tr('制作属于你的工作台') : tr('工作台')),
             h('p', { className: 'dshWbMuted' }, tab === 'submit' ? tr('跟着 AI 助手做出工作台，先在本机试用，满意后还可以上架分享。') : tr('有序组织专属界面、会话与资料')), tab !== 'submit' && h('label', { className: 'dshWbSearch' }, h(MarketIcon, { name: 'search' }), h('input', { type: 'search', placeholder: tr('搜索名称、作者或分类'), 'aria-label': tr('搜索工作台'), value: search, onChange: (event) => { setSearch(event.target.value); setVisibleCount(PAGE_SIZE) } }))),
           h('div', { className: 'dshWbMarketHeaderActions' },
+            h(WorkbenchInstallMenu, { service, onInstalled: () => { selectCollection('mine'); setSearch(''); setCategory('all') } }),
 
-            h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus(null) } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? tr('返回工作台市场') : tr('制作我的工作台')))),
+            h(UiButton, { 'data-dsh-wb-primitive': true, variant: tab !== 'submit' ? 'primary' : 'outline', className: 'dshWbCreate', icon: h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus(null) } }, tab === 'submit' ? tr('返回工作台市场') : tr('制作我的工作台')))),
         h(Notice, { service, showCatalogStatus: true }),
         service.getSnapshot().registrationFailures?.length > 0 && h('div', { role: 'alert', className: 'dshWbFailureHint' },
           h('strong', null, registrationText(service.ctx, 'failed')),
@@ -2918,6 +3174,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       ctx.effect(() => ctx.locale.register(CREATE_NS, createCopy), 'workbenches: creation dictionaries')
       ctx.effect(() => ctx.locale.register(DOWNLOAD_NS, downloadCopy), 'workbenches: download dictionaries')
       ctx.effect(() => ctx.locale.register(REGISTRATION_NS, registrationCopy), 'workbenches: registration dictionaries')
+      ctx.effect(() => ctx.locale.register(INSTALL_NS, installCopy), 'workbenches: install dictionaries')
       ctx.effect(() => ctx.locale.register(RESTART_NS, restartCopy), 'desktop: restart dictionaries')
       const service = new Workbenches(ctx)
       ctx.effect(() => ctx.reflect.provide('desktopWorkbenches', service), 'workbenches: service')

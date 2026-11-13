@@ -208,6 +208,7 @@ export function createGenerationPackageBackend(options) {
             registry: request.registry,
             expectedVersion: request.expectedVersion,
             autoInstallPeers: request.autoInstallPeers,
+            strictDepBuilds: true,
             minimumReleaseAge: request.minimumReleaseAge,
             nodeExecutablePath,
             pnpmEntryPath,
