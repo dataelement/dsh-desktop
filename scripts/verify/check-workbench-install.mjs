@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile, readdir, realpath } from 'node:fs/
 import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { workbenchInstallIsolation, assertWorkbenchInstallPaths, prepareInstallInspector, inspectInstallPaths } from './workbench-install-isolation.mjs'
+import { connect, workbenchInstallIsolation, assertWorkbenchInstallPaths, prepareInstallInspector, inspectInstallPaths } from './workbench-install-isolation.mjs'
 
 const run = promisify(execFile)
 const executable = resolve(process.argv[2])
@@ -67,49 +67,6 @@ async function freePort() {
   const { port } = server.address()
   await new Promise(resolve => server.close(resolve))
   return port
-}
-
-// Drive the packaged renderer through Chromium's own debugging protocol. Files
-// enter its actual file input so the native preload must resolve their paths.
-async function connect(url) {
-  const socket = new WebSocket(url)
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      socket.close()
-      reject(new Error('Packaged renderer debugging connection timed out'))
-    }, 10_000)
-    socket.addEventListener('open', () => { clearTimeout(timer); resolve() }, { once: true })
-    socket.addEventListener('error', error => { clearTimeout(timer); reject(error) }, { once: true })
-  })
-  let id = 0
-  const pending = new Map()
-  socket.addEventListener('message', event => {
-    const message = JSON.parse(event.data)
-    const request = pending.get(message.id)
-    if (!request) return
-    pending.delete(message.id)
-    clearTimeout(request.timer)
-    if (message.error) request.reject(new Error(JSON.stringify(message.error)))
-    else request.resolve(message.result)
-  })
-  socket.addEventListener('close', () => {
-    for (const request of pending.values()) {
-      clearTimeout(request.timer)
-      request.reject(new Error('Packaged renderer disconnected'))
-    }
-    pending.clear()
-  })
-  return {
-    close: () => socket.close(),
-    send(method, params = {}) {
-      return new Promise((resolve, reject) => {
-        const requestId = ++id
-        const timer = setTimeout(() => { pending.delete(requestId); reject(new Error(`CDP timed out for ${method}`)) }, 30_000)
-        pending.set(requestId, { resolve, reject, timer })
-        socket.send(JSON.stringify({ id: requestId, method, params }))
-      })
-    }
-  }
 }
 
 async function evaluate(expression) {

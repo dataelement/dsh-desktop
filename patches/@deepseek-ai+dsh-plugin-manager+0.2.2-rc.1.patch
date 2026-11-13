@@ -96,9 +96,12 @@ index ea6b83f..0e348bb 100644
  				Object.assign(result, enabled ? await this.publishAndReload(this.bundleRows(name).map((row) => row.id)) : await this.reload());
  			}), {
  				stage: "enable",
-@@ -2719,5 +2728,7 @@ let PluginManager = (() => {
+@@ -2719,5 +2728,10 @@ let PluginManager = (() => {
  		installBundle(spec, options) {
  			const requestId = options?.requestId;
++			// An active id belongs to one control; never replace its cancellation/result owner.
++			if (requestId !== void 0 && this.installs.has(requestId)) return Promise.reject(new Error("Installation request id is already active"));
++
 +			// A reused id must never expose the receipt of an older attempt.
 +			if (requestId !== void 0) this.completedInstalls?.delete(requestId);
  			const control = {

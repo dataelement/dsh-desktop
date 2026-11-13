@@ -55,6 +55,92 @@ export function assertWorkbenchInstallPaths(plan, initialized) {
   return actual
 }
 
+/** Shared CDP transport for main and renderer. Event waits are explicitly armed
+ * before triggering commands, and disposed on success, cancellation or closure.
+ */
+export async function connect(url) {
+  const socket = new WebSocket(url)
+  let id = 0
+  let closed = false
+  const pending = new Map()
+  const events = new Set()
+  function failPending(error) {
+    for (const request of [...pending.values(), ...events]) request.finish(error)
+  }
+  socket.addEventListener('message', event => {
+    let message
+    try { message = JSON.parse(event.data) } catch (error) {
+      failPending(error)
+      socket.close()
+      return
+    }
+    if (message.id !== undefined) {
+      const request = pending.get(message.id)
+      if (request) request.finish(message.error ? new Error(JSON.stringify(message.error)) : null, message.result)
+    } else {
+      for (const request of [...events]) {
+        if (request.method === message.method) request.finish(null, message.params)
+      }
+    }
+  })
+  socket.addEventListener('close', () => {
+    closed = true
+    failPending(new Error('Packaged debugging connection disconnected'))
+  })
+  socket.addEventListener('error', () => failPending(new Error('Packaged debugging connection failed')))
+  await new Promise((resolve, reject) => {
+    const finish = error => {
+      clearTimeout(timer)
+      socket.removeEventListener('open', onOpen)
+      socket.removeEventListener('error', onError)
+      socket.removeEventListener('close', onClose)
+      if (error) { socket.close(); reject(error) } else resolve()
+    }
+    const onOpen = () => finish()
+    const onError = () => finish(new Error('Packaged debugging connection failed'))
+    const onClose = () => finish(new Error('Packaged debugging connection closed before opening'))
+    const timer = setTimeout(() => finish(new Error('Packaged debugging connection timed out')), 10_000)
+    socket.addEventListener('open', onOpen)
+    socket.addEventListener('error', onError)
+    socket.addEventListener('close', onClose)
+  })
+  function request(timeout, description, register, unregister) {
+    let finish
+    const promise = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => finish(new Error(`CDP timed out for ${description}`)), timeout)
+      finish = (error, value) => {
+        clearTimeout(timer)
+        unregister()
+        if (error) reject(error)
+        else resolve(value)
+      }
+      register({ finish })
+      if (closed) finish(new Error('Packaged debugging connection disconnected'))
+    })
+    return { promise, cancel: () => finish(new Error(`CDP wait cancelled for ${description}`)) }
+  }
+  return {
+    close() {
+      closed = true
+      failPending(new Error('Packaged debugging connection closed'))
+      socket.close()
+    },
+    waitForEvent(method, timeout = 30_000) {
+      assert(Number.isFinite(timeout) && timeout > 0, 'CDP event timeout must be positive and finite')
+      let entry
+      return request(timeout, method, value => { entry = { ...value, method }; events.add(entry) }, () => events.delete(entry))
+    },
+    send(method, params = {}) {
+      const requestId = ++id
+      const result = request(30_000, method, value => pending.set(requestId, value), () => pending.delete(requestId))
+      try { socket.send(JSON.stringify({ id: requestId, method, params })) } catch (error) {
+        pending.get(requestId)?.finish(error)
+      }
+      return result.promise
+    }
+  }
+}
+
 // Resolve Electron's built-in module without relying on a CommonJS global in
 // the packaged entry. Only fixed path diagnostics cross this inspector channel.
 const electronApp = `process.getBuiltinModule('module').createRequire(process.execPath)('electron').app`
@@ -69,10 +155,31 @@ export async function inspectInstallPaths(inspector) {
   return reply.result.value
 }
 
-/** Called while --inspect-brk is still waiting, before application code runs.
- * On any error, leave the process paused for the caller's scoped termination.
+/** Advance Node initialization, but stop at the --inspect-brk entry breakpoint.
+ * Runtime.evaluate before this pause has no process global on supported Node.
+ * Never substitute Debugger.pause: it could let application code run first.
  */
+export async function pauseInstallEntry(inspector) {
+  await inspector.send('Debugger.enable')
+  const paused = inspector.waitForEvent('Debugger.paused', 10_000)
+  // Observe rejection immediately, including when the command fails first.
+  const pauseResult = paused.promise.then(value => ({ value }), error => ({ error }))
+  try {
+    await inspector.send('Runtime.runIfWaitingForDebugger')
+    const result = await pauseResult
+    if (result.error) throw result.error
+    const frame = result.value?.callFrames?.[0]
+    assert.equal(result.value?.reason, 'Break on start', 'Expected --inspect-brk application entry breakpoint')
+    assert(frame?.location?.scriptId && !frame.url?.startsWith('node:'), 'Expected application entry script frame')
+    return result.value
+  } finally {
+    paused.cancel()
+  }
+}
+
+/** On any error, leave entry paused for the caller's scoped termination. */
 export async function prepareInstallInspector(inspector, plan) {
+  await pauseInstallEntry(inspector)
   const reply = await inspector.send('Runtime.evaluate', {
     expression: `(() => { const app = ${electronApp}; app.setPath('appData', ${JSON.stringify(plan.appData)}); app.setPath('home', ${JSON.stringify(plan.userHome)}); app.setPath('userData', ${JSON.stringify(plan.bootstrapUserData)}); app.setPath('sessionData', ${JSON.stringify(plan.bootstrapUserData)}); return true; })()`,
     returnByValue: true
@@ -82,5 +189,5 @@ export async function prepareInstallInspector(inspector, plan) {
   assert.equal(paths.appData, plan.appData, 'Electron appData must be isolated before startup')
   assert.equal(paths.osHome, plan.userHome, 'Electron OS home must be isolated before startup')
   assert.equal(paths.userData, plan.bootstrapUserData, 'Electron bootstrap userData must be isolated before startup')
-  await inspector.send('Runtime.runIfWaitingForDebugger')
+  await inspector.send('Debugger.resume')
 }

@@ -62,6 +62,29 @@ describe('Plugin Manager bounded terminal installation receipts', () => {
     } finally { clock.mockRestore() }
   })
 
+  it.each(['applied', 'rejected'])('rejects a duplicate active id without stealing the original control (%s)', async settlement => {
+    let resolve, reject
+    const transaction = new Promise((done, fail) => { resolve = done; reject = fail })
+    const { manager } = fixture()
+    manager.change.mockReturnValue(transaction)
+    const first = manager.installBundle('/fixture/first.tgz', { requestId: 'overlap' })
+    const control = manager.installs.get('overlap')
+    await expect(manager.installBundle('/fixture/other.tgz', { requestId: 'overlap' })).rejects.toThrow('already active')
+    expect(manager.installs.get('overlap')).toBe(control)
+    expect(manager.change).toHaveBeenCalledOnce()
+    if (settlement === 'applied') {
+      const outcome = { application: 'applied', bundle: 'first' }
+      resolve(outcome)
+      await first
+      expect(await manager.waitForInstall('overlap')).toBe(outcome)
+    } else {
+      reject(new Error('original lock timeout'))
+      await expect(first).rejects.toThrow('original lock timeout')
+      expect(await manager.waitForInstall('overlap')).toBeNull()
+    }
+    expect(manager.installs.has('overlap')).toBe(false)
+  })
+
   it('invalidates an older receipt when a reused request id rejects', async () => {
     const { manager, finish } = fixture()
     finish({ application: 'applied', bundle: 'old-package' })
