@@ -1,7 +1,9 @@
 import { it, expect } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, copyFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
@@ -61,20 +63,35 @@ it('real pnpm blocks undecided scripts, skips refused scripts, and executes appr
     const tooFresh = await installGeneration({ ...options, minimumReleaseAge: 1440 })
     expect(tooFresh.ok).toBe(false)
     expect(tooFresh.detail).toMatch(/minimumReleaseAge|NO_MATCHING_VERSION/)
-    const blocked = await installGeneration(options)
+    let blockedOutput = ''
+    const blocked = await installGeneration({ ...options, onOutput: chunk => { blockedOutput += chunk } })
     expect(blocked.ok).toBe(false)
     expect(blocked.detail).toContain('ERR_PNPM_IGNORED_BUILDS')
     const profile = join(home, 'profiles/web')
     await mkdir(profile, { recursive: true })
     const policyPath = join(profile, 'pnpm-workspace.yaml')
-    const deniedPolicy = 'allowBuilds:\n  dsh-test-build-dependency: false\n'
+    // Exercise the shipped manager parser/writer, not a hand-written bare-name
+    // approval: pnpm reports package@version and consent must stay that exact key.
+    const require = createRequire(import.meta.url)
+    const managerRoot = dirname(require.resolve('@deepseek-ai/dsh-plugin-manager/package.json'))
+    const { recordPendingBuilds, approveBuilds } = await import(pathToFileURL(join(managerRoot, 'lib/types/build-approval.js')).href)
+    const pending = await recordPendingBuilds(profile, blockedOutput)
+    expect(pending).toEqual(['dsh-test-build-dependency@1.0.0'])
+    await approveBuilds(profile, pending)
+    const approvedPolicy = await readFile(policyPath, 'utf8')
+    expect(approvedPolicy).toContain('dsh-test-build-dependency@1.0.0: true')
+    await writeFile(policyPath, 'allowBuilds: { "dsh-test-build-dependency@2.0.0": true }\n')
+    const otherVersion = await installGeneration(options)
+    expect(otherVersion.ok).toBe(false)
+    expect(otherVersion.detail).toContain('ERR_PNPM_IGNORED_BUILDS')
+    const deniedPolicy = 'allowBuilds: { "dsh-test-build-dependency@1.0.0": false } # explicit refusal\n'
     await writeFile(policyPath, deniedPolicy)
     const denied = await installGeneration(options)
     expect(denied.ok, denied.detail).toBe(true)
     await expect(readFile(join(denied.generation.directory, 'node_modules/dsh-test-build-dependency/built.js')))
       .rejects.toMatchObject({ code: 'ENOENT' })
     expect(await readFile(policyPath, 'utf8')).toBe(deniedPolicy)
-    await writeFile(policyPath, 'allowBuilds:\n  dsh-test-build-dependency: true\n')
+    await writeFile(policyPath, approvedPolicy)
     let buildOutput = ''
     const approved = await installGeneration({ ...options, onOutput: chunk => { buildOutput += chunk } })
     expect(approved.ok, approved.detail).toBe(true)

@@ -1,23 +1,52 @@
 import assert from 'node:assert/strict'
 import { spawn, execFile } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile, readdir, realpath } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, readdir, realpath } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { workbenchInstallIsolation, assertWorkbenchInstallPaths, prepareInstallInspector, inspectInstallPaths } from './workbench-install-isolation.mjs'
 
 const run = promisify(execFile)
 const executable = resolve(process.argv[2])
 const output = resolve(process.argv[3] || 'artifacts/workbench-install')
-const profile = `dsh-workbench-acceptance-${randomUUID()}`
-const userData = join(process.platform === 'win32' ? process.env.APPDATA : join(process.env.HOME, 'Library/Application Support'), profile)
-const home = join(userData, 'harness')
+// Fail before spawning on platforms whose native Electron appData isolation has
+// not been verified. This is the Windows packaged acceptance driver used by CI.
+assert.equal(process.platform, 'win32', 'Packaged installation acceptance currently supports isolated Windows launches only')
+let home
 const results = []
 let desktop
 let page
+let mainInspector
 
 await mkdir(output, { recursive: true })
 const fixtureRoot = await realpath(output)
+// mkdtemp owns a fresh subtree even when an artifact directory is reused. Keep
+// it as failure evidence; cleanup below only stops this driver's child process.
+const isolationRoot = await realpath(await mkdtemp(join(fixtureRoot, 'isolated-install-')))
+const isolation = workbenchInstallIsolation(process.platform, isolationRoot, process.env)
+await mkdir(isolation.appData, { recursive: true })
+await mkdir(isolation.env.LOCALAPPDATA, { recursive: true })
+await mkdir(isolation.bootstrapUserData, { recursive: true })
+
+async function verifyIsolatedProfile() {
+  const diagnostic = await inspectInstallPaths(mainInspector)
+  assert.equal(diagnostic.appData, isolation.appData, 'Electron must retain isolated appData')
+  assert.equal(diagnostic.osHome, isolation.userHome, 'Electron must retain isolated OS home')
+  assertWorkbenchInstallPaths(isolation, [diagnostic])
+  const initialized = []
+  for (const candidate of isolation.candidates) {
+    try {
+      await readFile(join(candidate.home, 'profiles/desktop/package.json'), 'utf8')
+      initialized.push({ userData: await realpath(candidate.userData), home: await realpath(candidate.home) })
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+  }
+  const verified = assertWorkbenchInstallPaths(isolation, initialized)
+  assert.equal(verified.userData.toLowerCase(), diagnostic.userData.toLowerCase(), 'Initialized profile must match actual Electron userData')
+  home = verified.home
+  results.push({ stage: 'isolated-profile', initialized: true })
+}
 
 async function waitFor(description, action, timeout = 90_000) {
   const deadline = Date.now() + timeout
@@ -112,39 +141,51 @@ async function screenshot(name) {
 
 async function startDesktop() {
   const debugPort = await freePort()
+  const inspectorPort = await freePort()
   const env = {
-    ...process.env, DSH_DEV_PROFILE: profile,
+    ...isolation.env,
     DSH_DEV_HARNESS_PORT: String(await freePort()), DSH_DEV_MOBILE_PORT: String(await freePort())
   }
   delete env.ELECTRON_RUN_AS_NODE
-  desktop = spawn(executable, [`--remote-debugging-port=${debugPort}`], {
+  desktop = spawn(executable, [`--inspect-brk=127.0.0.1:${inspectorPort}`, `--remote-debugging-port=${debugPort}`], {
     cwd: fixtureRoot, env, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe']
   })
   let diagnostics = ''
   desktop.stdout.on('data', chunk => { diagnostics = (diagnostics + chunk).slice(-16_384) })
   desktop.stderr.on('data', chunk => { diagnostics = (diagnostics + chunk).slice(-16_384) })
   desktop.on('error', error => { diagnostics += error.message })
-  let importSkipped = false
+  const mainTarget = await waitFor('paused packaged main process inspector', async () => {
+    if (desktop.exitCode !== null) throw new Error(`Desktop exited with ${desktop.exitCode}`)
+    const targets = await fetch(`http://127.0.0.1:${inspectorPort}/json/list`, { signal: AbortSignal.timeout(2000) }).then(response => response.json())
+    return targets.find(target => target.type === 'node' && target.webSocketDebuggerUrl)
+  })
+  mainInspector = await connect(mainTarget.webSocketDebuggerUrl)
+  // APPDATA may be ignored by native Windows APIs. Set and read actual Electron
+  // paths while its entry is paused; never resume an unverified application.
+  await prepareInstallInspector(mainInspector, isolation)
   const target = await waitFor('packaged application renderer', async () => {
     if (desktop.exitCode !== null) throw new Error(`Desktop exited with ${desktop.exitCode}\n${diagnostics}`)
     const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(2000) }).then(response => response.json())
     const importPage = targets.find(target => target.type === 'page' && target.url.includes('/web-import.html'))
-    if (importPage && !importSkipped) {
-      page = await connect(importPage.webSocketDebuggerUrl)
-      await click("document.getElementById('skip')")
-      page.close()
-      page = undefined
-      importSkipped = true
-    }
+    // An empty isolated OS home cannot offer web import. Never acknowledge an
+    // unexpected import prompt: doing so could mutate a non-isolated profile.
+    assert(!importPage, 'Unexpected web import prompt in an empty isolated home')
     return targets.find(target => target.type === 'page' && target.url.startsWith('dsh-app://app'))
   })
   page = await connect(target.webSocketDebuggerUrl)
   await page.send('Page.enable')
+  // Observe the initialized profile before workspace/session creation, file
+  // input selection, or any installation action. Recheck after every restart.
+  await verifyIsolatedProfile()
+  mainInspector.close()
+  mainInspector = undefined
   console.log('Connected to packaged renderer')
   await waitFor('workbench sidebar', () => evaluate(`!!${textButton('/^(工作台|Workbenches)$/')}`), 120_000)
 }
 
 async function stopDesktop() {
+  mainInspector?.close()
+  mainInspector = undefined
   page?.close()
   page = undefined
   if (!desktop || desktop.exitCode !== null || desktop.signalCode !== null) return

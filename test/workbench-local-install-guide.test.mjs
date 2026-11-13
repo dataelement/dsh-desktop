@@ -14,7 +14,7 @@ const Modal = ({ open, onClose, title, closeLabel, description, children, footer
     React.createElement('p', null, description), children, footer), document.body)
 import { JSDOM } from 'jsdom'
 import { afterEach, expect, it, vi } from 'vitest'
-import { parseInstallSpec } from '@deepseek-ai/dsh-plugin-manager'
+import { parseInstallSpec, PluginManager } from '@deepseek-ai/dsh-plugin-manager'
 
 const source = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
 let root, dom
@@ -186,6 +186,29 @@ it('queries an uncertain result without installing the package a second time', a
   expect(ui.manager.waitForInstall).toHaveBeenCalledWith(ui.service.localInstall.requestId)
   expect(ui.onInstalled).toHaveBeenCalledOnce()
   expect(dom.window.document.querySelector('[role=dialog]')).toBeNull()
+})
+it('recovers the actual manager terminal receipt after transport loses the final reply', async () => {
+  const ui = await mount('en')
+  const manager = Object.assign(Object.create(PluginManager.prototype), {
+    installs: new Map(),
+    ownerContext: { emit: vi.fn() },
+    change: vi.fn(async () => ({ application: 'applied', bundle: 'shared-workbench', version: '1.0.0' }))
+  })
+  ui.manager.installBundle.mockImplementation(async (spec, options) => {
+    await manager.installBundle(spec, options)
+    throw new Error('Terminal RPC reply lost')
+  })
+  ui.manager.waitForInstall.mockImplementation(async id => ({ ok: true, value: await manager.waitForInstall(id) }))
+  await ui.openUpload()
+  await selectFile()
+  await act(async () => ui.button('Confirm installation').click())
+  expect(manager.installs.size).toBe(0)
+  expect(ui.service.localInstall.phase).toBe('unknown')
+  await act(async () => ui.button('Query installation result').click())
+  expect(ui.service.localInstall.phase).toBe('installed')
+  expect(ui.onInstalled).toHaveBeenCalledOnce()
+  expect(ui.manager.installBundle).toHaveBeenCalledOnce()
+  expect(manager.change).toHaveBeenCalledOnce()
 })
 it.each(['shared.tgz', 'another.tgz', 'unsupported.zip'])('retains the unresolved task when reselecting %s and queries after reopening', async name => {
   const ui = await mount('en')

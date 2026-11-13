@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import semver from 'semver'
+import { isAlias, isMap, isScalar, parseDocument, visit } from 'yaml'
 import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
@@ -108,7 +109,11 @@ function installationClosureDir(dshHome) {
 }
 
 function safeBuildApprovalKey(key) {
-  return FILE_ALLOW_BUILD_PATTERN.test(key) || PACKAGE_NAME_PATTERN.test(key) ||
+  const separator = key.lastIndexOf('@')
+  const registryIdentity = separator > 0 && PACKAGE_NAME_PATTERN.test(key.slice(0, separator)) &&
+    /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(key.slice(separator + 1)) &&
+    semver.valid(key.slice(separator + 1)) !== null
+  return registryIdentity || FILE_ALLOW_BUILD_PATTERN.test(key) || PACKAGE_NAME_PATTERN.test(key) ||
     GIT_ALLOW_BUILD_PATTERN.test(key) ||
     CODELOAD_ALLOW_BUILD_PATTERN.test(key)
 }
@@ -122,23 +127,23 @@ function safeBuildApprovalKey(key) {
  */
 function generationBuildPolicy(workspaceYaml) {
   if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return new Map()
-  const blockPattern = /allowBuilds:[ \t]*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)*)/gu
+  const document = parseDocument(workspaceYaml)
+  if (document.errors[0] !== undefined) throw document.errors[0]
+  if (!isMap(document.contents)) throw new Error('pnpm-workspace.yaml must be a YAML mapping')
+  const builds = document.get('allowBuilds', true)
+  if (builds !== undefined && !isMap(builds)) throw new Error('allowBuilds must be a YAML mapping')
+  // Match the manager's fail-closed policy: aliases/anchors cannot supply consent.
+  visit(builds ?? null, (_key, node) => {
+    if (isAlias(node) || node?.anchor) {
+      throw new Error('allowBuilds must not contain YAML anchors or aliases')
+    }
+  })
   const decisions = new Map()
-  for (const block of workspaceYaml.matchAll(blockPattern)) {
-    for (const line of block[1].split(/\r?\n/u)) {
-      const match = /^[ \t]+(\S.*?)\s*:\s*(true|false)\s*$/u.exec(line)
-      if (match === null) continue
-      let key = match[1]
-      if (
-        key.length >= 2 &&
-        ((key.startsWith("'") && key.endsWith("'")) ||
-          (key.startsWith('"') && key.endsWith('"')))
-      ) {
-        if (key.startsWith('"')) {
-          try { key = JSON.parse(key) } catch { continue }
-        } else key = key.slice(1, -1).replaceAll("''", "'")
-      }
-      if (safeBuildApprovalKey(key)) decisions.set(key, match[2] === 'true')
+  for (const { key, value } of builds?.items ?? []) {
+    if (isScalar(key) && !key.tag && typeof key.value === 'string' && safeBuildApprovalKey(key.value) &&
+        isScalar(value) && !value.tag && typeof value.value === 'boolean') {
+      // Keep version-bound consent exact; never widen package@version to package.
+      decisions.set(key.value, value.value)
     }
   }
   return decisions

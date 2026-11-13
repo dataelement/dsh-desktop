@@ -647,7 +647,8 @@ describe('prerelease parity workflow', () => {
     const yml = await load()
     expect(yml).toContain('SMOKE_EXE')
     const acceptance = await readFile(path.join(projectRoot, 'scripts/verify/check-workbench-install.mjs'), 'utf8')
-    expect(acceptance).toContain('DSH_DEV_PROFILE: profile')
+    expect(acceptance).toContain('workbenchInstallIsolation(process.platform, isolationRoot, process.env)')
+    expect(acceptance).toContain('await verifyIsolatedProfile()')
   })
 })
 

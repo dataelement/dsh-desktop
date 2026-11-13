@@ -96,7 +96,15 @@ index ea6b83f..0e348bb 100644
  				Object.assign(result, enabled ? await this.publishAndReload(this.bundleRows(name).map((row) => row.id)) : await this.reload());
  			}), {
  				stage: "enable",
-@@ -2726,24 +2735,62 @@ let PluginManager = (() => {
+@@ -2719,5 +2728,7 @@ let PluginManager = (() => {
+ 		installBundle(spec, options) {
+ 			const requestId = options?.requestId;
++			// A reused id must never expose the receipt of an older attempt.
++			if (requestId !== void 0) this.completedInstalls?.delete(requestId);
+ 			const control = {
+ 				abort: new AbortController(),
+ 				phase: "installing",
+@@ -2726,24 +2737,62 @@ let PluginManager = (() => {
  				});
  			};
  			const result = this.change(async (result) => {
@@ -278,7 +286,50 @@ index ea6b83f..0e348bb 100644
  			}, {
  				stage: "install",
  				target: spec,
-@@ -2909,20 +2982,22 @@ let PluginManager = (() => {
+@@ -2867,16 +2940,37 @@ let PluginManager = (() => {
+ 				enabled: options?.enabled !== false
+ 			}, "install");
+ 			control.result = result;
+-			return result.finally(() => {
++			return result.then((outcome) => {
++				// Desktop may lose the terminal RPC reply. Keep a bounded, process-local
++				// receipt; never rerun installation merely because its active task ended.
++				if (requestId !== void 0) {
++					this.pruneInstallReceipts();
++					this.completedInstalls.delete(requestId);
++					this.completedInstalls.set(requestId, { outcome, expires: Date.now() + 10 * 60 * 1000 });
++					while (this.completedInstalls.size > 64) this.completedInstalls.delete(this.completedInstalls.keys().next().value);
++				}
++				return outcome;
++			}).finally(() => {
+ 				if (requestId !== void 0) this.installs.delete(requestId);
+ 			});
+ 		}
+-		/** Recover the result of an active installation without cancelling it.
++		/** Desktop compatibility: remove expired receipts without timers or disk writes.
++		* Remove this adapter when upstream retains bounded terminal install results.
++		*/
++		pruneInstallReceipts() {
++			this.completedInstalls ??= new Map();
++			const now = Date.now();
++			for (const [id, receipt] of this.completedInstalls) {
++				if (receipt.expires <= now) this.completedInstalls.delete(id);
++			}
++		}
++		/** Recover the result of an active or recently completed installation without cancelling it.
+ 		* @param requestId The id supplied when installation started.
+-		* @returns The installation's outcome after it settles, or null if no active request has that id.
+-		* Completed results are not retained; null establishes neither success nor cancellation.
++		* @returns The outcome, retained for at most 10 minutes and 64 completed requests per manager.
++		* An expired or unknown id returns null; null establishes neither success nor cancellation.
+ 		*/
+ 		async waitForInstall(requestId) {
+-			return this.installs.get(requestId)?.result ?? null;
++			this.pruneInstallReceipts();
++			return this.installs.get(requestId)?.result ?? this.completedInstalls.get(requestId)?.outcome ?? null;
+ 		}
+ 		/** Stop an installation this manager owns and wait until its files are back.
+@@ -2909,20 +3009,22 @@ let PluginManager = (() => {
  					if (bundle === void 0 || !bundle.removable) throw new ManagementFailure("not-removable");
  					if (this.ownerContext.get("hmr") === void 0 && (this.profile.startedBundles.includes(name) || bundle.error === void 0 && this.bundleRows(name).some((row) => [...this.ctx.loader.entries()].some((entry) => entry.options.id === row.id && entry.fiber !== void 0)))) throw new ManagementFailure("stop-profile");
  					const contributions = bundle.error === void 0 ? this.bundleRows(name) : [];
