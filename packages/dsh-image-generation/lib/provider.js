@@ -1,6 +1,8 @@
 export const DEFAULTS = Object.freeze({
   bytedance: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedream-4-5-251128' },
   openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-1.5' },
+  xai: { baseUrl: 'https://api.x.ai/v1', model: 'grok-imagine-image' },
+  agnes: { baseUrl: 'https://apihub.agnes-ai.com/v1', model: 'agnes-image-2.5-flash' },
 })
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 // Models documented by Images API; text, legacy DALL-E and unknown adapters
@@ -18,6 +20,19 @@ export const MODEL_CATALOG = Object.freeze({
     DEFAULTS.bytedance.model,
     'doubao-seedream-4-0-250828',
   ] },
+  // xAI Imagine image models, checked 2026-09-22:
+  // https://docs.x.ai/developers/models
+  xai: { source: 'builtin', canFetch: false, models: [
+    'grok-imagine-image',
+    'grok-imagine-image-quality',
+  ] },
+  // Agnes image models, checked 2026-09-22:
+  // https://wiki.agnes-ai.com/zh-Hans/docs/agnes-image-25-flash
+  agnes: { source: 'builtin', canFetch: false, models: [
+    DEFAULTS.agnes.model,
+    'agnes-image-2.1-flash',
+    'agnes-image-2.0-flash',
+  ] },
 })
 
 export class ImageError extends Error {
@@ -30,7 +45,7 @@ export function safeError(error) {
   return new ImageError('UNAVAILABLE', 'The image service is unavailable. Check the connection and try again.', 502)
 }
 export function profile(provider, input = {}) {
-  if (!Object.hasOwn(DEFAULTS, provider)) throw new ImageError('PROVIDER', 'Choose OpenAI or ByteDance.')
+  if (!Object.hasOwn(DEFAULTS, provider)) throw new ImageError('PROVIDER', 'Choose OpenAI, ByteDance, xAI or Agnes.')
   const model = String(input.model ?? DEFAULTS[provider].model).trim()
   if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(model)) throw new ImageError('MODEL', 'Enter a valid model ID.')
   let url
@@ -63,7 +78,7 @@ export async function readBounded(response, maxBytes, signal) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
 }
 
-const IMAGE_PARAMETERS = new Set(['model', 'prompt', 'size', 'response_format', 'output_format', 'quality', 'n', 'watermark', 'stream', 'sequential_image_generation', 'sequential_image_generation_options', 'image', 'background', 'moderation'])
+const IMAGE_PARAMETERS = new Set(['model', 'prompt', 'size', 'response_format', 'output_format', 'quality', 'n', 'watermark', 'stream', 'sequential_image_generation', 'sequential_image_generation_options', 'image', 'background', 'moderation', 'aspect_ratio', 'ratio', 'return_base64'])
 // Keep actionable identifiers, rather than forwarding a provider's free-form
 // message: an upstream error can echo credentials, prompts or a proxy HTML page.
 function providerFailure(response, payload, key, probe) {
@@ -135,13 +150,23 @@ export async function listModels(provider, spec, key, options = {}) {
   return { source: 'provider', canFetch: true, models: [...OPENAI_IMAGES].filter(id => ids.has(id)) }
 }
 
-/** One non-generating request: OpenAI model metadata or Ark required-prompt validation. */
+/** One non-generating request: OpenAI model metadata, Ark required-prompt validation,
+ * or the OpenAI-compatible model list used by xAI and Agnes. */
 export async function validateConnection(provider, spec, key, options = {}) {
   const signal = AbortSignal.any([AbortSignal.timeout(15_000), ...(options.signal ? [options.signal] : [])])
   if (provider === 'openai') {
     const result = await request(`${spec.baseUrl}/models/${encodeURIComponent(spec.model)}`, key, { ...options, signal })
     if (result.id !== spec.model) throw new ImageError('MODEL', 'The requested model was not returned by the provider.')
     return 'model'
+  }
+  if (provider === 'xai' || provider === 'agnes') {
+    // Both gateways expose the OpenAI-compatible model list. Reaching it proves
+    // the connection and key; the model is confirmed when the list includes it,
+    // while an unlisted custom endpoint ID still validates as a connection.
+    const result = await request(`${spec.baseUrl}/models`, key, { ...options, signal })
+    if (!Array.isArray(result.data)) throw new ImageError('RESPONSE', 'The provider returned an invalid model list.', 502)
+    const ids = new Set(result.data.filter(model => model && typeof model.id === 'string').map(model => model.id))
+    return ids.has(spec.model) ? 'model' : 'connection'
   }
   const result = await request(`${spec.baseUrl}/images/generations`, key, { ...options, signal, body: { model: spec.model }, parameterProbe: true })
   if (result.probe === 'connection') return 'connection'
@@ -153,13 +178,26 @@ export function generationBody(provider, spec, args) {
   const style = typeof args.style_context === 'string' ? args.style_context.trim() : ''
   if (!prompt || prompt.length + style.length > 8000) throw new ImageError('PROMPT', 'Enter an image description of up to 8000 characters including style context.')
   const ratio = args.aspect_ratio ?? '1:1'
+  const composed = [prompt, style && `Art direction: ${style}`, args.purpose && `Intended use: ${args.purpose}`, `Compose for ${ratio}. Keep important subjects inside the safe central area for cropping.`].filter(Boolean).join('\n\n')
+  if (provider === 'xai') {
+    // The Imagine API composes through aspect_ratio; a size hint is rejected.
+    const ratios = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '2:3', '3:2'])
+    if (!ratios.has(ratio)) throw new ImageError('RATIO', 'Choose a supported image aspect ratio.')
+    return { model: spec.model, prompt: composed, n: 1, response_format: 'b64_json', aspect_ratio: ratio }
+  }
+  if (provider === 'agnes') {
+    // Agnes takes a resolution tier plus an independent ratio enum.
+    const ratios = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '2:3', '3:2', '21:9'])
+    if (!ratios.has(ratio)) throw new ImageError('RATIO', 'Choose a supported image aspect ratio.')
+    return { model: spec.model, prompt: composed, size: '2K', ratio, return_base64: true }
+  }
   const sizes = provider === 'openai'
     ? { '1:1': '1024x1024', '16:9': '1536x1024', '9:16': '1024x1536', '4:3': '1536x1024', '3:4': '1024x1536' }
     : { '1:1': '2048x2048', '16:9': '2560x1440', '9:16': '1440x2560', '4:3': '2304x1728', '3:4': '1728x2304' }
   if (!sizes[ratio]) throw new ImageError('RATIO', 'Choose a supported image aspect ratio.')
   return {
     model: spec.model,
-    prompt: [prompt, style && `Art direction: ${style}`, args.purpose && `Intended use: ${args.purpose}`, `Compose for ${ratio}. Keep important subjects inside the safe central area for cropping.`].filter(Boolean).join('\n\n'),
+    prompt: composed,
     size: sizes[ratio],
     ...(provider === 'openai'
       ? { n: 1, quality: 'auto', output_format: 'png' }
