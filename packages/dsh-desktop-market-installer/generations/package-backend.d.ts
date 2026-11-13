@@ -21,6 +21,8 @@ export interface ProfileBundleInstallRequest {
 
 export interface ProfileBundlePackageBackend {
   readonly supportsVerifiedInstall: true
+  /** Desired generations not yet selected by this Profile; same check as the mutation guard. */
+  readRestartStatus(): Promise<{ restartRequired: boolean; packages: string[] }>
   /** Installs every bundle, including the market, as an immutable generation. */
   install(request: ProfileBundleInstallRequest): Promise<{
     packageResult: PackageResult

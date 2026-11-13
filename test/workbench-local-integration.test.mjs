@@ -122,7 +122,11 @@ describe('local workbench registration through real host state routes', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(() => service.register({ title: 'Broken', repository: 'not-a-repository' }, () => null)).toThrow()
-      await act(async () => view.render(React.createElement(exports.Market, { service })))
+      await act(async () => view.render(React.createElement(React.Fragment, null,
+        React.createElement(exports.Market, { service }),
+        React.createElement(exports.RestartNotice, { service, t: key => key }))))
+      expect(container.querySelector('.dshWbMarket [role="alert"]')).toBeNull()
+      await act(async () => container.querySelector('.dshRestartNotice [aria-expanded]').click())
       expect(container.querySelector('[role="alert"]').textContent).toContain('broken-review')
       expect(container.querySelector('[role="alert"]').textContent).toContain('GitHub URL')
       let dispose

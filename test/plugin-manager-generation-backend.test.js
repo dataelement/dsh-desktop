@@ -3,7 +3,7 @@ import { copyFile, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writ
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createGenerationPackageBackend } from '../packages/dsh-desktop-market-installer/generations/package-backend.mjs'
+import { assertNoPendingGenerationUpdates, createGenerationPackageBackend } from '../packages/dsh-desktop-market-installer/generations/package-backend.mjs'
 import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection.mjs'
 import { listGenerations, readDesired, resolveEnabledGenerations } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
 import { readDisabledPlugins } from '../packages/dsh-desktop-market-installer/plugin-state.mjs'
@@ -378,6 +378,12 @@ describe('Plugin Manager generation package backend', () => {
     const staged = await makeBackend('plugin-b', '2.0.0').install({ spec: 'plugin-b@2.0.0', kind: 'registry' })
     expect(staged.restartRequired).toBe(true)
     staged.commit()
+    expect(await b.readRestartStatus()).toEqual({ restartRequired: true, packages: ['plugin-b'] })
+    await expect(assertNoPendingGenerationUpdates(home, 'web', 'plugin-d')).rejects.toMatchObject({
+      code: 'pending-generation-update', restartRequired: true, packages: ['plugin-b']
+    })
+    // A newly-created backend must not baseline away an already pending npm update.
+    expect(await makeBackend('plugin-d', '1.0.0').readRestartStatus()).toEqual({ restartRequired: true, packages: ['plugin-b'] })
     const beforeDesired = await readDesired(home)
     const manifestPath = join(profile, 'package.json')
     const beforeManifest = await readFile(manifestPath, 'utf8')
@@ -406,6 +412,7 @@ describe('Plugin Manager generation package backend', () => {
     newer.commit()
     if (finish === 'cancel') expect((await b.remove({ name: 'plugin-b' })).packageResult.exitCode).toBe(0)
     else await projectGenerations(home)
+    expect(await b.readRestartStatus()).toEqual({ restartRequired: false, packages: [] })
     const accepted = await d.install({ spec: 'plugin-d@1.0.0', kind: 'registry' })
     expect(accepted.packageResult.exitCode).toBe(0)
     accepted.commit()

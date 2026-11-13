@@ -2679,6 +2679,16 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
 
+  it('retains failed install semantics while exposing an earlier pending package restart', async () => {
+    const { service } = await fixture()
+    service.request = async () => Response.json({ application: 'failed', error: 'Pending generation update', result: { application: 'failed' }, restartRequired: true, restartPackages: ['pending-plugin'] }, { status: 409 })
+    await expect(service.marketPackage('/api/desktop-workbenches/market-install', 'o/helper')).rejects.toThrow('Pending generation update')
+    expect(service.restartNeeded).toBe(true)
+    expect(service.restartReasons()).toContain('pending-plugin')
+    expect(service.applicationOutcomes.size).toBe(0)
+    expect(service.installing).toBeNull()
+  })
+
   const listed = (patch = {}) => ({ id: 'o/helper', owner: 'o', repository: 'helper', url: 'https://github.com/o/helper', name: 'Helper', categoryName: '效率',
     description: { zh: '整理资料。' }, screenshots: [], version: '1.0.0', distribution: { type: 'npm', name: 'helper', version: '1.0.0' }, ...patch })
   function withMarket(service, routes) {
@@ -4604,21 +4614,22 @@ describe('repository-free local registration', () => {
     expect(service.getSnapshot().registrationFailures).toEqual([expect.objectContaining({ sourcePackage: 'broken-local', stage: 'register', message: expect.stringContaining('GitHub URL') })])
     ctx.locale = { bind: vi.fn(namespace => key => `${namespace}:${key}`) }
     const ui = interactiveMarket(service, 'mine')
-    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(1)
-    expect(ctx.locale.bind).toHaveBeenCalledWith('dsh-desktop-workbenches.registration')
+    // Diagnostics now belong to the global notification, never the market row.
+    // The mounted notification behavior is covered by harness-restart-notice.
+    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(0)
     expect(service.catalog.has('writer')).toBe(true)
     const dispose = service.register({ title: 'Fixed' }, () => null)
     expect(service.getSnapshot().registrationFailures).toEqual([])
     expect(() => service.register({ title: 'Duplicate' }, () => null)).toThrow('Duplicate')
     expect(service.getSnapshot().registrationFailures[0]).toMatchObject({ sourcePackage: 'broken-local', stage: 'register' })
-    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(1)
+    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(0)
     dispose()
     expect(service.catalog.has('local:broken-local')).toBe(false)
     expect(service.registrationFailures.size).toBe(0)
     delete ctx.fiber.entry
     expect(() => service.register({ title: 'Missing source' }, () => null)).toThrow('client package entry name')
     expect(service.getSnapshot().registrationFailures[0]).toMatchObject({ sourcePackage: '(unknown package)', stage: 'register' })
-    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(1)
+    expect(ui.find(ui.render(), node => node.props?.role === 'alert')).toHaveLength(0)
     warn.mockRestore()
     service.dispose()
   })

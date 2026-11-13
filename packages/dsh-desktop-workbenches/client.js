@@ -85,8 +85,8 @@ Start by asking for the first piece of information still missing.`,
     }
     const RESTART_NS = 'dsh-desktop-restart'
     const restartCopy = {
-      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。' },
-      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.' }
+      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。' },
+      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', operationFailed: 'Workbench operation could not finish', registrationFailed: 'A workbench could not load', diagnostics: 'View details for the full reason. Fix the issue, then reload workbenches.', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.' }
     }
     const registrationText = (ctx, key) => ctx.locale?.bind
       ? ctx.locale.bind(REGISTRATION_NS)(key)
@@ -835,6 +835,13 @@ Start by asking for the first piece of information still missing.`,
         const verified = evidence?.contentVerified && evidence.fingerprint
           ? installed.filter(id => this.installs[id].fingerprint === evidence.fingerprint && this.installs[id].version === evidence.version)
           : []
+        const remembered = Object.entries(this.knownProviders).filter(([id, entry]) => !id.startsWith('local:') && entry.sourcePackage === source).map(([id]) => id)
+        const historicallyReferenced = listed.some(id => this.state.added.includes(id) || this.state.pinned.includes(id)
+          || this.state.favorites.includes(id) || this.state.active === id || Object.values(this.state.sessionBindings).includes(id)
+          || Object.hasOwn(this.state.notes, id) || Object.hasOwn(this.state.recentSessions, id) || Object.hasOwn(this.state.hiddenWorkspaces, id))
+        // Discovery aliases cannot turn an unattributed local package into a market install.
+        if (evidence?.origin === 'local' && !installed.length && !declared && !legacy.length
+          && !remembered.length && !historicallyReferenced) return local
         const matches = verified.length ? [verified] : [installed, listed, legacy]
         const identities = [...new Set([...matches.flat(), ...(declared ? [declared] : [])])]
         if (identities.length > 1) {
@@ -843,13 +850,6 @@ Start by asking for the first piece of information still missing.`,
           if (declared && matches.every(ids => !ids.length || ids.includes(declared))) return declared
           throw new Error(`Client package ${source} matches multiple workbenches: ${identities.sort().join(', ')}.`)
         }
-        const remembered = Object.entries(this.knownProviders).filter(([id, entry]) => !id.startsWith('local:') && entry.sourcePackage === source).map(([id]) => id)
-        const historicallyReferenced = listed.some(id => this.state.added.includes(id) || this.state.pinned.includes(id)
-          || this.state.favorites.includes(id) || this.state.active === id || Object.values(this.state.sessionBindings).includes(id)
-          || Object.hasOwn(this.state.notes, id) || Object.hasOwn(this.state.recentSessions, id) || Object.hasOwn(this.state.hiddenWorkspaces, id))
-        // A catalog package-name match is discovery, not a market installation receipt.
-        if (this.packageEvidence?.[source]?.origin === 'local' && !installed.length && !declared && !legacy.length
-          && !remembered.length && !historicallyReferenced) return local
         if (identities.length) return identities[0]
         if (remembered.length > 1) throw new Error(`Client package ${source} matches multiple workbenches: ${remembered.sort().join(', ')}.`)
         if (remembered.length) throw new Error(`Client package ${source} is not attributed to its previous market repository.`)
@@ -1078,6 +1078,12 @@ Start by asking for the first piece of information still missing.`,
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: catalogId, ...options })
           })
           const data = await readWorkbenchJson(response)
+          // A failed mutation can still be blocked by an earlier pending switch.
+          // Preserve failure semantics while surfacing its actual recovery action.
+          if (!response.ok && data.restartRequired === true) {
+            this.hostRestartNeeded = true
+            if (Array.isArray(data.restartPackages)) this.restartPackages = data.restartPackages.filter(name => typeof name === 'string')
+          }
           if (!response.ok) {
             const error = new Error(installErrorMessage(this.ctx, data, response.status))
             error.result = data.result
@@ -1856,7 +1862,7 @@ Start by asking for the first piece of information still missing.`,
         font-size:13px; line-height:20px; text-align:left; white-space:normal;
       }
       /* Version updates and workbench notifications share the lower-right corner. */
-      html:has([data-dsh-update-corner-visible]) .dshRestartNotice { display:none; }
+      html:has([data-dsh-update-corner-visible]) .dshRestartNotice { bottom:180px; max-height:calc(100vh - 208px); }
       .dshRestartRow { display:flex; gap:12px; align-items:center; }
       .dshRestartIcon {
         display:grid; place-items:center; flex:none; width:36px; height:36px;
@@ -1873,7 +1879,7 @@ Start by asking for the first piece of information still missing.`,
       }
       .dshRestartNotice .dshRestartPrimary {
         padding:6px 12px; font-weight:500;
-        background:var(--dsw-alias-button-primary-fill); color:var(--dsw-alias-label-primary-inverted);
+        background:var(--dsw-alias-button-primary-fill); color:var(--dsw-alias-label-primary-foreground);
       }
       .dshRestartNotice .dshRestartPrimary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover); }
       .dshRestartNotice .dshRestartToggle {
@@ -1884,7 +1890,10 @@ Start by asking for the first piece of information still missing.`,
       .dshRestartNotice button:disabled { opacity:.55; cursor:default; }
       .dshRestartDetails { margin-top:12px; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
       .dshRestartDetails ul { margin:0; padding-left:20px; }
-      .dshRestartDetails p { margin:8px 0 0; }
+      .dshRestartDetails p { margin:8px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+      .dshRestartDiagnostic { padding:8px 0; border-top:1px solid var(--dsw-alias-border-l2); }
+      .dshRestartDiagnostic strong { color:var(--dsw-alias-label-primary); }
+      .dshRestartDetails { max-height:240px; overflow:auto; }
       .dshRestartError { margin:12px 0 0; color:var(--dsw-alias-state-error-primary); }
       @media (max-width:480px) {
         .dshRestartRow { flex-wrap:wrap; }
@@ -1894,10 +1903,11 @@ Start by asking for the first piece of information still missing.`,
       html[data-dsh-workbench-active] [data-dsh-sidebar-new-session]{display:none!important}
       .dshWb{font-family:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);box-sizing:border-box}
       /* Only style controls owned by the Workbench UI. The native conversation
-         is mounted inside .dshWbFrame and must keep its own composer styles. */
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):not([data-dsh-wb-primitive]){font-family:inherit;font-size:13px;line-height:20px;color:inherit;box-sizing:border-box}
+         is mounted inside .dshWbFrame and must keep its own composer styles.
+         Keep reset specificity below component colors, including disabled states. */
+      :where(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :where(button,input,select,textarea):not([data-dsh-wb-primitive]){font-family:inherit;font-size:13px;line-height:20px;color:inherit;box-sizing:border-box}
       :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button:not([data-dsh-wb-primitive]){cursor:pointer;transition:none}
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button:not([data-dsh-wb-primitive]):disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
+      :where(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :where(button):not([data-dsh-wb-primitive]):disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
       :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):not([data-dsh-wb-primitive]):focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px}
       .dshWbBtn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:6px;padding:5px 10px;white-space:nowrap}
       a.dshWbBtn{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
@@ -2106,7 +2116,12 @@ Start by asking for the first piece of information still missing.`,
       return null
     }
     function RestartNotice({ service, t }) {
-      const { error: workbenchError, errorDismissed, pending: workbenchPending, restartNeeded, restartReasons } = useWorkbench(service)
+      const { error: workbenchError, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], registrationFailures = [] } = useWorkbench(service)
+      const operationError = workbenchError && !errorDismissed ? workbenchError : null
+      const failureKey = JSON.stringify(registrationFailures)
+      const [dismissedFailures, setDismissedFailures] = React.useState(null)
+      const showRegistration = registrationFailures.length > 0 && dismissedFailures !== failureKey
+      React.useEffect(() => { setDismissedFailures(null) }, [failureKey])
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState('')
       const pending = React.useRef(false)
@@ -2131,17 +2146,28 @@ Start by asking for the first piece of information still missing.`,
           if (live.current) setBusy(false)
         }
       }
-      if (workbenchError && !errorDismissed) {
+      const diagnosticItems = () => [
+        operationError && h('div', { key: 'operation', className: 'dshRestartDiagnostic' }, h('strong', null, t('operationFailed')), h('p', null, tr(operationError))),
+        showRegistration && h('div', { key: 'registration', className: 'dshRestartDiagnostic' },
+          h('strong', null, registrationText(service.ctx, 'failed')),
+          h('p', null, registrationText(service.ctx, 'guidance')),
+          ...registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` }, `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`)))
+      ]
+      const diagnostics = () => h('div', { id: details, className: 'dshRestartDetails' }, ...diagnosticItems())
+      if (!restartNeeded && (operationError || showRegistration)) {
         return h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert' },
           h('div', { className: 'dshRestartRow' },
             h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
               h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' },
                 h('circle', { cx: 12, cy: 12, r: 9 }),
                 h('path', { d: 'M12 8v4m0 4h.01' }))),
-            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, tr(workbenchError))),
+            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(operationError ? 'operationFailed' : 'registrationFailed')), h('p', { className: 'dshRestartDescription' }, t('diagnostics'))),
             h('div', { className: 'dshRestartActions' },
-              h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => service.dismissError() }, both('关闭', 'Dismiss')),
-              h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载')))))
+              h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => { service.dismissError(); setDismissedFailures(failureKey) } }, both('关闭', 'Dismiss')),
+              h('button', { type: 'button', className: 'dshRestartToggle', 'aria-expanded': expanded, 'aria-controls': details, onClick: () => setExpanded(value => !value) }, t(expanded ? 'hide' : 'details')),
+              h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载')))),
+          expanded && diagnostics(),
+          error && h('p', { className: 'dshRestartError', role: 'alert' }, error))
       }
       if (!restartNeeded) return null
       return h('aside', { className: 'dshRestartNotice', 'aria-label': t('title'), 'aria-live': 'polite', 'aria-busy': busy },
@@ -2154,11 +2180,12 @@ Start by asking for the first piece of information still missing.`,
               h('path', { d: 'M8 16H3v5' }))),
           h('div', { className: 'dshRestartBody' },
             h('p', { className: 'dshRestartTitle' }, t('title')),
-            h('p', { className: 'dshRestartDescription' }, t('description'))),
+            h('p', { className: 'dshRestartDescription' }, t('description')),
+            (operationError || showRegistration) && h('p', { className: 'dshRestartDescription' }, t(operationError ? 'operationFailed' : 'registrationFailed'))),
           h('div', { className: 'dshRestartActions' },
             h('button', { type: 'button', className: 'dshRestartToggle', disabled: busy, 'aria-expanded': expanded, 'aria-controls': details, onClick: () => setExpanded(value => !value) }, t(expanded ? 'hide' : 'details')),
-            h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy, onClick: () => void restart() }, t(busy ? 'restarting' : 'restart')))),
-        expanded && h('div', { id: details, className: 'dshRestartDetails' }, h('ul', null, ...restartReasons.map(reason => h('li', { key: reason }, ['workbenches', 'market', 'image'].includes(reason) ? t(reason) : reason))), h('p', null, t('interrupted'))),
+            h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => void restart() }, t(busy ? 'restarting' : 'restart')))),
+        expanded && h('div', { id: details, className: 'dshRestartDetails' }, h('ul', null, ...restartReasons.map(reason => h('li', { key: reason }, ['workbenches', 'market', 'image'].includes(reason) ? t(reason) : reason))), h('p', null, t('interrupted')), ...diagnosticItems()),
         error && h('p', { className: 'dshRestartError', role: 'alert' }, error))
     }
     function screenshotsFor(entry) {
@@ -2831,11 +2858,6 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
 
             h(UiButton, { 'data-dsh-wb-primitive': true, variant: tab !== 'submit' ? 'primary' : 'outline', className: 'dshWbCreate', icon: h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus(null) } }, tab === 'submit' ? tr('返回工作台市场') : tr('制作我的工作台')))),
         h(Notice, { service, showCatalogStatus: true }),
-        service.getSnapshot().registrationFailures?.length > 0 && h('div', { role: 'alert', className: 'dshWbFailureHint' },
-          h('strong', null, registrationText(service.ctx, 'failed')),
-          h('p', null, registrationText(service.ctx, 'guidance')),
-          ...service.getSnapshot().registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` },
-            `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`))),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': tr('工作台集合') },
             h(Button, { id: 'dsh-workbench-market-tab', role: 'tab', tabIndex: tab === 'market' ? 0 : -1, 'aria-selected': tab === 'market', 'aria-controls': 'dsh-workbench-market-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('market') }, tr('市场')),
