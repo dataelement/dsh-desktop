@@ -125,7 +125,7 @@ describe('workbench market install routes', () => {
     setBundleEnabled: vi.fn(async () => outcome()), ...patch
   })
   const KEY = 'o/project-helper'
-  async function host(pluginManager, catalog = index, fetchCatalog) {
+  async function host(pluginManager, catalog = index, fetchCatalog, generationBackend) {
     const home = await tempRoot()
     vi.stubEnv('DSH_HOME', home)
     const root = join(home, 'desktop-workbenches')
@@ -133,7 +133,11 @@ describe('workbench market install routes', () => {
     const connection = { fetch: { register(route) { routes.push(route) } } }
     // The catalog reader captures fetch when the plugin applies.
     vi.stubGlobal('fetch', fetchCatalog || vi.fn(async url => Response.json(String(url).endsWith('/package.json') ? { name: 'project-helper', version: '1.2.0' } : catalog)))
-    apply({ effect: fn => fn(), reflect: { provide() {} }, connection, inject(deps, callback) { if (pluginManager && !deps.includes('tools')) callback({ connection, pluginManager, effect: fn => fn() }) } }, { root })
+    apply({ effect: fn => fn(), reflect: { provide() {} }, connection, inject(deps, callback) {
+      if (deps.includes('profileBundlePackageBackend')) {
+        if (generationBackend) callback({ profileBundlePackageBackend: generationBackend, effect: fn => fn() })
+      } else if (pluginManager && !deps.includes('tools')) callback({ connection, pluginManager, effect: fn => fn() })
+    } }, { root })
     const call = async (path, body) => {
       const route = routes.find(value => value.path === path)
       if (!route) return undefined
@@ -142,6 +146,16 @@ describe('workbench market install routes', () => {
     }
     return { root, home, call }
   }
+
+  it('exposes pending ordinary/npm generations on startup and preserves failed operation recovery fields', async () => {
+    const backend = { readRestartStatus: vi.fn(async () => ({ restartRequired: true, packages: ['billion-context'] })) }
+    const result = outcome('failed', { error: { code: 'package-failed', diagnostic: 'Pending generation update for billion-context.' } })
+    const { call } = await host(manager({ installBundle: vi.fn(async () => result) }), index, undefined, backend)
+    expect(await call('/api/desktop-workbenches/restart-status')).toMatchObject({ status: 200, body: { restartRequired: true, packages: ['billion-context'] } })
+    expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toMatchObject({ status: 409, body: {
+      application: 'failed', result, restartRequired: true, actionRequired: 'restart', restartPackages: ['billion-context'], code: 'package-failed'
+    } })
+  })
 
   it('stays browse-only when Desktop has no package service', async () => {
     const { call } = await host(undefined)

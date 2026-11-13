@@ -49,7 +49,7 @@ function replaceDesiredGeneration(desired, generations, pluginName, generationId
 }
 
 /** Caller holds the registry lock; no Profile or desired state is changed here. */
-export async function assertNoPendingGenerationUpdates(dshHome, profile, requestedName) {
+async function pendingGenerationUpdates(dshHome, profile, requestedName) {
   const [desired, generations] = await Promise.all([readDesired(dshHome), listGenerations(dshHome)])
   const byId = new Map(generations.map(generation => [generation.id, generation]))
   const others = desired.map(id => {
@@ -57,7 +57,8 @@ export async function assertNoPendingGenerationUpdates(dshHome, profile, request
     if (!generation) throw new Error(`Desired generation is missing or unreadable: ${id}`)
     return generation
   }).filter(generation => generation.pluginName !== requestedName)
-  if (others.length === 0) return
+  if (others.length === 0) return []
+  const pending = []
   const directory = profileDirectory(dshHome, profile)
   let manifest
   try {
@@ -86,9 +87,21 @@ export async function assertNoPendingGenerationUpdates(dshHome, profile, request
       }
     }
     if (!selected) {
-      throw new Error(`Pending generation update for ${generation.pluginName}. Restart before changing another package, or replace/remove that pending package first.`, { cause })
+      pending.push({ name: generation.pluginName, cause })
     }
   }
+  return pending
+}
+
+/** Caller holds the registry lock. Share the projection test with restart guidance. */
+export async function assertNoPendingGenerationUpdates(dshHome, profile, requestedName) {
+  const pending = await pendingGenerationUpdates(dshHome, profile, requestedName)
+  if (!pending.length) return
+  const error = new Error(`Pending generation update for ${pending[0].name}. Restart before changing another package, or replace/remove that pending package first.`, { cause: pending[0].cause })
+  error.code = 'pending-generation-update'
+  error.restartRequired = true
+  error.packages = pending.map(item => item.name)
+  throw error
 }
 
 async function createOperationLog(dshHome, profile) {
@@ -140,6 +153,12 @@ export function createGenerationPackageBackend(options) {
 
   return Object.freeze({
     supportsVerifiedInstall: true,
+    async readRestartStatus() {
+      return withRegistryLock(dshHome, async () => {
+        const packages = (await pendingGenerationUpdates(dshHome, profile)).map(item => item.name)
+        return { restartRequired: packages.length > 0, packages }
+      })
+    },
     async install(request) {
       const log = await createOperationLog(dshHome, profile)
       let activeChild
