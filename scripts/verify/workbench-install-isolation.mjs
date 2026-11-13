@@ -156,7 +156,8 @@ export async function inspectInstallPaths(inspector) {
 }
 
 /** Advance Node initialization, but stop at the --inspect-brk entry breakpoint.
- * Runtime.evaluate before this pause has no process global on supported Node.
+ * The process global's availability before this pause varies by Node version;
+ * only the verified entry breakpoint proves application code has not run.
  * Never substitute Debugger.pause: it could let application code run first.
  */
 export async function pauseInstallEntry(inspector) {

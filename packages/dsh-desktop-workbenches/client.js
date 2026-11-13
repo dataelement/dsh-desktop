@@ -586,10 +586,13 @@ Start by asking for the first piece of information still missing.`,
         this.publish()
       }
       localInstallBusy() {
-        return ['installing', 'querying'].includes(this.localInstall.phase)
+        return ['installing', 'querying'].includes(this.localInstall.phase) || this.localInstall.cancelling === true
       }
       localInstallUnresolved() {
         return this.localInstallBusy() || this.localInstall.phase === 'unknown'
+      }
+      localInstallCurrent(requestId) {
+        return this.localInstall.requestId === requestId && this.localInstallUnresolved()
       }
       selectWorkbenchPackage(file) {
         if (!file || this.localInstallUnresolved()) return
@@ -616,20 +619,22 @@ Start by asking for the first piece of information still missing.`,
           const reply = await manager.installBundle(this.localInstall.file.path, {
             enabled: true, requestId, ...(approvedBuilds?.length ? { approvedBuilds } : {})
           })
+          if (!this.localInstallCurrent(requestId)) return
           if (!reply?.ok) throw new Error(reply?.error?.message || this.ctx.locale.bind(INSTALL_NS)('unknown'))
-          await this.settleWorkbenchPackage(reply.value)
+          await this.settleWorkbenchPackage(reply.value, requestId)
         } catch (error) {
           // A lost RPC response cannot be treated as a failed installation and retried.
-          this.updateLocalInstall({ phase: 'unknown', error: error instanceof Error ? error.message : String(error) })
+          if (this.localInstallCurrent(requestId)) this.updateLocalInstall({ phase: 'unknown', error: error instanceof Error ? error.message : String(error) })
         }
       }
-      async settleWorkbenchPackage(result) {
+      async settleWorkbenchPackage(result, requestId) {
+        if (!this.localInstallCurrent(requestId)) return
         if (result.application === 'cancelled') {
-          this.updateLocalInstall({ phase: 'cancelled', pendingBuilds: [], error: '' })
+          this.updateLocalInstall({ phase: 'cancelled', pendingBuilds: [], error: '', cancelling: false })
           return
         }
         if (result.application === 'failed' || result.application === 'overridden') {
-          this.updateLocalInstall({ phase: 'error', pendingBuilds: result.pendingBuilds || [], error: result.error?.diagnostic || result.packageResult?.output || result.error?.code || this.ctx.locale.bind(INSTALL_NS)('failed') })
+          this.updateLocalInstall({ phase: 'error', cancelling: false, pendingBuilds: result.pendingBuilds || [], error: result.error?.diagnostic || result.packageResult?.output || result.error?.code || this.ctx.locale.bind(INSTALL_NS)('failed') })
           return
         }
         if (!result.bundle) {
@@ -638,31 +643,43 @@ Start by asking for the first piece of information still missing.`,
         }
         this.recordApplication(result.bundle, result, undefined, 'install')
         await this.refreshNative()
+        if (!this.localInstallCurrent(requestId)) return
         this.updateLocalInstall({ phase: 'installed', bundle: result.bundle, version: result.version, pendingBuilds: [], error: '', cancelling: false })
       }
       async queryWorkbenchPackageInstall() {
         if (this.localInstallBusy() || !this.localInstall.requestId) return
+        const requestId = this.localInstall.requestId
         this.updateLocalInstall({ phase: 'querying', error: '' })
         try {
-          const reply = await this.ctx.remote.pluginManager.waitForInstall(this.localInstall.requestId)
+          const reply = await this.ctx.remote.pluginManager.waitForInstall(requestId)
+          if (!this.localInstallCurrent(requestId)) return
           if (!reply?.ok || !reply.value) {
             this.updateLocalInstall({ phase: 'unknown', error: reply?.error?.message || '' })
             return
           }
-          await this.settleWorkbenchPackage(reply.value)
+          await this.settleWorkbenchPackage(reply.value, requestId)
         } catch (error) {
-          this.updateLocalInstall({ phase: 'unknown', error: error instanceof Error ? error.message : String(error) })
+          if (this.localInstallCurrent(requestId)) this.updateLocalInstall({ phase: 'unknown', error: error instanceof Error ? error.message : String(error) })
         }
       }
       async cancelWorkbenchPackageInstall() {
-        if (this.localInstall.phase !== 'installing' || this.localInstall.cancelling) return
+        if (!this.localInstallUnresolved() || !this.localInstall.requestId || this.localInstall.cancelling) return
         const requestId = this.localInstall.requestId
         this.updateLocalInstall({ cancelling: true })
         try {
           const reply = await this.ctx.remote.pluginManager.cancelInstall(requestId)
+          if (!this.localInstallCurrent(requestId)) return
           if (!reply?.ok) throw new Error(reply?.error?.message || this.ctx.locale.bind(INSTALL_NS)('failed'))
+          // Only cancelled confirms that the manager finished cleanup. too-late
+          // and not-running must still recover the actual receipt (or stay unknown).
+          if (reply.value?.status === 'cancelled') {
+            await this.settleWorkbenchPackage({ application: 'cancelled' }, requestId)
+          } else {
+            this.updateLocalInstall({ phase: 'unknown', cancelling: false })
+            await this.queryWorkbenchPackageInstall()
+          }
         } catch (error) {
-          if (this.localInstall.requestId === requestId && this.localInstall.phase === 'installing') {
+          if (this.localInstallCurrent(requestId)) {
             this.updateLocalInstall({ cancelling: false, error: error instanceof Error ? error.message : String(error) })
           }
         }
@@ -2702,9 +2719,9 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         open: true, onClose: dismiss, title: t('upload'), closeLabel: t('close'), description: t('uploadHelp'), className: 'dshWbInstallModal',
         footer: h(React.Fragment, null,
           h(UiButton, { variant: 'outline', disabled: busy, onClick: dismiss }, t('close')),
-          install.phase === 'installing' && h(UiButton, { variant: 'outline', disabled: install.cancelling, onClick: () => void service.cancelWorkbenchPackageInstall() }, t('cancel')),
-          install.phase === 'unknown' && h(UiButton, { variant: 'outline', onClick: onInstalled }, t('installed')),
-          install.phase === 'unknown' && h(UiButton, { variant: 'primary', onClick: () => void service.queryWorkbenchPackageInstall() }, t('query')),
+          selectionLocked && install.requestId && h(UiButton, { variant: 'outline', disabled: install.cancelling, onClick: () => void service.cancelWorkbenchPackageInstall() }, t('cancel')),
+          install.phase === 'unknown' && h(UiButton, { variant: 'outline', disabled: busy, onClick: () => { if (!service.localInstallBusy()) onInstalled() } }, t('installed')),
+          install.phase === 'unknown' && h(UiButton, { variant: 'primary', disabled: busy, onClick: () => void service.queryWorkbenchPackageInstall() }, t('query')),
           install.phase !== 'unknown' && h(UiButton, { variant: 'primary', disabled: !canInstall || busy, onClick: () => void service.installWorkbenchPackage(install.pendingBuilds) }, t(install.pendingBuilds.length ? 'approve' : install.phase === 'error' ? 'retry' : 'confirm')))
       }, h('div', { 'aria-busy': busy },
         h('input', { ref: fileInput, type: 'file', accept: '.tgz,.tar.gz', className: 'dshWbSrOnly', tabIndex: -1, 'aria-hidden': true, disabled: selectionLocked,

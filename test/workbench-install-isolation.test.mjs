@@ -210,7 +210,10 @@ describe('packaged workbench acceptance isolation', () => {
         child.once('exit', onExit)
       })
       inspector = await connect(url)
-      const before = await inspector.send('Runtime.evaluate', { expression: 'typeof process', returnByValue: true })
+      // Node versions expose process at different bootstrap stages. The safety
+      // invariant is that application code has not executed, not its availability.
+      const before = await inspector.send('Runtime.evaluate', { expression: 'typeof globalThis.entrySentinel', returnByValue: true })
+      expect(before.exceptionDetails).toBeUndefined()
       expect(before.result.value).toBe('undefined')
       const paused = await pauseInstallEntry(inspector)
       expect(paused.reason).toBe('Break on start')

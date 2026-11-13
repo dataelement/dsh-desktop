@@ -157,8 +157,10 @@ it.each([true, false])('preserves copied source and only supplies its missing pr
   const result = await installGeneration({ dshHome: join(root, 'home'), pluginSpec: 'file:' + source, sourceDirectory: source, expectedPluginName: 'fixture-plugin', nodeExecutablePath: process.execPath, pnpmEntryPath: 'pnpm', runInstall: async (staging, phase) => {
     calls.push(phase)
     if (phase === 'peers') { await provider(staging); return { code: 0, output: '' } }
-    await cp(join(staging, 'source/fixture-plugin'), join(staging, 'node_modules/fixture-plugin'), { recursive: true })
-    await writeFile(join(staging, 'package.json'), JSON.stringify({ dependencies: { 'fixture-plugin': 'file:./source/fixture-plugin' } }))
+    const [identity] = await readdir(join(staging, 'source'))
+    expect(identity).toMatch(/^[a-f0-9]{64}$/)
+    await cp(join(staging, 'source', identity), join(staging, 'node_modules/fixture-plugin'), { recursive: true })
+    await writeFile(join(staging, 'package.json'), JSON.stringify({ dependencies: { 'fixture-plugin': `file:source/${identity}` } }))
     await writeFile(join(staging, 'pnpm-lock.yaml'), 'source lock')
     return { code: 0, output: '' }
   } })

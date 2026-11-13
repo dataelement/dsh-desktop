@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream, existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import semver from 'semver'
@@ -171,6 +171,46 @@ export function pinnedGitBuildApproval(pluginName, pluginSpec, approvals) {
   const codeload = `${pluginName}@https://codeload.github.com/${owner}/${repo}/tar.gz/${sha}`
   if (!approvals.includes(stable) && !approvals.includes(codeload)) return undefined
   return `${pluginName}@git+ssh://git@github.com/${owner}/${repo}.git#${sha}${subpath}`
+}
+
+/**
+ * Bind local script consent to the canonical source and the complete copied
+ * snapshot, not its package name/version or random staging UUID. Hash the copy
+ * pnpm will consume (including dependency files and dereferenced links), so a
+ * source edit during/after copying cannot reuse consent for different bytes.
+ * Framed metadata covers paths, types, sizes and executable modes;
+ * file data is streamed to avoid holding large local trees in memory.
+ *
+ * This protects retries, not against a process able to mutate our private
+ * staging tree or edit the Profile's approval policy directly.
+ */
+async function localSourceIdentity(sourceDirectory, snapshotDirectory) {
+  const hash = createHash('sha256')
+  const record = (value) => { hash.update(`${JSON.stringify(value)}\n`) }
+  // realpath resolves junctions/short-path aliases on Windows. Internal paths
+  // use '/' on every platform, matching pnpm's file dependency identities.
+  const sourcePath = await realpath(sourceDirectory)
+  record(['dsh-local-source-v1', process.platform === 'win32' ? sourcePath.replace(/\\/gu, '/') : sourcePath])
+  const walk = async (directory, prefix) => {
+    const entries = await readdir(directory, { withFileTypes: true })
+    entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    for (const entry of entries) {
+      const path = join(directory, entry.name)
+      const name = prefix === '' ? entry.name : `${prefix}/${entry.name}`
+      const info = await lstat(path)
+      if (info.isDirectory()) {
+        record(['directory', name, info.mode & 0o777])
+        await walk(path, name)
+      } else if (info.isFile()) {
+        record(['file', name, info.mode & 0o777, info.size])
+        for await (const chunk of createReadStream(path)) hash.update(chunk)
+      } else {
+        throw new Error('ERR_LOCAL_SOURCE_TYPE: local snapshot must contain only files and directories')
+      }
+    }
+  }
+  await walk(snapshotDirectory, '')
+  return hash.digest('hex')
 }
 
 async function stageBuildPolicy(
@@ -380,10 +420,16 @@ export async function installGeneration(options) {
     }
     let installSpec = pluginSpec
     if (options.sourceDirectory !== undefined) {
-      const sourceCopy = join(stagingDir, 'source', pluginName.replace(/^@/u, '').replace(/[/\\]/gu, '+'))
-      await mkdir(join(stagingDir, 'source'), { recursive: true })
+      const sourceRoot = join(stagingDir, 'source')
+      const sourceCopy = join(sourceRoot, 'snapshot')
+      await mkdir(sourceRoot, { recursive: true })
       await cp(options.sourceDirectory, sourceCopy, { recursive: true, dereference: true })
-      installSpec = `file:${sourceCopy}`
+      const identity = await localSourceIdentity(options.sourceDirectory, sourceCopy)
+      await rename(sourceCopy, join(sourceRoot, identity))
+      // Explicitly relative and slash-normalized: no drive letters, junction
+      // aliases or random staging UUID can drift pnpm's exact allowBuilds key.
+      // Both true and false decisions stay exact in the staged buildPolicy.
+      installSpec = `file:source/${identity}`
     }
     trace(`installing ${options.sourceSpec ?? pluginSpec} into staging`)
     // A git subpackage can declare a pnpm version different from its workspace

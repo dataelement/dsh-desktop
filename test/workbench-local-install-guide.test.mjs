@@ -37,7 +37,7 @@ async function mount(language = 'zh') {
   const manager = {
     installBundle: vi.fn(async () => ({ ok: true, value: { application: 'applied', bundle: 'shared-workbench', version: '1.0.0' } })),
     setBundleEnabled: vi.fn(async () => ({ ok: true, value: { application: 'applied' } })),
-    waitForInstall: vi.fn(), cancelInstall: vi.fn(async () => ({ ok: true, value: true }))
+    waitForInstall: vi.fn(), cancelInstall: vi.fn(async () => ({ ok: true, value: { status: 'cancelled' } }))
   }
   const ctx = {
     locale: { register: (ns, copy) => dictionaries.set(ns, copy), bind: ns => key => dictionaries.get(ns)?.[language]?.[key] || key },
@@ -172,6 +172,131 @@ it('prevents duplicate installs and lets the user cancel an active task', async 
   await act(async () => finish({ ok: true, value: { application: 'cancelled' } }))
   expect(ui.text()).toContain('Installation cancelled')
   expect(ui.button('Confirm installation')).toBeDefined()
+})
+it.each(['unknown', 'querying'])('cancels the original active manager task after disconnect in %s', async phase => {
+  const ui = await mount('en')
+  const manager = Object.assign(Object.create(PluginManager.prototype), { installs: new Map(), ownerContext: { emit: vi.fn() } })
+  let finish
+  const outcome = new Promise(resolve => { finish = resolve })
+  const abort = new AbortController()
+  abort.signal.addEventListener('abort', () => finish({ application: 'cancelled' }))
+  ui.manager.installBundle.mockImplementation(async (_, { requestId }) => {
+    manager.installs.set(requestId, { phase: 'installing', abort, result: outcome })
+    throw new Error('Connection lost')
+  })
+  ui.manager.waitForInstall.mockImplementation(async id => ({ ok: true, value: await manager.waitForInstall(id) }))
+  ui.manager.cancelInstall.mockImplementation(async id => ({ ok: true, value: await manager.cancelInstall(id) }))
+  await ui.openUpload()
+  await selectFile()
+  await act(async () => ui.button('Confirm installation').click())
+  const requestId = ui.service.localInstall.requestId
+  if (phase === 'querying') await act(async () => ui.button('Query installation result').click())
+  expect(ui.service.localInstall.phase).toBe(phase)
+  expect(ui.button('Cancel installation').disabled).toBe(false)
+  await selectFile('another.tgz')
+  expect(ui.service.localInstall.file.name).toBe('shared.tgz')
+  if (phase === 'querying') {
+    expect(ui.button('Close').disabled).toBe(true)
+    await act(async () => dom.window.document.querySelector('[role=dialog] button[aria-label=Close]').click())
+    expect(dom.window.document.querySelector('[role=dialog]')).not.toBeNull()
+  }
+  await act(async () => ui.button('Cancel installation').click())
+  expect(ui.manager.cancelInstall).toHaveBeenCalledWith(requestId)
+  expect(abort.signal.aborted).toBe(true)
+  expect(ui.service.localInstall).toMatchObject({ phase: 'cancelled', requestId, cancelling: false })
+  expect(ui.manager.installBundle).toHaveBeenCalledOnce()
+})
+it.each(['too-late', 'not-running'])('recovers the actual result rather than assuming %s means cancelled', async status => {
+  const ui = await mount('en')
+  await ui.openUpload()
+  ui.manager.installBundle.mockRejectedValueOnce(new Error('Connection lost'))
+  await selectFile()
+  await act(async () => ui.button('Confirm installation').click())
+  const requestId = ui.service.localInstall.requestId
+  ui.manager.cancelInstall.mockResolvedValueOnce({ ok: true, value: { status } })
+  ui.manager.waitForInstall.mockResolvedValueOnce({ ok: true, value: status === 'too-late' ? { application: 'applied', bundle: 'shared-workbench' } : null })
+  await act(async () => ui.button('Cancel installation').click())
+  expect(ui.manager.waitForInstall).toHaveBeenCalledWith(requestId)
+  expect(ui.service.localInstall.phase).toBe(status === 'too-late' ? 'installed' : 'unknown')
+  expect(ui.service.localInstall.cancelling).toBe(false)
+})
+it.each(['reply', 'error'])('ignores a stale query %s after cancellation and a new installation', async kind => {
+  const ui = await mount('en')
+  await ui.openUpload()
+  ui.manager.installBundle.mockRejectedValueOnce(new Error('Connection lost'))
+  await selectFile()
+  await act(async () => ui.button('Confirm installation').click())
+  let resolve, reject
+  ui.manager.waitForInstall.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no }))
+  await act(async () => ui.button('Query installation result').click())
+  await act(async () => ui.button('Cancel installation').click())
+  await selectFile('another.tgz')
+  ui.manager.installBundle.mockImplementationOnce(() => new Promise(() => {}))
+  await act(async () => ui.button('Confirm installation').click())
+  const current = ui.service.localInstall
+  await act(async () => kind === 'reply' ? resolve({ ok: true, value: { application: 'applied', bundle: 'old-workbench' } }) : reject(new Error('Old query disconnected')))
+  expect(ui.service.localInstall).toEqual(current)
+  expect(ui.service.refreshNative).not.toHaveBeenCalled()
+  expect(ui.onInstalled).not.toHaveBeenCalled()
+})
+it('ignores a late install reply after cancellation and a new task starts', async () => {
+  const ui = await mount('en')
+  await ui.openUpload()
+  let installReply
+  ui.manager.installBundle.mockImplementationOnce(() => new Promise(resolve => { installReply = resolve }))
+  await selectFile()
+  await act(async () => ui.button('Confirm installation').click())
+  await act(async () => ui.button('Cancel installation').click())
+  await selectFile('another.tgz')
+  ui.manager.installBundle.mockImplementationOnce(() => new Promise(() => {}))
+  await act(async () => ui.button('Confirm installation').click())
+  const current = ui.service.localInstall
+  await act(async () => {
+    installReply({ ok: true, value: { application: 'applied', bundle: 'old-workbench' } })
+  })
+  expect(ui.service.localInstall).toEqual(current)
+  expect(ui.service.refreshNative).not.toHaveBeenCalled()
+})
+it.each(['reply', 'error'])('ignores a late cancel %s after the query settles and a new task starts', async kind => {
+  const ui = await mount('en')
+  await ui.openUpload()
+  ui.manager.installBundle.mockRejectedValueOnce(new Error('Connection lost'))
+  await selectFile()
+  await act(async () => ui.button('Confirm installation').click())
+  let queryReply, cancelReply, cancelError
+  ui.manager.waitForInstall.mockImplementationOnce(() => new Promise(resolve => { queryReply = resolve }))
+  ui.manager.cancelInstall.mockImplementationOnce(() => new Promise((resolve, reject) => { cancelReply = resolve; cancelError = reject }))
+  await act(async () => ui.button('Query installation result').click())
+  await act(async () => ui.button('Cancel installation').click())
+  expect(ui.button('Close').disabled).toBe(true)
+  await act(async () => queryReply({ ok: true, value: { application: 'cancelled' } }))
+  await selectFile('another.tgz')
+  ui.manager.installBundle.mockImplementationOnce(() => new Promise(() => {}))
+  await act(async () => ui.button('Confirm installation').click())
+  const current = ui.service.localInstall
+  await act(async () => kind === 'reply' ? cancelReply({ ok: true, value: { status: 'cancelled' } }) : cancelError(new Error('Old cancel disconnected')))
+  expect(ui.service.localInstall).toEqual(current)
+  expect(ui.manager.waitForInstall).toHaveBeenCalledOnce()
+})
+it('keeps close and replacement locked while cancelling an unknown task', async () => {
+  const ui = await mount('en')
+  await ui.openUpload()
+  ui.manager.installBundle.mockRejectedValueOnce(new Error('Connection lost'))
+  await selectFile()
+  await act(async () => ui.button('Confirm installation').click())
+  let finish
+  ui.manager.cancelInstall.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  await act(async () => ui.button('Cancel installation').click())
+  expect(ui.button('Close').disabled).toBe(true)
+  expect(ui.button('Cancel installation').disabled).toBe(true)
+  expect(ui.button('Query installation result').disabled).toBe(true)
+  await act(async () => dom.window.document.querySelector('[role=dialog] button[aria-label=Close]').click())
+  expect(dom.window.document.querySelector('[role=dialog]')).not.toBeNull()
+  await selectFile('another.tgz')
+  await act(async () => ui.service.installWorkbenchPackage())
+  expect(ui.service.localInstall.file.name).toBe('shared.tgz')
+  expect(ui.manager.installBundle).toHaveBeenCalledOnce()
+  await act(async () => finish({ ok: true, value: { status: 'cancelled' } }))
 })
 it('queries an uncertain result without installing the package a second time', async () => {
   const ui = await mount('en')
