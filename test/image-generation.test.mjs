@@ -90,6 +90,13 @@ async function fixture() {
 const saveInput = (provider, baseUrl, revision = 0) => ({ provider, baseUrl, model: DEFAULTS[provider].model, apiKey: 'test-image-key', revision })
 
 describe('image settings save and provider requests', () => {
+  it('uses GPT Image 2.6 for new OpenAI profiles', () => {
+    const spec = profile('openai', {})
+    const body = generationBody('openai', spec, { prompt: 'A flower' })
+    expect(body).toMatchObject({ model: 'gpt-image-2.6-sunburst', size: '1024x1024', quality: 'auto', output_format: 'png' })
+    expect(body).not.toHaveProperty('response_format')
+    expect(MODEL_CATALOG.openai.models).toContain('gpt-image-2.6-flare')
+  })
   it.each(['openai', 'bytedance'])('saves %s with exactly one non-generating request and redacts credentials', async provider => {
     const f = await fixture(); const s = await server()
     const result = await f.settings.save(saveInput(provider, s.baseUrl))
@@ -206,7 +213,7 @@ describe('image settings save and provider requests', () => {
     const f = await fixture(); const s = await server()
     const before = await f.settings.describe()
     const result = await f.settings.models(saveInput('openai', s.baseUrl))
-    expect(result).toEqual({ source: 'provider', canFetch: true, models: ['gpt-image-2.5-flare', DEFAULTS.openai.model] })
+    expect(result).toEqual({ source: 'provider', canFetch: true, models: [DEFAULTS.openai.model, 'gpt-image-2.5-flare'] })
     expect(s.calls).toHaveLength(1); expect(s.calls[0]).toMatchObject({ method: 'GET', url: '/v1/models' })
     expect(await f.settings.describe()).toEqual(before)
     expect(JSON.stringify(result)).not.toContain('test-image-key')

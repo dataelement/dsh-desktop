@@ -25,7 +25,7 @@ API 地址同时接受基础地址和控制台提供的完整 `/images/generatio
 | 服务商 | 默认模型 | 默认 API 地址 |
 | --- | --- | --- |
 | 字节 / 火山方舟 | `doubao-seedream-4-5-251128` | `https://ark.cn-beijing.volces.com/api/v3` |
-| OpenAI | `gpt-image-1.5` | `https://api.openai.com/v1` |
+| OpenAI | `gpt-image-2.6-sunburst` | `https://api.openai.com/v1` |
 
 保存自动发起一次非生图校验请求，界面显示校验中、保存成功或具体错误。失败保留输入及之前的有效配置。Key 更换后立即生效；两个服务商分别保存配置和 Key。更换 API 地址的域名时需要重新填写 Key。
 
