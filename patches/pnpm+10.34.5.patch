@@ -1,0 +1,56 @@
+diff --git a/node_modules/pnpm/dist/pnpm.cjs b/node_modules/pnpm/dist/pnpm.cjs
+index 0ace97c..89c59b8 100644
+--- a/node_modules/pnpm/dist/pnpm.cjs
++++ b/node_modules/pnpm/dist/pnpm.cjs
+@@ -98153,6 +98153,7 @@ var require_npm_lifecycle = __commonJS({
+       }
+       let sh = "sh";
+       let shFlag = "-c";
++      let shellCommand = cmd;
+       const customShell = opts.scriptShell;
+       if (customShell) {
+         sh = customShell;
+@@ -98160,6 +98161,9 @@ var require_npm_lifecycle = __commonJS({
+         sh = process.env.comspec || "cmd";
+         shFlag = "/d /s /c";
+         conf.windowsVerbatimArguments = true;
++        // Match Node's shell quoting: /s strips the outer command quotes.
++        // Keep a quoted executable path (Program Files, etc.) intact inside.
++        shellCommand = `"${cmd}"`;
+       }
+       opts.log.verbose("lifecycle", logid(pkg, stage), "PATH:", env[PATH]);
+       opts.log.verbose("lifecycle", logid(pkg, stage), "CWD:", wd);
+@@ -98189,7 +98193,7 @@ var require_npm_lifecycle = __commonJS({
+         }).catch((err) => procError(err));
+         return;
+       }
+-      const proc = spawn(sh, [shFlag, cmd], conf, opts.log);
++      const proc = spawn(sh, [shFlag, shellCommand], conf, opts.log);
+       proc.on("error", procError);
+       proc.on("close", (code, signal) => {
+         opts.log.silly("lifecycle", logid(pkg, stage), "Returned: code:", code, " signal:", signal);
+@@ -213588,6 +213592,24 @@ async function runPnpm() {
+   }
+ }
+ async function passThruToNpm() {
++  // Desktop supplies a metadata-only adapter; reuse pnpm's actual config and
++  // network/auth stack instead of requiring a second package manager on PATH.
++  if (["view", "info", "show", "v"].includes(argv[0]) && process.env.DSH_DESKTOP_REGISTRY_VIEW) {
++    try {
++      const { registryView } = await import(require("node:url").pathToFileURL(process.env.DSH_DESKTOP_REGISTRY_VIEW).href);
++      const output = await registryView(argv.slice(1), {
++        loadConfig: async (cliOptions) => (await require_lib24().getConfig({ cliOptions, packageManager: require_lib4().packageManager, rcOptionsTypes: require_lib24().types })).config,
++        createFetch: require_lib31().createFetchFromRegistry,
++        createAuth: require_lib77().createGetAuthHeaderByURI,
++        semver: require_semver2()
++      });
++      process.stdout.write(output);
++    } catch (error) {
++      console.error("ERR_DSH_REGISTRY_VIEW", error.code ?? "", error.message);
++      process.exitCode = 1;
++    }
++    return;
++  }
+   const { runNpm } = await Promise.resolve().then(() => __importStar2(require_runNpm()));
+   const { status } = await runNpm(argv);
+   process.exit(status);

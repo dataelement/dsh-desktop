@@ -91,6 +91,11 @@ const RPC_ALLOWLIST = new Set([...Object.keys(HARNESS_ENDPOINTS), 'session.histo
 
 export interface LanMobileBridgeOptions {
   harnessUrl(): string | undefined
+  /**
+   * Session cookie the shell already traded for the launch token.
+   * When this returns a cookie, the bridge does not spend the token again.
+   */
+  harnessCookie?(): string | undefined
   /** Per-process Harness launch token, traded once for a session cookie. */
   harnessAuthToken?(): string | undefined
   locale?: 'en' | 'zh' | (() => 'en' | 'zh')
@@ -170,6 +175,7 @@ export class LanMobileBridge {
   private port?: number
   private pairingToken?: string
   private pairingExpiresAt?: number
+  private pairingPinRevealed = false
   private tunnelInstance?: InternetTunnelInstance
   private tunnelActive = false
   private tunnelLoading = false
@@ -245,6 +251,7 @@ export class LanMobileBridge {
     this.port = undefined
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
+    this.pairingPinRevealed = false
     this.desktopBootstrapToken = undefined
     // Wait for an in-flight launch so the tunnel it spawns is stopped below
     // instead of outliving the bridge (and the app).
@@ -300,6 +307,7 @@ export class LanMobileBridge {
       this.tunnelError = undefined
       this.clearTunnelDeathFlags()
       this.tunnelExpiresAt = undefined
+      this.pairingPinRevealed = false
       return this.snapshot()
     }
 
@@ -321,6 +329,7 @@ export class LanMobileBridge {
     try {
       await launch
       this.tunnelActive = true
+      this.pairingPinRevealed = false
       this.clearTunnelDeathFlags()
       this.armTunnelProcess(this.tunnelInstance)
     } catch (error) {
@@ -350,6 +359,7 @@ export class LanMobileBridge {
     this.tunnelLaunch = launch
     try {
       await launch
+      this.pairingPinRevealed = false
       this.clearTunnelDeathFlags()
       this.armTunnelProcess(this.tunnelInstance)
     } catch (error) {
@@ -446,6 +456,7 @@ export class LanMobileBridge {
   private rotatePairingToken(): void {
     this.pairingToken = randomBytes(32).toString('base64url')
     this.pairingExpiresAt = this.now() + PAIRING_TTL_MS
+    this.pairingPinRevealed = false
   }
 
   private pairingTokenValid(): boolean {
@@ -506,7 +517,12 @@ export class LanMobileBridge {
     pinConsent: boolean
     pinExpiresAt?: number
   } {
-    const pin = this.tunnelActive ? this.ensurePairingPin() : undefined
+    const previous = this.readPairingPin()
+    // Once the phone is entering a temporary PIN, let it expire visibly.
+    // Polling must not replace the password behind that phone's input page.
+    const pin = this.tunnelActive && !(this.pairingPinRevealed && previous.expired)
+      ? this.ensurePairingPin()
+      : undefined
     const view = this.readPairingPin()
     return {
       ...(pin ? { pairingPin: pin } : {}),
@@ -556,10 +572,14 @@ export class LanMobileBridge {
   }
 
   private revokeMobileSessions(): void {
+    const pinRevealed = this.pairingPinRevealed
     this.sessions.clear()
     this.suspendedSessions.clear()
     this.resumableSessions.clear()
     this.rotatePairingToken()
+    // Credential changes keep the current PIN view open for the user who
+    // initiated them. Explicit rescan resets the view along with the link.
+    this.pairingPinRevealed = pinRevealed
     this.clearPinFailures()
     this.syncConnected()
   }
@@ -590,6 +610,7 @@ export class LanMobileBridge {
     this.sessions.set(token, { token, remoteAddress })
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
+    this.pairingPinRevealed = false
     const secure = connectionMode === 'tunnel' ? '; Secure' : ''
     response.setHeader(
       'set-cookie',
@@ -631,6 +652,7 @@ export class LanMobileBridge {
     this.tunnelLoading = false
     this.tunnelExpiresAt = undefined
     this.tunnelInstance = undefined
+    this.pairingPinRevealed = false
     this.sessions.clear()
     this.syncConnected()
   }
@@ -645,6 +667,7 @@ export class LanMobileBridge {
       pairingUrl: snapshot.pairingUrl,
       qrSvg,
       expiresAt: snapshot.expiresAt,
+      pinRevealed: this.tunnelActive && this.pairingPinRevealed,
       unexpectedlyClosed: this.unexpectedlyClosed,
       tunnelExpiresAt: this.tunnelExpiresAt,
       ...this.desktopPinFields()
@@ -720,7 +743,6 @@ export class LanMobileBridge {
       }
       const snapshot = this.snapshot()
       const connected = this.sessions.size > 0
-      if (!snapshot.pairingUrl && !connected) return this.text(response, 503, 'Bridge unavailable.')
       const qrSvg = snapshot.pairingUrl
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
         : ''
@@ -738,7 +760,9 @@ export class LanMobileBridge {
           tunnelProvider: snapshot.tunnelProvider ?? this.lastTunnelProvider,
           tunnelUrl: snapshot.tunnelUrl,
           tunnelError: snapshot.tunnelError,
+          internetSelected: Boolean(snapshot.tunnelActive || snapshot.tunnelLoading || snapshot.tunnelError || this.unexpectedlyClosed),
           unexpectedlyClosed: this.unexpectedlyClosed,
+          pinRevealed: this.tunnelActive && this.pairingPinRevealed,
           pairingPin: pin.pairingPin,
           pinConsent: pin.pinConsent,
           pinExpiresAt: pin.pinExpiresAt,
@@ -759,6 +783,22 @@ export class LanMobileBridge {
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
         : undefined
       return this.json(response, 200, this.desktopTunnelPayload(snapshot, qrSvg))
+    }
+
+    if (request.method === 'POST' && url.pathname === '/desktop/rescan') {
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
+      this.verifySameOrigin(request)
+      if (this.sessions.size > 0 || this.tunnelLoading) {
+        return this.json(response, 409, { ok: false })
+      }
+      this.rotatePairingToken()
+      this.ephemeralPin = undefined
+      this.ephemeralPinExpiresAt = undefined
+      const snapshot = this.snapshot()
+      const qrSvg = snapshot.pairingUrl
+        ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
+        : undefined
+      return this.json(response, 200, { ok: true, ...this.desktopTunnelPayload(snapshot, qrSvg) })
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/fallback') {
@@ -937,6 +977,10 @@ export class LanMobileBridge {
       const migrationUrl = this.tunnelMigrationUrl(new URL('/reconnect', url), connectionMode)
       if (migrationUrl) return this.json(response, 200, { redirectUrl: migrationUrl })
       if (connectionMode === 'tunnel') {
+        if (this.tunnelActive && this.tunnelPinAcceptsReconnect()) {
+          if (!this.pairingTokenValid()) this.rotatePairingToken()
+          this.pairingPinRevealed = true
+        }
         this.options.onReconnectRequested?.()
         return this.json(response, 200, { ok: true, pinRequired: true })
       }
@@ -966,6 +1010,7 @@ export class LanMobileBridge {
         response.end()
         return
       }
+      if (this.tunnelActive) this.pairingPinRevealed = true
       return this.html(response, renderPairingPinPage(this.locale()))
     }
 
@@ -1248,6 +1293,11 @@ export class LanMobileBridge {
   private harnessCookie?: { base: string; cookie: string }
 
   private async harnessSession(base: string): Promise<string | undefined> {
+    const supplied = this.options.harnessCookie?.()
+    if (typeof supplied === 'string' && supplied.length > 0 && !/[\r\n]/u.test(supplied)) {
+      this.harnessCookie = { base, cookie: supplied }
+      return supplied
+    }
     if (this.harnessCookie?.base === base) return this.harnessCookie.cookie
     const token = this.options.harnessAuthToken?.()
     if (token === undefined) return undefined

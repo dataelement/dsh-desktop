@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { RepairSessionStore } from './state/repair-agent-sessions'
+import { RepairSessionStore } from './recovery/repair-agent-sessions'
 import { cookiePair } from './mobile/lan-mobile-bridge'
 import {
   extractDshEntryFailureCause,
   extractOffendingPlugins,
   latestHarnessAttemptLogs
-} from './runtime/harness-runtime'
+} from './recovery/harness-log'
 import type { RuntimeSnapshot } from '../shared/contracts'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../shared/plugin-startup-failure'
 
@@ -22,6 +22,8 @@ export interface RepairAgentServiceOptions {
   repairHistory?: () => Promise<readonly { action: string; status: string; plugins: readonly string[] }[]>
   harnessUrl: () => string | undefined
   harnessAuthToken: () => string | undefined
+  /** Already exchanged Host cookie. When present, the launch token is not spent again. */
+  harnessCookie?: () => string | undefined
   ensureHarnessReady: () => Promise<void>
   /** Harness's own home (DSH_HOME): profiles, plugins, and the patch layer the agent diagnoses. */
   workspaceDirectory: string
@@ -327,6 +329,12 @@ export class RepairAgentService {
   }
 
   private async harnessSession(base: string): Promise<string | undefined> {
+    const provided = this.sessionCookie()
+    if (provided !== undefined) {
+      if (this.harnessCookie?.base === base && this.harnessCookie.cookie === provided) return provided
+      this.harnessCookie = { base, cookie: provided }
+      return provided
+    }
     const token = this.options.harnessAuthToken?.()
     if (this.harnessCookie?.base === base && this.harnessCookie.token === token) return this.harnessCookie.cookie
     if (token === undefined) return undefined
@@ -346,6 +354,12 @@ export class RepairAgentService {
       console.warn('[repair-agent] harnessSession auth handshake failed', err)
       return undefined
     }
+  }
+
+  private sessionCookie(): string | undefined {
+    const cookie = this.options.harnessCookie?.()
+    if (typeof cookie !== 'string' || cookie === '' || cookie.length > 4096 || /[\r\n]/.test(cookie)) return undefined
+    return cookie
   }
 
   private async harnessFetch(url: URL, init: RequestInit, base: string): Promise<Response> {
@@ -481,7 +495,7 @@ export class RepairAgentService {
         }
       }
 
-      const owner = this.options.harnessAuthToken()
+      const owner = this.options.harnessAuthToken() ?? this.sessionCookie()
       const needsRestore = !this.activeSessionId || this.sessionOwner !== owner || this.sessionEnvironment !== environment
       if (options.fresh) {
         this.activeSessionId = undefined

@@ -2,8 +2,8 @@
 
 The change covers HTML bootstrapping and client activation, plus Electron request routing. Backend Profile composition and plugin failure policy remain unchanged.
 
-- Read static shell assets from the current installation’s `node_modules/@deepseek-ai/dsh-web-frontend/dist`, using the existing `bundledRuntimeRoot()` anchor in both packaged and development builds. Do not resolve shell assets from a Profile or caller cwd.
-- Load `dsh-desktop://harness/` before starting Harness. The existing shell prepares its static modules and waits on `__DSH_BOOT_READY__`. A narrow main-frame IPC bridge supplies the current backend’s structured index injections only after authenticated boot.
+- Read static application assets from the current installation’s `node_modules/@deepseek-ai/dsh-web-frontend/dist`. Do not resolve them from a Profile or caller cwd.
+- Show `build/splash.html` first, then load `dsh-app://app/`. The index document inserts `__DSH_BOOT_READY__` before page scripts. Static files are served immediately. Other requests return 503 until Host has authenticated and the shell holds that cookie. A narrow main-frame IPC bridge supplies the current backend’s structured index injections only after that handshake.
 - Obtain injections from an authenticated route registered by the existing bundled desktop-client-ui plugin. Normal Profile and Safe Mode both include that plugin; their backend/plugin discovery anchors remain unchanged. The current webServer injection table remains the authority for graph, revision and script URLs.
 - The main process owns the backend cookie, proxies application requests and strips transport response headers. Only the owned loopback backend is accepted. Reject foreign origins, confine static paths and cancel superseded connections. No launch token or cookie is exposed in page URLs or logs.
 - Preserve the registration queue → bootstrap script execution → boot graph → module-system creation → application activation order, using the upstream desktop injection interpreter. Reuse the prepared document after backend readiness. Reload it on backend restart; reset deferred boot and authentication state so previous launches cannot resolve the next page.
@@ -21,8 +21,8 @@ Verification: behavior tests for local serving, traversal and origin rejection, 
 
 ## Startup failure cover
 
-The host cover applies during HTML bootstrapping and client activation, on both
-`dsh-desktop://harness/` and legacy loopback HTTP pages. It paints the same
+The host cover applies during HTML bootstrapping and client activation, on
+`dsh-app://app/` and on a loopback page that belongs to the current Host. It paints the same
 `startup-whale.gif` as the startup page, in a preload-owned shadow root,
 because plugin slots are not yet available. It does not change Profile composition,
 module resolution, bootstrap ordering, API routing, or the normal/Safe Mode backend anchors.

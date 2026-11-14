@@ -45,7 +45,7 @@ it.each(['DeepSeekModelsEditor', 'ModelListEditor'])('%s expands options and edi
   const tokensLabel = 'maxTokens 1'
   let tree = render()
   expect(find(tree, contextLabel)).toBeUndefined()
-  find(tree, 'modelAdvanced 1').props.onClick()
+  find(tree, 'modelAdvanced 1').props.onClick({ currentTarget: { focus() {} } })
   tree = render()
   expect(find(tree, contextLabel).props.value).toBe('128K')
   expect(find(tree, tokensLabel).props.value).toBe('8K')

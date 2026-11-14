@@ -8,9 +8,9 @@ async function fixture(icons, run) {
   const root = await mkdtemp(path.join(tmpdir(), 'dsh-brand-assets-'))
   try {
     const dist = path.join(root, 'node_modules/@deepseek-ai/dsh-web-frontend/dist')
-    await Promise.all(['scripts', 'build', path.relative(root, dist)].map(dir => mkdir(path.join(root, dir), { recursive: true })))
-    const script = path.join(root, 'scripts/install-brand-assets.mjs')
-    await writeFile(script, await readFile(new URL('../scripts/install-brand-assets.mjs', import.meta.url)))
+    await Promise.all(['scripts/release', 'build', path.relative(root, dist)].map(dir => mkdir(path.join(root, dir), { recursive: true })))
+    const script = path.join(root, 'scripts/release/install-brand-assets.mjs')
+    await writeFile(script, await readFile(new URL('../scripts/release/install-brand-assets.mjs', import.meta.url)))
     for (const name of ['icon.png', 'logo-light.png', 'logo-dark.png']) await writeFile(path.join(root, 'build', name), 'test-icon')
     await writeFile(path.join(dist, 'index.html'), '<link rel="icon" href="./favicon.svg" />')
     await writeFile(path.join(dist, 'manifest.webmanifest'), JSON.stringify({ name: 'Harness', icons }))

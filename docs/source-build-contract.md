@@ -46,7 +46,7 @@
 
 本次检查发现：#369 同时修改 `packages/ppt-runtime/{core,adapter}/lib/client.js`、`packages/ppt-bundles/*.tgz`、`artifacts.json` 和锁文件中的 integrity。维护代码与由它生成的包被重复跟踪。
 
-当前已有 `scripts/build-ppt-runtime.mjs` 和 `ppt:build`，但普通 build 和 release workflow 未调用该生成命令；`package.json` 直接引用已提交的 PPT tgz。生成器还会写入维护目录下的预览图和清单，因此不能不经调整就直接接到普通 build。
+当前已有 `scripts/ppt/build-ppt-runtime.mjs` 和 `ppt:build`，但普通 build 和 release workflow 未调用该生成命令；`package.json` 直接引用已提交的 PPT tgz。生成器还会写入维护目录下的预览图和清单，因此不能不经调整就直接接到普通 build。
 
 目标是：维护代码与模板原始输入 → 构建生成预览/清单及插件分发内容 → 应用打包。开发者提交代码、输入和脚本，CI 保存和分发产物；完整性值由生成流程计算。
 

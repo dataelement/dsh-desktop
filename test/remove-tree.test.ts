@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { removeTree, removeTreeIfPossible } from '../src/main/state/remove-tree'
+import { removeTree, removeTreeIfPossible } from '../src/main/profile/remove-tree'
 
 const roots: string[] = []
 

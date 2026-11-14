@@ -1,0 +1,55 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
+index f4bc5b6..9c855f1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
+@@ -10063,6 +10063,7 @@ function isExplicitFilePath(value) {
+ * fragment-only links, queries, malformed escapes, or control characters.
+ */
+ function parseFileLink(value) {
++	const isExplicitFilePath = (candidate) => /^(?:[\\/]|\.{1,2}[\\/]|[a-z]:[\\/])/i.test(candidate);
+ 	const hash = value.indexOf("#");
+ 	const destination = hash < 0 ? value : value.slice(0, hash);
+ 	if (destination.includes("?")) return void 0;
+@@ -10073,11 +10074,14 @@ function parseFileLink(value) {
+ 		return;
+ 	}
+ 	if (path.length === 0 || /[\u0000-\u001f\u007f]/.test(path)) return void 0;
++	const suffix = hash < 0 ? /:([1-9]\d*)(?::[1-9]\d*)?(?:-[1-9]\d*(?::[1-9]\d*)?)?$/.exec(destination) : null;
++	const suffixStem = suffix === null ? "" : path.slice(0, -suffix[0].length);
++	const suffixIsFile = suffix !== null && suffixStem !== "" && !/^[a-z]:$/i.test(suffixStem) && (/[\\/]/.test(suffixStem) || /\.[a-z][a-z\d]{0,9}$/i.test(suffixStem));
++	if (suffixIsFile) path = suffixStem;
+ 	if (!isExplicitFilePath(path) && URL.canParse(path)) return void 0;
+-	const suffix = hash < 0 ? /:(\d+)(?::\d+|-(\d+))?$/.exec(destination) : null;
+-	if (suffix !== null) path = path.slice(0, -suffix[0].length);
++	if (!isExplicitFilePath(path) && /^[a-z][a-z\d+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path)) return void 0;
+ 	if (path.length === 0) return void 0;
+-	const match = suffix ?? (hash < 0 ? null : /^L(\d+)(?:-L(\d+))?$/.exec(value.slice(hash + 1)));
++	const match = suffixIsFile ? suffix : hash < 0 ? null : /^L([1-9]\d*)(?:C[1-9]\d*)?(?:-L?([1-9]\d*)(?:C[1-9]\d*)?)?$/.exec(value.slice(hash + 1));
+ 	if (match === null) return { path };
+ 	const line = Number(match[1]);
+ 	const end = match[2] === void 0 ? line : Number(match[2]);
+@@ -10487,7 +10491,7 @@ function renderNode(node, key, context) {
+ 				onClick: mention.open,
+ 				...mention.contextMenuProps,
+ 				children: [jsx(LinkIconMedium, {
+-					kind: classifyLinkPath(value),
++					kind: mention.kind === "folder" ? "folder" : classifyLinkPath(mention.title || value),
+ 					className: markdownCss.linkIcon
+ 				}), value]
+ 			}) }, key);
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts
+index cd2ddbc..cdebc91 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/markdown/render.d.ts
+@@ -88,6 +88,11 @@ export interface MarkdownFileMentions {
+         contextMenuProps?: Pick<HTMLAttributes<HTMLElement>, 'onContextMenu' | 'onKeyDown' | 'tabIndex'>;
+         label: string;
+         title: string;
++        /**
++         * `folder` draws the folder glyph and is opened by the owner outside the
++         * document preview. Absent or `file` keeps the extension glyph.
++         */
++        kind?: "file" | "folder";
+     } | undefined;
+ }
+ /**

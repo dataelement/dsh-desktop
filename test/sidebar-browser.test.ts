@@ -267,6 +267,29 @@ describe('SidebarBrowserGuests network and capability boundaries', () => {
 })
 
 describe('SidebarBrowserGuests cleanup', () => {
+  it('gives the shell the guest after the reservation document is ready', async () => {
+    const names: string[] = []
+    const releaseInput = vi.fn()
+    const local = new SidebarBrowserGuests(() => host)
+    const localOwner = new Contents(asSession(fakeSession()))
+    local.bind(windowFor(localOwner).electron, (_guest, name) => {
+      names.push(name)
+      return releaseInput
+    })
+    const reservation = local.acquire(localOwner.electron(), 'workspace-a')
+    const params = { src: 'about:blank#' + reservation.lease, partition: reservation.partition }
+    localOwner.emit('will-attach-webview', event(), {}, params)
+    const guest = new Contents(session.fromPartition(reservation.partition))
+    guest.url = params.src
+    guest.mainFrame.url = params.src
+    localOwner.emit('did-attach-webview', event(), guest.electron())
+    expect(names).toEqual([])
+    guest.emit('dom-ready')
+    expect(names).toEqual([reservation.lease])
+    await local.release(localOwner.electron(), reservation.lease)
+    expect(releaseInput).toHaveBeenCalledOnce()
+  })
+
   it('closes without beforeunload, handles already released/destroyed guests, and binds once', async () => {
     manager.bind(ownerWindow.electron)
     expect(owner.listenerCount('will-attach-webview')).toBe(1)

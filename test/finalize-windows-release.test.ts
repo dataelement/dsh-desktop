@@ -18,7 +18,7 @@ describe('signed Windows release finalizer', () => {
 
       const result = spawnSync(
         process.execPath,
-        [path.join(process.cwd(), 'scripts', 'finalize-windows-release.mjs'), releaseDir, '1.2.3'],
+        [path.join(process.cwd(), 'scripts', 'release', 'finalize-windows-release.mjs'), releaseDir, '1.2.3'],
         { encoding: 'utf8' }
       )
       expect(result.status, result.stderr).toBe(0)

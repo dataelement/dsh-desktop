@@ -1,7 +1,6 @@
-import { suspendGenerationProjectionForPnpm } from '../packages/dsh-desktop-market-installer/pnpm-runner.mjs'
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
-import { lstat, mkdir, mkdtemp, open, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, rm, writeFile } from 'node:fs/promises'
 
 function readInstalledVersion(_profile, name, explicitDir) {
   try {
@@ -33,6 +32,12 @@ vi.mock('node:fs/promises', async importOriginal => {
       throw Object.assign(new Error('EPERM: simulated occupied junction'), { code: 'EPERM' })
     }
     return fs.unlink(path)
+  }, symlink: async (target, path, type) => {
+    if (renameFault.phase === 'new-link' && process.platform === 'win32') {
+      renameFault.phase = ''
+      throw Object.assign(new Error('EPERM: simulated occupied link path'), { code: 'EPERM' })
+    }
+    return fs.symlink(target, path, type)
   }, rename: async (from, to) => {
     const matches = renameFault.phase === 'old-link' ? String(to).includes('.dsh-previous-')
       : renameFault.phase === 'new-link' ? String(from).includes('.dsh-next-')
@@ -48,7 +53,7 @@ vi.mock('node:fs/promises', async importOriginal => {
 /**
  * `runExternalMarketPluginInstall` is the boundary dsh-market 1.6+
  * feature-detects for `add`. These drive it through a stubbed pnpm so they run
- * anywhere; the live pnpm path is covered by scripts/generation-poc.mjs.
+ * anywhere; the live pnpm path is covered by the profile plugin command tests.
  */
 describe('the market install boundary', () => {
   const homes = []
@@ -199,7 +204,7 @@ describe('the market install boundary', () => {
     ))
 
     expect(result.exitCode).toBe(0)
-    expect(npmrc).toContain('registry=https://mirrors.cloud.tencent.com/npm/')
+    expect(npmrc).toContain('registry=https://registry.npmmirror.com/')
   })
 
   it('passes release-age overrides and refuses to promote an install with blocked scripts', async () => {
@@ -214,7 +219,7 @@ describe('the market install boundary', () => {
       ['add', 'demo@1.0.0'], join(home, 'profiles', 'web')))
     expect(failed.exitCode).toBe(1)
     expect(failed.stderr).toContain('ERR_PNPM_IGNORED_BUILDS')
-    expect(policies[0]).not.toContain('strict-dep-builds=')
+    expect(policies[0]).toContain('strict-dep-builds=true')
     expect(policies[0]).toContain('minimum-release-age=1440')
     await drainHandle(svc.runExternalMarketPluginInstall(
       ['add', '--config.minimumReleaseAge=0', 'demo@1.0.0'], join(home, 'profiles', 'web')))
@@ -483,7 +488,9 @@ describe('the market install boundary', () => {
       nodeExecutablePath: process.execPath,
       pnpmEntryPath: 'unused',
       runInstall: async (stagingDir) => {
-        expect(await readFile(join(stagingDir, 'source', 'source-plugin', 'installed-marker.txt'), 'utf8'))
+        const [identity] = await readdir(join(stagingDir, 'source'))
+        expect(identity).toMatch(/^[a-f0-9]{64}$/)
+        expect(await readFile(join(stagingDir, 'source', identity, 'installed-marker.txt'), 'utf8'))
           .toBe('exact installed tree\n')
         return stubGenerationInstall('source-plugin', '1.2.3')(stagingDir)
       }
@@ -499,191 +506,77 @@ describe('the market install boundary', () => {
     ])
   })
 
-  /** A stubbed dsh CLI child that reports one clean pnpm run. */
-  function fakeCliSpawn(calls) {
-    return (_executablePath, args, options) => {
-      calls.push({ args, options })
-      const child = new EventEmitter()
-      child.stdout = new EventEmitter()
-      child.stderr = new EventEmitter()
-      child.pid = 4242
-      child.exitCode = null
-      setImmediate(async () => {
-        const profile = options.cwd
-        const isolation = await suspendGenerationProjectionForPnpm(profile)
-        const spec = args.find(arg => arg.startsWith('dshmarket@'))
-        const version = spec.slice(spec.lastIndexOf('@') + 1)
-        await mkdir(join(profile, 'node_modules/dshmarket'), { recursive: true })
-        await writeFile(join(profile, 'node_modules/dshmarket/package.json'), JSON.stringify({ name: 'dshmarket', version }))
-        const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
-        manifest.dependencies.dshmarket = version
-        await writeFile(join(profile, 'package.json'), JSON.stringify(manifest))
-        await isolation.restore()
-        child.stdout.emit('data', Buffer.from('Progress: resolved 1, done\n'))
-        child.exitCode = 0
-        child.emit('close', 0, null)
-      })
-      return child
-    }
-  }
-
-  it('updates dshmarket in the shared tree rather than switching its non-link directory', async () => {
+  it('installs the recommended market through the ordinary generation boundary', async () => {
     const home = await freshHome()
-    const profile = join(home, 'profiles', 'web')
-    // dshmarket is a core bundle: a real hoisted directory, never a link.
-    await mkdir(join(profile, 'node_modules', 'dshmarket'), { recursive: true })
-    await writeFile(
-      join(profile, 'node_modules', 'dshmarket', 'package.json'),
-      JSON.stringify({ name: 'dshmarket', version: '1.39.0' })
-    )
-    await mkdir(join(profile, '.dsh-market'), { recursive: true })
-    await writeFile(
-      join(profile, '.dsh-market', 'state.json'),
-      JSON.stringify({ region: 'china', regionAuto: true })
-    )
-
+    const profile = join(home, 'profiles/web')
     const calls = []
     const svc = createDesktopPnpmService({
-      binDirectory: join(home, '.desktop-bin'),
-      dshEntryPath: join(home, 'bin.js'),
-      executablePath: process.execPath,
-      home,
-      environment: {},
-      spawnProcess: fakeCliSpawn(calls)
+      home, binDirectory: join(home, '.desktop-bin'), dshEntryPath: join(home, 'bin.js'),
+      environment: {}, spawnProcess: (...args) => { calls.push(args); throw new Error('Shared CLI must not run') },
+      runGenerationInstall: stubGenerationInstall('dshmarket', '1.66.47')
     })
-
-    const result = await drainHandle(
-      svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.45.1'], profile)
-    )
-
+    const result = await drainHandle(svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.66.47'], profile))
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('shared profile')
-    // Routed through the ordinary shared-tree `add`, never installGeneration.
-    expect(calls).toHaveLength(1)
-    expect(calls[0].args).toEqual(
-      expect.arrayContaining([
-        'plugin', '--profile', 'web', 'add', '--workspace-root', 'dshmarket@1.45.1'
-      ])
-    )
-    // Pinned to the market's own registry, exactly as the generation path is.
-    expect(calls[0].options.env.npm_config_registry).toBe('https://mirrors.cloud.tencent.com/npm')
-    // No generation artifacts: desired.json untouched, entry stays a real dir.
-    expect(await readDesired(home)).toEqual([])
-    expect((await lstat(join(profile, 'node_modules', 'dshmarket'))).isSymbolicLink()).toBe(false)
-    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
-    expect(manifest.pnpm?.overrides?.dshmarket).toBeUndefined()
+    expect(calls).toEqual([])
+    expect(await readDesired(home)).toEqual([expect.stringMatching(/^dshmarket\+1\.66\.47\+/u)])
+    expect((await lstat(join(profile, 'node_modules/dshmarket'))).isSymbolicLink()).toBe(true)
+    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.66.47')
+    await svc.dispose()
   })
 
-  it('collapses a projected Market generation back into the shared tree on update', async () => {
+  it('updates an existing market generation without demoting it to the shared tree', async () => {
     const home = await freshHome()
     const profile = join(home, 'profiles/web')
-    // A build from before this fix left dshmarket projected as a generation.
-    // Projection refuses to create that shape now, so write it by hand.
-    const first = await installGeneration({
-      dshHome: home, pluginSpec: 'dshmarket@1.45.1', nodeExecutablePath: process.execPath,
-      pnpmEntryPath: 'unused', runInstall: stubGenerationInstall('dshmarket', '1.45.1')
-    })
-    await writeDesired(home, [first.generation.id])
-    const marketPath = join(profile, 'node_modules/dshmarket')
-    await mkdir(join(profile, 'node_modules'), { recursive: true })
-    await symlink(join(first.generation.directory, 'node_modules', 'dshmarket'), marketPath, 'junction')
-    expect((await lstat(marketPath)).isSymbolicLink()).toBe(true)
-
-    const calls = []
-    const svc = createDesktopPnpmService({
-      binDirectory: join(home, '.desktop-bin'), dshEntryPath: join(home, 'bin.js'),
-      executablePath: process.execPath, home, environment: {}, spawnProcess: fakeCliSpawn(calls)
-    })
-    const result = await drainHandle(svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.46.0'], profile))
-
-    expect(result.exitCode).toBe(0)
-    // Never the generation path: the shared-tree CLI ran instead.
-    expect(calls).toHaveLength(1)
-    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.46.0')
-    expect((await lstat(marketPath)).isSymbolicLink()).toBe(false)
-    // The stale generation pointer has no further purpose.
-    expect(await readDesired(home)).toEqual([])
-  })
-
-  it('repairs stale Market staging without changing an ordinary plugin during shared-tree update', async () => {
-    const home = await freshHome()
-    const profile = join(home, 'profiles/web')
-    await drainHandle(service(home, stubGenerationInstall('widget', '1.0.0'))
-      .runExternalMarketPluginInstall(['add', 'widget@1.0.0'], profile))
+    await drainHandle(service(home, stubGenerationInstall('dshmarket', '1.66.47'))
+      .runExternalMarketPluginInstall(['add', 'dshmarket@1.66.47'], profile))
     await projectGenerations(home)
-    const widgetLink = await readlink(join(profile, 'node_modules/widget'))
-    await mkdir(join(profile, 'node_modules/dshmarket'), { recursive: true })
-    await writeFile(join(profile, 'node_modules/dshmarket/package.json'), JSON.stringify({ name: 'dshmarket', version: '1.39.0' }))
-    const staged = await installGeneration({
-      dshHome: home, pluginSpec: 'dshmarket@1.44.0', nodeExecutablePath: process.execPath,
-      pnpmEntryPath: 'unused', runInstall: stubGenerationInstall('dshmarket', '1.44.0')
-    })
-    const previous = await readDesired(home)
-    await writeDesired(home, [...previous, staged.generation.id])
-    await publishGenerationManifest(home)
-    const svc = createDesktopPnpmService({ home, binDirectory: join(home, '.desktop-bin'),
-      dshEntryPath: join(home, 'bin.js'), spawnProcess: fakeCliSpawn([]) })
-    const result = await drainHandle(svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.45.1'], profile))
+    const oldTarget = await readlink(join(profile, 'node_modules/dshmarket'))
+    const result = await drainHandle(service(home, stubGenerationInstall('dshmarket', '1.66.48'))
+      .runExternalMarketPluginInstall(['add', 'dshmarket@1.66.48'], profile))
     expect(result.exitCode).toBe(0)
-    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.45.1')
-    expect(readInstalledVersion('web', 'widget', profile)).toBe('1.0.0')
-    expect(await readDesired(home)).toEqual(previous)
-    await projectGenerations(home)
-    expect(await readlink(join(profile, 'node_modules/widget'))).toBe(widgetLink)
-    expect((await lstat(join(profile, 'node_modules/dshmarket'))).isSymbolicLink()).toBe(false)
-    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.45.1')
+    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.66.48')
+    expect(await readlink(join(profile, 'node_modules/dshmarket'))).not.toBe(oldTarget)
+    expect(await readDesired(home)).toEqual([expect.stringMatching(/^dshmarket\+1\.66\.48\+/u)])
   })
 
-  it('rejects a shared-tree CLI success that leaves the installed version unchanged', async () => {
+  it('does not claim a legacy real-directory update is visible to a streaming caller', async () => {
     const home = await freshHome()
     const profile = join(home, 'profiles/web')
-    await mkdir(join(profile, 'node_modules/dshmarket'), { recursive: true })
-    await writeFile(join(profile, 'node_modules/dshmarket/package.json'), JSON.stringify({ version: '1.39.0' }))
+    const market = join(profile, 'node_modules/dshmarket')
+    await mkdir(market, { recursive: true })
+    await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.39.0' }))
     const before = await readFile(join(profile, 'package.json'), 'utf8')
-    const svc = createDesktopPnpmService({ home, binDirectory: join(home, '.desktop-bin'),
-      dshEntryPath: join(home, 'bin.js'), spawnProcess: () => {
-        const child = new EventEmitter()
-        child.stdout = new EventEmitter()
-        child.stderr = new EventEmitter()
-        setImmediate(() => child.emit('close', 0, null))
-        return child
-      } })
-    const result = await drainHandle(svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.45.1'], profile))
+    const result = await drainHandle(service(home, stubGenerationInstall('dshmarket', '1.66.47'))
+      .runExternalMarketPluginInstall(['add', 'dshmarket@1.66.47'], profile))
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('expected 1.45.1, found 1.39.0')
+    expect(result.stderr).toContain('standard plugin manager')
+    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.39.0')
     expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(before)
     expect(await readDesired(home)).toEqual([])
   })
 
-  it('reports a failed dshmarket shared-tree update', async () => {
+  it('removes the market generation without resurrecting it on restart', async () => {
     const home = await freshHome()
-    const profile = join(home, 'profiles', 'web')
-    const svc = createDesktopPnpmService({
-      binDirectory: join(home, '.desktop-bin'),
-      dshEntryPath: join(home, 'bin.js'),
-      executablePath: process.execPath,
-      home,
-      environment: {},
-      spawnProcess: (_e, _a, _o) => {
-        const child = new EventEmitter()
-        child.stdout = new EventEmitter()
-        child.stderr = new EventEmitter()
-        child.exitCode = null
-        setImmediate(() => {
-          child.stderr.emit('data', Buffer.from('ERR_PNPM_NO_MATCHING_VERSION\n'))
-          child.exitCode = 1
-          child.emit('close', 1, null)
-        })
-        return child
-      }
-    })
+    const profile = join(home, 'profiles/web')
+    const svc = service(home, stubGenerationInstall('dshmarket', '1.66.47'))
+    await drainHandle(svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.66.47'], profile))
+    await projectGenerations(home)
+    expect((await drainHandle(svc.runPlugin(['remove', 'dshmarket'], profile))).exitCode).toBe(0)
+    expect(await readDesired(home)).toEqual([])
+    await projectGenerations(home)
+    await expect(lstat(join(profile, 'node_modules/dshmarket'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 
-    const result = await drainHandle(
-      svc.runExternalMarketPluginInstall(['add', 'dshmarket@9.9.9'], profile)
-    )
-
+  it('reports failed market installs without changing the profile', async () => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles/web')
+    const before = await readFile(join(profile, 'package.json'), 'utf8')
+    const result = await drainHandle(service(home, async () => ({ code: 1, output: 'ERR_PNPM_NO_MATCHING_VERSION' }))
+      .runExternalMarketPluginInstall(['add', 'dshmarket@9.9.9'], profile))
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('Market install failed: 1')
+    expect(result.stderr).toContain('ERR_PNPM_NO_MATCHING_VERSION')
+    expect(await readDesired(home)).toEqual([])
+    expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(before)
   })
 
   it('serialises against a concurrent operation', async () => {

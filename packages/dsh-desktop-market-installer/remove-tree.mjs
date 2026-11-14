@@ -16,7 +16,7 @@
  * unlinked rather than followed, so a link into pnpm's store never takes the
  * store's contents with it.
  *
- * This is the Harness-side copy of `src/main/state/remove-tree.ts`. The two
+ * This is the Harness-side copy of `src/main/profile/remove-tree.ts`. The two
  * run in different processes — this one inside Harness, the other in the
  * desktop's main process — and the desktop's build does not reach into this
  * package's sources, so the walk is stated in both places rather than shared

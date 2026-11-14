@@ -49,7 +49,7 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
   const t = key => dictionaries[english ? 'en' : 'zh'][key] ?? key
   function render() {
-    const names = ['conversation.hero.modeActions', 'conversation.input.accessory', 'conversation.hero.dock']
+    const names = ['conversation.hero.options', 'conversation.input.accessory', 'conversation.hero.dock']
     if (seats.has('conversation.chat.userMessageFooter')) names.push('conversation.chat.userMessageFooter')
     root.render(React.createElement(React.Fragment, null, ...names.map(seat => React.createElement(seats.get(seat), {
       key: seat, sessionId, session: { blank }, leading: blank ? false : leading, store, t

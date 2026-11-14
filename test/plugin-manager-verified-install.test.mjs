@@ -6,7 +6,7 @@ import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'
 import { TYPERT } from '@deepseek-ai/dsh-plugin-manager/typert'
 import remote from '@deepseek-ai/dsh-plugin-manager/remote'
 
-// Compatibility patch for manager 0.2.2-alpha.2. Remove when upstream offers verified replacement.
+// Compatibility patch for manager 0.2.2-rc.1. Remove when upstream offers verified replacement.
 const roots = []
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))

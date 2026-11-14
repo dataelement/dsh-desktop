@@ -33,7 +33,7 @@ async function fixture(document = { querySelector: () => null }) {
   let exports
   vm.runInNewContext(source, {
     window: { localStorage: storage, sessionStorage: storage, __ModuleLoader__: { load({ factory }) {
-      exports = factory(name => name === 'react' ? React : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Switch: () => null })
+      exports = factory(name => name === 'react' ? React : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Button: ({ children, icon, variant, ...props }) => React.createElement('button', props, icon, children), IconDownloadOutlineRegular: () => null, Menu: ({ anchor }) => anchor, Switch: () => null })
     } } }, document, console, setTimeout, clearTimeout, AbortController
   })
   const request = (path, options) => {
@@ -42,7 +42,7 @@ async function fixture(document = { querySelector: () => null }) {
     return route.fetch(new Request(new URL(path, 'http://localhost'), options))
   }
   const makeController = async packageName => {
-    const ctx = { fiber: { entry: { options: { name: packageName } } },
+    const ctx = { locale: { bind: () => key => key }, fiber: { entry: { options: { name: packageName } } },
       sessions: { list: { getSnapshot: () => ({ ids: [], byId: {} }) } },
       workspaces: { list: { getSnapshot: () => ({ items: [] }) } },
       layout: { beginNavigation: () => new AbortController().signal, selectPanel() {} }
@@ -122,7 +122,11 @@ describe('local workbench registration through real host state routes', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(() => service.register({ title: 'Broken', repository: 'not-a-repository' }, () => null)).toThrow()
-      await act(async () => view.render(React.createElement(exports.Market, { service })))
+      await act(async () => view.render(React.createElement(React.Fragment, null,
+        React.createElement(exports.Market, { service }),
+        React.createElement(exports.RestartNotice, { service, t: key => key }))))
+      expect(container.querySelector('.dshWbMarket [role="alert"]')).toBeNull()
+      await act(async () => container.querySelector('.dshRestartNotice [aria-expanded]').click())
       expect(container.querySelector('[role="alert"]').textContent).toContain('broken-review')
       expect(container.querySelector('[role="alert"]').textContent).toContain('GitHub URL')
       let dispose

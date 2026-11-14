@@ -21,7 +21,7 @@ vi.mock('tar', async importOriginal => {
   const tar = await importOriginal()
   return { ...tar, c: vi.fn(tar.c), t: vi.fn(tar.t) }
 })
-import { archiveWindowsRelease, validateWindowsArchive } from '../scripts/archive-windows-release.mjs'
+import { archiveWindowsRelease, validateWindowsArchive } from '../scripts/release/archive-windows-release.mjs'
 
 let directory, output
 const log = vi.fn()
@@ -65,7 +65,7 @@ it.runIf(process.platform === 'darwin')('can be extracted by the native tar used
 
 it('runs the guarded CLI with an explicit Unicode directory', async () => {
   await writeFile(join(directory, 'win-unpacked', 'payload'), 'test')
-  execFileSync(process.execPath, [fileURLToPath(new URL('../scripts/archive-windows-release.mjs', import.meta.url)), directory])
+  execFileSync(process.execPath, [fileURLToPath(new URL('../scripts/release/archive-windows-release.mjs', import.meta.url)), directory])
   await validateWindowsArchive(output)
 })
 

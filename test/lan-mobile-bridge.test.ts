@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as os from 'node:os'
+import type { InternetTunnelInstance } from '../src/main/mobile/internet-tunnel'
 import { createServer, request as httpRequest, type IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
@@ -10,6 +12,11 @@ import {
   LanMobileBridge,
   normalizeRemoteAddress
 } from '../src/main/mobile/lan-mobile-bridge'
+
+vi.mock('node:os', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) }
+})
 
 const bridges: LanMobileBridge[] = []
 const servers: ReturnType<typeof createServer>[] = []
@@ -75,6 +82,76 @@ describe('LAN mobile bridge address policy', () => {
 })
 
 describe('LAN mobile bridge pairing surface', () => {
+  it.each(['ready', 'failed'] as const)('renders internet progress before a background tunnel is %s even with LAN available', async outcome => {
+    const addresses = vi.spyOn(os, 'networkInterfaces').mockReturnValue({
+      en0: [{ address: '192.168.1.8', netmask: '255.255.255.0', family: 'IPv4', mac: '00:00:00:00:00:00', internal: false, cidr: '192.168.1.8/24' }]
+    })
+    let settle: () => void = () => {}
+    const gate = new Promise<void>(resolve => { settle = resolve })
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      createCloudflareTunnel: async () => {
+        await gate
+        if (outcome === 'failed') throw new Error('Cloudflare test failure')
+        return {
+          provider: 'cloudflare',
+          url: 'https://pending-test.trycloudflare.com',
+          process: {} as InternetTunnelInstance['process'],
+          stop: async () => {}
+        }
+      },
+      createPinggyTunnel: async () => { throw new Error('Pinggy test failure') }
+    })
+    bridges.push(bridge)
+    let opening: ReturnType<LanMobileBridge['toggleTunnel']> | undefined
+    try {
+      const snapshot = await bridge.start()
+      expect(snapshot.pairingUrl).toContain('http://192.168.1.8:')
+      // The shell deliberately starts this without awaiting it, before loading /desktop.
+      opening = bridge.toggleTunnel(true)
+      expect(bridge.snapshot()).toMatchObject({ tunnelLoading: true, tunnelActive: false })
+      const cookie = await authorizeDesktop(bridge)
+      const headers = { cookie }
+      const page = await fetch(snapshot.desktopUrl!, { headers })
+      expect(page.status).toBe(200)
+      const html = await page.text()
+      expect(html).toContain('id="btnTunnel" type="button" class="mode-btn active" aria-pressed="true"')
+      expect(html).toContain('id="qrLoading" class="qr-loading show"')
+      expect(html).toContain('selectedTunnelTab=true')
+      expect(html).toContain('if(tunnelLoading)startTunnelProgress(true)')
+      expect(html).toContain('id="qrCode" hidden')
+      const statusUrl = `http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`
+      const pending = await fetch(statusUrl, { headers })
+      expect(pending.status).toBe(200)
+      expect(await pending.json()).toMatchObject({ active: false, loading: true })
+
+      settle()
+      await opening
+      const finished = await fetch(statusUrl, { headers })
+      expect(finished.status).toBe(200)
+      const payload = await finished.json()
+      expect(payload.loading).toBe(false)
+      expect(payload.active).toBe(outcome === 'ready')
+      if (outcome === 'ready') {
+        expect(payload.pairingUrl).toContain('https://pending-test.trycloudflare.com/pair?token=')
+        expect(payload.qrSvg).toContain('<svg')
+        expect(payload.error).toBeUndefined()
+      } else {
+        expect(payload.error).toContain('Cloudflare test failure')
+        expect(payload.error).toContain('Pinggy test failure')
+        const failedPage = await fetch(snapshot.desktopUrl!, { headers })
+        const failedHtml = await failedPage.text()
+        expect(failedHtml).toContain('selectedTunnelTab=true')
+        expect(failedHtml).toContain('id="tunnelError" class="tunnel-err show"')
+        expect(failedHtml).toContain('Cloudflare test failure')
+      }
+    } finally {
+      settle()
+      await opening
+      addresses.mockRestore()
+    }
+  })
+
   it('serves the desktop pairing page only on loopback', async () => {
     const bridge = new LanMobileBridge({
       harnessUrl: () => 'http://127.0.0.1:9999'
@@ -716,6 +793,42 @@ describe('LAN mobile bridge pairing surface', () => {
         maxMessages: 100
       }
     })
+  })
+
+  it('uses the shell session cookie instead of spending the launch token', async () => {
+    const seen: { url: string | undefined; cookie: string | undefined }[] = []
+    const harness = createServer(async (request, response) => {
+      seen.push({ url: request.url, cookie: request.headers.cookie })
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(Buffer.from(chunk))
+      const body = Buffer.concat(chunks).toString('utf8')
+      if (body.length === 0) {
+        response.statusCode = 204
+        response.end()
+        return
+      }
+      const envelope = JSON.parse(body) as { rpcId?: unknown }
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({
+        type: 'server-response',
+        rpcId: envelope.rpcId,
+        result: { ok: true, value: { models: [] } }
+      }))
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`,
+      harnessCookie: () => 'session=desktop-cookie',
+      harnessAuthToken: () => 'spent-token'
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const listed = await mobileRpc(port, cookie, 'session.models', {})
+    expect(listed.status).toBe(200)
+    expect(seen.some(item => item.cookie === 'session=desktop-cookie')).toBe(true)
+    expect(seen.some(item => item.url?.includes('spent-token') === true)).toBe(false)
   })
 
   it('streams native session follow snapshots and events to an authorized phone', async () => {
@@ -1437,6 +1550,93 @@ describe('LAN vs tunnel pairing authorization', () => {
     })
     expect(tunnelStatus.status).toBe(403)
     expect(await tunnelStatus.text()).not.toContain('246810')
+  })
+
+  it('reveals the desktop PIN only after a valid tunnel scan and re-arms the QR without replacing a long-term PIN', async () => {
+    const store = memoryPinStore()
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const { port } = await bridge.start()
+    armFakeTunnel(bridge)
+    const base = `http://127.0.0.1:${port}`
+    const desktopHeaders = { cookie: await authorizeDesktop(bridge) }
+    const phoneHeaders = {
+      host: 'active-mobile.trycloudflare.com',
+      'cf-connecting-ip': '203.0.113.40',
+      'cf-ray': 'test-ray'
+    }
+    const status = async () => await (await fetch(`${base}/desktop/tunnel/status`, {
+      headers: desktopHeaders
+    })).json() as { pinRevealed: boolean; pairingPin: string; pairingUrl: string }
+    const first = await status()
+    expect(first.pinRevealed).toBe(false)
+    const initialPage = await (await fetch(`${base}/desktop`, { headers: desktopHeaders })).text()
+    expect(initialPage).toContain('id="pinPanel" class="pin-panel" hidden')
+    expect(initialPage).not.toContain(`class="pin-value">${first.pairingPin}`)
+    expect(store.load()).toEqual({})
+    const rejected = await fetch(`${base}/pair?token=invalid`, { headers: phoneHeaders })
+    expect(rejected.status).toBe(401)
+    expect((await status()).pinRevealed).toBe(false)
+
+    const firstLink = new URL(first.pairingUrl)
+    const phonePage = await fetch(`${base}${firstLink.pathname}${firstLink.search}`, { headers: phoneHeaders })
+    expect(phonePage.status).toBe(200)
+    expect(phonePage.headers.get('set-cookie')).toBeNull()
+    const phoneHtml = await phonePage.text()
+    expect(phoneHtml).toContain('Enter pairing password')
+    expect(phoneHtml).not.toContain('id="pinValue"')
+    expect(await status()).toMatchObject({ pinRevealed: true, pairingPin: first.pairingPin })
+
+    const durable = await fetch(`${base}/desktop/pin/consent`, {
+      method: 'POST',
+      headers: { ...desktopHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ consent: true })
+    })
+    expect(durable.status).toBe(200)
+    const savedPin = store.load().pin
+    expect(savedPin).toMatch(/^\d{6}$/)
+    expect(await durable.json()).toMatchObject({ pinRevealed: true, pinConsent: true, pairingPin: savedPin })
+
+    const deniedRescan = await fetch(`${base}/desktop/rescan`, { method: 'POST', headers: phoneHeaders })
+    expect(deniedRescan.status).toBe(403)
+    const rescanned = await fetch(`${base}/desktop/rescan`, { method: 'POST', headers: desktopHeaders })
+    expect(rescanned.status).toBe(200)
+    const next = await status()
+    expect(next).toMatchObject({ pinRevealed: false, pairingPin: savedPin })
+    expect(next.pairingUrl).not.toBe(first.pairingUrl)
+    expect((await fetch(`${base}${firstLink.pathname}${firstLink.search}`, { headers: phoneHeaders })).status).toBe(401)
+  })
+
+  it('leaves an expired scanned PIN expired until the desktop re-arms the QR', async () => {
+    let now = Date.now()
+    const bridge = new LanMobileBridge({ harnessUrl: () => 'http://127.0.0.1:9999', now: () => now })
+    bridges.push(bridge)
+    const { port } = await bridge.start()
+    armFakeTunnel(bridge)
+    const base = `http://127.0.0.1:${port}`
+    const headers = { cookie: await authorizeDesktop(bridge) }
+    const status = async () => await (await fetch(`${base}/desktop/tunnel/status`, { headers })).json()
+    const first = await status() as { pairingUrl: string }
+    const link = new URL(first.pairingUrl)
+    const scan = await fetch(`${base}${link.pathname}${link.search}`, {
+      redirect: 'manual',
+      headers: { host: link.host, 'cf-connecting-ip': '203.0.113.41', 'cf-ray': 'test-ray' }
+    })
+    expect(scan.status).toBe(200)
+    expect(await status()).toMatchObject({ pinRevealed: true, pairingPin: expect.stringMatching(/^\d{6}$/) })
+    now += 5 * 60 * 1000 + 1
+    const expired = await status()
+    expect(expired).toMatchObject({ pinRevealed: true, pinExpiresAt: expect.any(Number) })
+    expect(expired).not.toHaveProperty('pairingPin')
+    const rescan = await fetch(`${base}/desktop/rescan`, { method: 'POST', headers })
+    expect(await rescan.json()).toMatchObject({
+      pinRevealed: false,
+      pairingPin: expect.stringMatching(/^\d{6}$/),
+      pinExpiresAt: now + 5 * 60 * 1000
+    })
   })
 
   it('requires a PIN on the tunnel and ignores a sibling device on the same public IP', async () => {

@@ -4,22 +4,33 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSafeModeViewModel,
   safeModeBlockingGroupCount,
+  normalRelaunchArguments,
+  relaunchArguments,
   safeModeExitConfirmation,
   shouldStartInSafeMode
 } from '../src/main/safe-mode'
-import type { ProfileCompatibilityIssue } from '../src/main/state/profile-compatibility'
+import type { ProfileCompatibilityIssue } from '../src/main/profile/profile-compatibility'
 import {
   ensureSafeModeProfile,
   extractSafeModePatch,
   SAFE_MODE_BUNDLES,
   SAFE_MODE_MODEL_ENTRY_IDS,
   SAFE_MODE_PROFILE
-} from '../src/main/state/safe-mode-profile'
+} from '../src/main/recovery/safe-mode-profile'
 
 describe('Safe Mode', () => {
   it('is opt-in through an exact command-line switch', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode'])).toBe(true)
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
+    expect(relaunchArguments(['/Electron', '/app', '--user-data-dir=/tmp/dsh', '--safe-mode'])).toEqual([
+      '/app',
+      '--user-data-dir=/tmp/dsh',
+      '--safe-mode'
+    ])
+    expect(normalRelaunchArguments(['/Electron', '/app', '--user-data-dir=/tmp/dsh', '--safe-mode'])).toEqual([
+      '/app',
+      '--user-data-dir=/tmp/dsh'
+    ])
   })
 
   it('marks plugins as still being checked until the market check answers', () => {

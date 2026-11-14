@@ -11,8 +11,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../packages/dsh-desktop-workbenches/index.js'
-import { renderDocumentPage } from '../scripts/workbench-doc-page.mjs'
-import { renderBundledGuide, SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, ACCEPTANCE_EN_SOURCE, ACCEPTANCE_EN_TARGET, GUIDE_SOURCE, GUIDE_TARGET, GUIDE_EN_SOURCE, GUIDE_EN_TARGET, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE, renderAcceptanceFromSource, renderGuideFromSource, renderQuickstartFromSource, renderEnglishGuideFromSource, renderEnglishAcceptanceFromSource, renderEnglishQuickstartFromSource } from '../scripts/build-workbench-guide.mjs'
+import { renderDocumentPage } from '../scripts/verify/workbench-doc-page.mjs'
+import { renderBundledGuide, SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, ACCEPTANCE_EN_SOURCE, ACCEPTANCE_EN_TARGET, GUIDE_SOURCE, GUIDE_TARGET, GUIDE_EN_SOURCE, GUIDE_EN_TARGET, QUICKSTART_SOURCE, QUICKSTART_EN_SOURCE, renderAcceptanceFromSource, renderGuideFromSource, renderQuickstartFromSource, renderEnglishGuideFromSource, renderEnglishAcceptanceFromSource, renderEnglishQuickstartFromSource } from '../scripts/verify/build-workbench-guide.mjs'
 
 const root = join(import.meta.dirname, '..')
 const read = path => readFileSync(join(root, path), 'utf8')
@@ -32,7 +32,7 @@ describe('bundled workbench development guide', () => {
   it('generates website Markdown and reading pages without bundled-copy notices', async () => {
     const site = await mkdtemp(join(tmpdir(), 'dsh-workbench-site-'))
     try {
-      execFileSync(process.execPath, [join(root, 'scripts/build-workbench-guide.mjs'), '--site', site])
+      execFileSync(process.execPath, [join(root, 'scripts/verify/build-workbench-guide.mjs'), '--site', site])
       for (const [doc, source, notice] of [[SITE_DOCUMENTS.development, GUIDE_SOURCE, '内置离线快照'], [SITE_DOCUMENTS.developmentEn, GUIDE_EN_SOURCE, 'Bundled offline snapshot']]) {
         expect(readFileSync(join(site, doc.file), 'utf8')).toBe(read(source))
         expect(readFileSync(join(site, doc.page), 'utf8')).not.toContain(notice)

@@ -13,14 +13,14 @@ function client() {
   let exports
   vm.runInNewContext(source.replace('return { apply, inject:', 'return { Preview, ScreenshotGallery, apply, inject:'), {
     window: { localStorage: { getItem: key => key === 'dsh-workbench-enabled' ? 'true' : null, setItem() {} }, __ModuleLoader__: { load({ factory }) {
-      exports = factory(name => name === 'react' ? React : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Switch: () => null })
+      exports = factory(name => name === 'react' ? React : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Button: ({ children, icon, variant, ...props }) => React.createElement('button', props, icon, children), IconDownloadOutlineRegular: () => null, Menu: ({ anchor }) => anchor, Switch: () => null })
     } } }, document: dom.window.document, setTimeout, clearTimeout, AbortController
   })
   return exports
 }
 function service({ listed = true, added = true } = {}) {
   const { Workbenches } = client()
-  const ctx = { fiber: { entry: { options: { name: 'animation-package' } } }, layout: { beginNavigation() {} } }
+  const ctx = { locale: { bind: () => key => key }, fiber: { entry: { options: { name: 'animation-package' } } }, layout: { beginNavigation() {} } }
   const value = new Workbenches(ctx)
   value.ready = true
   value.state.added = added ? ['example/animation'] : []

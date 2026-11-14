@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import afterSign, { notarizeWithStapleRetry } from '../scripts/notarize-macos.mjs'
-import { verifyMacOSMicrophonePermissions } from '../scripts/verify-macos-permissions.mjs'
+import afterSign, { notarizeWithStapleRetry } from '../scripts/release/notarize-macos.mjs'
+import { verifyMacOSMicrophonePermissions } from '../scripts/verify/verify-macos-permissions.mjs'
 
-vi.mock('../scripts/verify-macos-permissions.mjs', () => ({ verifyMacOSMicrophonePermissions: vi.fn() }))
+vi.mock('../scripts/verify/verify-macos-permissions.mjs', () => ({ verifyMacOSMicrophonePermissions: vi.fn() }))
 
 const options = { appPath: '/fixture/DSH Desktop.app' }
 const stapleError = new Error('Failed to staple your application with code: 68\nThe network connection was lost.')
@@ -157,7 +157,7 @@ describe('macOS app notarization', () => {
   it('uses the explicit hook with built-in notarization disabled to avoid duplicate submissions', async () => {
     const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
     expect(pkg.build.mac.notarize).toBe(false)
-    expect(pkg.build.afterSign).toBe('scripts/notarize-macos.mjs')
+    expect(pkg.build.afterSign).toBe('scripts/release/notarize-macos.mjs')
     expect(pkg.devDependencies['@electron/notarize']).toBe('2.5.0')
   })
 })

@@ -3,6 +3,11 @@
 // right panels from this value through --dsh-windows-titlebar-height.
 export const WINDOWS_TITLEBAR_HEIGHT = 40
 
+/** Linux reuses Harness's Windows-named caption seam, without changing its platform identity. */
+export function usesDesktopCaption(platform: string): boolean {
+  return platform === 'win32' || platform === 'linux'
+}
+
 export const desktopMenuCommands = [
   'connect-phone',
   'restart-harness',
@@ -22,6 +27,7 @@ export const desktopMenuCommands = [
   'zoom-out',
   'toggle-fullscreen',
   'about',
+  'explore-enterprise',
   'quit'
 ] as const
 

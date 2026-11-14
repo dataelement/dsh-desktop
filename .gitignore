@@ -1,7 +1,9 @@
 node_modules/
 out/
+out-shell/
 dist/
 dist-dev/
+dist-shell/
 .DS_Store
 *.log
 coverage/
@@ -40,3 +42,6 @@ docs/mobile-connection-latency.zh.md
 
 # Local design iterations; production artwork lives in build/dmg/.
 /docs/dmg-install-preview/
+
+# Snapshots fetched by scripts/upstream-diff.mjs. Not source.
+/.upstream-cache/

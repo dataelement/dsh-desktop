@@ -8,6 +8,7 @@ on:
     branches:
       - main
       - V0.9.1
+      - V0.14.0
   workflow_dispatch:
     inputs:
       mode:
@@ -56,7 +57,7 @@ env:
 concurrency:
   # Platform-only retries have independent artifacts and never publish.
   group: desktop-release-${{ github.ref }}-${{ inputs.target || 'all' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate-dispatch:
@@ -248,17 +249,17 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-        run: node scripts/prepare-macos-signing-keychain.mjs
+        run: node scripts/release/prepare-macos-signing-keychain.mjs
       - name: Build signed ${{ matrix.label }} package
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
-        run: node scripts/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never
+        run: node scripts/verify/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never
       - name: Build isolated ${{ matrix.label }} development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: node scripts/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never --config electron-builder.dev.cjs
+        run: node scripts/verify/verify-target.mjs darwin ${{ matrix.arch }} && npx --no-install electron-builder --mac --${{ matrix.arch }} --publish never --config electron-builder.dev.cjs
       - name: Preserve ${{ matrix.label }} update metadata
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         run: mv dist/latest-mac.yml dist/latest-mac-${{ matrix.arch }}.yml
@@ -429,10 +430,10 @@ jobs:
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Check recovery UI on native Windows at three display scales
-        if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
-        run: node scripts/check-recovery-ui.mjs
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended')
+        run: node scripts/verify/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
+        if: always() && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'))
         with:
           name: windows-recovery-ui
           retention-days: 7
@@ -442,23 +443,20 @@ jobs:
           if-no-files-found: warn
       - name: Build Windows release package
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
-        run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never
+        run: node scripts/verify/verify-target.mjs win32 x64 && node scripts/release/electron-builder-windows.mjs --win --x64 --publish never
       - name: Build isolated Windows development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
-        run: node scripts/verify-target.mjs win32 x64 && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs
+        run: node scripts/verify/verify-target.mjs win32 x64 && node scripts/release/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs
       - name: Test installer failure cancellation on Windows
         env:
           DSH_TEST_NSIS: '1'
         run: npx --no-install vitest run test/windows-installer-errors.test.ts
       - name: Smoke test packaged Windows Harness
-        if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended')
         shell: pwsh
         env:
           SMOKE_EXE: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist\win-unpacked\DSH Desktop.exe' || 'dist-dev\win-unpacked\DSH Desktop Dev.exe' }}
-          SMOKE_USERDATA: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dsh-desktop' || 'dsh-desktop-dev' }}
         run: |
-          $userData = Join-Path $env:APPDATA $env:SMOKE_USERDATA
-          $logPath = Join-Path $userData 'logs\harness.log'
           # Run outside the checkout: otherwise Node can silently resolve a
           # missing packaged dependency from the repository's node_modules.
           $sourceExecutable = Get-Item $env:SMOKE_EXE
@@ -466,8 +464,6 @@ jobs:
           New-Item -ItemType Directory -Path $isolatedApp | Out-Null
           Copy-Item -Path (Join-Path $sourceExecutable.Directory.FullName '*') -Destination $isolatedApp -Recurse
           $executable = Join-Path $isolatedApp $sourceExecutable.Name
-          $desktopStdout = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stdout.log'
-          $desktopStderr = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stderr.log'
           $packagedNode = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\node\bin\node.exe'
           if (Test-Path $packagedNode) { throw 'Standalone Windows node.exe must not be packaged.' }
           # Exercise the actual native binding too; the best-effort fallback
@@ -497,108 +493,12 @@ jobs:
           $pnpmEntry = Join-Path $isolatedApp 'resources\app.asar\node_modules\pnpm\bin\pnpm.cjs'
           $pnpmExitCode = Invoke-ElectronNode @($pnpmEntry, '--version')
           if ($pnpmExitCode -ne 0) { throw "Packaged pnpm failed under Electron Node mode (exit code $pnpmExitCode)." }
-          if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
-          $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru `
-            -RedirectStandardOutput $desktopStdout -RedirectStandardError $desktopStderr
           try {
-            $deadline = (Get-Date).AddSeconds(75)
-            $ready = $false
-            $endpoint = $null
-            while ((Get-Date) -lt $deadline) {
-              if ($desktop.HasExited) {
-                throw "DSH Desktop Dev exited before Harness was ready (exit code $($desktop.ExitCode))."
-              }
-              if (Test-Path $logPath) {
-                $log = Get-Content -Raw $logPath
-                if (-not [string]::IsNullOrEmpty($log)) {
-                  $match = [regex]::Match($log, 'dsh web: (http://127\.0\.0\.1:\d+/\?token=[^\s]+)')
-                  if ($match.Success) {
-                    try {
-                      $authenticatedUrl = $match.Groups[1].Value
-                      $response = Invoke-WebRequest `
-                        -UseBasicParsing `
-                        -Uri $authenticatedUrl `
-                        -SessionVariable harnessSession `
-                        -TimeoutSec 2
-                      if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
-                        $endpoint = ([uri]$authenticatedUrl).GetLeftPart([System.UriPartial]::Authority)
-                        $ready = $true
-                        break
-                      }
-                    } catch { }
-                  }
-                }
-              }
-              Start-Sleep -Milliseconds 500
-            }
-            if (-not $ready) { throw 'Packaged Harness did not become ready within 75 seconds.' }
-
-            function Invoke-HarnessRpc([string]$endpointName, [hashtable]$request) {
-              $rpcId = [guid]::NewGuid().ToString()
-              $body = @{
-                type = 'client-request'
-                rpcId = $rpcId
-                method = $endpointName
-                payload = @{ args = @{ request = $request } }
-              } | ConvertTo-Json -Depth 8 -Compress
-              $response = Invoke-RestMethod `
-                -Method Post `
-                -Uri "$endpoint/api/$endpointName" `
-                -ContentType 'application/json; charset=utf-8' `
-                -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) `
-                -WebSession $harnessSession `
-                -TimeoutSec 30
-              if ($response.rpcId -ne $rpcId) { throw "Harness RPC id mismatch for $endpointName." }
-              if (-not $response.result.ok) {
-                throw "Harness RPC $endpointName failed: $($response.result.error.code): $($response.result.error.message)"
-              }
-              return $response.result.value
-            }
-
-            $workspacePath = Join-Path $env:RUNNER_TEMP '数据项素-工作区'
-            New-Item -ItemType Directory -Force -Path $workspacePath | Out-Null
-            $workspace = Invoke-HarnessRpc 'workspace/create' @{ path = $workspacePath }
-            $session = Invoke-HarnessRpc 'session/create' @{ workspaceId = $workspace.workspace.workspaceId }
-            if ([string]::IsNullOrWhiteSpace($session.sessionId)) {
-              throw 'Harness did not return a session id for the selected workspace.'
-            }
-
-            Start-Sleep -Seconds 20
-            $stableLog = Get-Content -Raw $logPath
-            $readyMarker = $stableLog.LastIndexOf('[desktop] Harness is ready')
-            if ($readyMarker -lt 0) { throw 'Harness readiness marker is missing.' }
-            $postReadyLog = $stableLog.Substring($readyMarker)
-            if ($postReadyLog -match '\[stderr\]') {
-              throw 'Harness reported stderr after becoming ready.'
-            }
-            if ($stableLog -match '\[node\] Harness process exited') {
-              throw 'Harness process exited after workspace and session creation.'
-            }
-            if ($desktop.HasExited) {
-              throw "DSH Desktop Dev exited after workspace and session creation (exit code $($desktop.ExitCode))."
-            }
-            Write-Host 'Packaged Windows Harness smoke test passed.'
+            node scripts/verify/check-workbench-install.mjs "$executable" "artifacts/workbench-install"
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows workbench installation acceptance failed.' }
           } finally {
-            foreach ($path in @($desktopStdout, $desktopStderr)) {
-              if (Test-Path $path) {
-                Write-Host "--- $path ---"
-                Get-Content $path
-              }
-            }
-            Get-CimInstance Win32_Process -Filter "name='$($sourceExecutable.Name)'" |
-              Select-Object ProcessId, ParentProcessId, CommandLine | Format-List | Out-String | Write-Host
-            if (Test-Path $logPath) {
-              Write-Host '--- harness.log ---'
-              Get-Content $logPath
-            }
-            # The smoke owns only this isolated copy. Kill descendants too, then
-            # verify no executable from that copy remains before leaving the step.
-            if (-not $desktop.HasExited) {
-              try { $desktop.Kill($true) } catch {
-                if (-not $desktop.HasExited) { throw }
-              }
-              if (-not $desktop.WaitForExit(10000)) { throw 'Packaged smoke process did not exit.' }
-            }
+            # The driver owns a unique Profile and closes its desktop process.
+            # Also clean descendants from this isolated executable if it failed.
             $smokeRoot = [System.IO.Path]::GetFullPath($isolatedApp).TrimEnd('\') + '\'
             $cleanupDeadline = (Get-Date).AddSeconds(10)
             do {
@@ -618,13 +518,23 @@ jobs:
             } while ((Get-Date) -lt $cleanupDeadline)
             if ($remaining.Count -gt 0) { throw 'Processes from the isolated packaged smoke did not exit.' }
           }
+      - name: Upload Windows workbench installation evidence
+        if: always() && (github.event_name == 'pull_request' || inputs.checks == 'extended')
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-workbench-installation
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            artifacts/workbench-install/*.png
+            artifacts/workbench-install/results.json
       - name: Archive and verify unpacked Windows payload
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease' || inputs.checks == 'extended'))
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease' || inputs.checks == 'extended'))
         shell: pwsh
         env:
           ARCHIVE_DIST: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist' || 'dist-dev' }}
         run: |
-          node scripts/archive-windows-release.mjs "$env:ARCHIVE_DIST"
+          node scripts/release/archive-windows-release.mjs "$env:ARCHIVE_DIST"
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         with:
@@ -706,7 +616,7 @@ jobs:
           HTTPS_PROXY: ''
           ALL_PROXY: ''
         run: |
-          node scripts/download-artifact-ranges.mjs "$GITHUB_REPOSITORY" "$SOURCE_RUN_ID" \
+          node scripts/release/download-artifact-ranges.mjs "$GITHUB_REPOSITORY" "$SOURCE_RUN_ID" \
             windows-x64-unsigned "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
           unzip -q "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip" -d "$WINDOWS_SIGNING_WORK_DIR/release"
           rm "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
@@ -748,10 +658,10 @@ jobs:
           test -s "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
           tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"
           JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
-            node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
+            node scripts/release/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
           rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
           JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
-            node scripts/electron-builder-windows.mjs --win --x64 --publish never \
+            node scripts/release/electron-builder-windows.mjs --win --x64 --publish never \
             --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
             --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"
           rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
@@ -799,7 +709,7 @@ jobs:
           else
             version="${SIGNED_VERSION#v}"
           fi
-          node scripts/finalize-windows-release.mjs \
+          node scripts/release/finalize-windows-release.mjs \
             "$WINDOWS_SIGNING_WORK_DIR/release" \
             "$version"
           test -f "$WINDOWS_SIGNING_WORK_DIR/release/latest.yml"
@@ -941,7 +851,7 @@ jobs:
       - name: Merge macOS update metadata
         run: |
           set -euo pipefail
-          node scripts/merge-mac-update-metadata.mjs \
+          node scripts/release/merge-mac-update-metadata.mjs \
             release-assets/latest-mac-arm64.yml \
             release-assets/latest-mac-x64.yml \
             release-assets/latest-mac.yml
@@ -951,7 +861,7 @@ jobs:
       - name: Verify release assets before publication
         run: |
           set -euo pipefail
-          node scripts/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}"
+          node scripts/verify/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}"
       - name: Build GitHub release note prompt
         run: |
           set -euo pipefail
@@ -1012,7 +922,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
         run: 'env GITHUB_SHA="$RELEASE_SOURCE_SHA" "$RUNNER_TEMP/release-review-env/bin/python" .github/scripts/confirm_popup_release.py'
       - name: Inject approved popup notes into update feeds
-        run: env GITHUB_SHA="$RELEASE_SOURCE_SHA" node scripts/inject-popup-notes.mjs
+        run: env GITHUB_SHA="$RELEASE_SOURCE_SHA" node scripts/release/inject-popup-notes.mjs
       - name: Preserve release review evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1100,7 +1010,7 @@ jobs:
             echo "⚠️ CRASH_ADMIN_TOKEN secret not set; skipping rollout configuration."
             exit 0
           fi
-          node scripts/configure-rollout.mjs "${RELEASE_TAG#v}" 5
+          node scripts/release/configure-rollout.mjs "${RELEASE_TAG#v}" 5
 
       - name: Build Feishu release note prompt
         run: |
@@ -1196,7 +1106,7 @@ jobs:
       - name: Merge macOS update metadata
         run: |
           set -euo pipefail
-          node scripts/merge-mac-update-metadata.mjs \
+          node scripts/release/merge-mac-update-metadata.mjs \
             release-assets/latest-mac-arm64.yml \
             release-assets/latest-mac-x64.yml \
             release-assets/latest-mac.yml
@@ -1204,7 +1114,7 @@ jobs:
             \( -name latest-mac-arm64.yml -o -name latest-mac-x64.yml \) \
             -delete
       - name: Verify release assets before publication
-        run: node scripts/verify-release-assets.mjs release-assets "${{ inputs.version }}"
+        run: node scripts/verify/verify-release-assets.mjs release-assets "${{ inputs.version }}"
       - name: Create or update pre-release
         env:
           GH_TOKEN: ${{ github.token }}
