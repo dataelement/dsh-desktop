@@ -60,9 +60,9 @@ export async function readLocalWorkbenchSnapshot(home = process.env.DSH_HOME || 
 
 /**
  * @param {() => Promise<Record<string, string>>} readSnapshot
- * @param {{ minimumInterval?: number }} [options]
+ * @param {{ minimumInterval?: number, readPendingGenerations?: () => Promise<{ restartRequired: boolean, packages: string[] }> }} [options]
  */
-export function createRestartStatus(readSnapshot, { minimumInterval = 1000 } = {}) {
+export function createRestartStatus(readSnapshot, { minimumInterval = 1000, readPendingGenerations = async () => ({ restartRequired: false, packages: [] }) } = {}) {
   // Start before publishing the route, so a freshly installed package cannot
   // become the baseline merely because no browser had asked for status yet.
   const baseline = Promise.resolve().then(readSnapshot)
@@ -90,8 +90,13 @@ export function createRestartStatus(readSnapshot, { minimumInterval = 1000 } = {
         const before = await baseline
         const current = await readSnapshot()
         for (const [name, fingerprint] of Object.entries(current)) if (before[name] !== fingerprint) pending.add(name)
+        // Unlike local fingerprints, desired-vs-projected generations are live
+        // state, not a process baseline. Already-pending npm/ordinary plugins
+        // must remain visible after a page refresh or host startup.
+        const generations = await readPendingGenerations()
+        const packages = [...new Set([...pending, ...generations.packages])]
         lastRead = Date.now()
-        lastStatus = { restartRequired: pending.size > 0, packages: [...pending] }
+        lastStatus = { restartRequired: packages.length > 0, packages }
         return lastStatus
       })().finally(() => { inFlight = undefined })
       return inFlight

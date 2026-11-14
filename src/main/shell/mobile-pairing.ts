@@ -45,11 +45,11 @@ export function desktopMobilePort(packaged: boolean, env: NodeJS.ProcessEnv = pr
   return parsed
 }
 
-/** Open the optional internet tunnel only when the desktop has no LAN pairing address. */
+/** Prefer internet pairing even on WiFi; never switch an already connected phone. */
 export function shouldOpenInternetTunnel(snapshot: {
   pairingUrl?: string
   tunnelActive?: boolean
   connected?: boolean
 }): boolean {
-  return snapshot.pairingUrl === undefined && snapshot.tunnelActive !== true && snapshot.connected !== true
+  return snapshot.tunnelActive !== true && snapshot.connected !== true
 }

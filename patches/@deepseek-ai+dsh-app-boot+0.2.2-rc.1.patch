@@ -445,8 +445,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibili
 index 9594009..3d4d7e3 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
-@@ -33,4 +33,6 @@ export declare function evaluatePluginCompatibility(manifest: object, exemptions
-  * @returns an English diagnostic for logs and stderr.
+@@ -34,3 +34,5 @@ export declare function evaluatePluginCompatibility(manifest: object, exemptions
   */
  export declare function pluginCompatibilityWarning(issue: PluginCompatibility): string;
 +/** Report an unverified version declaration without blocking installation or loading. */

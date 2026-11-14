@@ -140,6 +140,12 @@ export function createGenerationPackageBackend(options) {
 
   return Object.freeze({
     supportsVerifiedInstall: true,
+    async readRestartStatus() {
+      return withRegistryLock(dshHome, async () => {
+        const packages = (await pendingGenerationUpdates(dshHome, profile)).map(item => item.name)
+        return { restartRequired: packages.length > 0, packages }
+      })
+    },
     async install(request) {
       const log = await createOperationLog(dshHome, profile)
       let activeChild
@@ -208,6 +214,7 @@ export function createGenerationPackageBackend(options) {
             registry: request.registry,
             expectedVersion: request.expectedVersion,
             autoInstallPeers: request.autoInstallPeers,
+            strictDepBuilds: true,
             minimumReleaseAge: request.minimumReleaseAge,
             nodeExecutablePath,
             pnpmEntryPath,

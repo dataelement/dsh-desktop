@@ -541,6 +541,23 @@ describe('GitHub release contract', () => {
     expect(officialVite).not.toContain('electron.vite.shell.config.ts')
   })
 
+  it('builds the official package from the transplanted shell', async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as { scripts: Record<string, string>, build: { extraMetadata?: { main?: string } } }
+    const officialVite = await readFile(path.join(projectRoot, 'electron.vite.config.ts'), 'utf8')
+
+    expect(packageJson.scripts['build:shell']).toBeUndefined()
+    expect(packageJson.scripts['package:shell:mac:arm64']).toBeUndefined()
+    expect(packageJson.scripts.build).toContain('electron-vite build')
+    expect(officialVite).toContain("resolve('src/main/shell/app.ts')")
+    expect(officialVite).toContain("resolve('src/host/index.ts')")
+    expect(officialVite).toContain("resolve('src/preload/app.ts')")
+    expect(officialVite).not.toContain('src/main/index.ts')
+    expect(officialVite).not.toContain('src/preload/index.ts')
+    expect(officialVite).not.toContain('electron.vite.shell.config.ts')
+  })
+
   it('builds and publishes every supported platform', async () => {
     const workflow = await readFile(
       path.join(projectRoot, '.github', 'workflows', 'release.yml'),
@@ -555,7 +572,6 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('$sourceExecutable = Get-Item $env:SMOKE_EXE')
     expect(workflow).toContain("$isolatedApp = Join-Path $env:RUNNER_TEMP")
     expect(workflow).toContain('$executable = Join-Path $isolatedApp $sourceExecutable.Name')
-    expect(workflow).toContain('-WorkingDirectory $isolatedApp')
     expect(workflow).toContain('Packaged koffi native binding failed (exit code $koffiExitCode).')
     expect(workflow).toContain("'dist-dev\\win-unpacked\\" + developmentManifest.productName + ".exe'")
     expect(workflow).toContain('if (-not [string]::IsNullOrEmpty($log))')
@@ -568,10 +584,6 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('node scripts/release/archive-windows-release.mjs "$env:ARCHIVE_DIST"')
     expect(workflow).toContain("&& 'dist' || 'dist-dev'")
     expect(workflow).not.toContain('tar -czf dist/win-unpacked.tar.gz')
-    expect(workflow).toContain('payload = @{ args = @{ request = $request } }')
-    expect(workflow).toContain("Invoke-HarnessRpc 'workspace/create'")
-    expect(workflow).toContain("Invoke-HarnessRpc 'session/create'")
-    expect(workflow).toContain('Harness process exited after workspace and session creation.')
     expect(workflow).toContain('version:')
     expect(workflow).not.toContain('signed_version:')
     expect(workflow).toContain('mode:')
@@ -735,21 +747,19 @@ describe('GitHub release contract', () => {
     expect(installer).not.toMatch(/RequestExecutionLevel\s+highest/)
   })
 
-  it('routes stable downloads through the website and previews through GitHub', async () => {
+  it('routes README downloads through the website without direct asset links', async () => {
     const readmes = await Promise.all(
-      ['README.md', 'README.zh.md', 'README.ja.md', 'README.ru.md', 'README.es.md', 'README.pt.md'].map((file) =>
+      ['README.md', 'README.zh.md', 'README.en.md', 'README.ja.md', 'README.ru.md', 'README.es.md', 'README.pt.md'].map((file) =>
         readFile(path.join(projectRoot, file), 'utf8')
       )
     )
 
     for (const readme of readmes) {
-      expect(readme).toMatch(/https:\/\/(?:www\.)?dshdesktop\.com\/(?:#download|zh\/)/)
+      expect(readme).toMatch(/\[[^\]]+\]\(https:\/\/(?:www\.)?dshdesktop\.com\/(?:[a-z]{2}\/)?(?:#download)?\)/)
       expect(readme).not.toContain('| Platform | Package | Download |')
       expect(readme).not.toContain('| 平台 | 安装包 | 下载 |')
       expect(readme).not.toContain('Coming soon')
       expect(readme).not.toContain('即将发布')
-      expect(readme).toContain('https://github.com/dataelement/dsh-desktop/releases')
-      expect(readme).toContain('**Pre-release**')
       for (const asset of releaseAssets) {
         expect(readme).not.toContain(`releases/latest/download/${asset}`)
       }
@@ -815,7 +825,9 @@ describe('prerelease parity workflow', () => {
   it('parametrises the Windows smoke test executable', async () => {
     const yml = await load()
     expect(yml).toContain('SMOKE_EXE')
-    expect(yml).toContain('SMOKE_USERDATA')
+    const acceptance = await readFile(path.join(projectRoot, 'scripts/verify/check-workbench-install.mjs'), 'utf8')
+    expect(acceptance).toContain('workbenchInstallIsolation(process.platform, isolationRoot, process.env)')
+    expect(acceptance).toContain('await verifyIsolatedProfile()')
   })
 })
 

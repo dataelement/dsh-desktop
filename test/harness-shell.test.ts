@@ -307,6 +307,30 @@ describe('packaged Harness shell', () => {
     await expect(shell.waitUntilReady()).rejects.toThrow()
   })
 
+  it('lets a market install finish after the ordinary API deadline', async () => {
+    vi.useFakeTimers()
+    let finishInstall!: (response: Response) => void
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(authResponse())
+      .mockResolvedValueOnce(Response.json({ injections: [] }))
+      .mockImplementation((url, init) => new Promise((resolve, reject) => {
+        if (String(url).endsWith('/market-install')) finishInstall = resolve
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      }))
+    shell = new HarnessShell({ frontendRoot: root, fetch: fetcher })
+    await shell.connect('http://127.0.0.1:9999')
+    const install = shell.handle(request('api/desktop-workbenches/market-install', {
+      method: 'POST', body: JSON.stringify({ id: 'example/workbench' })
+    }))
+    const ordinary = shell.handle(request('api/desktop-workbenches/state'))
+
+    await vi.advanceTimersByTimeAsync(30_001)
+    expect((await ordinary).status).toBe(502)
+    expect(fetcher.mock.calls[2]?.[1]?.signal?.aborted).toBe(false)
+    finishInstall(Response.json({ application: 'applied' }))
+    expect(await (await install).json()).toEqual({ application: 'applied' })
+  })
+
   it('streams immediately and forwards renderer cancellation/reset to the upstream stream', async () => {
     const cancelled = vi.fn()
     const upstream = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode('first')) }, cancel: cancelled })

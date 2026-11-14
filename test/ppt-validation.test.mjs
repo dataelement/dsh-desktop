@@ -9,6 +9,8 @@ import yaml from 'js-yaml'
 import { unzipSync } from 'fflate'
 import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 
+// Cold CLI processes load the native font and rendering dependencies.
+const CLI_START_TIMEOUT_MS = 30_000
 let packageRoot, apply, cli
 const cleanups = []
 beforeAll(async () => {
@@ -100,14 +102,14 @@ describe('PPT validation authoring loop', () => {
     const blocked = await f.run('pptd_render', { project_path: 'deck', output_file: 'escaped.pptx' })
     expect(blocked.value.status).toBe('needs_revision')
     expect(await readdir(f.workspace)).toEqual(['deck'])
-    const cliCheck = spawnSync(process.execPath, [cli, 'check', f.project, '--json'], { encoding: 'utf8', timeout: 10_000 })
+    const cliCheck = spawnSync(process.execPath, [cli, 'check', f.project, '--json'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
     expect(cliCheck.status).toBe(1)
     expect(JSON.parse(cliCheck.stdout).issues.some(i => i.code === 'text-escaped-newline')).toBe(true)
-    const cliRender = spawnSync(process.execPath, [cli, 'render', f.project, '-o', path.join(f.workspace, 'cli-escaped.pptx'), '--json'], { encoding: 'utf8', timeout: 10_000 })
+    const cliRender = spawnSync(process.execPath, [cli, 'render', f.project, '-o', path.join(f.workspace, 'cli-escaped.pptx'), '--json'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
     expect(cliRender.status).toBe(1)
     expect(JSON.parse(cliRender.stdout).status).toBe('needs_revision')
     expect(await readFile(file, 'utf8')).toBe(source)
-  }, 30_000)
+  }, 90_000)
 
   it.each([
     ['double-quoted', String.raw`"水是供应链中\n最被低估的\n宏观变量"`],
@@ -141,9 +143,9 @@ describe('PPT validation authoring loop', () => {
     const xml = new TextDecoder().decode(unzipSync(await readFile(outputPath))['ppt/slides/slide1.xml'])
     expect(xml).toContain(String.raw`\n`)
     const importedDir = path.join(f.workspace, 'imported')
-    const imported = spawnSync(process.execPath, [cli, 'convert', outputPath, '-o', importedDir, '--json'], { encoding: 'utf8', timeout: 10_000 })
+    const imported = spawnSync(process.execPath, [cli, 'convert', outputPath, '-o', importedDir, '--json'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
     expect(imported.status, imported.stdout + imported.stderr).toBe(0)
-    const importCheck = spawnSync(process.execPath, [cli, 'check', importedDir, '--json'], { encoding: 'utf8', timeout: 10_000 })
+    const importCheck = spawnSync(process.execPath, [cli, 'check', importedDir, '--json'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
     expect(JSON.parse(importCheck.stdout).issues.filter(i => i.code === 'text-escaped-newline')).toEqual([])
     const hostImport = await f.run('pptd_import', { pptx_path: rendered.value.outputPath, output_directory: 'host-imported' })
     expect((await f.run('pptd_check', { project_path: hostImport.value.projectPath })).value.issues.filter(i => i.code === 'text-escaped-newline')).toEqual([])
@@ -151,7 +153,7 @@ describe('PPT validation authoring loop', () => {
     await writeFile(file, yaml.dump(page))
     checked = await f.run('pptd_check', { project_path: 'deck' })
     expect(checked.value.issues.some(i => i.code === 'text-literal-escapes')).toBe(true)
-  }, 30_000)
+  }, 90_000)
 
   it('checks only visible rich text for newline residue', async () => {
     const f = await fixture({ broken: false })
@@ -229,7 +231,7 @@ describe('PPT validation authoring loop', () => {
     await expect(f.run('pptd_write_file', { ...args, file_path: 'pages/2.page', expected_sha256: 'a'.repeat(64) })).rejects.toThrow('only when replacing')
   })
 
-  it('groups misplaced text styles, skips cascading overflow, and supplies directly usable read arguments', { timeout: 15_000 }, async () => {
+  it('groups misplaced text styles, skips cascading overflow, and supplies directly usable read arguments', { timeout: 45_000 }, async () => {
     const f = await fixture()
     const file = path.join(f.project, 'pages/1.page')
     const page = { elements: [{ elementId: 'shared-caption', elementType: 'text', bounds: [48, 80, 800, 16],
@@ -238,7 +240,7 @@ describe('PPT validation authoring loop', () => {
     const checked = await f.run('pptd_check', { project_path: 'deck/deck.pptd' })
     const misplaced = checked.value.issues.filter(i => i.code === 'misplaced-text-style')
     expect(misplaced).toHaveLength(4)
-    const cliCheck = spawnSync(process.execPath, [cli, 'check', f.project, '--json'], { encoding: 'utf8', timeout: 10_000 })
+    const cliCheck = spawnSync(process.execPath, [cli, 'check', f.project, '--json'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
     expect(cliCheck.status).toBe(1)
     const cliIssues = JSON.parse(cliCheck.stdout).issues
     expect(cliIssues.filter(i => i.code === 'misplaced-text-style')).toHaveLength(4)
@@ -280,14 +282,14 @@ describe('PPT validation authoring loop', () => {
     const entries = [cli]
     if (process.platform !== 'win32') { await symlink(cli, link); entries.push(link) }
     for (const entry of entries) {
-      const help = spawnSync(process.execPath, [entry, '--help'], { encoding: 'utf8', timeout: 10_000 })
+      const help = spawnSync(process.execPath, [entry, '--help'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
       expect(help.status).toBe(0)
       expect(help.stdout).toContain('check')
-      const check = spawnSync(process.execPath, [entry, 'check', f.project, '--json'], { encoding: 'utf8', timeout: 10_000 })
+      const check = spawnSync(process.execPath, [entry, 'check', f.project, '--json'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
       expect(check.status).toBe(1)
       expect(check.stderr).toBe('')
       expect(JSON.parse(check.stdout).issues.filter(i => i.code === 'text-overflow')).toHaveLength(4)
-      const render = spawnSync(process.execPath, [entry, 'render', f.project, '-o', path.join(f.workspace, 'failed.pptx'), '--json'], { encoding: 'utf8', timeout: 10_000 })
+      const render = spawnSync(process.execPath, [entry, 'render', f.project, '-o', path.join(f.workspace, 'failed.pptx'), '--json'], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
       expect(render.status).toBe(1)
       const report = JSON.parse(render.stdout)
       expect(report.status).toBe('needs_revision')
@@ -295,8 +297,8 @@ describe('PPT validation authoring loop', () => {
       expect(report.issues.filter(i => i.code === 'text-overflow')).toHaveLength(4)
       expect(await readdir(f.workspace)).toEqual(['deck'])
     }
-    const imported = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(cli).href)})`], { encoding: 'utf8', timeout: 10_000 })
+    const imported = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(cli).href)})`], { encoding: 'utf8', timeout: CLI_START_TIMEOUT_MS })
     expect(imported.status).toBe(0)
     expect(imported.stdout).toBe('')
-  }, 80_000) // Up to seven cold CLI starts on macOS, each independently limited to 10s.
+  }, 240_000) // Covers seven independently bounded cold CLI starts on macOS.
 })

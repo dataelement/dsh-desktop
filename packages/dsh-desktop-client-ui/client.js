@@ -1891,7 +1891,7 @@ interaction.observe(document.documentElement, { attributes: true, attributeFilte
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
-          id: 'desktop-delete-session',
+          id: 'desktop-delete-session', locale: ACTIONS_NS,
           order: 900,
           locale: DELETE_SESSION_NS,
           inject: () => ({ deletion, t: deletionText })

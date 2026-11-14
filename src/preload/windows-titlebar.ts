@@ -11,7 +11,9 @@ interface TitlebarLayoutMountOptions {
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
 }
 
-/** Harness reads this marker while creating its first layout frame. */
+/** Harness reads this marker while creating its first layout frame.
+ * Its Windows-named seam is also used for the Linux overlay; data-platform stays Linux.
+ */
 export function markWindowsTitlebar(document: Document): void {
   const apply = (root: HTMLElement): void => {
     root.dataset.windowsTitlebar = ''
@@ -34,7 +36,7 @@ export function markWindowsTitlebar(document: Document): void {
 }
 
 /**
- * Windows caption layout. Harness 0.1.7 owns the caption row on its pages
+ * Windows/Linux caption layout. Harness 0.1.7 owns the caption row on its pages
  * (AppFrame reserves it, paints it and makes it draggable) once the marker is
  * set; Desktop adds the caption menubar in the upstream seat, a drag strip for
  * its own local pages, and releases the drag area while a dialog is open.

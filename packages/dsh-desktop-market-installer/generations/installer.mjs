@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream, existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import semver from 'semver'
+import { isAlias, isMap, isScalar, parseDocument, visit } from 'yaml'
 import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
@@ -36,6 +37,9 @@ const PACKAGE_NAME_PATTERN = /^(?:@[A-Za-z0-9-~][A-Za-z0-9._~-]*\/)?[A-Za-z0-9-~
 const GIT_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@git\+https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/u
 const CODELOAD_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@https:\/\/codeload\.github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/tar\.gz\/[0-9a-f]{40}$/u
 const PINNED_GITHUB_TARGET_PATTERN = /^github:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
+// Only our content-addressed snapshots carry transferable file consent. Legacy
+// path-only keys can refer to different bytes on the next installation.
+const FILE_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@file:source\/[a-f0-9]{64}(?:\.tgz)?$/u
 const PINNED_GIT_APPROVAL_PATTERN = /@git\+ssh:\/\/git@github\.com\//u
 const GENERATION_INSTALL_TIMEOUT_MS = 90 * 1000
 
@@ -107,38 +111,51 @@ function installationClosureDir(dshHome) {
 }
 
 function safeBuildApprovalKey(key) {
-  return PACKAGE_NAME_PATTERN.test(key) ||
+  const separator = key.lastIndexOf('@')
+  const registryIdentity = separator > 0 && PACKAGE_NAME_PATTERN.test(key.slice(0, separator)) &&
+    /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(key.slice(separator + 1)) &&
+    semver.valid(key.slice(separator + 1)) !== null
+  return registryIdentity || FILE_ALLOW_BUILD_PATTERN.test(key) || PACKAGE_NAME_PATTERN.test(key) ||
     GIT_ALLOW_BUILD_PATTERN.test(key) ||
     CODELOAD_ALLOW_BUILD_PATTERN.test(key)
 }
 
 /**
- * Read only explicit, safe `allowBuilds: ...: true` entries from a Profile
+ * Read only explicit, safe `allowBuilds` decisions from a Profile
  * workspace file. Generation installs run in a separate pnpm workspace, so
- * an approval written by dsh-market has to cross that boundary deliberately.
+ * a decision written by dsh-market has to cross that boundary deliberately.
  * No other Profile workspace setting is inherited: patchedDependencies and
  * relative package globs would be invalid inside the immutable staging tree.
  */
-export function generationBuildApprovals(workspaceYaml) {
-  if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return []
-  const blockPattern = /allowBuilds:[ \t]*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)*)/gu
-  const approved = new Set()
-  for (const block of workspaceYaml.matchAll(blockPattern)) {
-    for (const line of block[1].split(/\r?\n/u)) {
-      const match = /^[ \t]+(\S.*?)\s*:\s*(true|false)\s*$/u.exec(line)
-      if (match === null || match[2] !== 'true') continue
-      let key = match[1]
-      if (
-        key.length >= 2 &&
-        ((key.startsWith("'") && key.endsWith("'")) ||
-          (key.startsWith('"') && key.endsWith('"')))
-      ) {
-        key = key.slice(1, -1)
-      }
-      if (safeBuildApprovalKey(key)) approved.add(key)
+function generationBuildPolicy(workspaceYaml) {
+  if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return new Map()
+  const document = parseDocument(workspaceYaml)
+  if (document.errors[0] !== undefined) throw document.errors[0]
+  if (!isMap(document.contents)) throw new Error('pnpm-workspace.yaml must be a YAML mapping')
+  const builds = document.get('allowBuilds', true)
+  if (builds !== undefined && !isMap(builds)) throw new Error('allowBuilds must be a YAML mapping')
+  // Match the manager's fail-closed policy: aliases/anchors cannot supply consent.
+  visit(builds ?? null, (_key, node) => {
+    if (isAlias(node) || node?.anchor) {
+      throw new Error('allowBuilds must not contain YAML anchors or aliases')
+    }
+  })
+  const decisions = new Map()
+  for (const { key, value } of builds?.items ?? []) {
+    if (isScalar(key) && !key.tag && typeof key.value === 'string' && safeBuildApprovalKey(key.value) &&
+        isScalar(value) && !value.tag && typeof value.value === 'boolean') {
+      // Keep version-bound consent exact; never widen package@version to package.
+      decisions.set(key.value, value.value)
     }
   }
-  return [...approved]
+  return decisions
+}
+
+/** Return approvals only; explicit refusals must never authorize git preparation. */
+export function generationBuildApprovals(workspaceYaml) {
+  return [...generationBuildPolicy(workspaceYaml)]
+    .filter(([, allowed]) => allowed)
+    .map(([key]) => key)
 }
 
 /**
@@ -158,7 +175,47 @@ export function pinnedGitBuildApproval(pluginName, pluginSpec, approvals) {
   return `${pluginName}@git+ssh://git@github.com/${owner}/${repo}.git#${sha}${subpath}`
 }
 
-async function stageBuildApprovals(
+/**
+ * Bind local script consent to the canonical source and the complete copied
+ * snapshot, not its package name/version or random staging UUID. Hash the copy
+ * pnpm will consume (including dependency files and dereferenced links), so a
+ * source edit during/after copying cannot reuse consent for different bytes.
+ * Framed metadata covers paths, types, sizes and executable modes;
+ * file data is streamed to avoid holding large local trees in memory.
+ *
+ * This protects retries, not against a process able to mutate our private
+ * staging tree or edit the Profile's approval policy directly.
+ */
+async function localSourceIdentity(sourceDirectory, snapshotDirectory) {
+  const hash = createHash('sha256')
+  const record = (value) => { hash.update(`${JSON.stringify(value)}\n`) }
+  // realpath resolves junctions/short-path aliases on Windows. Internal paths
+  // use '/' on every platform, matching pnpm's file dependency identities.
+  const sourcePath = await realpath(sourceDirectory)
+  record(['dsh-local-source-v1', process.platform === 'win32' ? sourcePath.replace(/\\/gu, '/') : sourcePath])
+  const walk = async (directory, prefix) => {
+    const entries = await readdir(directory, { withFileTypes: true })
+    entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    for (const entry of entries) {
+      const path = join(directory, entry.name)
+      const name = prefix === '' ? entry.name : `${prefix}/${entry.name}`
+      const info = await lstat(path)
+      if (info.isDirectory()) {
+        record(['directory', name, info.mode & 0o777])
+        await walk(path, name)
+      } else if (info.isFile()) {
+        record(['file', name, info.mode & 0o777, info.size])
+        for await (const chunk of createReadStream(path)) hash.update(chunk)
+      } else {
+        throw new Error('ERR_LOCAL_SOURCE_TYPE: local snapshot must contain only files and directories')
+      }
+    }
+  }
+  await walk(snapshotDirectory, '')
+  return hash.digest('hex')
+}
+
+async function stageBuildPolicy(
   dshHome,
   stagingDir,
   profile = 'web',
@@ -172,22 +229,21 @@ async function stageBuildApprovals(
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
   }
-  const approvals = generationBuildApprovals(yaml)
-  const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, approvals)
-  const stagedApprovals = pinned === undefined ? approvals : [...approvals, pinned]
-  // Isolate hoisting from ancestor workspaces even without Profile approvals.
-  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n', 'utf8')
-  if (stagedApprovals.length === 0) return []
-  const lines = [
-    'packages:',
-    '  - .',
-    '',
-    'allowBuilds:',
-    ...stagedApprovals.map((key) => `  ${JSON.stringify(key)}: true`),
-    ''
-  ]
-  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), lines.join('\n'), 'utf8')
-  return stagedApprovals
+  const decisions = generationBuildPolicy(yaml)
+  // Normalize source-bound git identities for either decision. A refusal skips
+  // scripts while allowing installation; it is never an approval.
+  for (const allowed of [true, false]) {
+    const keys = [...decisions].filter(([, value]) => value === allowed).map(([key]) => key)
+    const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, keys)
+    if (pinned !== undefined) decisions.set(pinned, allowed)
+  }
+  const lines = ['packages:', '  - .']
+  if (decisions.size > 0) {
+    lines.push('', 'allowBuilds:', ...[...decisions].map(([key, allowed]) => `  ${JSON.stringify(key)}: ${allowed}`))
+  }
+  // Isolate hoisting from ancestor workspaces even without Profile decisions.
+  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), `${lines.join('\n')}\n`, 'utf8')
+  return decisions
 }
 
 /**
@@ -353,22 +409,46 @@ export async function installGeneration(options) {
   const cleanupStaging = () => rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
 
   try {
-    const approvals = await stageBuildApprovals(
+    const buildPolicy = await stageBuildPolicy(
       dshHome,
       stagingDir,
       options.profile ?? 'web',
       pluginName,
       pluginSpec
     )
+    const approvals = [...buildPolicy].filter(([, allowed]) => allowed).map(([key]) => key)
     if (approvals.length > 0) {
       trace(`forwarded ${approvals.length} approved build-script key(s) into staging`)
     }
     let installSpec = pluginSpec
     if (options.sourceDirectory !== undefined) {
-      const sourceCopy = join(stagingDir, 'source', pluginName.replace(/^@/u, '').replace(/[/\\]/gu, '+'))
-      await mkdir(join(stagingDir, 'source'), { recursive: true })
+      const sourceRoot = join(stagingDir, 'source')
+      const sourceCopy = join(sourceRoot, 'snapshot')
+      await mkdir(sourceRoot, { recursive: true })
       await cp(options.sourceDirectory, sourceCopy, { recursive: true, dereference: true })
-      installSpec = `file:${sourceCopy}`
+      const identity = await localSourceIdentity(options.sourceDirectory, sourceCopy)
+      await rename(sourceCopy, join(sourceRoot, identity))
+      // Explicitly relative and slash-normalized: no drive letters, junction
+      // aliases or random staging UUID can drift pnpm's exact allowBuilds key.
+      // Both true and false decisions stay exact in the staged buildPolicy.
+      installSpec = `file:source/${identity}`
+    } else {
+      const archivePath = pluginSpec.replace(/^file:/u, '')
+      if (isAbsolute(archivePath) && /\.(?:tgz|tar\.gz)$/iu.test(archivePath)) {
+        const sourceRoot = join(stagingDir, 'source')
+        const snapshot = join(sourceRoot, 'snapshot.tgz')
+        await mkdir(sourceRoot, { recursive: true })
+        await cp(archivePath, snapshot, { dereference: true })
+        // Hash the private copy pnpm consumes, not the mutable upload path.
+        // Include the canonical origin so consent cannot move between sources.
+        const hash = createHash('sha256')
+        const canonical = await realpath(archivePath)
+        hash.update(`${JSON.stringify(['dsh-local-archive-v1', process.platform === 'win32' ? canonical.replace(/\\/gu, '/') : canonical])}\n`)
+        for await (const chunk of createReadStream(snapshot)) hash.update(chunk)
+        const identity = hash.digest('hex')
+        await rename(snapshot, join(sourceRoot, `${identity}.tgz`))
+        installSpec = `file:source/${identity}.tgz`
+      }
     }
     trace(`installing ${options.sourceSpec ?? pluginSpec} into staging`)
     // A git subpackage can declare a pnpm version different from its workspace
@@ -452,8 +532,8 @@ export async function installGeneration(options) {
     const lockfileText = await readFile(join(stagingDir, 'pnpm-lock.yaml'), 'utf8').catch(() => randomUUID())
     // Approval can change built files without changing the lockfile. Never
     // reuse an older unbuilt generation after the user approves its scripts.
-    const buildIdentity = options.strictDepBuilds === true || approvals.length > 0
-      ? `\nbuild-policy-v1:${JSON.stringify([...approvals].sort())}:${process.platform}:${process.arch}` : ''
+    const buildIdentity = options.strictDepBuilds === true || buildPolicy.size > 0
+      ? `\nbuild-policy-v2:${JSON.stringify([...buildPolicy].sort(([a], [b]) => a.localeCompare(b)))}:${process.platform}:${process.arch}` : ''
     const id = generationId(pluginName, version, lockfileText + buildIdentity)
     const generationDir = join(layout.generations, id)
 

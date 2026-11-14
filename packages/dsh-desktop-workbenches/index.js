@@ -74,7 +74,15 @@ export function apply(ctx, config) {
   })
   const marketInstalls = createMarketInstallStore(config.root)
   const restartRuntimeId = randomUUID()
-  const restartStatus = createRestartStatus(async () => readLocalWorkbenchSnapshot(undefined, await marketInstalls.read()))
+  let generationBackend
+  ctx.inject(['profileBundlePackageBackend'], scoped => {
+    const backend = scoped.profileBundlePackageBackend
+    generationBackend = backend
+    scoped.effect(() => () => { if (generationBackend === backend) generationBackend = undefined })
+  })
+  const restartStatus = createRestartStatus(async () => readLocalWorkbenchSnapshot(undefined, await marketInstalls.read()), {
+    readPendingGenerations: () => generationBackend?.readRestartStatus?.() ?? Promise.resolve({ restartRequired: false, packages: [] })
+  })
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/restart-status',
     methods: ['GET'],
@@ -270,16 +278,25 @@ export function apply(ctx, config) {
     const manager = ctx.pluginManager
     lifecycleManager = manager
     ctx.effect(() => () => { if (lifecycleManager === manager) lifecycleManager = undefined })
-    const lifecycleResponse = (result, extra = {}) => {
+    const lifecycleResponse = async (result, extra = {}) => {
       if (!result || !['applied', 'restart-required', 'overridden', 'failed', 'cancelled'].includes(result.application)) {
         throw new MarketInstallError('Plugin Manager returned no lifecycle outcome.', 502)
       }
       const failed = result.application === 'failed' || result.application === 'cancelled'
+      // Plugin Manager preserves operation failure but flattens package backend
+      // errors to diagnostic text. Recover the actionable state from its owner,
+      // not from English message matching or a falsely successful outcome.
+      const pendingRestart = failed ? await generationBackend?.readRestartStatus?.().catch(error => {
+        ctx.logger?.warn?.('Could not inspect pending generation updates: %s', error.message)
+        return undefined
+      }) : undefined
+      const restartRequired = result.application === 'restart-required' || pendingRestart?.restartRequired === true
       return Response.json({
         ...extra, result, application: result.application,
-        restartRequired: result.application === 'restart-required',
+        restartRequired,
+        ...(pendingRestart?.restartRequired ? { restartPackages: pendingRestart.packages } : {}),
         reloadRequired: false,
-        actionRequired: result.application === 'restart-required' ? 'restart' : 'none',
+        actionRequired: restartRequired ? 'restart' : 'none',
         ...(result.restartReason ? { restartReason: result.restartReason } : {}),
         ...(failed ? { error: operationFailureText(result.error), code: result.error?.code || result.application } : {})
       }, { status: failed ? 409 : 200, headers: { 'cache-control': 'no-store' } })
@@ -329,7 +346,7 @@ export function apply(ctx, config) {
             if (evidence?.fingerprint) install.fingerprint = evidence.fingerprint
             await marketInstalls.record(id, install)
           }
-          return lifecycleResponse(result, install ? { install } : {})
+          return await lifecycleResponse(result, install ? { install } : {})
         } catch (error) { return installFailure(error, 'Could not install the workbench.') }
       }
     })
@@ -346,7 +363,7 @@ export function apply(ctx, config) {
         try {
           const { id, enabled } = await catalogPayloadFrom(request)
           if (typeof enabled !== 'boolean') throw new MarketInstallError('An enabled boolean is required.')
-          return lifecycleResponse(await manager.setBundleEnabled(await installedPackage(id), enabled))
+          return await lifecycleResponse(await manager.setBundleEnabled(await installedPackage(id), enabled))
         } catch (error) { return installFailure(error, 'Could not change workbench enablement.') }
       }
     })
@@ -363,11 +380,11 @@ export function apply(ctx, config) {
           // absent bundles, so clear this record after a successful inventory read.
           if (!bundles.some(bundle => bundle.name === name)) {
             await marketInstalls.forget(id)
-            return lifecycleResponse({ target: name, stage: 'remove', application: 'applied', changed: true, warnings: [] })
+            return await lifecycleResponse({ target: name, stage: 'remove', application: 'applied', changed: true, warnings: [] })
           }
           const result = await manager.removeBundle(name)
           if (result?.application === 'applied') await marketInstalls.forget(id)
-          return lifecycleResponse(result)
+          return await lifecycleResponse(result)
         } catch (error) { return installFailure(error, 'Could not uninstall the workbench.') }
       }
     })
