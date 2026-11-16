@@ -24,15 +24,30 @@ function setup(language, payload) {
 
 describe('market download error locale contract', () => {
   it.each([
-    ['zh', 'download_failed', '无法下载工作台安装包'],
-    ['en', 'download_failed', 'Could not download the workbench package'],
-    ['zh', 'download_interrupted', '工作台安装包下载中断'],
-    ['en', 'download_interrupted', 'Workbench package download interrupted']
+    ['zh', 'download_failed', '安装包下载失败，请重试；若多次失败，请检查网络或代理设置。'],
+    ['en', 'download_failed', 'Package download failed. Retry; if it keeps failing, check your network or proxy settings.'],
+    ['zh', 'download_interrupted', '安装包下载中断，请重新下载；若多次失败，请检查网络或代理设置。'],
+    ['en', 'download_interrupted', 'Package download interrupted. Download again; if it keeps failing, check your network or proxy settings.']
   ])('localizes %s %s and preserves the safe diagnostic', async (language, code, label) => {
     const service = setup(language, { code, params: { diagnostic: 'ERR_PROXY_CONNECTION_FAILED' }, error: 'legacy error' })
     try {
-      await expect(service.marketPackage('/update', 'owner/tool')).rejects.toThrow(`${label}: ERR_PROXY_CONNECTION_FAILED`)
+      await expect(service.marketPackage('/update', 'owner/tool')).rejects.toMatchObject({ message: label, diagnostic: 'ERR_PROXY_CONNECTION_FAILED' })
       expect(service.installing).toBeNull()
+    } finally { service.dispose() }
+  })
+  it.each([
+    ['zh', 'UND_ERR_CONNECT_TIMEOUT', '安装包下载连接超时，请重试；若多次失败，请检查网络或代理设置。'],
+    ['zh', 'ECONNRESET, ETIMEDOUT', '安装包下载连接超时，请重试；若多次失败，请检查网络或代理设置。'],
+    ['en', 'TIMEOUT', 'The package download connection timed out. Retry; if it keeps failing, check your network or proxy settings.']
+  ])('explains %s timeout %s while retaining details separately', async (language, diagnostic, message) => {
+    const service = setup(language, { code: 'download_failed', params: { diagnostic } })
+    try {
+      await service.marketPackage('/update', 'owner/tool').catch(error => service.report(error))
+      expect(service.snapshot.error).toBe(message)
+      expect(service.snapshot.error).not.toContain(diagnostic)
+      expect(service.snapshot.errorDiagnostic).toBe(diagnostic)
+      service.report(new Error('another failure'))
+      expect(service.snapshot.errorDiagnostic).toBe('')
     } finally { service.dispose() }
   })
   it.each([
