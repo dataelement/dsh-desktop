@@ -19,7 +19,8 @@ describe('platform account view availability', () => {
   it('passes the real runtime platform from the application composition root', async () => {
     const source = await readFile(new URL('../../src/main/shell/app.ts', import.meta.url), 'utf8')
     // Supplement the behavioral guard below: mapping Linux to darwin here bypasses it.
-    expect(source).toMatch(/const platform = process\.platform/u)
+    expect(source).toMatch(/const adapter = requireDesktopPlatform\(process\.platform\)/u)
+    expect(source.includes('const platform = adapter.platform')).toBe(true)
     expect(source).toMatch(/new DesktopPlatformView\(\s*preload,\s*[^\n]+,\s*platform,\s*app\.getVersion\(\)/u)
   })
 

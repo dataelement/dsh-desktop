@@ -1,3 +1,4 @@
+import { usesDesktopCaption } from '../shared/desktop-menu'
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type {
   DesktopShortcutInput,
@@ -19,7 +20,7 @@ import { isSafeModeRenderer } from '../main/shell/mobile-pairing'
 const appDocument = location.protocol === `${SCHEME}:` && location.hostname === 'app'
 const webImportDocument = location.protocol === 'file:' && location.pathname.endsWith('/web-import.html')
 
-if (process.platform === 'win32') {
+if (usesDesktopCaption(process.platform)) {
   // This preload runs before <html> exists. Harness reads the marker while
   // creating its first frame, so the attribute has to land as soon as the
   // element appears. The caption menu itself waits until the body exists.
