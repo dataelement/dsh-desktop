@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { desktopBrandLogoPaths } from '../../src/main/shell/brand-logo'
 import { workspaceDirectoryPrompt } from '../../src/main/shell/directory-picker'
 import { desktopWindowChrome, windowsChromeBackground, windowsTitleBarOverlay } from '../../src/main/shell/window-chrome'
-import { WINDOWS_TITLEBAR_HEIGHT } from '../../src/shared/desktop-menu'
+import { usesDesktopCaption, WINDOWS_TITLEBAR_HEIGHT } from '../../src/shared/desktop-menu'
 
 describe('desktop window chrome', () => {
   it('places the macOS traffic lights on the sidebar row', () => {
@@ -16,11 +16,14 @@ describe('desktop window chrome', () => {
       visualEffectState: 'active',
       backgroundColor: '#00000000'
     })
-    expect(desktopWindowChrome('linux')).toEqual({})
+    expect(desktopWindowChrome('freebsd')).toEqual({})
   })
 
-  it('hides the Windows frame so the page caption replaces File, Edit, View and Window', () => {
-    expect(desktopWindowChrome('win32', true)).toEqual({
+  it.each(['win32', 'linux'])('uses the caption menu and native overlay on %s', platform => {
+    expect(usesDesktopCaption(platform)).toBe(true)
+    expect(usesDesktopCaption('darwin')).toBe(false)
+    expect(desktopWindowChrome(platform, false).backgroundColor).toBe('#f8f8f6')
+    expect(desktopWindowChrome(platform, true)).toEqual({
       titleBarStyle: 'hidden',
       titleBarOverlay: windowsTitleBarOverlay(true),
       autoHideMenuBar: true,

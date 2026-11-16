@@ -101,6 +101,14 @@ describe('local workbench restart detection', () => {
     expect(Object.keys(await readLocalWorkbenchSnapshot(home, receipts))).toEqual(['archive-workbench'])
   })
 
+  it('merges live generation pending state without latching it into the local baseline', async () => {
+    let generations = { restartRequired: true, packages: ['ordinary-npm-plugin'] }
+    const status = createRestartStatus(async () => ({}), { minimumInterval: 0, readPendingGenerations: async () => generations })
+    expect(await status.read()).toEqual(generations)
+    generations = { restartRequired: false, packages: [] }
+    expect(await status.read()).toEqual(generations)
+  })
+
   it('throttles scans across clients while retaining the host status', async () => {
     let calls = 0
     const status = createRestartStatus(async () => { calls++; return {} }, { minimumInterval: 10000 })

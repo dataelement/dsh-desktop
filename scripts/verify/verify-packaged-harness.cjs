@@ -8,6 +8,41 @@ const { execFile, spawn } = require('node:child_process')
 const { promisify } = require('node:util')
 const { pathToFileURL } = require('node:url')
 const { runInNewContext } = require('node:vm')
+const { createServer } = require('node:http')
+
+/** Catch accidental reliance on a developer machine's npm in the shipped ASAR. */
+async function verifyRegistryMetadata(appRoot, executable) {
+  const temporary = await fsp.mkdtemp(path.join(os.tmpdir(), 'dsh-packaged-registry-'))
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ 'dist-tags': { latest: '1.0.0' }, versions: {
+      '1.0.0': { name: 'dsh-registry-fixture', version: '1.0.0', dsh: { client: { entry: 'client.js' } } }
+    } }))
+  })
+  try {
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
+    const config = path.join(temporary, 'empty.npmrc')
+    await fsp.writeFile(config, '')
+    await fsp.writeFile(path.join(temporary, 'package.json'), '{"private":true}')
+    const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/iu.test(key) && !/^path$/iu.test(key)))
+    const { stdout } = await promisify(execFile)(executable, [
+      path.join(appRoot, 'node_modules/dsh-desktop-market-installer/pnpm-runner.mjs'),
+      path.join(appRoot, 'node_modules/pnpm/bin/pnpm.cjs'),
+      'view', 'dsh-registry-fixture', 'name', 'version', 'dsh', '--json',
+      `--registry=http://127.0.0.1:${server.address().port}/`
+    ], { cwd: temporary, env: { ...environment, ELECTRON_RUN_AS_NODE: '1', PATH: temporary,
+      npm_config_userconfig: config, npm_config_globalconfig: config }, timeout: 15000, windowsHide: true })
+    const result = JSON.parse(stdout)
+    if (result.name !== 'dsh-registry-fixture' || result.version !== '1.0.0' || result.dsh?.client?.entry !== 'client.js') {
+      throw new Error('Packaged registry metadata query returned an invalid plugin')
+    }
+    console.log('Packaged registry metadata query passed without npm on PATH')
+  } finally {
+    server.closeAllConnections()
+    await new Promise(resolve => server.close(resolve))
+    await fsp.rm(temporary, { recursive: true, force: true })
+  }
+}
 
 /** Read manifests through the packaged Electron's ASAR filesystem, not the build checkout. */
 function verifyDependencyClosure(appRoot) {
@@ -147,6 +182,7 @@ async function verifyHarness(appRoot, resources, executable) {
 
 async function verifyRuntime(appRoot, resources, executable) {
   const count = verifyDependencyClosure(appRoot)
+  await verifyRegistryMetadata(appRoot, executable)
   await verifyTerminal(appRoot)
   await verifyHarness(appRoot, resources, executable)
   console.log(`Packaged Harness, bootstrap, native modules, terminal and ${count} dependency manifests passed`)
