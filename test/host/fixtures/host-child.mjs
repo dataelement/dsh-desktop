@@ -11,6 +11,12 @@ if (typeof report === 'string' && report.length > 0) {
 
 process.send?.({ type: 'starting', runId: '00000000-0000-4000-8000-000000000001' })
 
+if (process.env.FIXTURE_MODE === 'output') {
+  process.stdout.write('child-stdout\n')
+  process.stderr.write('child-stderr http://127.0.0.1:9/?token=secret\n')
+  process.exit(0)
+}
+
 if (process.env.FIXTURE_MODE === 'fatal') {
   process.send?.({ type: 'fatal', message: 'fixture failed' })
   process.exit(1)

@@ -56,6 +56,28 @@ describe('desktop host process', () => {
     await host.stop()
   })
 
+  it('forwards child output before the process exit callback', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
+    temporary.push(directory)
+    const chunks: string[] = []
+    let exited = false
+    const host = new DesktopHostProcess({
+      node: electron,
+      entry: fixture,
+      runtimeDir: directory,
+      projectDir: directory,
+      dshHome: directory,
+      environment: { FIXTURE_MODE: 'output' },
+      onOutput: (_source, chunk) => { chunks.push(chunk) },
+      onProcessExit: () => { exited = true }
+    })
+    await expect(host.start()).rejects.toThrow(/stopped/u)
+    expect(chunks.join('')).toContain('child-stdout')
+    expect(chunks.join('')).toContain('token=secret')
+    expect(exited).toBe(true)
+    await host.stop()
+  })
+
   it('rejects a fatal host message', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
     temporary.push(directory)

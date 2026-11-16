@@ -51,6 +51,8 @@ Electron logs/
 └── harness.log                  Desktop and Harness startup diagnostics
 ```
 
+The shell appends Host stdout, stderr and desktop notes to `harness.log`. An official packaged build, after the user agrees, POSTs the same JSON report as 0.13.2. Its `lines` field is the tail of that file. The local `crash-*.log` stays on disk for the short dialog.
+
 Production and development builds use separate user-data roots. Application upgrades do not replace profile, plugin, workspace, session, or model configuration data.
 
 ## Window and IPC security

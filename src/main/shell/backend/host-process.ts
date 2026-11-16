@@ -94,6 +94,10 @@ export interface DesktopHostProcessOptions {
   onFailure?: (error: Error) => void
   onPlatformSession?: (session: PlatformSession | null) => void
   onPluginOperation?: (record: PluginOperationRecord) => void
+  /** Raw child output, before the harness log prefixes it. */
+  onOutput?: (source: 'stdout' | 'stderr', chunk: string) => void
+  /** Child stdio has closed. Finish a partial log line before reading the file. */
+  onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void
 }
 
 /** One Web backend running under the Electron executable in Node mode. */
@@ -139,17 +143,27 @@ export class DesktopHostProcess {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     })
     this.child = child
-    const capture = (chunk: string): void => {
+    const capture = (source: 'stdout' | 'stderr') => (chunk: string): void => {
       this.stderr = redactHostOutput(this.stderr + chunk).slice(-MAX_HOST_DIAGNOSTIC_CHARS)
+      try {
+        this.options.onOutput?.(source, chunk)
+      } catch (error) {
+        console.error('desktop host log sink failed', error)
+      }
     }
     child.stdout?.setEncoding('utf8')
-    child.stdout?.on('data', capture)
+    child.stdout?.on('data', capture('stdout'))
     child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', capture)
+    child.stderr?.on('data', capture('stderr'))
     child.on('message', (message: unknown) => { this.receive(child, message) })
     child.once('error', error => { this.fail(error) })
     this.exitPromise = new Promise(resolve => {
-      child.once('close', code => {
+      child.once('close', (code, signal) => {
+        try {
+          this.options.onProcessExit?.(code, signal)
+        } catch (error) {
+          console.error('desktop host log finish failed', error)
+        }
         const suffix = this.stderr.trim() === '' ? '' : `: ${this.stderr.trim()}`
         if (code !== 0 && code !== null) this.fail(new Error(`dsh desktop host exited with ${String(code)}${suffix}`))
         else this.fail(new Error(`dsh desktop host stopped${suffix}`))
