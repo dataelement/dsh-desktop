@@ -575,7 +575,7 @@ Start by asking for the first piece of information still missing.`,
         if (!workspace) throw new Error(t('workspaceUnavailable'))
         if (this.state.active) await this.leave()
         this.setMarketOpen(false)
-        const options = { prompt: t('chatDraft'), whenDraftExists: 'append' }
+        const options = { prompt: t('chatDraft'), whenDraftExists: 'replace' }
         // Clear the panel first: selecting it after startSession aborts the
         // workspace navigation before its draft can be initialized.
         this.ctx.layout.selectPanel(null)
