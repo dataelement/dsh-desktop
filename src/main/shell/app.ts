@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { appendFile, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -28,6 +29,8 @@ import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
 import { developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
+import { directoryPickDeadline, settleWithin, startDirectoryPickTicks } from './directory-pick'
+import { directoryPickLogLine, directoryPickStallElapsed, directoryPickUserMessage, type DirectoryPickOutcome } from '../../shared/directory-picker'
 import { clearNativeLocaleAttempt, confirmNativeLocaleRestart, NativeDirectoryPicker, nativeLocaleRelaunchArguments, shouldCalibrateNativeLocale } from './native-locale'
 import { nativeLocaleMessages } from './native-locale-messages'
 import { savedDesktopLocaleValue } from './desktop-locale-preference'
@@ -847,7 +850,10 @@ async function main(): Promise<void> {
           profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
           environment: hostEnvironment,
           launchDirectory: projectDir,
-          showOpenDialog: options => window.isDestroyed() ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options),
+          showOpenDialog: options => settleWithin(
+            window.isDestroyed() ? dialog.showOpenDialog(options) : dialog.showOpenDialog(window, options),
+            directoryPickDeadline(undefined)
+          ),
           reveal: path => { shell.showItemInFolder(path) }
         }),
         restartHost: async () => {
@@ -985,12 +991,42 @@ async function main(): Promise<void> {
       window.webContents.send('updates:status-changed', getUpdateStatus())
     }
   })
+  const noteDirectoryPick = (line: string): void => {
+    console.info(line)
+    // Losing the log line must not change the result the page is waiting on.
+    void appendFile(join(app.getPath('logs'), 'harness.log'), `${line}\n`).catch(() => {})
+  }
+  ipcMain.on(DESKTOP_IPC.directoryPickStalled, (event, elapsed: unknown) => {
+    if (window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return
+    const elapsedMs = directoryPickStallElapsed(elapsed)
+    if (elapsedMs === undefined) return
+    noteDirectoryPick(directoryPickLogLine({ platform: process.platform, elapsedMs, outcome: 'stalled' }))
+  })
   ipcMain.handle(DESKTOP_IPC.directoryPick, async event => {
     assertMain(event)
-    const active = await explicitDesktopLocale()
-    const target = effectiveNativeLocale(active, app.getPreferredSystemLanguages())
-    const locale = target ?? 'en'
-    return directoryPicker.pick({
+    const started = Date.now()
+    const ticks = startDirectoryPickTicks({
+      requestId: randomUUID(),
+      send: tick => {
+        if (window.isDestroyed() || window.webContents.isDestroyed()) return
+        window.webContents.send(DESKTOP_IPC.directoryPickTick, tick)
+      }
+    })
+    const finish = (outcome: DirectoryPickOutcome): DirectoryPickOutcome => {
+      if (outcome.kind === 'failed') {
+        noteDirectoryPick(directoryPickLogLine({
+          platform: process.platform,
+          elapsedMs: Date.now() - started,
+          outcome: outcome.reason === 'timed-out' ? 'timed-out' : 'failed'
+        }))
+      }
+      return outcome
+    }
+    try {
+      const active = await explicitDesktopLocale()
+      const target = effectiveNativeLocale(active, app.getPreferredSystemLanguages())
+      const locale = target ?? 'en'
+      return finish(await directoryPicker.pick({
       locale, target: target ?? active,
       nativeLocale, native: process.platform === 'darwin',
       confirmRestart: () => confirmNativeLocaleRestart({
@@ -1027,7 +1063,16 @@ async function main(): Promise<void> {
         })
         return result.canceled ? null : result.filePaths[0] ?? null
       }
-    })
+    }))
+    } catch {
+      return finish({
+        kind: 'failed',
+        reason: 'unexpected',
+        message: directoryPickUserMessage(menuLocale === 'zh', 'unavailable')
+      })
+    } finally {
+      ticks.stop()
+    }
   })
   let mobileWindow: BrowserWindow | undefined
   const mobileBridge = safeMode ? undefined : new LanMobileBridge({

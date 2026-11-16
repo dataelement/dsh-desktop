@@ -109,8 +109,8 @@ describe('native language lifecycle', () => {
     const confirmRestart = vi.fn(async () => 'deferred' as const)
     const open = vi.fn(async () => '/workspace')
     const options = { locale: 'ja' as const, nativeLocale: 'en' as const, native: true, confirmRestart, open }
-    expect(await picker.pick(options)).toBe('/workspace')
-    expect(await picker.pick(options)).toBe('/workspace')
+    expect(await picker.pick(options)).toEqual({ kind: 'picked', path: '/workspace' })
+    expect(await picker.pick(options)).toEqual({ kind: 'picked', path: '/workspace' })
     expect(confirmRestart).toHaveBeenCalledTimes(1)
     expect(open).toHaveBeenLastCalledWith('en')
     await picker.pick({ ...options, locale: 'fr' })
@@ -128,10 +128,10 @@ describe('native language lifecycle', () => {
       const open = vi.fn(async () => '/workspace')
       const picker = new NativeDirectoryPicker()
       const options = { locale: 'ja' as const, nativeLocale: 'en' as const, native: true, confirmRestart: vi.fn(async () => outcome), open }
-      expect(await picker.pick(options)).toBeNull()
+      expect(await picker.pick(options)).toEqual({ kind: 'cancelled' })
       expect(open).not.toHaveBeenCalled()
       if (outcome === 'restarting') {
-        expect(await picker.pick(options)).toBeNull()
+        expect(await picker.pick(options)).toEqual({ kind: 'cancelled' })
         expect(options.confirmRestart).toHaveBeenCalledTimes(1)
       }
     }
@@ -144,10 +144,10 @@ describe('native language lifecycle', () => {
     const open = vi.fn(async () => { await pending; return '/workspace' })
     const options = { locale: 'en' as const, nativeLocale: 'en' as const, native: true, confirmRestart: vi.fn(async () => 'deferred' as const), open }
     const first = picker.pick(options)
-    expect(await picker.pick(options)).toBeNull()
+    expect(await picker.pick(options)).toEqual({ kind: 'cancelled' })
     release()
-    expect(await first).toBe('/workspace')
-    await expect(picker.pick({ ...options, open: async () => { throw new Error('panel failed') } })).rejects.toThrow('panel failed')
-    expect(await picker.pick(options)).toBe('/workspace')
+    expect(await first).toEqual({ kind: 'picked', path: '/workspace' })
+    expect(await picker.pick({ ...options, open: async () => { throw new Error('panel failed') } })).toMatchObject({ kind: 'failed', reason: 'open-failed' })
+    expect(await picker.pick(options)).toEqual({ kind: 'picked', path: '/workspace' })
   })
 })
