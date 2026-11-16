@@ -149,7 +149,13 @@ export class DesktopHostProcess {
     child.on('message', (message: unknown) => { this.receive(child, message) })
     child.once('error', error => { this.fail(error) })
     this.exitPromise = new Promise(resolve => {
-      child.once('close', code => {
+      // Spawn failures emit `error` without an `exit` event.
+      child.once('error', () => { if (child.pid === undefined) resolve() })
+      // A plugin subprocess may inherit stdout/stderr and keep those pipes open
+      // after the Host exits. Waiting for `close` then makes a successful stop
+      // time out and prevents restart even after SIGKILL. Process lifetime ends
+      // at `exit`; pipe cleanup is not proof that the old Host is still alive.
+      child.once('exit', code => {
         const suffix = this.stderr.trim() === '' ? '' : `: ${this.stderr.trim()}`
         if (code !== 0 && code !== null) this.fail(new Error(`dsh desktop host exited with ${String(code)}${suffix}`))
         else this.fail(new Error(`dsh desktop host stopped${suffix}`))

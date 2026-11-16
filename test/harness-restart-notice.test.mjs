@@ -33,7 +33,7 @@ describe('global Harness restart notice', () => {
       run: promise => void promise,
       dismissError: () => publish({ ...snapshot, errorDismissed: true })
     }
-    const copy = { close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', market: '插件市场安装变更', interrupted: '重启将中断正在执行的任务。' }
+    const copy = { installationDrift: '安装状态异常', installationDriftDescription: '停止外部更新并通过插件管理器修复。重启无法修复。', close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', market: '插件市场安装变更', interrupted: '重启将中断正在执行的任务。' }
     const root = createRoot(dom.window.document.getElementById('root'))
     try {
       await React.act(async () => root.render(React.createElement(Notice, { service, t: key => copy[key] })))
@@ -134,6 +134,12 @@ describe('global Harness restart notice', () => {
       expect(doc.querySelector('[data-dsh-workbench-notice]')).toBeNull()
       await React.act(async () => publish({ ...snapshot, registrationFailures: [{ ...registration, message: 'new diagnostic' }] }))
       expect(doc.querySelector('[data-dsh-workbench-notice]')).not.toBeNull()
+      await React.act(async () => publish({ restartNeeded: false, installationDrift: [{ name: 'fixture-plugin', code: 'external-modification', path: '/temporary/plugin' }] }))
+      expect(doc.querySelector('.dshRestartTitle').textContent).toBe(copy.installationDrift)
+      expect(doc.querySelector('.dshRestartNotice').textContent).not.toContain(copy.restart)
+      await React.act(async () => doc.querySelector('[aria-haspopup="dialog"]').click())
+      expect(doc.querySelector('[role="dialog"]').textContent).toContain('fixture-plugin')
+      expect(doc.querySelector('[role="dialog"]').textContent).toContain('/temporary/plugin')
       await React.act(async () => root.unmount())
       expect(listeners.size).toBe(0)
     } finally {

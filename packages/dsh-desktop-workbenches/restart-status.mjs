@@ -60,7 +60,7 @@ export async function readLocalWorkbenchSnapshot(home = process.env.DSH_HOME || 
 
 /**
  * @param {() => Promise<Record<string, string>>} readSnapshot
- * @param {{ minimumInterval?: number, readPendingGenerations?: () => Promise<{ restartRequired: boolean, packages: string[] }> }} [options]
+ * @param {{ minimumInterval?: number, readPendingGenerations?: () => Promise<{ restartRequired: boolean, packages: string[], installationDrift?: Array<{ name: string, code: string, path: string, expectedPath: string, recovery: string }> }> }} [options]
  */
 export function createRestartStatus(readSnapshot, { minimumInterval = 1000, readPendingGenerations = async () => ({ restartRequired: false, packages: [] }) } = {}) {
   // Start before publishing the route, so a freshly installed package cannot
@@ -96,7 +96,9 @@ export function createRestartStatus(readSnapshot, { minimumInterval = 1000, read
         const generations = await readPendingGenerations()
         const packages = [...new Set([...pending, ...generations.packages])]
         lastRead = Date.now()
-        lastStatus = { restartRequired: packages.length > 0, packages }
+        lastStatus = { restartRequired: packages.length > 0, packages,
+          ...(Array.isArray(generations.installationDrift) && generations.installationDrift.length
+            ? { installationDrift: generations.installationDrift } : {}) }
         return lastStatus
       })().finally(() => { inFlight = undefined })
       return inFlight

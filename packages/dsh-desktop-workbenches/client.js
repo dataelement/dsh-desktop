@@ -85,8 +85,8 @@ Start by asking for the first piece of information still missing.`,
     }
     const RESTART_NS = 'dsh-desktop-restart'
     const restartCopy = {
-      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。' },
-      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', close: 'Close', operationFailed: 'Workbench operation incomplete', registrationFailed: 'A workbench failed to load', diagnostics: 'View details for the full cause, then reload the workbench after fixing it.', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.' }
+      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。', installationDrift: '安装状态异常', installationDriftDescription: '检测到安装目录被外部修改，重启无法修复。请停止外部更新并备份需要保留的文件，然后从插件管理器重新安装。', installationDriftDetails: '安装状态异常详情' },
+      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', close: 'Close', operationFailed: 'Workbench operation incomplete', registrationFailed: 'A workbench failed to load', diagnostics: 'View details for the full cause, then reload the workbench after fixing it.', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.', installationDrift: 'Installation state is abnormal', installationDriftDescription: 'The installation directory was modified externally. Restarting cannot fix this. Stop external updates, back up files you need, then reinstall from Plugin Manager.', installationDriftDetails: 'Installation state details' }
     }
     const registrationText = (ctx, key) => ctx.locale?.bind
       ? ctx.locale.bind(REGISTRATION_NS)(key)
@@ -344,6 +344,7 @@ Start by asking for the first piece of information still missing.`,
         this.applicationOutcomes = new Map()
         this.hostRestartNeeded = false
         this.restartPackages = []
+        this.installationDrift = []
         this.extraRestartSources = new Set()
         try {
           const pending = JSON.parse(window.sessionStorage?.getItem('dsh-desktop-pending-restart') || 'null')
@@ -513,9 +514,11 @@ Start by asking for the first piece of information still missing.`,
           if (this.disposed) return
           const restarted = typeof data.runtimeId === 'string' && this.restartRuntimeId && data.runtimeId !== this.restartRuntimeId
           if (typeof data.runtimeId === 'string') this.restartRuntimeId = data.runtimeId
-          const before = JSON.stringify(this.restartReasons())
+          const before = JSON.stringify([this.restartReasons(), this.installationDrift])
           if (typeof data.restartRequired === 'boolean') this.hostRestartNeeded = data.restartRequired
           if (Array.isArray(data.packages)) this.restartPackages = data.packages.filter(name => typeof name === 'string')
+          this.installationDrift = Array.isArray(data.installationDrift)
+            ? data.installationDrift.filter(item => item && typeof item.name === 'string' && item.code === 'external-modification') : []
           if (restarted) this.extraRestartSources.delete('image')
           if (restarted && data.restartRequired === false) {
             this.hostRestartNeeded = false
@@ -526,7 +529,7 @@ Start by asking for the first piece of information still missing.`,
             }
           }
           this.persistRestartSources()
-          if (before !== JSON.stringify(this.restartReasons())) this.publish()
+          if (before !== JSON.stringify([this.restartReasons(), this.installationDrift])) this.publish()
         })().catch(() => {
           // Restart guidance is supplementary; a disconnected host must not
           // replace the user's conversation with a polling error.
@@ -922,19 +925,6 @@ Start by asking for the first piece of information still missing.`,
             if (typeof legacy === 'string' && legacy !== entry.id && referenced(legacy)) migrations[legacy] = entry.id
           }
         }
-        if (this.native.status === NATIVE_STATUS.ready) {
-          for (const [legacy, remembered] of Object.entries(this.knownProviders)) {
-            const source = remembered?.sourcePackage
-            const bundle = source && this.native.bundles[source]
-            if (legacy.startsWith('local:') || !source || !bundle || bundle.installed === false || bundle.error || this.catalog.has(legacy) || !referenced(legacy) || migrations[legacy]) continue
-            // A distinct market receipt may represent a different workbench
-            // that reused this package name. Do not transfer its owned data.
-            if (this.installs[legacy]?.pluginName === source) continue
-            const current = [...this.catalog.values()].filter((provider) => provider.sourcePackage === source &&
-              this.remoteCatalog.some((entry) => entry.id === provider.id))
-            if (current.length === 1 && current[0].id !== legacy) migrations[legacy] = current[0].id
-          }
-        }
         if (!Object.keys(migrations).length) return
         this.run(this.commit((state) => {
           const replace = id => migrations[id] || id
@@ -980,7 +970,7 @@ Start by asking for the first piece of information still missing.`,
         this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDismissed: this.errorDismissed,
 
           catalogLoaded: this.catalogLoaded, catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, checkingUpdates: this.checkingUpdates, pending: this.pending, marketOpen: this.marketOpen,
-          registrationFailures: [...this.registrationFailures.values()], catalog, categories: this.marketCategories, installs: this.installs, installing: this.installing || this.firstMarketInstall, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, restartReasons: this.restartReasons(), reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
+          registrationFailures: [...this.registrationFailures.values()], catalog, categories: this.marketCategories, installs: this.installs, installing: this.installing || this.firstMarketInstall, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, restartReasons: this.restartReasons(), installationDrift: this.installationDrift, reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
         for (const listener of this.listeners) listener()
       }
       report(error) {
@@ -2120,7 +2110,7 @@ Start by asking for the first piece of information still missing.`,
       return null
     }
     function RestartNotice({ service, t }) {
-      const { error: workbenchError, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], registrationFailures = [] } = useWorkbench(service)
+      const { error: workbenchError, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], installationDrift = [], registrationFailures = [] } = useWorkbench(service)
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState('')
       const pending = React.useRef(false)
@@ -2129,7 +2119,9 @@ Start by asking for the first piece of information still missing.`,
       const [expanded, setExpanded] = React.useState(false)
       const [dismissedFailures, setDismissedFailures] = React.useState(null)
       const failureKey = JSON.stringify(registrationFailures)
-      const operationError = workbenchError && !errorDismissed ? workbenchError : null
+      const driftError = installationDrift.length
+        ? `${t('installationDriftDescription')}\n${installationDrift.map(item => `${item.name}\n${item.path || ''}`).join('\n')}` : null
+      const operationError = driftError || (workbenchError && !errorDismissed ? workbenchError : null)
       const showRegistration = registrationFailures.length > 0 && dismissedFailures !== failureKey
       const hasFailure = !!operationError || showRegistration
       const noticeKey = JSON.stringify([operationError, showRegistration ? failureKey : null, restartNeeded])
@@ -2168,18 +2160,20 @@ Start by asking for the first piece of information still missing.`,
           if (live.current) setBusy(false)
         }
       }
-      if (!restartNeeded && hasFailure) {
+      // Installation drift is not a restart request, even if another package
+      // independently has a pending change. Keep that reason in the details.
+      if (driftError || (!restartNeeded && hasFailure)) {
         return h(React.Fragment, null, h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert', 'data-dsh-workbench-notice': '' },
           h('div', { className: 'dshRestartRow' },
             h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
               h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' },
                 h('circle', { cx: 12, cy: 12, r: 9 }),
                 h('path', { d: 'M12 8v4m0 4h.01' }))),
-            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(operationError ? 'operationFailed' : 'registrationFailed')), h('p', { className: 'dshRestartDescription' }, t('diagnostics'))),
+            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(driftError ? 'installationDrift' : operationError ? 'operationFailed' : 'registrationFailed')), h('p', { className: 'dshRestartDescription' }, t(driftError ? 'installationDriftDescription' : 'diagnostics'))),
             h('div', { className: 'dshRestartActions' },
-              h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => { setExpanded(false); service.dismissError(); setDismissedFailures(failureKey) } }, t('close')),
+              !driftError && h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => { setExpanded(false); service.dismissError(); setDismissedFailures(failureKey) } }, t('close')),
               h('button', { type: 'button', className: 'dshRestartToggle', 'aria-haspopup': 'dialog', 'aria-controls': expanded ? details : undefined, onClick: () => setExpanded(true) }, t('details')),
-              h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载'))))), dialog)
+              !driftError && h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载'))))), dialog)
       }
       if (!restartNeeded) return null
       return h(React.Fragment, null, h('aside', { className: 'dshRestartNotice', 'data-dsh-workbench-notice': '', 'aria-label': t('title'), 'aria-live': 'polite', 'aria-busy': busy },

@@ -56,6 +56,34 @@ describe('desktop host process', () => {
     await host.stop()
   })
 
+  it('finishes graceful stop when a plugin child still holds the Host pipes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
+    temporary.push(directory)
+    const host = new DesktopHostProcess({
+      node: electron,
+      entry: fixture,
+      runtimeDir: directory,
+      projectDir: directory,
+      dshHome: directory,
+      environment: { FIXTURE_MODE: 'inherited-pipes' }
+    })
+    await host.start()
+    const started = Date.now()
+    await expect(host.stop(true)).resolves.toBeUndefined()
+    expect(Date.now() - started).toBeLessThan(3_000)
+  })
+
+  it('does not hang stopping a Host that failed to spawn', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
+    temporary.push(directory)
+    const host = new DesktopHostProcess({
+      node: join(directory, 'missing-node'), entry: fixture,
+      runtimeDir: directory, projectDir: directory, dshHome: directory
+    })
+    await expect(host.start()).rejects.toThrow()
+    await expect(host.stop()).resolves.toBeUndefined()
+  })
+
   it('rejects a fatal host message', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
     temporary.push(directory)

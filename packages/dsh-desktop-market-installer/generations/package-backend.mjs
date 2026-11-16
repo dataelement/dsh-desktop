@@ -68,8 +68,9 @@ async function pendingGenerationUpdates(dshHome, profile, requestedName) {
   }
   const projection = manifest?.dsh?.desktop?.generationProjection
   for (const generation of others) {
-    let selected = projection?.version === 1 &&
+    const committed = projection?.version === 1 &&
       projection.plugins?.[generation.pluginName]?.generationId === generation.id
+    let selected = committed
     let cause
     if (selected) {
       const path = join(directory, 'node_modules', generation.pluginName)
@@ -81,13 +82,22 @@ async function pendingGenerationUpdates(dshHome, profile, requestedName) {
           : resolve(dirname(path), linked) === target || resolve(dirname(path), linked) === resolve(generation.directory, 'node_modules', generation.pluginName)
       } catch (error) {
         cause = error
-        // A damaged installed package with no old entry is still manageable.
-        // A real directory or a link to another generation is a pending switch.
-        if (error?.code !== 'ENOENT') selected = false
+        // Missing entries remain manageable, but are not evidence of a staged
+        // update. A committed projection replaced by another owner is drift.
+        selected = false
       }
     }
     if (!selected) {
-      pending.push({ name: generation.pluginName, cause })
+      pending.push({
+        name: generation.pluginName,
+        cause,
+        ...(committed ? {
+          code: 'external-modification',
+          path: join(directory, 'node_modules', generation.pluginName),
+          expectedPath: join(generation.directory, 'node_modules', generation.pluginName),
+          recovery: 'Stop the external updater and back up the conflicting package entry before recovery. Use Plugin Manager to explicitly reinstall or remove this package; no files have been replaced by this check.'
+        } : {})
+      })
     }
   }
   return pending
@@ -97,6 +107,15 @@ async function pendingGenerationUpdates(dshHome, profile, requestedName) {
 export async function assertNoPendingGenerationUpdates(dshHome, profile, requestedName) {
   const pending = await pendingGenerationUpdates(dshHome, profile, requestedName)
   if (!pending.length) return
+  const drift = pending.filter(item => item.code === 'external-modification')
+  if (drift.length) {
+    const error = new Error(`Installation drift for ${drift[0].name}: the committed generation entry was externally modified. ${drift[0].recovery}`, { cause: drift[0].cause })
+    error.code = 'installation-drift'
+    error.restartRequired = false
+    error.packages = drift.map(item => item.name)
+    error.installationDrift = drift.map(({ cause, ...diagnostic }) => diagnostic)
+    throw error
+  }
   const error = new Error(`Pending generation update for ${pending[0].name}. Restart before changing another package, or replace/remove that pending package first.`, { cause: pending[0].cause })
   error.code = 'pending-generation-update'
   error.restartRequired = true
@@ -155,8 +174,15 @@ export function createGenerationPackageBackend(options) {
     supportsVerifiedInstall: true,
     async readRestartStatus() {
       return withRegistryLock(dshHome, async () => {
-        const packages = (await pendingGenerationUpdates(dshHome, profile)).map(item => item.name)
-        return { restartRequired: packages.length > 0, packages }
+        const pending = await pendingGenerationUpdates(dshHome, profile)
+        const packages = pending.filter(item => item.code !== 'external-modification').map(item => item.name)
+        const installationDrift = pending.filter(item => item.code === 'external-modification')
+          .map(({ cause, ...diagnostic }) => diagnostic)
+        return {
+          restartRequired: packages.length > 0,
+          packages,
+          ...(installationDrift.length ? { installationDrift } : {})
+        }
       })
     },
     async install(request) {
