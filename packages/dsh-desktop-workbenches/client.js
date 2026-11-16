@@ -85,8 +85,8 @@ Start by asking for the first piece of information still missing.`,
     }
     const RESTART_NS = 'dsh-desktop-restart'
     const restartCopy = {
-      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。' },
-      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.' }
+      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。' },
+      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', close: 'Close', operationFailed: 'Workbench operation incomplete', registrationFailed: 'A workbench failed to load', diagnostics: 'View details for the full cause, then reload the workbench after fixing it.', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.' }
     }
     const registrationText = (ctx, key) => ctx.locale?.bind
       ? ctx.locale.bind(REGISTRATION_NS)(key)
@@ -1856,7 +1856,11 @@ Start by asking for the first piece of information still missing.`,
         font-size:13px; line-height:20px; text-align:left; white-space:normal;
       }
       /* Version updates and workbench notifications share the lower-right corner. */
-      html:has([data-dsh-update-corner-visible]) .dshRestartNotice { display:none; }
+      html:has([data-dsh-update-corner-visible][data-update-phase="downloading"]) .dshRestartNotice,
+      html:has([data-dsh-update-corner-visible][data-update-phase="downloaded"]) .dshRestartNotice { display:none; }
+      .dshRestartDialog .dshRestartDetails { max-height:55vh; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+      .dshRestartDialog h2 { margin:0; font-size:18px; line-height:26px; }
+      .dshRestartDialog button:focus-visible { outline:2px solid var(--dsw-alias-label-primary); outline-offset:3px; }
       .dshRestartRow { display:flex; gap:12px; align-items:center; }
       .dshRestartIcon {
         display:grid; place-items:center; flex:none; width:36px; height:36px;
@@ -2106,13 +2110,36 @@ Start by asking for the first piece of information still missing.`,
       return null
     }
     function RestartNotice({ service, t }) {
-      const { error: workbenchError, errorDismissed, pending: workbenchPending, restartNeeded, restartReasons } = useWorkbench(service)
+      const { error: workbenchError, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], registrationFailures = [] } = useWorkbench(service)
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState('')
       const pending = React.useRef(false)
       const live = React.useRef(true)
       const details = React.useId()
       const [expanded, setExpanded] = React.useState(false)
+      const [dismissedFailures, setDismissedFailures] = React.useState(null)
+      const failureKey = JSON.stringify(registrationFailures)
+      const operationError = workbenchError && !errorDismissed ? workbenchError : null
+      const showRegistration = registrationFailures.length > 0 && dismissedFailures !== failureKey
+      const hasFailure = !!operationError || showRegistration
+      const noticeKey = JSON.stringify([operationError, showRegistration ? failureKey : null, restartNeeded])
+      React.useEffect(() => { setExpanded(false) }, [noticeKey])
+      const dialogRef = React.useRef(null)
+      const closeDetails = () => { if (!busy) setExpanded(false) }
+      useDialogFocus(expanded && (hasFailure || restartNeeded), closeDetails, dialogRef)
+      React.useEffect(() => { if (expanded) dialogRef.current?.querySelector('button')?.focus() }, [expanded])
+      const dialog = expanded && (hasFailure || restartNeeded) && require('react-dom').createPortal(
+        h('div', { className: 'dshWbModalBackdrop', onClick: closeDetails },
+          h('section', { ref: dialogRef, id: details, className: 'dshWbModal dshRestartDialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${details}-title`, 'data-dsh-workbench-notice': '', tabIndex: -1, onClick: event => event.stopPropagation() },
+            h('div', { className: 'dshWbActions' }, h('h2', { id: `${details}-title` }, t(hasFailure ? (operationError ? 'operationFailed' : 'registrationFailed') : 'title')),
+              h(Button, { disabled: busy, onClick: closeDetails }, t('close'))),
+            h('div', { className: 'dshRestartDetails', tabIndex: 0 },
+              operationError && h('p', null, tr(operationError)),
+              showRegistration && h(React.Fragment, null,
+                h('p', null, registrationText(service.ctx, 'guidance')),
+                ...registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` }, `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`))),
+              restartNeeded && h(React.Fragment, null,
+                h('ul', null, ...restartReasons.map(reason => h('li', { key: reason }, ['workbenches', 'market', 'image'].includes(reason) ? t(reason) : reason))), h('p', null, t('interrupted')))))), document.body)
       React.useEffect(() => { live.current = true; return () => { live.current = false } }, [])
       const restart = async () => {
         if (pending.current) return
@@ -2131,20 +2158,21 @@ Start by asking for the first piece of information still missing.`,
           if (live.current) setBusy(false)
         }
       }
-      if (workbenchError && !errorDismissed) {
-        return h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert' },
+      if (hasFailure) {
+        return h(React.Fragment, null, h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert', 'data-dsh-workbench-notice': '' },
           h('div', { className: 'dshRestartRow' },
             h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
               h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' },
                 h('circle', { cx: 12, cy: 12, r: 9 }),
                 h('path', { d: 'M12 8v4m0 4h.01' }))),
-            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, tr(workbenchError))),
+            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(operationError ? 'operationFailed' : 'registrationFailed')), h('p', { className: 'dshRestartDescription' }, t('diagnostics'))),
             h('div', { className: 'dshRestartActions' },
-              h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => service.dismissError() }, both('关闭', 'Dismiss')),
-              h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载')))))
+              h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => { setExpanded(false); service.dismissError(); setDismissedFailures(failureKey) } }, t('close')),
+              h('button', { type: 'button', className: 'dshRestartToggle', 'aria-haspopup': 'dialog', 'aria-controls': expanded ? details : undefined, onClick: () => setExpanded(true) }, t('details')),
+              h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载'))))), dialog)
       }
       if (!restartNeeded) return null
-      return h('aside', { className: 'dshRestartNotice', 'aria-label': t('title'), 'aria-live': 'polite', 'aria-busy': busy },
+      return h(React.Fragment, null, h('aside', { className: 'dshRestartNotice', 'data-dsh-workbench-notice': '', 'aria-label': t('title'), 'aria-live': 'polite', 'aria-busy': busy },
         h('div', { className: 'dshRestartRow' },
           h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
             h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
@@ -2156,10 +2184,9 @@ Start by asking for the first piece of information still missing.`,
             h('p', { className: 'dshRestartTitle' }, t('title')),
             h('p', { className: 'dshRestartDescription' }, t('description'))),
           h('div', { className: 'dshRestartActions' },
-            h('button', { type: 'button', className: 'dshRestartToggle', disabled: busy, 'aria-expanded': expanded, 'aria-controls': details, onClick: () => setExpanded(value => !value) }, t(expanded ? 'hide' : 'details')),
+            h('button', { type: 'button', className: 'dshRestartToggle', disabled: busy, 'aria-haspopup': 'dialog', 'aria-controls': expanded ? details : undefined, onClick: () => setExpanded(true) }, t('details')),
             h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy, onClick: () => void restart() }, t(busy ? 'restarting' : 'restart')))),
-        expanded && h('div', { id: details, className: 'dshRestartDetails' }, h('ul', null, ...restartReasons.map(reason => h('li', { key: reason }, ['workbenches', 'market', 'image'].includes(reason) ? t(reason) : reason))), h('p', null, t('interrupted'))),
-        error && h('p', { className: 'dshRestartError', role: 'alert' }, error))
+        error && h('p', { className: 'dshRestartError', role: 'alert' }, error)), dialog)
     }
     function screenshotsFor(entry) {
       const images = Array.isArray(entry?.screenshots) ? entry.screenshots.filter(image => typeof image === 'string' && image) : []
