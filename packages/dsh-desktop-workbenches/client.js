@@ -835,6 +835,13 @@ Start by asking for the first piece of information still missing.`,
         const verified = evidence?.contentVerified && evidence.fingerprint
           ? installed.filter(id => this.installs[id].fingerprint === evidence.fingerprint && this.installs[id].version === evidence.version)
           : []
+        const remembered = Object.entries(this.knownProviders).filter(([id, entry]) => !id.startsWith('local:') && entry.sourcePackage === source).map(([id]) => id)
+        const historicallyReferenced = listed.some(id => this.state.added.includes(id) || this.state.pinned.includes(id)
+          || this.state.favorites.includes(id) || this.state.active === id || Object.values(this.state.sessionBindings).includes(id)
+          || Object.hasOwn(this.state.notes, id) || Object.hasOwn(this.state.recentSessions, id) || Object.hasOwn(this.state.hiddenWorkspaces, id))
+        // Discovery aliases cannot turn an unattributed local package into a market install.
+        if (evidence?.origin === 'local' && !installed.length && !declared && !legacy.length
+          && !remembered.length && !historicallyReferenced) return local
         const matches = verified.length ? [verified] : [installed, listed, legacy]
         const identities = [...new Set([...matches.flat(), ...(declared ? [declared] : [])])]
         if (identities.length > 1) {
@@ -843,13 +850,6 @@ Start by asking for the first piece of information still missing.`,
           if (declared && matches.every(ids => !ids.length || ids.includes(declared))) return declared
           throw new Error(`Client package ${source} matches multiple workbenches: ${identities.sort().join(', ')}.`)
         }
-        const remembered = Object.entries(this.knownProviders).filter(([id, entry]) => !id.startsWith('local:') && entry.sourcePackage === source).map(([id]) => id)
-        const historicallyReferenced = listed.some(id => this.state.added.includes(id) || this.state.pinned.includes(id)
-          || this.state.favorites.includes(id) || this.state.active === id || Object.values(this.state.sessionBindings).includes(id)
-          || Object.hasOwn(this.state.notes, id) || Object.hasOwn(this.state.recentSessions, id) || Object.hasOwn(this.state.hiddenWorkspaces, id))
-        // A catalog package-name match is discovery, not a market installation receipt.
-        if (this.packageEvidence?.[source]?.origin === 'local' && !installed.length && !declared && !legacy.length
-          && !remembered.length && !historicallyReferenced) return local
         if (identities.length) return identities[0]
         if (remembered.length > 1) throw new Error(`Client package ${source} matches multiple workbenches: ${remembered.sort().join(', ')}.`)
         if (remembered.length) throw new Error(`Client package ${source} is not attributed to its previous market repository.`)
@@ -1078,6 +1078,12 @@ Start by asking for the first piece of information still missing.`,
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: catalogId, ...options })
           })
           const data = await readWorkbenchJson(response)
+          // A failed mutation can still be blocked by an earlier pending switch.
+          // Preserve failure semantics while surfacing its actual recovery action.
+          if (!response.ok && data.restartRequired === true) {
+            this.hostRestartNeeded = true
+            if (Array.isArray(data.restartPackages)) this.restartPackages = data.restartPackages.filter(name => typeof name === 'string')
+          }
           if (!response.ok) {
             const error = new Error(installErrorMessage(this.ctx, data, response.status))
             error.result = data.result
@@ -1877,7 +1883,7 @@ Start by asking for the first piece of information still missing.`,
       }
       .dshRestartNotice .dshRestartPrimary {
         padding:6px 12px; font-weight:500;
-        background:var(--dsw-alias-button-primary-fill); color:var(--dsw-alias-label-primary-inverted);
+        background:var(--dsw-alias-button-primary-fill); color:var(--dsw-alias-label-primary-foreground);
       }
       .dshRestartNotice .dshRestartPrimary:hover:not(:disabled) { background:var(--dsw-alias-button-primary-hover); }
       .dshRestartNotice .dshRestartToggle {
@@ -1888,7 +1894,10 @@ Start by asking for the first piece of information still missing.`,
       .dshRestartNotice button:disabled { opacity:.55; cursor:default; }
       .dshRestartDetails { margin-top:12px; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
       .dshRestartDetails ul { margin:0; padding-left:20px; }
-      .dshRestartDetails p { margin:8px 0 0; }
+      .dshRestartDetails p { margin:8px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+      .dshRestartDiagnostic { padding:8px 0; border-top:1px solid var(--dsw-alias-border-l2); }
+      .dshRestartDiagnostic strong { color:var(--dsw-alias-label-primary); }
+      .dshRestartDetails { max-height:240px; overflow:auto; }
       .dshRestartError { margin:12px 0 0; color:var(--dsw-alias-state-error-primary); }
       @media (max-width:480px) {
         .dshRestartRow { flex-wrap:wrap; }
@@ -1898,10 +1907,11 @@ Start by asking for the first piece of information still missing.`,
       html[data-dsh-workbench-active] [data-dsh-sidebar-new-session]{display:none!important}
       .dshWb{font-family:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);box-sizing:border-box}
       /* Only style controls owned by the Workbench UI. The native conversation
-         is mounted inside .dshWbFrame and must keep its own composer styles. */
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):not([data-dsh-wb-primitive]){font-family:inherit;font-size:13px;line-height:20px;color:inherit;box-sizing:border-box}
+         is mounted inside .dshWbFrame and must keep its own composer styles.
+         Keep reset specificity below component colors, including disabled states. */
+      :where(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :where(button,input,select,textarea):not([data-dsh-wb-primitive]){font-family:inherit;font-size:13px;line-height:20px;color:inherit;box-sizing:border-box}
       :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button:not([data-dsh-wb-primitive]){cursor:pointer;transition:none}
-      :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) button:not([data-dsh-wb-primitive]):disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
+      :where(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :where(button):not([data-dsh-wb-primitive]):disabled{opacity:1;cursor:default;color:var(--dsw-alias-label-secondary)}
       :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):not([data-dsh-wb-primitive]):focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px}
       .dshWbBtn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:6px;padding:5px 10px;white-space:nowrap}
       a.dshWbBtn{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
@@ -2158,7 +2168,7 @@ Start by asking for the first piece of information still missing.`,
           if (live.current) setBusy(false)
         }
       }
-      if (hasFailure) {
+      if (!restartNeeded && hasFailure) {
         return h(React.Fragment, null, h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert', 'data-dsh-workbench-notice': '' },
           h('div', { className: 'dshRestartRow' },
             h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
@@ -2182,10 +2192,11 @@ Start by asking for the first piece of information still missing.`,
               h('path', { d: 'M8 16H3v5' }))),
           h('div', { className: 'dshRestartBody' },
             h('p', { className: 'dshRestartTitle' }, t('title')),
-            h('p', { className: 'dshRestartDescription' }, t('description'))),
+            h('p', { className: 'dshRestartDescription' }, t('description')),
+            hasFailure && h('p', { className: 'dshRestartDescription' }, t(operationError ? 'operationFailed' : 'registrationFailed'))),
           h('div', { className: 'dshRestartActions' },
             h('button', { type: 'button', className: 'dshRestartToggle', disabled: busy, 'aria-haspopup': 'dialog', 'aria-controls': expanded ? details : undefined, onClick: () => setExpanded(true) }, t('details')),
-            h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy, onClick: () => void restart() }, t(busy ? 'restarting' : 'restart')))),
+            h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => void restart() }, t(busy ? 'restarting' : 'restart')))),
         error && h('p', { className: 'dshRestartError', role: 'alert' }, error)), dialog)
     }
     function screenshotsFor(entry) {
@@ -2858,11 +2869,6 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
 
             h(UiButton, { 'data-dsh-wb-primitive': true, variant: tab !== 'submit' ? 'primary' : 'outline', className: 'dshWbCreate', icon: h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus(null) } }, tab === 'submit' ? tr('返回工作台市场') : tr('制作我的工作台')))),
         h(Notice, { service, showCatalogStatus: true }),
-        service.getSnapshot().registrationFailures?.length > 0 && h('div', { role: 'alert', className: 'dshWbFailureHint' },
-          h('strong', null, registrationText(service.ctx, 'failed')),
-          h('p', null, registrationText(service.ctx, 'guidance')),
-          ...service.getSnapshot().registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` },
-            `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`))),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': tr('工作台集合') },
             h(Button, { id: 'dsh-workbench-market-tab', role: 'tab', tabIndex: tab === 'market' ? 0 : -1, 'aria-selected': tab === 'market', 'aria-controls': 'dsh-workbench-market-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('market') }, tr('市场')),
