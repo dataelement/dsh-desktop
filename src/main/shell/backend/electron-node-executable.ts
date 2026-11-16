@@ -1,3 +1,4 @@
+import { requireDesktopPlatform } from '../../../shared/desktop-platform'
 import { posix } from 'node:path'
 
 /**
@@ -15,7 +16,7 @@ export function electronNodeExecutable(
   execPath: string,
   platform: NodeJS.Platform = process.platform
 ): string {
-  if (platform !== 'darwin') return execPath
+  if (requireDesktopPlatform(platform).nodeExecutable === 'self') return execPath
   // <App>.app/Contents/MacOS/<Name> → <App>.app/Contents/Frameworks/<Name> Helper.app/…
   const name = posix.basename(execPath)
   const contents = posix.dirname(posix.dirname(execPath))

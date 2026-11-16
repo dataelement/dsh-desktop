@@ -1,3 +1,4 @@
+import { requireDesktopPlatform } from '../../../shared/desktop-platform'
 /** POSIX login-shell environment for launches that inherit only the GUI session. */
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { homedir, userInfo } from 'node:os'
@@ -235,7 +236,7 @@ export async function readDesktopLoginShellEnvironment(
 ): Promise<DesktopLoginShellResult> {
   const platform = options.platform ?? process.platform
   const shells = options.shells ?? loginShellCandidates()
-  if (platform === 'win32') return { environment: base, failures: [] }
+  if (requireDesktopPlatform(platform).loginEnvironment === 'inherited') return { environment: base, failures: [] }
   const failures: DesktopLoginShellFailure[] = []
   for (const shell of shells) {
     const result = await readShell(shell, base, homedir(), config.timeoutMs, options.signal, options.spawnShell)
