@@ -1,3 +1,4 @@
+import { desktopPlatformAdapter } from '../../shared/desktop-platform'
 import type { GpuExitContext } from '../gpu-fallback'
 import { totalmem, freemem, release } from 'node:os'
 import { resourceSnapshot, graphicsSnapshot } from '../resource-diagnostics'
@@ -109,7 +110,7 @@ function openDesktopService(): DesktopService {
 
 /** Official packages only. This does not attach crash diagnostics or open a diagnostic session. */
 export function initializeDesktopUpdateService(): void {
-  if (!app.isPackaged || service || updateServiceFailure) return
+  if (!app.isPackaged || !desktopPlatformAdapter(process.platform)?.officialUpdates || service || updateServiceFailure) return
   try {
     service = openDesktopService()
   } catch (error) {
@@ -119,7 +120,7 @@ export function initializeDesktopUpdateService(): void {
 
 /** Call only after the single-instance lock, before bootstrap writes this session's log. */
 export function initializeDesktopService(options: { getExitContext?: () => GpuExitContext } = {}): void {
-  if (!app.isPackaged || updateServiceFailure) return
+  if (!app.isPackaged || !desktopPlatformAdapter(process.platform)?.officialUpdates || updateServiceFailure) return
   try {
     if (!service) service = openDesktopService()
     if (desktopDiagnostics || !service) return

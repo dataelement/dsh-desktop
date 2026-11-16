@@ -19,7 +19,7 @@ flowchart TD
   MAIN --> UPDATE["Installed-build update manager"]
 ```
 
-The official package is the transplanted shell. `electron.vite.config.ts` bundles `src/main/shell/app.ts` to `out/main/index.js` and `src/host/index.ts` to `out/main/host.js`. Main spawns that Host with the packaged Electron executable in Node mode (`ELECTRON_RUN_AS_NODE=1`): the app Helper on macOS, the main executable on Windows. Package commands outside Harness use the same runtime, and neither platform carries a standalone Node. Both paths reach Node internals through Harness's `node-addon-require-builtin`, which accepts only the Electron builds it was compiled for, so `scripts/verify/verify-target.mjs` runs the same loader calls under the packaging Electron before every package build. Cordis HMR's `--expose-internals` permission is granted to that isolated process and never to the web renderer. The application page is `dsh-app://app/`. On macOS the window uses `hiddenInset` so the traffic lights sit on the sidebar row. On Windows the window uses a hidden title bar: Harness draws the 40 DIP caption row, and Desktop adds the "应用" / "编辑" caption menubar beside the sidebar toggle, whose native popups carry the Desktop commands.
+The official package is the transplanted shell. `electron.vite.config.ts` bundles `src/main/shell/app.ts` to `out/main/index.js` and `src/host/index.ts` to `out/main/host.js`. Main spawns that Host with the packaged Electron executable in Node mode (`ELECTRON_RUN_AS_NODE=1`): the app Helper on macOS, the main executable on Windows and Linux. Package commands outside Harness use the same runtime, and none of these platforms carries a standalone Node. Both paths reach Node internals through Harness's `node-addon-require-builtin`, which accepts only the Electron builds it was compiled for, so `scripts/verify/verify-target.mjs` runs the same loader calls under the packaging Electron before every package build. Cordis HMR's `--expose-internals` permission is granted to that isolated process and never to the web renderer. The application page is `dsh-app://app/`. On macOS the window uses `hiddenInset` so the traffic lights sit on the sidebar row. On Windows and Linux the window uses a hidden title bar: Harness draws the 40 DIP caption row, and Desktop adds the "应用" / "编辑" caption menubar beside the sidebar toggle, whose native popups carry the Desktop commands.
 
 ## Startup flow
 
@@ -135,3 +135,20 @@ Harness 0.1.7 replaces directory based `dsh-agent-presets` with Profile composit
 ### 进程故障恢复边界
 
 应用级 `ProcessRecovery` 统一持有退出证据、GPU 设备丢失探测及窗口/GPU/OOM 最终恢复门禁，并负责释放监听器与探测计时器。窗口级 `RendererNavigationRecovery` 只负责导航和有限重试，通过取消回调服从应用门禁。GPU 降级策略、原生提示、故障上报分别保持纯策略、交互、诊断职责；诊断显式注入退出上下文，不依赖全局共享注册表。配置和 Profile 修复不并入进程故障控制器。详见 [GPU 与 OOM 故障恢复](stability-protection.md)。
+
+## Desktop platform adaptation
+
+Desktop platform policy belongs to this upstream repository, shared by downstream products. `src/shared/desktop-platform.ts` defines the supported desktop adapters and capability boundaries; shell startup resolves one explicitly. Linux (including UOS) is a desktop peer, not a Windows/macOS alias. Unknown platforms fail with their real platform name. OS/architecture native dependency support is independently checked by `verify-target` during native packaging.
+
+| Boundary | macOS | Windows | Linux / UOS |
+| --- | --- | --- | --- |
+| Client identity | macos | windows | linux |
+| Electron Node-mode Host/package commands | app Helper | app executable | app executable |
+| Login environment | POSIX login shell | inherited environment | POSIX login shell |
+| Window/menu integration | native traffic lights and app menu | caption overlay and menu IPC | caption overlay and menu IPC |
+| Official account usage/top-up protocol | supported | supported | unavailable |
+| Official auto-update service | supported when installed | supported when installed | unavailable; install native packages |
+
+The shell owns native capabilities and Host process launch. `src/host` stays Electron-free and runs the same Harness profile loader, package manager and lifecycle on all three platforms; native filesystem/process implementations remain Harness-owned. No alternate Linux runtime, Profile projection, plugin resolver, or global dependency fallback is introduced. Ordinary and Safe Mode keep their existing composition, installation/Profile resolution anchors, loopback authentication, startup IPC and original failure diagnostics. This change acts before Profile composition and does not change directory ownership or migrate user data. Unsupported official remote protocols are gated at their service boundary, not by terminating desktop startup. A downstream enterprise plugin may implement its own account/update protocol through the existing product interfaces.
+
+Validation must distinguish adapter/unit checks, real Host startup, authenticated bootstrap delivery, and actual UI activation. Native Windows/macOS smoke remains required for those platforms; Linux verification cannot substitute for it. Linux qualification uses a temporary XDG config directory and checks the built application rather than a development import.

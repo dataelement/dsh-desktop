@@ -16,11 +16,10 @@ describe('desktop window chrome', () => {
       visualEffectState: 'active',
       backgroundColor: '#00000000'
     })
-    expect(desktopWindowChrome('linux')).toEqual({})
   })
 
-  it('hides the Windows frame so the page caption replaces File, Edit, View and Window', () => {
-    expect(desktopWindowChrome('win32', true)).toEqual({
+  it.each(['win32', 'linux'])('uses the page caption and native overlay on %s', platform => {
+    expect(desktopWindowChrome(platform, true)).toEqual({
       titleBarStyle: 'hidden',
       titleBarOverlay: windowsTitleBarOverlay(true),
       autoHideMenuBar: true,

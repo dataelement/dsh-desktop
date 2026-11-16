@@ -1,4 +1,4 @@
-import { WINDOWS_TITLEBAR_HEIGHT } from '../../shared/desktop-menu'
+import { usesDesktopCaption, WINDOWS_TITLEBAR_HEIGHT } from '../../shared/desktop-menu'
 
 /** Native caption buttons drawn over the page on Windows. */
 export interface WindowsTitleBarOverlay {
@@ -50,7 +50,7 @@ export function desktopWindowChrome(platform: string, isDark = false): DesktopWi
       backgroundColor: '#00000000'
     }
   }
-  if (platform === 'win32') {
+  if (usesDesktopCaption(platform)) {
     return {
       titleBarStyle: 'hidden',
       titleBarOverlay: windowsTitleBarOverlay(isDark),
