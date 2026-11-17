@@ -24,8 +24,20 @@ export interface GenerationInstallOptions {
    * pnpm on whatever `~/.npmrc` says.
    */
   registry?: string | null
-  /** Hard ceiling for the pnpm subprocess; defaults to 90 seconds. */
+  /**
+   * Idle ceiling for the pnpm subprocess: killed after this long with no
+   * output (default 90 seconds). Continuous progress re-arms the clock, so a
+   * large download is no longer bounded by one total duration (#851). Only a
+   * safe positive integer overrides the default; anything else is ignored.
+   */
   installTimeoutMs?: number
+  /**
+   * Absolute per-phase ceiling regardless of progress (default 6 minutes):
+   * ends a process that keeps emitting output but never finishes. Both phases
+   * plus staging stay inside the registry lock budget (15-minute waiters,
+   * 20-minute stale deadline). Only a safe positive integer overrides it.
+   */
+  installHardTimeoutMs?: number
   spawnProcess?: unknown
   environment?: NodeJS.ProcessEnv
   onTrace?: (line: string) => void
