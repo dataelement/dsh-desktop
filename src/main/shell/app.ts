@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import * as nodeNet from 'node:net'
+import { installTypeOfServiceGuard } from '../../../build/type-of-service-guard.mjs'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { DesktopStorageManager } from '../profile/desktop-storage'
 import { prepareGenerationsForLaunch } from '../profile/generation-launch'
@@ -127,6 +129,23 @@ interface DesktopPackageMetadata {
     productName?: string
     appId?: string
   }
+}
+
+// The shell main process writes through Node's bundled undici: in the
+// affected versions a connection reset between connect and the first write
+// makes macOS setsockopt(IP_TOS) answer EINVAL and the synchronous throw
+// escapes the undici HTTP/1.1 write path as an uncaught exception in this
+// process (issue #821) — observed as the Electron default
+// uncaught-exception dialog. node:net on purpose: electron's `net` module is
+// not the one whose Socket prototype undici writes through. The guard
+// self-disables once the bundled undici carries the fix (>= 7.30.2 or
+// >= 8.8.0).
+if (
+  installTypeOfServiceGuard(nodeNet, process.versions.undici, (message) => {
+    console.error(message)
+  })
+) {
+  console.error(`[shell] type-of-service guard enabled (bundled undici ${process.versions.undici})`)
 }
 
 function readDesktopPackageMetadata(): DesktopPackageMetadata {
