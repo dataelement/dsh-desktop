@@ -87,7 +87,15 @@ describe('global Harness restart notice', () => {
       await React.act(async () => doc.querySelector('.dshWbOperationNotice .dshRestartPrimary').click())
       expect(service.load).toHaveBeenCalledOnce()
       expect(doc.querySelector('.dshWbOperationNotice')).toBeNull()
-      await React.act(async () => publish({ ...snapshot, restartNeeded: true, error: '重启后可恢复。', errorDismissed: false }))
+      service.ctx = { locale: { bind: () => key => key === 'diagnostic' ? '错误代码' : key } }
+      const timeoutMessage = '安装包下载连接超时，请重试；若多次失败，请检查网络或代理设置。'
+      await React.act(async () => publish({ ...snapshot, error: timeoutMessage, errorDiagnostic: 'UND_ERR_CONNECT_TIMEOUT', errorDismissed: false }))
+      expect(doc.querySelector('.dshWbOperationNotice').textContent).toContain(timeoutMessage)
+      expect(doc.querySelector('.dshWbOperationNotice').textContent).not.toContain('UND_ERR_CONNECT_TIMEOUT')
+      await React.act(async () => doc.querySelector('[aria-haspopup="dialog"]').click())
+      expect(doc.querySelector('[role="dialog"]').textContent).toContain('错误代码: UND_ERR_CONNECT_TIMEOUT')
+      await React.act(async () => doc.querySelector('[role="dialog"] button').click())
+      await React.act(async () => publish({ ...snapshot, restartNeeded: true, error: '重启后可恢复。', errorDiagnostic: '', errorDismissed: false }))
       expect(doc.querySelector('.dshWbOperationNotice')).toBeNull()
       expect(doc.querySelector('.dshRestartTitle').textContent).toBe(copy.title)
       await React.act(async () => doc.querySelector('[aria-haspopup="dialog"]').click())

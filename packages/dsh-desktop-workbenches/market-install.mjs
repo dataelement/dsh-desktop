@@ -16,7 +16,15 @@ import { selectMarketFetch } from './market-fetch.mjs'
 export const MAX_PACKAGE_BYTES = 8 * 1024 * 1024
 const MAX_UNPACKED_BYTES = 64 * 1024 * 1024
 const MAX_MANIFEST_BYTES = 1024 * 1024
-const DOWNLOAD_TIMEOUT_MS = 60_000
+const DOWNLOAD_TIMEOUT_MS = 120_000
+const DOWNLOAD_RETRY_DELAYS_MS = [1000, 3000]
+const TRANSIENT_NETWORK_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'EPIPE', 'ENETUNREACH', 'EHOSTUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
+  'ERR_CONNECTION_RESET', 'ERR_CONNECTION_CLOSED', 'ERR_CONNECTION_ABORTED', 'ERR_CONNECTION_REFUSED',
+  'ERR_CONNECTION_TIMED_OUT', 'ERR_TIMED_OUT', 'ERR_NETWORK_CHANGED', 'ERR_INTERNET_DISCONNECTED',
+  'ERR_PROXY_CONNECTION_FAILED', 'ERR_TUNNEL_CONNECTION_FAILED', 'TIMEOUT'
+])
 const INSTALLS_FILE = 'market-installs.json'
 
 export class MarketInstallError extends Error {
@@ -59,35 +67,78 @@ async function download(url, { fetchImpl, maxBytes, what }) {
   if (address.protocol !== 'https:' || address.username || address.password || address.port) {
     throw new MarketInstallError(`The download URL for ${what} must use HTTPS without credentials or a custom port.`, 502, 'unsafe_download_url')
   }
-  let response
-  try {
-    response = await (fetchImpl ?? selectMarketFetch())(url, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
-  } catch (error) {
-    throw new MarketInstallError(`Could not download ${what}: ${networkDiagnostic(error)}.`, 502, 'download_failed', { diagnostic: networkDiagnostic(error) })
+  const transport = fetchImpl ?? selectMarketFetch()
+  const controller = new AbortController()
+  const { signal } = controller
+  const timeout = setTimeout(() => controller.abort(new DOMException('Download budget exhausted.', 'TimeoutError')), DOWNLOAD_TIMEOUT_MS)
+  // Race body reads as well as headers: not every transport/body honors abort.
+  // Each waiter removes its listener, including during backoff and on success.
+  const withinBudget = async (operation) => {
+    signal.throwIfAborted()
+    let onAbort
+    const aborted = new Promise((_, reject) => {
+      onAbort = () => reject(signal.reason)
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+    try { return await Promise.race([operation, aborted]) }
+    finally { signal.removeEventListener('abort', onAbort) }
   }
-  if (!response.ok) fail(`Downloading ${what} returned HTTP ${response.status}.`, 502)
-  const declared = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > maxBytes) fail(`${what} is larger than ${maxBytes} bytes.`, 502)
-  const reader = response.body?.getReader()
-  if (!reader) fail(`${what} is empty.`, 502)
-  const chunks = []
-  let length = 0
+  // Cancellation is best effort and must never extend the download budget.
+  const cancel = (body) => {
+    try { Promise.resolve(body?.cancel()).catch(() => {}) } catch { /* A transport can already have closed the body. */ }
+  }
   try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      length += value.length
-      if (length > maxBytes) {
-        await reader.cancel()
-        fail(`${what} is larger than ${maxBytes} bytes.`, 502)
+    for (let attempt = 0; ; attempt++) {
+      let response
+      let reader
+      let complete = false
+      let stage = 'download_failed'
+      try {
+        signal.throwIfAborted()
+        const pending = Promise.resolve(transport(url, { redirect: 'follow', signal }))
+        // If a transport ignores abort and resolves late, dispose its response too.
+        pending.then(value => { if (signal.aborted) cancel(value.body) }, () => {})
+        response = await withinBudget(pending)
+        if (!response.ok) fail(`Downloading ${what} returned HTTP ${response.status}.`, 502)
+        const declared = Number(response.headers.get('content-length'))
+        if (Number.isFinite(declared) && declared > maxBytes) fail(`${what} is larger than ${maxBytes} bytes.`, 502)
+        reader = response.body?.getReader()
+        if (!reader) fail(`${what} is empty.`, 502)
+        stage = 'download_interrupted'
+        const chunks = []
+        let length = 0
+        while (true) {
+          const { done, value } = await withinBudget(reader.read())
+          if (done) break
+          length += value.length
+          if (length > maxBytes) fail(`${what} is larger than ${maxBytes} bytes.`, 502)
+          chunks.push(value)
+        }
+        complete = true
+        return Buffer.concat(chunks)
+      } catch (error) {
+        if (error instanceof MarketInstallError) throw error
+        const diagnostic = networkDiagnostic(signal.aborted ? signal.reason : error)
+        const transient = diagnostic.split(', ').some(code => TRANSIENT_NETWORK_CODES.has(code))
+        if (signal.aborted || !transient || attempt >= DOWNLOAD_RETRY_DELAYS_MS.length) {
+          const action = stage === 'download_interrupted' ? 'finish downloading' : 'download'
+          throw new MarketInstallError(`Could not ${action} ${what}: ${diagnostic}.`, 502, stage, { diagnostic })
+        }
+      } finally {
+        if (reader) {
+          if (!complete) cancel(reader)
+          reader.releaseLock()
+        } else if (response) cancel(response.body)
       }
-      chunks.push(value)
+      let delay
+      try {
+        await withinBudget(new Promise(resolve => { delay = setTimeout(resolve, DOWNLOAD_RETRY_DELAYS_MS[attempt]) }))
+      } catch (error) {
+        const diagnostic = networkDiagnostic(error)
+        throw new MarketInstallError(`Could not download ${what}: ${diagnostic}.`, 502, 'download_failed', { diagnostic })
+      } finally { clearTimeout(delay) }
     }
-  } catch (error) {
-    if (error instanceof MarketInstallError) throw error
-    throw new MarketInstallError(`Could not finish downloading ${what}: ${networkDiagnostic(error)}.`, 502, 'download_interrupted', { diagnostic: networkDiagnostic(error) })
-  } finally { reader.releaseLock() }
-  return Buffer.concat(chunks)
+  } finally { clearTimeout(timeout) }
 }
 
 /** Reads `package/package.json` from an npm-style `.tgz` without extracting anything to disk. */
