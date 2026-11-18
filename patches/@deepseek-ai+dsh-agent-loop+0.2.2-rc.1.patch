@@ -1,0 +1,16 @@
+diff --git a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
+index 453ceff..e100bfc 100644
+--- a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
+@@ -1571,6 +1571,11 @@ var AgentLoop = class extends Service {
+ 					detachSession = agent.ctx.sessions.enter(session);
+ 					agent.ctx.sessions.announce(session);
+ 					assertLive();
++					// A seeded startup inherits conversation history, not the pending input
++					// in it: a queued prompt stays claimable only by the session that
++					// queued it. Resume keeps its own pending input.
++					if (source === "startup" && session.inheritedEventCount > 0) agent.inbox.clear();
++					assertLive();
+ 					const setupCommit = await raceAbort(setup?.(agent.ctx, agent), abort.signal, id);
+ 					assertLive();
+ 					setupCommit?.commit();
