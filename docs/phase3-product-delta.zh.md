@@ -42,7 +42,7 @@ npm run package:mac:arm64
 | `keybindings.json` | 快捷键偏好 |
 | `recovery/` | 修复代理会话 |
 
-崩溃文件 `crash-*.log` 在应用日志目录，不在上面的 `userData` 里，也不向外发送。
+崩溃文件 `crash-*.log` 在应用日志目录，不在上面的 `userData` 里，仍只留在本机。正式包在用户同意后另把 `harness.log` 的尾部放进 POST 正文。
 
 ## 阶段 1：数据目录
 
@@ -94,7 +94,7 @@ npm run package:mac:arm64
 | 快捷键 | 偏好写在 `userData/keybindings.json`。页面标记 `data-platform`，不标记网页快捷键。侧边栏浏览器客人可以接收匹配的快捷键。没有强制更新遮罩，所以不按遮罩挡住按键。文件菜单跟在应用菜单后面 | 应用内快捷键设置会写入上面的文件。macOS「文件」菜单有「关闭页面或窗口」 | `npm test -- test/shell/keyboard.test.ts`。2026-11-06 窗口文档上没有快捷键标记，没有在窗口里改一次快捷键 |
 | 侧边栏浏览器 | 不另写官方 `browser-guests`。沿用现有客人策略：每个工作区一个隔离分区，不能打开 Harness 端口，也不能下载或要权限 | 应用页里由官方侧边栏浏览器发起打开网页时，壳创建隔离 webview。匹配的快捷键送到已打开的浏览器页 | `npm test -- test/sidebar-browser.test.ts`。2026-11-06 窗口里侧边栏浏览器框架数量是 0，没有打开一个网页 |
 | 文件拖放 | 页面只能拖出 Host 授权过的会话文件，或壳写下的临时副本。渲染进程不能直接提交本机路径。会话地址解析经过 `src/host/upstream-api.ts` | 在会话里拖出一个已授权的文件到桌面。未授权的本机路径不会被打开 | `npm test -- test/shell/file-drag.test.ts`。窗口还没拖过文件 |
-| 崩溃记录 | 报告正文先抹掉 `token` 查询参数。写完后按 64 KiB 和 500 毫秒上限，把 `userData/plugin-operations` 里的最近操作附进同一份 `crash-*.log`。已取消的收集不会启动。恢复页本身不改，记录也不外发 | 致命失败后到应用日志目录找 `crash-*.log`。短对话框会写出这份路径 | `npm test -- test/shell/crash-report.test.ts`。窗口还没产生一条真实崩溃日志 |
+| 崩溃记录 | 报告正文先抹掉 `token` 查询参数。写完后按 64 KiB 和 500 毫秒上限，把 `userData/plugin-operations` 里的最近操作附进同一份 `crash-*.log`。已取消的收集不会启动。恢复页本身不改。这份 `crash-*.log` 仍留在本机；正式包另有同意后的 POST，正文带 `harness.log` 尾部 | 致命失败后到应用日志目录找 `crash-*.log`。短对话框会写出这份路径 | `npm test -- test/shell/crash-report.test.ts`。窗口还没产生一条真实崩溃日志 |
 | 插件操作记录 | 官方写到自己的数据目录。新壳由调用方决定目录，实际是 `userData/plugin-operations`。Host 订阅管理事件后经 IPC 交给壳。恢复页读取最近记录；没有记录时页面照常显示 | 做一次插件启停或升级后，查看 `plugin-operations/`。启动修复页的「查看修复方案」列出最近记录 | `npm test -- test/shell/plugin-operations.test.ts test/host/run-profile.test.ts`。窗口还没看到一条真实操作记录 |
 | macOS 应用菜单 | 官方菜单含欢迎、账号和官方更新。新壳前三项依次是「关于 DSH Desktop」「检查更新…」「了解企业版」。普通启动下一项是「以安全模式重启…」。手机配对和修复代理不放进这个菜单。应用页的关于使用现有对话框；启动页等其它页面使用系统对话框 | 点左上角应用名。关于在 `dsh-app://app/` 上打开产品对话框；在鲸鱼页上打开系统对话框 | `npm test -- test/shell/enterprise-menu.test.ts`。窗口还没点开系统菜单 |
 | Host 进程 | 继续用 `ELECTRON_RUN_AS_NODE`，这次没有把新壳改成 macOS UtilityProcess。启动时设置 `DSH_HOME`，不把标准输出接到父进程。不安装官方更新任务。启动后把插件操作事件交给壳，并响应壳的文件拖放授权。`DSH_DESKTOP_PATCH_FILE` 指向的补丁会附加到 `runProfile` | 临时 `userData/harness` 被创建。`~/.dsh` 的修改时间不应变化 | `npm test -- test/host/run-profile.test.ts test/shell/quit-steps.test.ts`。macOS 隐私权限归属没有实测 |
