@@ -348,6 +348,14 @@ function createWindow(
       additionalArguments: [...extraArguments]
     }
   })
+  if (process.platform === 'darwin') {
+    const notifyFullscreen = (): void => {
+      window.webContents.send(DESKTOP_IPC.windowFullscreen, window.isFullScreen())
+    }
+    window.on('enter-full-screen', notifyFullscreen)
+    window.on('leave-full-screen', notifyFullscreen)
+    window.webContents.on('did-finish-load', notifyFullscreen)
+  }
   window.on('page-title-updated', event => {
     event.preventDefault()
     window.setTitle(app.getName())

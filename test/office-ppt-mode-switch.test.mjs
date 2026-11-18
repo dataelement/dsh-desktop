@@ -5,6 +5,7 @@ import React, { act } from 'react'
 import * as jsx from 'react/jsx-runtime'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it } from 'vitest'
+import { desktopUi } from './helpers/template-library-controls.mjs'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const officeSource = await readFile(resolve('packages/dsh-desktop-office/client.js'), 'utf8')
@@ -48,7 +49,12 @@ async function fixture(bound = true) {
   }
   for (const source of [officeSource, pptSource]) {
     let plugin
-    window.__ModuleLoader__ = { load({ factory }) { plugin = factory(name => name === 'react' ? React : name === 'react/jsx-runtime' ? jsx : {}) } }
+    window.__ModuleLoader__ = { load({ factory }) { plugin = factory(name => {
+      if (name === 'react') return React
+      if (name === 'react/jsx-runtime') return jsx
+      if (name === 'dsh-desktop-client-ui') return desktopUi
+      return {}
+    }) } }
     new Function(source)(); plugin.apply(ctx)
   }
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
