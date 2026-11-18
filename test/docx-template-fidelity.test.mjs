@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, access, symlink } fr
 import { resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
@@ -14,6 +15,30 @@ import { createDocxWorkflow, docxWorkerArgv, docxWorkerEnvironment, docxWorkerPy
 const cleanups = []
 afterEach(async () => { for (const fn of cleanups.splice(0).reverse()) await fn() })
 const sha = data => createHash('sha256').update(data).digest('hex')
+
+it('treats empty native property containers as inherited while still rejecting new formatting', () => {
+  const worker = resolve('packages/dsh-desktop-office/lib/docx-layout.py')
+  const program = `import runpy, copy
+from lxml import etree as E
+w=runpy.run_path(${JSON.stringify(worker)});q=w['Q']
+body=b'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Inherited</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:line="240"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>Explicit</w:t></w:r></w:p></w:body></w:document>'
+source={'word/document.xml':body};root=E.fromstring(body)
+first=root.find('.//'+q('p'));first.insert(0,E.Element(q('pPr')));first.find(q('r')).insert(0,E.Element(q('rPr')))
+candidate={'word/document.xml':E.tostring(root)}
+assert 'paragraph-and-run-styles' in w['validate'](source,candidate,None)
+for name in ['sz','spacing','rFonts']:
+ changed=copy.deepcopy(root)
+ if name=='spacing':changed.find('.//'+q('spacing')).set(q('line'),'999')
+ elif name=='sz':changed.find('.//'+q('sz')).set(q('val'),'100')
+ else:E.SubElement(changed.find('.//'+q('rPr')),q('rFonts')).set(q('ascii'),'Unapproved Font')
+ try:w['validate'](source,{'word/document.xml':E.tostring(changed)},None)
+ except ValueError:pass
+ else:raise AssertionError('format mutation accepted: '+name)
+print('inherited-properties-and-format-guards-pass')`
+  const result = spawnSync(docxWorkerPython(resolve('.build/office-runtime')), ['-I', '-B', '-c', program], { encoding: 'utf8' })
+  expect(result.stderr).toBe(''); expect(result.status).toBe(0)
+  expect(result.stdout).toContain('inherited-properties-and-format-guards-pass')
+})
 async function fixture(templateId = 'government-notice') {
   const workspace = await realpath(await mkdtemp(join(tmpdir(), 'docx-layout-'))); cleanups.push(() => rm(workspace, { recursive: true, force: true }))
   const ctx = new Context()

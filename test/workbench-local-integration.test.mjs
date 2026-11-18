@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import vm from 'node:vm'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import * as ReactDOM from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { JSDOM } from 'jsdom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -33,7 +34,7 @@ async function fixture(document = { querySelector: () => null }) {
   let exports
   vm.runInNewContext(source, {
     window: { localStorage: storage, sessionStorage: storage, __ModuleLoader__: { load({ factory }) {
-      exports = factory(name => name === 'react' ? React : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Button: ({ children, icon, variant, ...props }) => React.createElement('button', props, icon, children), IconDownloadOutlineRegular: () => null, Menu: ({ anchor }) => anchor, Switch: () => null })
+      exports = factory(name => name === 'react' ? React : name === 'react-dom' ? ReactDOM : name === '@deepseek-ai/cordis' ? { Service: { tracker: Symbol() } } : { Button: ({ children, icon, variant, ...props }) => React.createElement('button', props, icon, children), IconDownloadOutlineRegular: () => null, Menu: ({ anchor }) => anchor, Switch: () => null })
     } } }, document, console, setTimeout, clearTimeout, AbortController
   })
   const request = (path, options) => {
@@ -126,9 +127,9 @@ describe('local workbench registration through real host state routes', () => {
         React.createElement(exports.Market, { service }),
         React.createElement(exports.RestartNotice, { service, t: key => key }))))
       expect(container.querySelector('.dshWbMarket [role="alert"]')).toBeNull()
-      await act(async () => container.querySelector('.dshRestartNotice [aria-expanded]').click())
-      expect(container.querySelector('[role="alert"]').textContent).toContain('broken-review')
-      expect(container.querySelector('[role="alert"]').textContent).toContain('GitHub URL')
+      await act(async () => container.querySelector('.dshRestartNotice [aria-haspopup="dialog"]').click())
+      expect(dom.window.document.querySelector('[role="dialog"]').textContent).toContain('broken-review')
+      expect(dom.window.document.querySelector('[role="dialog"]').textContent).toContain('GitHub URL')
       let dispose
       await act(async () => {
         dispose = service.register({ title: 'Corrected', customFrame: true }, () => React.createElement('p', null, 'Ready'))

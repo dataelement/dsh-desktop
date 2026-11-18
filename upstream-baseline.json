@@ -41,7 +41,8 @@
         "启动 Host 时设置 DSH_HOME",
         "Host 入口是本仓库构建的 host.js，启动参数用对象",
         "新壳继续用 ELECTRON_RUN_AS_NODE。旧壳的 macOS UtilityProcess 保留，这次没有做隐私权限实测",
-        "不把 Host 标准输出接到父进程，认证 URL 先去掉 token 再留在失败诊断里"
+        "不把 Host 标准输出接到父进程，认证 URL 先去掉 token 再留在失败诊断里",
+        "停止按子进程 exit 而非 stdout/stderr close 确认结束，避免插件后代继承管道导致重启误超时；spawn error 同样结束等待"
       ]
     },
     {

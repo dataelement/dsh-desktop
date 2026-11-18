@@ -122,6 +122,7 @@ def save_package(parts):
 
 def protected(p, profile, index):
     return bool(p.findall('.//w:drawing', NS) or p.findall('.//w:pBdr', NS) or p.findall('.//w:sectPr', NS)
+                or any(p.findall('.//w:' + tag, NS) for tag in ['pict', 'hyperlink', 'fldSimple', 'fldChar', 'instrText', 'sdt'])
                 or (profile and profile.get('issuerHeader', {}).get('paragraph') == index))
 
 
@@ -243,12 +244,20 @@ def write_document(path, data, replace=False):
 def canonical(element):
     # Compare expanded names: serializers may legitimately change namespace prefixes.
     if element is None: return ('inherited',)
+    # An empty run/paragraph property container inherits exactly as an absent one.
+    # Native serializers may materialize this container while replacing text.
+    if element.tag in [Q('rPr'), Q('pPr')] and not element.attrib and not len(element) and not (element.text or '').strip():
+        return ('inherited',)
     return (element.tag, tuple(sorted(element.attrib.items())), (element.text or '').strip(), tuple(canonical(c) for c in element))
 
 
 def validate(source, candidate, profile):
     expected, actual = document(source), document(candidate)
     checks = []
+    if profile and profile.get('immutablePackage'):
+        if set(source) != set(candidate) or any(candidate[name] != data for name, data in source.items() if name != 'word/document.xml'):
+            raise ValueError('Preserve all native template package resources outside the edited body')
+        checks.append('native-package-resources')
     for name, data in source.items():
         if name.startswith('word/fonts/') or name.startswith('word/footer') or name.startswith('word/header') or name == 'word/fontTable.xml':
             if candidate.get(name) != data: raise ValueError('Preserve the template embedded fonts, headers and page-number footers')
@@ -279,8 +288,9 @@ def validate(source, candidate, profile):
     if proposed - allowed: raise ValueError('Use the font assignments from the selected template')
     checks.append('template-font-assignments')
     for query, message in [('.//w:body//w:p/w:pPr', 'Use the selected template paragraph styles and spacing'), ('.//w:body//w:r/w:rPr', 'Use the selected template text sizes and styles')]:
-        allowed_profiles = set(canonical(e) for e in expected.findall(query, NS))
-        if any(canonical(e) not in allowed_profiles for e in actual.findall(query, NS)): raise ValueError(message)
+        parent_query, property_name = query.rsplit('/', 1)
+        allowed_profiles = set(canonical(e.find(property_name, NS)) for e in expected.findall(parent_query, NS))
+        if any(canonical(e.find(property_name, NS)) not in allowed_profiles for e in actual.findall(parent_query, NS)): raise ValueError(message)
     checks.append('paragraph-and-run-styles')
     header = profile.get('issuerHeader') if profile else None
     if header:
@@ -306,7 +316,8 @@ def edit(parts, profile, args):
         key = replacement['id']
         if key in seen or key not in lookup: raise ValueError('Use each recorded paragraph ID once')
         seen.add(key); p = lookup[key]
-        if p.findall('.//w:drawing', NS): raise ValueError('Edit drawing content with the native Office workflow')
+        if any(p.findall('.//w:' + tag, NS) for tag in ['drawing', 'pict', 'hyperlink', 'fldSimple', 'fldChar', 'instrText', 'sdt']):
+            raise ValueError('Keep drawing, hyperlink and field paragraphs intact in the native template')
         set_text(p, replacement['text'], replacement.get('runs'), prototypes)
     tails = {}
     for addition in additions:

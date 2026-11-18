@@ -63,6 +63,41 @@ afterEach(() => {
 const status = (phase: UpdateStatus['phase'], extra: Partial<UpdateStatus> = {}): UpdateStatus => ({ phase, currentVersion: '1.0.0', manual: true, presentationId: 7, ...extra })
 
 describe('desktop update presentation at the IPC boundary', () => {
+  it('defers an automatic update offer until all workbench notices close without dismissing the release', async () => {
+    const ui = await mount(Promise.resolve(status('available', { manual: false, availableVersion: '1.1.0' })))
+    const notice = document.createElement('aside')
+    notice.setAttribute('data-dsh-workbench-notice', '')
+    document.body.appendChild(notice)
+    await Promise.resolve()
+    expect(ui.host.style.display).toBe('none')
+    const details = notice.cloneNode() as HTMLElement
+    document.body.appendChild(details)
+    notice.remove()
+    await Promise.resolve()
+    expect(ui.host.style.display).toBe('none')
+    details.remove()
+    await Promise.resolve()
+    expect(ui.host.style.display).toBe('block')
+    expect(ui.shadow.querySelector('.title')?.textContent).toContain('1.1.0')
+    expect(ipc.invoke).not.toHaveBeenCalledWith('updates:skip', expect.anything())
+  })
+
+  it('keeps manual checks and active update progress available during workbench failure', async () => {
+    const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+    const notice = document.createElement('aside')
+    notice.setAttribute('data-dsh-workbench-notice', '')
+    document.body.appendChild(notice)
+    await Promise.resolve()
+    ui.emit(status('available', { manual: true, availableVersion: '1.1.0', presentationId: 8 }))
+    expect(ui.host.style.display).toBe('block')
+    expect(ui.shadow.querySelector('[role="dialog"]')).not.toBeNull()
+    ui.emit(status('checking', { manual: false }))
+    ui.emit(status('downloading', { manual: false, availableVersion: '1.1.0', percent: 20 }))
+    expect(ui.host.style.display).toBe('block')
+    ui.emit(status('error', { manual: false, message: 'Download failed' }))
+    expect(ui.host.style.display).toBe('block')
+  })
+
   it('redraws an open update and About panel when the live language changes to a non-legacy locale', async () => {
     const ui = await mount(Promise.resolve(status('idle', { manual: false })))
     ui.emit(status('available', { locale: 'en', availableVersion: '1.1.0', presentationId: 8 }))

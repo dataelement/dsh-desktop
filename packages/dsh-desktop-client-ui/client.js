@@ -8,6 +8,84 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const { BrandWordmark, FishLogo, MenuItemButton, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
+
+    // Small presentation-only primitives shared by PPT and native Office templates.
+    // Callers own file import, persistence, translations and template state.
+    const templateElement = React.createElement
+    function TemplateIcon({ name }) {
+      const paths = name === 'create' ? ['m4 20 11-11 3 3L7 23z', 'm14 10 3 3', 'M6 3v4M4 5h4M18 2v4M16 4h4M21 8v4M19 10h4']
+        : name === 'edit' ? ['m15 4 5 5', 'M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z']
+        : name === 'delete' ? ['M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'] : ['m6 6 12 12M6 18 18 6']
+      return templateElement('svg', { width: name === 'create' ? 28 : 16, height: name === 'create' ? 28 : 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.65, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        ...paths.map((d, key) => templateElement('path', { key, d })))
+    }
+    function TemplateCreateButton({ label, hint, disabled, onClick }) {
+      return templateElement('button', { type: 'button', className: 'dsh-template-create', disabled, title: hint, onClick }, templateElement(TemplateIcon, { name: 'create' }), templateElement('span', null, label))
+    }
+    function TemplateCardActions({ busy, editLabel, deleteLabel, onEdit, onDelete }) {
+      return templateElement('div', { className: 'dsh-template-actions' },
+        templateElement('button', { type: 'button', disabled: busy, title: editLabel, 'aria-label': editLabel, onClick: onEdit }, templateElement(TemplateIcon, { name: 'edit' })),
+        templateElement('button', { type: 'button', disabled: busy, title: deleteLabel, 'aria-label': deleteLabel, onClick: onDelete }, templateElement(TemplateIcon, { name: 'delete' })))
+    }
+    function TemplateManagementDialog({ deleting, name, description, onNameChange, onDescriptionChange, onSave, onDelete, onRequestDelete, onClose, onCancelDelete, busy, error, t }) {
+      const dialog = React.useRef(null), first = React.useRef(null), title = React.useId()
+      React.useLayoutEffect(() => {
+        const node = dialog.current
+        node.showModal(); first.current?.focus()
+        return () => { if (node.open) node.close() }
+      }, [])
+      React.useLayoutEffect(() => { first.current?.focus() }, [deleting])
+      const close = () => { if (!busy) onClose() }
+      const button = (label, onClick, props = {}) => templateElement('button', { type: 'button', disabled: busy, onClick, ...props }, label)
+      return templateElement('dialog', { ref: dialog, className: 'dsh-template-dialog', 'aria-modal': true, 'aria-labelledby': title,
+        onCancel: event => { event.preventDefault(); close() },
+        onClick: event => {
+          if (event.target !== event.currentTarget) return
+          const rect = event.currentTarget.getBoundingClientRect()
+          if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) close()
+        },
+        onKeyDown: event => {
+          if (event.key !== 'Tab') return
+          const fields = [...event.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled)')]
+          const first = fields[0], last = fields.at(-1)
+          if (!first) { event.preventDefault(); return }
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+        } },
+        templateElement('header', null, templateElement('h2', { id: title }, t(deleting ? 'deleteTitle' : 'editTitle')),
+          templateElement('button', { type: 'button', className: 'dsh-template-close', disabled: busy, 'aria-label': t('close'), onClick: close }, templateElement(TemplateIcon, { name: 'close' }))),
+        deleting ? templateElement('div', { className: 'dsh-template-fields' },
+          templateElement('p', { className: 'dsh-template-delete-copy' },
+            templateElement('bdi', null, name), templateElement('br'), t('deleteHint')),
+          error ? templateElement('div', { role: 'alert', className: 'dsh-template-error' }, error) : null,
+          templateElement('footer', null, button(t('cancel'), onCancelDelete ?? close, { ref: first }), button(t(busy ? 'processing' : 'confirmDelete'), onDelete)))
+        : templateElement('form', { 'aria-busy': busy, onSubmit: event => { event.preventDefault(); if (!busy && name.trim()) onSave() } },
+          templateElement('label', null, t('name'), templateElement('input', { ref: first, value: name, maxLength: 80, required: true, disabled: busy, autoComplete: 'off', onChange: event => onNameChange(event.target.value) })),
+          templateElement('label', null, t('description'), templateElement('textarea', { value: description, maxLength: 1000, disabled: busy, placeholder: t('descriptionPlaceholder'), onChange: event => onDescriptionChange(event.target.value) })),
+          error ? templateElement('div', { role: 'alert', className: 'dsh-template-error' }, error) : null,
+          templateElement('footer', null, button(t('delete'), onRequestDelete), templateElement('button', { type: 'submit', disabled: busy || !name.trim() }, t(busy ? 'processing' : 'update')))))
+    }
+    const templateControlsCss = `
+.dsh-template-create{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;aspect-ratio:16/9;width:100%;padding:20px;border:2px solid transparent;border-radius:14px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;transition:background .15s,color .15s}
+.dsh-template-create:hover{background:color-mix(in srgb,var(--dsw-alias-label-primary) 10%,var(--dsw-alias-bg-base));color:var(--dsw-alias-label-primary)}
+.dsh-template-create:disabled{opacity:.55;cursor:default}
+.dsh-template-actions{position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:2;opacity:0;pointer-events:none;transition:opacity .12s}
+[data-template-card]:hover .dsh-template-actions,[data-template-card]:focus-within .dsh-template-actions{opacity:1;pointer-events:auto}
+.dsh-template-actions button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid color-mix(in srgb,var(--dsw-alias-label-primary-foreground) 15%,transparent);border-radius:7px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 80%,transparent);color:var(--dsw-alias-label-primary-foreground);cursor:pointer;backdrop-filter:blur(8px)}
+.dsh-template-actions button:hover{background:var(--dsw-alias-label-primary)}.dsh-template-actions button:disabled{opacity:.5;cursor:default}
+.dsh-template-dialog{box-sizing:border-box;width:min(560px,calc(100vw - 40px));max-height:calc(100dvh - 48px);margin:auto;padding:26px;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:20px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;box-shadow:0 24px 80px color-mix(in srgb,var(--dsw-alias-label-primary) 20%,transparent);overflow-y:auto;overscroll-behavior:contain}
+.dsh-template-dialog::backdrop{background:color-mix(in srgb,var(--dsw-alias-label-primary) 50%,transparent)}
+.dsh-template-dialog header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:26px}.dsh-template-dialog h2{margin:0;font-size:18px;line-height:26px;font-weight:600}
+.dsh-template-dialog .dsh-template-close{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.dsh-template-dialog form,.dsh-template-fields{display:grid;gap:22px}.dsh-template-dialog label{display:grid;gap:9px;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:20px}
+.dsh-template-dialog input,.dsh-template-dialog textarea{box-sizing:border-box;width:100%;margin:0;padding:12px 14px;border:1px solid transparent;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:21px}.dsh-template-dialog textarea{min-height:112px;resize:vertical;max-height:260px}.dsh-template-dialog input::placeholder,.dsh-template-dialog textarea::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dsh-template-dialog footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:4px}.dsh-template-dialog footer button{min-height:38px;padding:8px 16px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);border-radius:10px;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:transform 120ms cubic-bezier(.23,1,.32,1)}
+.dsh-template-dialog :disabled{cursor:default;opacity:.55}.dsh-template-delete-copy{margin:0 0 26px;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:1.65;overflow-wrap:anywhere}.dsh-template-error{margin:0;padding:10px 12px;border-radius:10px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.dsh-template-create:focus-visible,.dsh-template-actions button:focus-visible,.dsh-template-dialog :is(button,input,textarea):focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+@media(hover:none){.dsh-template-actions{opacity:1;pointer-events:auto}}@media(hover:hover) and (pointer:fine){.dsh-template-dialog button:hover:not(:disabled){filter:brightness(.94)}.dsh-template-dialog .dsh-template-close:hover{background:var(--dsw-alias-interactive-bg-hover)}}@media(prefers-reduced-motion:reduce){.dsh-template-create,.dsh-template-actions,.dsh-template-dialog footer button{transition:none}}
+`
+    const TemplateLibraryControls = { CreateButton: TemplateCreateButton, CardActions: TemplateCardActions, ManagementDialog: TemplateManagementDialog }
+
     // Tight bounds of the mark inside its 1000x1000 source artwork.
     const BRAND_MARK_VIEWBOX = { x: 42, y: 218, width: 898, height: 564 }
     // DSH Desktop whale mark: a window with a tail, drawn in currentColor so
@@ -314,7 +392,7 @@ window.__ModuleLoader__.load({
         if (document.getElementById(id)) return
         const style = document.createElement('style')
         style.id = id
-        style.textContent = `
+        style.textContent = `${templateControlsCss}
           [data-dsh-sidebar-brand-identity] { display:none !important; }
           /* Third-party plugins (dshmarket, dsh-better-sidebar) draw custom icons via ::before on settings nav rows,
              expecting direct > svg to hide the fallback gear. In 0.2.2-rc.1, navIcon wraps the fallback in a span,
@@ -453,6 +531,7 @@ window.__ModuleLoader__.load({
       )
     }
 
+    exports.TemplateLibraryControls = TemplateLibraryControls
     exports.apply = apply
     exports.inject = inject
     return module.exports
