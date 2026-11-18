@@ -70,8 +70,8 @@ Start by asking for the first piece of information still missing.`,
     }
     const DOWNLOAD_NS = 'dsh-desktop-workbenches.download'
     const downloadCopy = {
-      zh: { download_failed: '无法下载工作台安装包', download_interrupted: '工作台安装包下载中断', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
-      en: { download_failed: 'Could not download the workbench package', download_interrupted: 'Workbench package download interrupted', invalid_download_url: 'The workbench download URL is invalid.', unsafe_download_url: 'The workbench download URL must use HTTPS without credentials or a custom port.' }
+      zh: { download_failed: '安装包下载失败，请重试；若多次失败，请检查网络或代理设置。', download_timeout: '安装包下载连接超时，请重试；若多次失败，请检查网络或代理设置。', download_interrupted: '安装包下载中断，请重新下载；若多次失败，请检查网络或代理设置。', diagnostic: '错误代码', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
+      en: { download_failed: 'Package download failed. Retry; if it keeps failing, check your network or proxy settings.', download_timeout: 'The package download connection timed out. Retry; if it keeps failing, check your network or proxy settings.', download_interrupted: 'Package download interrupted. Download again; if it keeps failing, check your network or proxy settings.', diagnostic: 'Error code', invalid_download_url: 'The workbench download URL is invalid.', unsafe_download_url: 'The workbench download URL must use HTTPS without credentials or a custom port.' }
     }
     const CREATE_NS = 'dsh-desktop-workbenches.creation'
     const createCopy = {
@@ -102,13 +102,18 @@ Start by asking for the first piece of information still missing.`,
       const named = lines.filter(line => /EPERM|EBUSY|EEXIST|ENOENT|error/i.test(line))
       return (coded || named.at(-1) || lines.at(-1) || '').slice(0, 400)
     }
+    function downloadDiagnostic(data) {
+      const diagnostic = data?.params?.diagnostic
+      return (data?.code === 'download_failed' || data?.code === 'download_interrupted') && typeof diagnostic === 'string' && /^(?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR)(?:, (?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR))*$/.test(diagnostic) ? diagnostic : ''
+    }
     function installErrorMessage(ctx, data, status) {
       if ((data?.code === 'invalid_download_url' || data?.code === 'unsafe_download_url') && ctx.locale?.bind && data.params === undefined) {
         return ctx.locale.bind(DOWNLOAD_NS)(data.code)
       }
-      const diagnostic = data?.params?.diagnostic
-      if ((data?.code === 'download_failed' || data?.code === 'download_interrupted') && ctx.locale?.bind && typeof diagnostic === 'string' && /^(?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR)(?:, (?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR))*$/.test(diagnostic)) {
-        return `${ctx.locale.bind(DOWNLOAD_NS)(data.code)}: ${diagnostic}`
+      const diagnostic = downloadDiagnostic(data)
+      if (diagnostic && ctx.locale?.bind) {
+        const timedOut = diagnostic.split(', ').some(code => ['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'ETIMEDOUT', 'ERR_CONNECTION_TIMED_OUT', 'ERR_TIMED_OUT', 'TIMEOUT'].includes(code))
+        return ctx.locale.bind(DOWNLOAD_NS)(timedOut ? 'download_timeout' : data.code)
       }
       const reported = typeof data?.error === 'string' ? data.error.trim() : ''
       const code = typeof data?.code === 'string' ? data.code : ''
@@ -967,7 +972,7 @@ Start by asking for the first piece of information still missing.`,
           }
         }
         const error = this.error instanceof UnavailableWorkbenchError ? this.error.message : this.error
-        this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDismissed: this.errorDismissed,
+        this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDiagnostic: error ? this.errorDiagnostic || '' : '', errorDismissed: this.errorDismissed,
 
           catalogLoaded: this.catalogLoaded, catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, checkingUpdates: this.checkingUpdates, pending: this.pending, marketOpen: this.marketOpen,
           registrationFailures: [...this.registrationFailures.values()], catalog, categories: this.marketCategories, installs: this.installs, installing: this.installing || this.firstMarketInstall, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, restartReasons: this.restartReasons(), installationDrift: this.installationDrift, reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
@@ -976,6 +981,7 @@ Start by asking for the first piece of information still missing.`,
       report(error) {
         if (this.disposed) return
         this.error = error instanceof UnavailableWorkbenchError ? error : error instanceof Error ? error.message : String(error)
+        this.errorDiagnostic = downloadDiagnostic({ code: 'download_failed', params: { diagnostic: error?.diagnostic } })
         this.errorDismissed = false
         this.publish()
       }
@@ -1076,6 +1082,7 @@ Start by asking for the first piece of information still missing.`,
           }
           if (!response.ok) {
             const error = new Error(installErrorMessage(this.ctx, data, response.status))
+            error.diagnostic = downloadDiagnostic(data)
             error.result = data.result
             error.application = data.application || data.result?.application
             if (response.status === 409 && data.code === 'confirmation_required' && (data.params?.updateRisk === 'local' || data.params?.updateRisk === 'modified')) {
@@ -2110,7 +2117,7 @@ Start by asking for the first piece of information still missing.`,
       return null
     }
     function RestartNotice({ service, t }) {
-      const { error: workbenchError, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], installationDrift = [], registrationFailures = [] } = useWorkbench(service)
+      const { error: workbenchError, errorDiagnostic, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], installationDrift = [], registrationFailures = [] } = useWorkbench(service)
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState('')
       const pending = React.useRef(false)
@@ -2138,6 +2145,7 @@ Start by asking for the first piece of information still missing.`,
               h(Button, { disabled: busy, onClick: closeDetails }, t('close'))),
             h('div', { className: 'dshRestartDetails', tabIndex: 0 },
               operationError && h('p', null, tr(operationError)),
+              !driftError && operationError && errorDiagnostic && h('p', null, `${service.ctx.locale.bind(DOWNLOAD_NS)('diagnostic')}: ${errorDiagnostic}`),
               showRegistration && h(React.Fragment, null,
                 h('p', null, registrationText(service.ctx, 'guidance')),
                 ...registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` }, `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`))),
@@ -2170,7 +2178,8 @@ Start by asking for the first piece of information still missing.`,
               h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' },
                 h('circle', { cx: 12, cy: 12, r: 9 }),
                 h('path', { d: 'M12 8v4m0 4h.01' }))),
-            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(driftError ? 'installationDrift' : operationError ? 'operationFailed' : 'registrationFailed')), h('p', { className: 'dshRestartDescription' }, t(driftError ? 'installationDriftDescription' : registrationOnly ? 'registrationRecovery' : 'diagnostics'))),
+            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(driftError ? 'installationDrift' : operationError ? 'operationFailed' : 'registrationFailed')),
+              h('p', { className: 'dshRestartDescription' }, !driftError && operationError && errorDiagnostic ? tr(operationError) : t(driftError ? 'installationDriftDescription' : registrationOnly ? 'registrationRecovery' : 'diagnostics'))),
             h('div', { className: 'dshRestartActions' },
               !driftError && h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => { setExpanded(false); service.dismissError(); setDismissedFailures(failureKey) } }, t('close')),
               h('button', { type: 'button', className: 'dshRestartToggle', 'aria-haspopup': 'dialog', 'aria-controls': expanded ? details : undefined, onClick: () => setExpanded(true) }, t('details')),
