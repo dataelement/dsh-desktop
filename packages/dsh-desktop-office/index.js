@@ -28,7 +28,18 @@ export async function apply(ctx, config) {
       cli: config.cli
     })
     registerBusinessSkills(ctx, join(config.resources, 'business-skills'))
-    const library = await createTemplateLibrary(join(config.resources, 'templates'))
+    const builtins = await createTemplateLibrary(join(config.resources, 'templates'))
+    const home = process.env.DSH_HOME
+    let library = builtins
+    if (home && isAbsolute(home)) {
+      try {
+        // An incomplete optional upload package must not abort the Host import.
+        const { createPersonalOfficeLibrary, personalOfficeRenderer } = await import('./lib/personal-templates.js')
+        library = await createPersonalOfficeLibrary(join(home, 'office-templates'), builtins, personalOfficeRenderer(config.resources, config.cli))
+      } catch (error) {
+        ctx.logger?.warn?.(`desktop-office: personal template library unavailable; keeping built-in templates: ${error?.message || error}`)
+      }
+    }
     ctx.inject(['officeModes', 'tools', 'skills', 'workingDirectory', 'sandboxPolicy', 'sandbox', 'subprocess'], scoped => {
       registerOfficeContext(scoped, library, scoped.officeModes)
       const docx = createDocxWorkflow(scoped, library, scoped.officeModes, config.resources)
