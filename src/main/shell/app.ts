@@ -143,10 +143,6 @@ function configureDesktopIdentity(): void {
   app.setPath('userData', identity.userData)
 }
 
-configureDesktopIdentity()
-app.setAppLogsPath()
-applyPersistedGpuFallback(app.getPath('userData'), app.commandLine, () => { app.disableHardwareAcceleration() })
-
 let quitting = false
 let pageRecovery: PageRecovery | undefined
 let windowsTray: Tray | undefined
@@ -456,6 +452,16 @@ async function savedDesktopMenuLocale(
 async function main(): Promise<void> {
   const adapter = requireDesktopPlatform(process.platform)
   const platform = adapter.platform
+  try {
+    configureDesktopIdentity()
+    app.setAppLogsPath()
+    applyPersistedGpuFallback(app.getPath('userData'), app.commandLine, () => { app.disableHardwareAcceleration() })
+  } catch (error: unknown) {
+    await app.whenReady()
+    await reportFatal(error, 'main')
+    app.exit(1)
+    return
+  }
   await loadDesktopProductEntry(readDesktopPackageMetadata(), app.getAppPath())
   if (!app.requestSingleInstanceLock()) {
     app.quit()
