@@ -1,4 +1,6 @@
 import { desktopLocale, nativeLanguage, type DesktopLocale } from '../../shared/desktop-locale'
+import { directoryPickUserMessage, type DirectoryPickOutcome } from '../../shared/directory-picker'
+import { DirectoryPickTimeoutError, directoryPickDeadline, settleWithin } from './directory-pick'
 import { nativeLocaleMessages } from './native-locale-messages'
 
 const ATTEMPT_FLAG = '--dsh-native-language-attempt='
@@ -101,22 +103,43 @@ export class NativeDirectoryPicker {
     native: boolean
     confirmRestart: () => Promise<'deferred' | 'restarting' | 'not-saved'>
     open: (locale: DesktopLocale | undefined) => Promise<string | null>
-  }): Promise<string | null> {
-    if (this.busy || this.restarting) return null
+    /** Test seam. Production uses the long panel deadline. */
+    deadlineMs?: number
+  }): Promise<DirectoryPickOutcome> {
+    if (this.busy || this.restarting) return { kind: 'cancelled' }
     this.busy = true
     try {
       const target = desktopLocale(options.target ?? options.locale)
+      const openAt = async (locale: DesktopLocale | undefined): Promise<DirectoryPickOutcome> => {
+        try {
+          const path = await settleWithin(options.open(locale), directoryPickDeadline(options.deadlineMs))
+          return path === null ? { kind: 'cancelled' } : { kind: 'picked', path }
+        } catch (error) {
+          return {
+            kind: 'failed',
+            reason: error instanceof DirectoryPickTimeoutError ? 'timed-out' : 'open-failed',
+            message: directoryPickUserMessage(options.locale === 'zh', 'unavailable')
+          }
+        }
+      }
       if (!options.native || target === undefined || target === options.nativeLocale) {
         this.deferred = undefined
-        return await options.open(options.native ? options.nativeLocale : options.locale)
+        return await openAt(options.native ? options.nativeLocale : options.locale)
       }
       if (this.deferred !== target) {
         const outcome = await options.confirmRestart()
         if (outcome === 'restarting') this.restarting = true
-        if (outcome !== 'deferred') return null
+        if (outcome !== 'deferred') return { kind: 'cancelled' }
         this.deferred = target
       }
-      return await options.open(options.nativeLocale)
+      return await openAt(options.nativeLocale)
+    } catch {
+      // confirmRestart can fail while reading the saved language. That must still release the guard.
+      return {
+        kind: 'failed',
+        reason: 'unexpected',
+        message: directoryPickUserMessage(options.locale === 'zh', 'unavailable')
+      }
     } finally {
       this.busy = false
     }

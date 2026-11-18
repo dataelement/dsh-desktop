@@ -8,6 +8,8 @@ import type {
 } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { DesktopFileSource, FileDragHandle, FileDragRequestId } from '@deepseek-ai/dsh-util-file-drag'
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME } from '../main/shell/window/ipc'
+import { directoryPickStallElapsed, directoryPickUserMessage } from '../shared/directory-picker'
+import { watchDirectoryPick } from './directory-pick'
 import { setupDesktopStoragePersistence } from './desktop-storage'
 import { createSidebarBrowserBridge } from './sidebar-browser'
 import { usesDesktopCaption } from '../shared/desktop-menu'
@@ -157,7 +159,23 @@ if (appDocument && !isSafeModeRenderer(process.argv)) {
 }
 if (appDocument) {
   contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
-    pick: (): Promise<string | null> => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>
+    pick: (): Promise<string | null> => watchDirectoryPick({
+      invoke: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick),
+      subscribe: onTick => {
+        const receive = (_event: IpcRendererEvent, tick: unknown): void => { onTick(tick) }
+        ipcRenderer.on(DESKTOP_IPC.directoryPickTick, receive)
+        return () => { ipcRenderer.removeListener(DESKTOP_IPC.directoryPickTick, receive) }
+      },
+      notifyStall: elapsedMs => {
+        const elapsed = directoryPickStallElapsed(elapsedMs)
+        if (elapsed === undefined) return
+        ipcRenderer.send(DESKTOP_IPC.directoryPickStalled, elapsed)
+      },
+      message: () => directoryPickUserMessage(
+        (document.documentElement?.lang ?? '').toLowerCase().startsWith('zh'),
+        'stalled'
+      )
+    })
   })
   contextBridge.exposeInMainWorld('__DSH_LOCALE__', {
     read: (): Promise<unknown> => ipcRenderer.invoke(DESKTOP_IPC.localeBootstrap),

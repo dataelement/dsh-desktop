@@ -22,7 +22,7 @@ describe('desktop Electron directory picker', () => {
   })
 
   it('provides the stock picker bridge from preload', async () => {
-    const preload = await readFile('src/preload/index.ts', 'utf8')
+    const preload = await readFile('src/preload/app.ts', 'utf8')
     const stockClient = await readFile(
       'node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native/lib/client.js',
       'utf8'
