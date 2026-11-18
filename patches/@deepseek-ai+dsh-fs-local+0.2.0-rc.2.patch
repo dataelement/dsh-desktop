@@ -1,0 +1,22 @@
+diff --git a/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js b/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js
+index b77bf6c..bc43caa 100644
+--- a/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js
+@@ -240,7 +240,7 @@ async function probe(absolutePath) {
+ 	if (!info) return null;
+ 	return {
+ 		version: versionOf(info),
+-		mode: Number(info.mode & 511n),
++		mode: Number(BigInt(info.mode) & 511n),
+ 		type: pathType(info),
+ 		size: Number(info.size)
+ 	};
+@@ -255,7 +255,7 @@ async function probeNoFollow(absolutePath) {
+ 	if (!info) return null;
+ 	return {
+ 		version: versionOf(info),
+-		mode: Number(info.mode & 511n),
++		mode: Number(BigInt(info.mode) & 511n),
+ 		type: pathLinkType(info),
+ 		size: Number(info.size)
+ 	};
