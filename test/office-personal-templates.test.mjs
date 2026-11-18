@@ -49,6 +49,29 @@ it.each(['word', 'excel'])('retains native %s bytes through import, metadata cha
   if (mode === 'excel') expect(prepared.files.some(file => file.path === 'xlsx-cache.py')).toBe(true)
 })
 
+it('loads healthy templates and accepts new uploads after skipping damaged records', async () => {
+  const { root, render, library } = await setup()
+  const item = await library.import(input('word'))
+  const damagedId = 'personal-' + 'a'.repeat(32)
+  const incompleteId = 'personal-' + 'b'.repeat(32)
+  const damaged = join(root, damagedId, 'template.json')
+  const incomplete = join(root, incompleteId, 'template.json')
+  await mkdir(join(root, damagedId))
+  await mkdir(join(root, incompleteId))
+  await writeFile(damaged, '{')
+  const manifest = JSON.parse(await readFile(join(root, item.id, 'template.json'), 'utf8'))
+  await writeFile(incomplete, JSON.stringify({ ...manifest, id: incompleteId, files: {} }))
+
+  const skipped = []
+  const restarted = await createPersonalOfficeLibrary(root, builtin, render, id => skipped.push(id))
+  expect(skipped.sort()).toEqual([damagedId, incompleteId])
+  expect((await restarted.list()).map(template => template.id)).toEqual([item.id])
+  expect((await restarted.prepare(item.id, item)).files[0].data).toBe(input('word').data)
+  const newItem = await restarted.import(input('excel'))
+  expect((await restarted.list()).map(template => template.id)).toEqual([item.id, newItem.id])
+  expect(await readFile(damaged, 'utf8')).toBe('{')
+})
+
 it('serializes duplicate imports and archives/restores without modifying originals', async () => {
   const { root, library, renders } = await setup()
   const [a, b] = await Promise.all([library.import(input('word')), library.import(input('word'))])
@@ -102,6 +125,16 @@ with tempfile.TemporaryDirectory() as d:
  p=pathlib.Path(d)/'source.docx'
  p.write_bytes(package({'word/_rels/document.xml.rels':'<Relationships><Relationship Type="http://x/hyperlink" TargetMode="External" Target="https://example.com"/></Relationships>'}))
  assert w['inspect_package'](str(p),'word')['checked']
+ ns='http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+ def word_field(field):
+  return f'<w:document xmlns:w="{ns}">{field}</w:document>'
+ p.write_bytes(package(body=word_field('<w:fldSimple w:instr="PAGE"/>')))
+ assert w['inspect_package'](str(p),'word')['checked']
+ for field in ['<w:instrText>INCLUDETEXT</w:instrText>', '<w:fldSimple w:instr=" INCLUDETEXT "/>', '<w:fldSimple w:instr=" DDE "/>']:
+  p.write_bytes(package(body=word_field(field)))
+  try:w['inspect_package'](str(p),'word')
+  except ValueError as error:assert str(error)=='External Word fields are not supported'
+  else:raise AssertionError('External Word field was accepted')
  for extra,body in [({'../escape':'x'},b'<doc/>'),({'word/vbaProject.bin':'x'},b'<doc/>'),({'word/embeddings/item.bin':'x'},b'<doc/>'),({'word/_rels/document.xml.rels':'<Relationships><Relationship Type="http://x/image" TargetMode="External" Target="https://example.com"/></Relationships>'},b'<doc/>'),({},b'<!DOCTYPE d [<!ENTITY e "x">]><doc>&e;</doc>')]:
   p.write_bytes(package(extra,body))
   try:w['inspect_package'](str(p),'word')

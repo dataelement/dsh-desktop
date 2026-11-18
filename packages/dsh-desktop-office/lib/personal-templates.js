@@ -11,7 +11,7 @@ export { MAX_PERSONAL_OFFICE_BYTES, MAX_OFFICE_REQUEST_BYTES } from './templates
 const ID = /^personal-[a-f0-9]{32}$/
 
 /** Profile-owned native originals; removal archives only the library record. */
-export async function createPersonalOfficeLibrary(root, builtins, render) {
+export async function createPersonalOfficeLibrary(root, builtins, render, onInvalidRecord = () => {}) {
   if (!isAbsolute(root)) throw new Error('Use a host-owned absolute Office library path')
   await mkdir(root, { recursive: true, mode: 0o700 })
   if ((await lstat(root)).isSymbolicLink()) throw new Error('Use a regular Office library directory')
@@ -26,18 +26,29 @@ export async function createPersonalOfficeLibrary(root, builtins, render) {
     return readFile(path)
   }
   const recordPath = id => join(root, id, 'template.json')
-  for (const name of await readdir(root)) {
-    if (!ID.test(name)) continue
-    if ((await lstat(join(root, name))).isSymbolicLink()) throw new Error('Invalid personal Office directory')
-    const item = JSON.parse((await regular(recordPath(name))).toString('utf8'))
-    if (item.id !== name || item.origin !== 'personal' || !['word', 'excel'].includes(item.mode)
+  const loadRecord = async id => {
+    if (!(await lstat(join(root, id))).isDirectory()) throw new Error('Invalid personal Office directory')
+    const item = JSON.parse((await regular(recordPath(id))).toString('utf8'))
+    if (!item || item.id !== id || item.origin !== 'personal' || !['word', 'excel'].includes(item.mode)
       || !/^[a-f0-9]{24}$/.test(item.revision) || typeof item.title !== 'string' || !item.title.trim()
       || !Number.isInteger(item.pages) || item.pages < 1 || item.pages > 50
       || !Array.isArray(item.pageAspectRatios) || item.pageAspectRatios.length !== item.pages
       || item.pageAspectRatios.some(value => !Number.isFinite(value) || value <= 0 || value > 20)
       || item.sampleFile !== (item.mode === 'word' ? 'example.docx' : 'example.xlsx')
-      || !item.files || Object.entries(item.files).some(([file, sha]) => !/^(example\.(docx|xlsx)|design\.md|thumbnail\.webp|pages\/[1-9][0-9]?\.webp)$/.test(file) || !/^[a-f0-9]{64}$/.test(sha))) throw new Error('Invalid personal Office record')
-    if (!item.archived) records.set(name, item)
+      || !item.files || typeof item.files !== 'object' || Array.isArray(item.files)
+      || Object.entries(item.files).some(([file, sha]) => !/^(example\.(docx|xlsx)|design\.md|thumbnail\.webp|pages\/[1-9][0-9]?\.webp)$/.test(file) || !/^[a-f0-9]{64}$/.test(sha))) throw new Error('Invalid personal Office record')
+    const requiredFiles = [item.sampleFile, 'design.md', 'thumbnail.webp', ...item.pageAspectRatios.map((_, i) => `pages/${i + 1}.webp`)]
+    if (requiredFiles.some(file => !Object.hasOwn(item.files, file))) throw new Error('Missing personal Office resources')
+    return item
+  }
+  for (const id of await readdir(root)) {
+    if (!ID.test(id)) continue
+    try {
+      const item = await loadRecord(id)
+      if (!item.archived) records.set(id, item)
+    } catch {
+      onInvalidRecord(id)
+    }
   }
   const entry = id => records.get(id) ?? builtins.entry(id)
   const asset = async (id, file) => {
@@ -113,7 +124,7 @@ export async function createPersonalOfficeLibrary(root, builtins, render) {
         await writeFile(join(staging, 'template.json'), JSON.stringify(item), { flag: 'wx', mode: 0o600 })
         try { await rename(staging, join(root, id)) } catch (error) {
           if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error
-          const previous = JSON.parse((await regular(recordPath(id))).toString('utf8'))
+          const previous = await loadRecord(id)
           if (!previous.archived || previous.sourceSha256 !== sha256) throw error
           const restored = { ...previous, archived: false }
           await persist(restored); records.set(id, restored)

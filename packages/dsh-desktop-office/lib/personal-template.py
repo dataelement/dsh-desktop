@@ -9,6 +9,9 @@ from lxml import etree as ET
 from PIL import Image
 
 
+EXTERNAL_WORD_FIELD = re.compile(r'\b(?:DDE(?:AUTO)?|INCLUDETEXT|INCLUDEPICTURE|LINK)\b', re.I)
+
+
 def inspect_package(path, mode):
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
@@ -38,8 +41,12 @@ def inspect_package(path, mode):
                             raise ValueError('External linked data is not supported')
                 for node in root.iter():
                     local = ET.QName(node).localname
-                    if local == 'instrText' and re.search(r'\b(?:DDE(?:AUTO)?|INCLUDETEXT|INCLUDEPICTURE|LINK)\b', node.text or '', re.I):
-                        raise ValueError('External Word fields are not supported')
+                    if local in ('instrText', 'fldSimple'):
+                        instructions = (node.text or '',) if local == 'instrText' else (
+                            value for name, value in node.attrib.items() if ET.QName(name).localname == 'instr'
+                        )
+                        if any(EXTERNAL_WORD_FIELD.search(instruction) for instruction in instructions):
+                            raise ValueError('External Word fields are not supported')
                     if mode == 'excel' and local == 'f' and re.search(r'\b(?:WEBSERVICE|RTD)\s*\(|\[[^\]]*\.(?:xlsx?|xlsm|xlsb)\]|\|[^!]*!', node.text or '', re.I):
                         raise ValueError('External formula data is not supported')
     return {'mode': mode, 'checked': True}

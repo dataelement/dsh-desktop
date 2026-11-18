@@ -35,7 +35,10 @@ export async function apply(ctx, config) {
       try {
         // An incomplete optional upload package must not abort the Host import.
         const { createPersonalOfficeLibrary, personalOfficeRenderer } = await import('./lib/personal-templates.js')
-        library = await createPersonalOfficeLibrary(join(home, 'office-templates'), builtins, personalOfficeRenderer(config.resources, config.cli))
+        library = await createPersonalOfficeLibrary(
+          join(home, 'office-templates'), builtins, personalOfficeRenderer(config.resources, config.cli),
+          id => ctx.logger?.warn?.(`desktop-office: skipping invalid personal template record ${id}`)
+        )
       } catch (error) {
         ctx.logger?.warn?.(`desktop-office: personal template library unavailable; keeping built-in templates: ${error?.message || error}`)
       }
