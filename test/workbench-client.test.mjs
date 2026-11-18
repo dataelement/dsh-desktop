@@ -142,7 +142,6 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
     },
     useRef: initial => ({ current: initial }),
     useLayoutEffect: effect => { layoutEffects.push(effect) },
-    useCallback: callback => callback,
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   const sandbox = { window: { sessionStorage, localStorage: clientWindow.localStorage, __ModuleLoader__: { load({ factory }) {
@@ -164,12 +163,7 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
     showMarket: vi.fn(), open: vi.fn(), openNative: vi.fn(), run: vi.fn()
   }
   let activePanelId = null
-  service.ctx = { layout: { panelInfo: {
-    subscribe: () => () => {},
-    getSnapshot: () => ({ activePanelId })
-  } } }
-  // The real quickSwitcher slot only supplies wide/startSession, not usePanelInfo.
-  const render = () => { stateIndex = 0; return renderSidebar({ service, wide: true, startSession: vi.fn() }) }
+  const render = () => { stateIndex = 0; return renderSidebar({ service, wide: true, startSession: vi.fn(), usePanelInfo: selector => selector({ activePanelId }) }) }
   const find = (node, predicate) => {
     if (Array.isArray(node)) return node.flatMap(item => find(item, predicate))
     if (!node || typeof node !== 'object') return []
@@ -2391,7 +2385,7 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
   it('renders a persistent Workbench home area beside the current mode and switch button', () => {
-    expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession })')
+    expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession, usePanelInfo })')
     expect(fullSource).toContain("'data-dsh-workbench-switcher': ''")
     expect(fullSource).toContain("className: 'dshWbModeSwitch', 'aria-describedby': 'dsh-wb-current-mode-tooltip'")
     expect(fullSource).toContain("role: 'menu', 'aria-label': tr('选择会话模式')")
@@ -2776,6 +2770,17 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot().restartNeeded).toBe(false)
   })
 
+  it('reports a retryable service error for a plain-text proxy failure', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    withMarket(service, {
+      '/api/desktop-workbenches/market-install': () => new Response('Harness proxy failed', { status: 502 })
+    })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('工作台服务暂时无法响应，请稍后重试。 (HTTP 502)')
+    expect(service.getSnapshot().installing).toBeNull()
+    expect(service.installFailures.get('o/helper')).toMatchObject({ kind: 'install' })
+  })
+
   it('shows a hidden operation diagnostic when the response only names the error code', async () => {
     const { service } = await fixture()
     service.remoteCatalog = [listed()]
@@ -3116,7 +3121,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(1)
   })
 
-  it('migrates an old-only installed ID to its unique live market provider and preserves owned data', async () => {
+  it('does not infer an unauthorized repository migration from a shared package name', async () => {
     const initial = { ...emptyState(), added: ['o/old'], pinned: ['o/old'], favorites: ['o/old'], active: 'o/old',
       notes: { 'o/old': 'Keep notes' }, sessionBindings: { old: 'o/old' }, recentSessions: { 'o/old': 'old' } }
     const { service, ctx, saved } = await fixture(initial)
@@ -3127,13 +3132,15 @@ describe('workbench market screenshot and metadata display', () => {
     service.register({ title: 'Helper', repository: 'https://github.com/o/new' }, () => null)
     await service.queue
 
-    expect(saved().state).toMatchObject({ added: ['o/new'], pinned: ['o/new'], favorites: ['o/new'], active: 'o/new',
-      notes: { 'o/new': 'Keep notes' }, sessionBindings: { old: 'o/new' }, recentSessions: { 'o/new': 'old' } })
+    expect(saved().state).toEqual(initial)
+    service.migrateLegacyWorkbenchIds()
+    await service.queue
+    expect(saved().state).toEqual(initial)
     expect(service.knownProviders['o/old'].sourcePackage).toBe('helper')
     const ui = interactiveMarket(service, 'mine')
-    expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(0)
+    expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(1)
     expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/new')).toHaveLength(1)
-    await expect(service.open('o/new')).resolves.toBeUndefined()
+    await expect(service.open('o/new')).rejects.toThrow() // No automatic add or ownership transfer.
   })
 
   it('defaults market cards to descending stars and offers downloads, update time and name sorting', async () => {

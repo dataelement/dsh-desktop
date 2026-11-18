@@ -1,4 +1,3 @@
-import { usesDesktopCaption } from '../shared/desktop-menu'
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type {
   DesktopShortcutInput,
@@ -11,6 +10,7 @@ import type { DesktopFileSource, FileDragHandle, FileDragRequestId } from '@deep
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME } from '../main/shell/window/ipc'
 import { setupDesktopStoragePersistence } from './desktop-storage'
 import { createSidebarBrowserBridge } from './sidebar-browser'
+import { usesDesktopCaption } from '../shared/desktop-menu'
 import { markDesktopPlatform } from './desktop-platform'
 import { mountDesktopUpdateUi } from './desktop-update-ui'
 import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'

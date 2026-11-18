@@ -47,6 +47,7 @@ export const WINDOWS_SERIAL_SUITES = [
   'test/lan-mobile-tunnel.test.ts',
   'test/renderer-recovery-electron.test.ts',
   'test/shell/startup-recovery-electron.test.ts',
+  'test/shell/mobile-window-electron.test.ts',
   'test/ptc-electron-helper.test.js',
   'test/landlock-asar-layout.test.mjs'
 ]

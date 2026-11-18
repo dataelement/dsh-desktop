@@ -1,4 +1,5 @@
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -359,6 +360,58 @@ describe('Plugin Manager generation package backend', () => {
     expect(JSON.parse(await readFile(join(legacy, 'package.json'), 'utf8')).version).toBe('0.9.0')
   })
 
+  it('diagnoses an externally replaced committed entry without promising a restart or overwriting it live', async () => {
+    const home = await freshHome()
+    const backend = createGenerationPackageBackend({
+      dshHome: home, nodeExecutablePath: process.execPath, pnpmEntryPath: 'unused',
+      runInstall: installer('managed-plugin', '1.0.0')
+    })
+    const installed = await backend.install({ spec: 'managed-plugin@1.0.0', kind: 'registry' })
+    installed.commit()
+    const path = join(home, 'profiles', 'web', 'node_modules', 'managed-plugin')
+    // Simulate an external installer replacing Desktop's projected link.
+    await rm(path)
+    await mkdir(path)
+    await writeFile(join(path, 'package.json'), JSON.stringify({ name: 'managed-plugin', version: '9.0.0' }))
+    const beforeDesired = await readDesired(home)
+    const beforeManifest = await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
+    const status = await backend.readRestartStatus()
+    expect(status).toMatchObject({
+      restartRequired: false, packages: [],
+      installationDrift: [{ name: 'managed-plugin', code: 'external-modification', path }]
+    })
+    expect(status.installationDrift[0].recovery).toContain('back up')
+    await expect(assertNoPendingGenerationUpdates(home, 'web', 'unrelated-plugin')).rejects.toMatchObject({
+      code: 'installation-drift', restartRequired: false, packages: ['managed-plugin']
+    })
+    expect((await lstat(path)).isDirectory()).toBe(true)
+    expect(JSON.parse(await readFile(join(path, 'package.json'), 'utf8')).version).toBe('9.0.0')
+    expect(await readDesired(home)).toEqual(beforeDesired)
+    expect(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')).toBe(beforeManifest)
+    // An external local-link owner is drift too; keep its source intact.
+    const external = join(home, 'external-plugin')
+    await mkdir(external)
+    await writeFile(join(external, 'package.json'), JSON.stringify({ name: 'managed-plugin', version: '8.0.0' }))
+    await rm(path, { recursive: true })
+    await symlink(external, path, process.platform === 'win32' ? 'junction' : 'dir')
+    expect(await backend.readRestartStatus()).toMatchObject({
+      restartRequired: false, installationDrift: [{ code: 'external-modification' }]
+    })
+    await rm(path)
+    expect(JSON.parse(await readFile(join(external, 'package.json'), 'utf8')).version).toBe('8.0.0')
+    // A deleted projected entry is also a diagnostic, not a staged update.
+    expect(await backend.readRestartStatus()).toMatchObject({
+      restartRequired: false, installationDrift: [{ code: 'external-modification' }]
+    })
+    await mkdir(path)
+    // Explicit removal of the affected package remains available without touching
+    // the foreign directory; desired no longer silently reinstalls it next launch.
+    expect((await backend.remove({ name: 'managed-plugin' })).packageResult.exitCode).toBe(0)
+    expect(await readDesired(home)).toEqual([])
+    expect((await lstat(path)).isDirectory()).toBe(true)
+    expect(await backend.readRestartStatus()).toEqual({ restartRequired: false, packages: [] })
+  })
+
   it.each([
     [true, 'cancel'], [false, 'cancel'], [true, 'restart'], [false, 'restart']
   ])('blocks other package mutations while an update is pending (deferUpdates=%s, then %s)', async (deferUpdates, finish) => {
@@ -377,6 +430,12 @@ describe('Plugin Manager generation package backend', () => {
     const staged = await makeBackend('plugin-b', '2.0.0').install({ spec: 'plugin-b@2.0.0', kind: 'registry' })
     expect(staged.restartRequired).toBe(true)
     staged.commit()
+    expect(await b.readRestartStatus()).toEqual({ restartRequired: true, packages: ['plugin-b'] })
+    await expect(assertNoPendingGenerationUpdates(home, 'web', 'plugin-d')).rejects.toMatchObject({
+      code: 'pending-generation-update', restartRequired: true, packages: ['plugin-b']
+    })
+    // A newly-created backend must not baseline away an already pending npm update.
+    expect(await makeBackend('plugin-d', '1.0.0').readRestartStatus()).toEqual({ restartRequired: true, packages: ['plugin-b'] })
     const beforeDesired = await readDesired(home)
     const manifestPath = join(profile, 'package.json')
     const beforeManifest = await readFile(manifestPath, 'utf8')
@@ -405,6 +464,7 @@ describe('Plugin Manager generation package backend', () => {
     newer.commit()
     if (finish === 'cancel') expect((await b.remove({ name: 'plugin-b' })).packageResult.exitCode).toBe(0)
     else await projectGenerations(home)
+    expect(await b.readRestartStatus()).toEqual({ restartRequired: false, packages: [] })
     const accepted = await d.install({ spec: 'plugin-d@1.0.0', kind: 'registry' })
     expect(accepted.packageResult.exitCode).toBe(0)
     accepted.commit()
@@ -451,7 +511,11 @@ describe('Plugin Manager generation package backend', () => {
     }
     const c = await makeBackend('plugin-c', '1.0.0').install({ spec: 'plugin-c@1.0.0', kind: 'registry' })
     expect(c.packageResult.exitCode).toBe(1)
-    expect(c.packageResult.output).toContain('Pending generation update for plugin-b. Restart')
+    // Once projection committed its marker without selecting the broken target,
+    // another restart cannot repair the missing bytes: report drift, not a loop.
+    expect(c.packageResult.output).toContain(marker === 'new-marker'
+      ? 'Installation drift for plugin-b'
+      : 'Pending generation update for plugin-b. Restart')
     expect(JSON.parse(await readFile(join(profile, 'node_modules', 'plugin-b', 'package.json'), 'utf8')).version).toBe('1.0.0')
   })
 

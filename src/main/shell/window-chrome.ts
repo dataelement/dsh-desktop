@@ -1,6 +1,6 @@
 import { usesDesktopCaption, WINDOWS_TITLEBAR_HEIGHT } from '../../shared/desktop-menu'
 
-/** Native caption buttons drawn over the page on Windows. */
+/** Native caption buttons drawn over the page on Windows and Linux. */
 export interface WindowsTitleBarOverlay {
   color: string
   symbolColor: string
@@ -37,7 +37,7 @@ export function windowsChromeBackground(isDark: boolean): string {
 
 /**
  * macOS keeps the close buttons and the sidebar collapse control on one row.
- * Windows hides the native frame so the page caption (应用 / 编辑) is the menu.
+ * Windows and Linux hide the native frame so the page caption (应用 / 编辑) is the menu.
  * A normal title bar would stack Electron's File menu above that caption.
  */
 export function desktopWindowChrome(platform: string, isDark = false): DesktopWindowChrome {

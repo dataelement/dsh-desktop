@@ -430,7 +430,7 @@ jobs:
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - name: Check recovery UI on native Windows at three display scales
-        if: github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended')
         run: node scripts/verify/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always() && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.checks == 'extended'))

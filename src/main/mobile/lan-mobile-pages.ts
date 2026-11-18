@@ -322,7 +322,6 @@ export function renderDesktopPairingPage(options: {
     disconnect: zh ? '断开连接' : 'Disconnect',
     copy: zh ? '复制' : 'Copy',
     copied: zh ? '已复制' : 'Copied',
-    pinLabel: zh ? '连接密码' : 'Pairing password',
     enterPin: zh ? '扫码后，请在移动端输入下方密码完成连接。' : 'Enter this password on your phone to finish connecting.',
     enterDurablePin: zh ? '请在移动端输入下方长期密码完成连接。' : 'Enter this long-term password on your phone to connect.',
     rescan: zh ? '重新扫码' : 'Scan again',
@@ -430,7 +429,7 @@ export function renderDesktopPairingPage(options: {
   async function copyUrl(){if(!pairingUrl)return;try{await navigator.clipboard.writeText(pairingUrl)}catch{return}const btn=document.getElementById('copyBtn'),tip=document.getElementById('copyTip');btn.classList.add('copied');tip.textContent=T.copied;clearTimeout(copyFeedbackTimer);copyFeedbackTimer=setTimeout(()=>{btn.classList.remove('copied');tip.textContent=T.copy},1800)}
   function syncFallbackLink(){const link=document.getElementById('fallbackLink');if(!link)return;link.classList.toggle('hide',!(tunnelActive&&tunnelProvider==='cloudflare'&&!phoneConnected&&!modeSwitching&&!tunnelLoading&&!pinRevealed))}
   function syncModeControls(connected){phoneConnected=connected;const disabled=connected||modeSwitching||tunnelLoading||pinBusy;document.getElementById('btnLan').disabled=disabled;document.getElementById('btnTunnel').disabled=disabled;syncFallbackLink()}
-  function syncModeSelection(active){document.getElementById('btnLan').classList.toggle('active',!active);document.getElementById('btnTunnel').classList.toggle('active',active);byId('btnLan').setAttribute?.('aria-pressed',String(!active));byId('btnTunnel').setAttribute?.('aria-pressed',String(active))}
+  function syncModeSelection(active){document.getElementById('btnLan').classList.toggle('active',!active);document.getElementById('btnTunnel').classList.toggle('active',active);byId('btnLan').setAttribute('aria-pressed',String(!active));byId('btnTunnel').setAttribute('aria-pressed',String(active))}
   function syncTunnelError(){const el=document.getElementById('tunnelError');el.classList.toggle('show',selectedTunnelTab&&!!el.textContent)}
   function setTunnelProgress(value){const progress=Math.max(0,Math.min(100,Math.round(value)));document.getElementById('tunnelProgressBar').style.width=progress+'%';document.getElementById('tunnelProgressValue').textContent=progress+'%'}
   function startTunnelProgress(enableTunnel){const loading=document.getElementById('qrLoading'),duration=enableTunnel?4500:800;clearInterval(tunnelProgressTimer);tunnelProgressStartedAt=Date.now();document.getElementById('tunnelLoadingText').textContent=enableTunnel?T.tunnelLoading:T.lanLoading;setTunnelProgress(0);loading.classList.add('show');tunnelProgressTimer=setInterval(()=>{setTunnelProgress(Math.min(99,(Date.now()-tunnelProgressStartedAt)/duration*100))},50);return duration}

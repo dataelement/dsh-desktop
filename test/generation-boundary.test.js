@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
-import { lstat, mkdir, mkdtemp, open, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, rm, writeFile } from 'node:fs/promises'
 
 function readInstalledVersion(_profile, name, explicitDir) {
   try {

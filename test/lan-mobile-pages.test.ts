@@ -875,6 +875,7 @@ describe('desktop pairing page expiry copy', () => {
 
 interface PairingElement {
   id: string
+  setAttribute: (name: string, value: string) => void
   classList: {
     add: (...names: string[]) => void
     remove: (...names: string[]) => void
@@ -903,6 +904,7 @@ function pairingPageElements(): {
     const values = new Set<string>()
     const element: PairingElement = {
       id,
+      setAttribute: () => undefined,
       classList: {
         add: (...names: string[]) => names.forEach((name) => values.add(name)),
         remove: (...names: string[]) => names.forEach((name) => values.delete(name)),
