@@ -1,10 +1,14 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 /** Product metadata is authoritative; never discover a product through a parent checkout. */
-function hasEnterprisePlugin(metadata: unknown): boolean {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false
+const HOST_PLUGIN_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i
+
+function declaredHostPluginRows(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return ''
   const plugins = (metadata as Record<string, unknown>).dshDesktopHostPlugins
-  return Array.isArray(plugins) && plugins.includes('dsh-desktop-enterprise')
+  if (!Array.isArray(plugins)) return ''
+  const names = [...new Set(plugins.filter((plugin): plugin is string => HOST_PLUGIN_NAME.test(plugin)))]
+  return names.map(name => `    - id: ${name}\n      name: ${name}\n`).join('')
 }
 
 /**
@@ -27,10 +31,6 @@ const DESKTOP_PRODUCT_PATCH_BASE = `- id: desktop-product-telemetry
 - insert:
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
-`
-
-const DESKTOP_ENTERPRISE_ROW = `    - id: dsh-desktop-enterprise
-      name: dsh-desktop-enterprise
 `
 
 const DESKTOP_WORKBENCH_ROW = `    - id: dsh-desktop-workbenches
@@ -60,8 +60,8 @@ const DESKTOP_PPT_ROW = `    - id: dsh-ppt-composer
 export const DESKTOP_SAFE_PRODUCT_PATCH = DESKTOP_PRODUCT_PATCH_BASE
 
 export function buildDesktopProductPatch(metadata?: unknown): string {
-  const enterprise = hasEnterprisePlugin(metadata) ? DESKTOP_ENTERPRISE_ROW : ''
-  return `${DESKTOP_PRODUCT_PATCH_BASE}${enterprise}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_PPT_ROW}`
+  const declaredPlugins = declaredHostPluginRows(metadata)
+  return `${DESKTOP_PRODUCT_PATCH_BASE}${declaredPlugins}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_PPT_ROW}`
 }
 
 export const DESKTOP_PRODUCT_PATCH = buildDesktopProductPatch()
@@ -83,10 +83,7 @@ export async function writeDesktopProductPatch(
   await mkdir(dshHome, { recursive: true })
   const path = join(dshHome, 'desktop-product.patch.yml')
   const base = mode === 'safe' ? DESKTOP_SAFE_PRODUCT_PATCH : buildDesktopProductPatch(metadata)
-  // Preserve the original third-argument options API as well as product metadata.
-  const legacyOptions = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
-    ? metadata as { skipBlockingHmr?: boolean } : undefined
-  const text = (options?.skipBlockingHmr ?? legacyOptions?.skipBlockingHmr) === true ? `${base}${WINDOWS_DEV_HMR_DISABLE}` : base
+  const text = options?.skipBlockingHmr === true ? `${base}${WINDOWS_DEV_HMR_DISABLE}` : base
   await writeFile(path, text)
   return path
 }

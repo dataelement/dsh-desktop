@@ -4,7 +4,7 @@
 
 ## 产品插件选择
 
-桌面产品补丁只按安装包明确声明的 `dshDesktopHostPlugins` 决定企业插件是否挂载；依赖包能否从父目录偶然解析，不是产品选择依据。`writeDesktopProductPatch` 接收安装元数据，普通上游产品默认不加载企业插件，Safe Mode 始终不挂载企业业务插件。这也避免嵌套 checkout 或第三方包提升改变启动组合。
+桌面产品补丁只按安装包明确声明的 `dshDesktopHostPlugins` 决定产品插件是否挂载；依赖包能否从父目录偶然解析，不是产品选择依据。`writeDesktopProductPatch` 接收安装元数据，普通上游产品默认不加载额外产品插件，Safe Mode 始终不挂载这些插件。这也避免嵌套 checkout 或第三方包提升改变启动组合。
 
 ## 启动和重启
 

@@ -66,7 +66,7 @@ describe('Desktop account UI composition', () => {
         expect(entries.filter((entry) => entry.name === name && !entry.disabled)).toHaveLength(1)
       }
       for (const mode of ['desktop', 'safe']) {
-        const windowsDev = await writeDesktopProductPatch(home, mode, { skipBlockingHmr: true })
+      const windowsDev = await writeDesktopProductPatch(home, mode, undefined, { skipBlockingHmr: true })
         const windowsEntries = composeEntries([base, loadOverlayPatches('test', windowsDev)])
         expect(windowsEntries.find((entry) => entry.id === 'hmr')?.disabled).toBe(true)
       }

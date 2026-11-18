@@ -83,7 +83,7 @@ it('uses Harness locale for desktop actions, preserves the local deletion dialog
   const description = dialogProps.t('description', { name: injected.deletion.getSnapshot().displayTitle })
   expect(description).toContain('<My session>')
   expect(description).not.toContain('{name}')
-  expect(registrations.some(item => item.config.name === 'settings.sidebar.footer')).toBe(false)
+  expect(registrations.some(item => item.config.name === 'settings.sidebar.footer')).toBe(true)
   active = 'fr'
   expect(deletion.component(sessionProps).children).toContain('Delete session permanently')
   const unread = registrations.find(item => item.config.id === 'desktop-unread-session')
