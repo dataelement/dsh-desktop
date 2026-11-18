@@ -63,20 +63,23 @@ describe('crash upload', () => {
     diagnostics.dispose()
   })
 
-  it('puts the host diagnostic in the uploaded message after the log has been preserved', async () => {
+  it('puts the redacted host diagnostic in the uploaded message after the log has been preserved', async () => {
     const preserveFailureLog = vi.fn()
     const { capture, diagnostics, upload } = session([], preserveFailureLog)
     upload.startSending()
     upload.beginHostAttempt()
-    const diagnostic = 'Configuration file: startup.yml\n--- startup entries ---\nhttp://127.0.0.1/?token=secret'
+    const diagnostic = 'Configuration file: startup.yml\n--- startup entries ---\nhttp://127.0.0.1/?token=secret&token=also-secret'
     await upload.reportHostFailure(new DesktopHostFatalError('host stopped', diagnostic))
     await settleDiagnostics()
     expect(preserveFailureLog).toHaveBeenCalledWith(diagnostic)
     expect(capture).toHaveBeenCalled()
-    const reported = capture.mock.calls[0]?.[1]
+    const reported = String(capture.mock.calls[0]?.[1])
     expect(reported).toContain('host stopped')
     expect(reported).toContain('Configuration file: startup.yml')
     expect(reported).toContain('--- startup entries ---')
+    expect(reported).toContain('http://127.0.0.1/?token=[redacted]&token=[redacted]')
+    expect(reported.includes('token=secret')).toBe(false)
+    expect(reported.includes('also-secret')).toBe(false)
     expect(preserveFailureLog.mock.invocationCallOrder[0]).toBeLessThan(capture.mock.invocationCallOrder[0] ?? 0)
     diagnostics.dispose()
   })

@@ -1,7 +1,7 @@
 import type { RuntimeSnapshot } from '../../shared/contracts'
 import type { PluginStartupFailure } from '../../shared/plugin-startup-failure'
 import { SAFE_MODE_PROFILE } from '../recovery/safe-mode-profile'
-import { DesktopHostFatalError } from './backend/host-process'
+import { DesktopHostFatalError, redactHostOutput } from './backend/host-process'
 
 export interface CrashUploadDiagnostics {
   startSending(): void
@@ -31,8 +31,8 @@ export function crashUploadProfile(safeMode: boolean): string {
 /**
  * Translate the new Host lifecycle into the pre-0.14 diagnostic session.
  * A named installed plugin suppresses a startup failure. A failure after ready
- * still uploads. The Host diagnostic travels with the short message so the
- * report is not limited to `Error.message`.
+ * still uploads. The Host diagnostic is redacted the same way as harness.log,
+ * then travels with the short message so the report is not limited to `Error.message`.
  */
 export function createCrashUpload(options: CrashUploadOptions) {
   let attempt = 0
@@ -62,6 +62,7 @@ export function createCrashUpload(options: CrashUploadOptions) {
     async reportHostFailure(failure: unknown): Promise<void> {
       const message = failure instanceof Error && failure.message.length > 0 ? failure.message : 'Desktop host failed'
       const diagnostic = failure instanceof DesktopHostFatalError ? failure.diagnostic ?? '' : ''
+      const reportedDiagnostic = redactHostOutput(diagnostic)
       const current = diagnostics()
       let names: readonly string[] = []
       if (current) {
@@ -87,7 +88,7 @@ export function createCrashUpload(options: CrashUploadOptions) {
       }))
       current.runtimeChanged({
         phase: 'failed',
-        message: diagnostic.length > 0 ? `${message}\n${diagnostic}` : message,
+        message: reportedDiagnostic.length > 0 ? `${message}\n${reportedDiagnostic}` : message,
         logs: [],
         ...(pluginFailures.length > 0 ? { pluginFailures } : {})
       }, flushLog, attempt)

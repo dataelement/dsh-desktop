@@ -96,7 +96,10 @@ export interface DesktopHostProcessOptions {
   onPluginOperation?: (record: PluginOperationRecord) => void
   /** Raw child output, before the harness log prefixes it. */
   onOutput?: (source: 'stdout' | 'stderr', chunk: string) => void
-  /** Child stdio has closed. Finish a partial log line before reading the file. */
+  /**
+   * Child has exited. Finish a partial log line. Stop and restart do not wait
+   * for this, and an inherited pipe that never closes must not block them.
+   */
   onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void
 }
 
@@ -158,7 +161,13 @@ export class DesktopHostProcess {
     child.on('message', (message: unknown) => { this.receive(child, message) })
     child.once('error', error => { this.fail(error) })
     this.exitPromise = new Promise(resolve => {
-      child.once('close', (code, signal) => {
+      // Spawn failures emit `error` without an `exit` event.
+      child.once('error', () => { if (child.pid === undefined) resolve() })
+      // A plugin subprocess may inherit stdout/stderr and keep those pipes open
+      // after the Host exits. Waiting for `close` then makes a successful stop
+      // time out and prevents restart even after SIGKILL. Process lifetime ends
+      // at `exit`; pipe cleanup is not proof that the old Host is still alive.
+      child.once('exit', (code, signal) => {
         try {
           this.options.onProcessExit?.(code, signal)
         } catch (error) {

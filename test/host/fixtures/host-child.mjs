@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 
 const report = process.env.FIXTURE_REPORT
@@ -29,8 +30,14 @@ if (process.env.FIXTURE_MODE === 'invalid') {
   process.send?.({ type: 'ready', url: 'http://127.0.0.1:9/', injections: ['boot'] })
   process.on('message', message => {
     if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'shutdown') {
-      process.send?.({ type: 'shutdown-complete' })
-      process.exit(0)
+      if (process.env.FIXTURE_MODE === 'inherited-pipes') {
+        // Outlive the Host while holding its stdout/stderr open, like a plugin proxy.
+        const proxy = spawn(process.execPath, ['-e', 'setTimeout(() => process.exit(0), 4000)'], {
+          stdio: ['ignore', 'inherit', 'inherit'], env: process.env
+        })
+        proxy.unref()
+      }
+      process.send?.({ type: 'shutdown-complete' }, () => { process.exit(0) })
     }
   })
 }

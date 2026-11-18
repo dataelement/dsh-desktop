@@ -60,7 +60,7 @@ export class HarnessLog {
     }
   }
 
-  /** Write a trailing partial line once the child streams have closed. */
+  /** Write a trailing partial line that has not yet ended with a newline. */
   finishProcessOutput(): void {
     for (const source of ['stdout', 'stderr'] as const) {
       const line = this.remainders[source]
