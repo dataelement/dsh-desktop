@@ -111,6 +111,19 @@ it.each([['Word', 'word', '.docx'], ['Excel', 'excel', '.xlsx']])('uploads and m
   expect(f.store.snapshot('session-a').selectionExpired).toBe(true)
 })
 
+it.each([false, true])('renders the template name separately from the localized delete explanation (English=%s)', async english => {
+  const item = { ...templates[0], id: 'personal-test', title: 'My template', titleEn: 'My template', origin: 'personal' }
+  const f = await fixture({ english, examples: [item] })
+  await f.click('Word')
+  await f.click(english ? 'Delete My template' : '删除 My template')
+
+  const copy = container.querySelector('dialog[open] .dsh-template-delete-copy')
+  expect(copy.querySelector('bdi')?.textContent).toBe('My template')
+  expect(copy.querySelector('br')?.nextSibling?.textContent).toBe(english
+    ? 'Generated files are preserved when you delete a template.'
+    : '删除模板后，已生成的文件继续保留。')
+})
+
 it('rejects the wrong upload format before making a request and displays import failures', async () => {
   const f = await fixture(); await f.click('Word')
   const input = container.querySelector('input[type=file]')

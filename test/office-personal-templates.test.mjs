@@ -128,9 +128,15 @@ with tempfile.TemporaryDirectory() as d:
  ns='http://schemas.openxmlformats.org/wordprocessingml/2006/main'
  def word_field(field):
   return f'<w:document xmlns:w="{ns}">{field}</w:document>'
- p.write_bytes(package(body=word_field('<w:fldSimple w:instr="PAGE"/>')))
- assert w['inspect_package'](str(p),'word')['checked']
- for field in ['<w:instrText>INCLUDETEXT</w:instrText>', '<w:fldSimple w:instr=" INCLUDETEXT "/>', '<w:fldSimple w:instr=" DDE "/>']:
+ def complex_field(*parts):
+  begin='<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+  separate='<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+  end='<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+  return begin+''.join(f'<w:r><w:instrText>{part}</w:instrText></w:r>' for part in parts)+separate+end
+ for allowed in ['<w:fldSimple w:instr="PAGE"/>', complex_field('PA', 'GE'), complex_field('INCLUDE')+complex_field('TEXT')]:
+  p.write_bytes(package(body=word_field(allowed)))
+  assert w['inspect_package'](str(p),'word')['checked']
+ for field in ['<w:instrText>INCLUDETEXT</w:instrText>', '<w:fldSimple w:instr=" INCLUDETEXT "/>', '<w:fldSimple w:instr=" DDE "/>', complex_field('INCLUDE', 'TEXT')]:
   p.write_bytes(package(body=word_field(field)))
   try:w['inspect_package'](str(p),'word')
   except ValueError as error:assert str(error)=='External Word fields are not supported'

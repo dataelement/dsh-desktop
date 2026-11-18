@@ -55,7 +55,8 @@ window.__ModuleLoader__.load({
         templateElement('header', null, templateElement('h2', { id: title }, t(deleting ? 'deleteTitle' : 'editTitle')),
           templateElement('button', { type: 'button', className: 'dsh-template-close', disabled: busy, 'aria-label': t('close'), onClick: close }, templateElement(TemplateIcon, { name: 'close' }))),
         deleting ? templateElement('div', { className: 'dsh-template-fields' },
-          templateElement('p', { className: 'dsh-template-delete-copy' }, name + '。' + t('deleteHint')),
+          templateElement('p', { className: 'dsh-template-delete-copy' },
+            templateElement('bdi', null, name), templateElement('br'), t('deleteHint')),
           error ? templateElement('div', { role: 'alert', className: 'dsh-template-error' }, error) : null,
           templateElement('footer', null, button(t('cancel'), onCancelDelete ?? close, { ref: first }), button(t(busy ? 'processing' : 'confirmDelete'), onDelete)))
         : templateElement('form', { 'aria-busy': busy, onSubmit: event => { event.preventDefault(); if (!busy && name.trim()) onSave() } },

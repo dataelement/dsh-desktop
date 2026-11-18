@@ -12,6 +12,43 @@ from PIL import Image
 EXTERNAL_WORD_FIELD = re.compile(r'\b(?:DDE(?:AUTO)?|INCLUDETEXT|INCLUDEPICTURE|LINK)\b', re.I)
 
 
+def check_word_field(instruction):
+    if EXTERNAL_WORD_FIELD.search(instruction):
+        raise ValueError('External Word fields are not supported')
+
+
+def inspect_fields(root, mode):
+    # A complex field may span multiple runs. None marks a separated field's result.
+    fields = []
+    for node in root.iter():
+        name = ET.QName(node)
+        local = name.localname
+        if local == 'fldChar':
+            kind = node.get(ET.QName(name.namespace, 'fldCharType'))
+            if kind == 'begin':
+                fields.append([])
+            elif fields and kind in ('separate', 'end'):
+                parts = fields.pop()
+                if parts:
+                    check_word_field(''.join(parts))
+                if kind == 'separate':
+                    fields.append(None)
+        elif local == 'instrText':
+            instruction = node.text or ''
+            check_word_field(instruction)
+            if fields and fields[-1] is not None:
+                fields[-1].append(instruction)
+        elif local == 'fldSimple':
+            for attr, instruction in node.attrib.items():
+                if ET.QName(attr).localname == 'instr':
+                    check_word_field(instruction)
+        elif mode == 'excel' and local == 'f' and re.search(r'\b(?:WEBSERVICE|RTD)\s*\(|\[[^\]]*\.(?:xlsx?|xlsm|xlsb)\]|\|[^!]*!', node.text or '', re.I):
+            raise ValueError('External formula data is not supported')
+    for parts in fields:
+        if parts:
+            check_word_field(''.join(parts))
+
+
 def inspect_package(path, mode):
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
@@ -39,16 +76,7 @@ def inspect_package(path, mode):
                     for relation in root:
                         if relation.get('TargetMode') == 'External' and not relation.get('Type', '').endswith('/hyperlink'):
                             raise ValueError('External linked data is not supported')
-                for node in root.iter():
-                    local = ET.QName(node).localname
-                    if local in ('instrText', 'fldSimple'):
-                        instructions = (node.text or '',) if local == 'instrText' else (
-                            value for name, value in node.attrib.items() if ET.QName(name).localname == 'instr'
-                        )
-                        if any(EXTERNAL_WORD_FIELD.search(instruction) for instruction in instructions):
-                            raise ValueError('External Word fields are not supported')
-                    if mode == 'excel' and local == 'f' and re.search(r'\b(?:WEBSERVICE|RTD)\s*\(|\[[^\]]*\.(?:xlsx?|xlsm|xlsb)\]|\|[^!]*!', node.text or '', re.I):
-                        raise ValueError('External formula data is not supported')
+                inspect_fields(root, mode)
     return {'mode': mode, 'checked': True}
 
 
