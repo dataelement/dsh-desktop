@@ -29,6 +29,7 @@ import {
 import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
 import { developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
 import { resolveDesktopIdentity } from './product-identity'
+import { loadDesktopProductEntry } from './product-entry'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
 import { clearNativeLocaleAttempt, confirmNativeLocaleRestart, NativeDirectoryPicker, nativeLocaleRelaunchArguments, shouldCalibrateNativeLocale } from './native-locale'
@@ -455,6 +456,7 @@ async function savedDesktopMenuLocale(
 async function main(): Promise<void> {
   const adapter = requireDesktopPlatform(process.platform)
   const platform = adapter.platform
+  await loadDesktopProductEntry(readDesktopPackageMetadata(), app.getAppPath())
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return

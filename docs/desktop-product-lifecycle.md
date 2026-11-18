@@ -1,6 +1,6 @@
 # Desktop 产品生命周期接缝
 
-底座负责 Profile、Host 和窗口生命周期；产品在自己的入口模块中注册一次 `registerDesktopProduct(factory)`，再加载底座应用入口。默认产品不注册时保持原行为。此接口只供安装包中的可信主进程代码使用，不接受网页指定模块或配置执行任意代码。
+底座负责 Profile、Host 和窗口生命周期。安装包可以在顶层 package metadata 中声明相对路径 `dshDesktopProductEntry`，该模块导出 `registerDesktopProduct(register)`，由底座把唯一的宿主注册函数传入。产品入口在正式主进程中加载并注册一次，模块重复携带一份 runtime 时注册会落到宿主单例，避免静默失效。没有声明入口时保持默认产品行为。此接口只供安装包中的可信主进程代码使用，不接受网页指定模块或配置执行任意代码。
 
 ## 产品插件选择
 

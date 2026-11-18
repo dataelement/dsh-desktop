@@ -30,6 +30,10 @@ let runtime: DesktopProductRuntime | undefined
 let starting: Promise<void> | undefined
 let stopping: Promise<void> | undefined
 
+export function isDesktopProductRegistered(): boolean {
+  return factory !== undefined
+}
+
 /** Register once, before the first start attempt (including an unconfigured start). */
 export function registerDesktopProduct(productFactory: DesktopProductFactory): void {
   if (factory || started || closing) {
