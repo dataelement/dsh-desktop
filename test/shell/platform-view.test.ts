@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
   session: { fromPartition: native.fromPartition },
   shell: { openExternal: vi.fn() }
 }))
-vi.mock('@deepseek-ai/dsh-deepseek-account', () => ({
+vi.mock('@deepseek-ai/dsh-deepseek-account/client-metadata', () => ({
   mergePlatformCookies: vi.fn(),
   platformClientHeaders: native.headers
 }))

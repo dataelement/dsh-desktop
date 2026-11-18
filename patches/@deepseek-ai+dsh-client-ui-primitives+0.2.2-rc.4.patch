@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-index f4bc5b6..9c855f1 100644
+index e1a9691..e3a5310 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-@@ -10063,6 +10063,7 @@ function isExplicitFilePath(value) {
+@@ -10756,6 +10756,7 @@ function isExplicitFilePath(value) {
  * fragment-only links, queries, malformed escapes, or control characters.
  */
  function parseFileLink(value) {
@@ -10,7 +10,7 @@ index f4bc5b6..9c855f1 100644
  	const hash = value.indexOf("#");
  	const destination = hash < 0 ? value : value.slice(0, hash);
  	if (destination.includes("?")) return void 0;
-@@ -10073,11 +10074,14 @@ function parseFileLink(value) {
+@@ -10766,11 +10767,14 @@ function parseFileLink(value) {
  		return;
  	}
  	if (path.length === 0 || /[\u0000-\u001f\u007f]/.test(path)) return void 0;
@@ -28,7 +28,7 @@ index f4bc5b6..9c855f1 100644
  	if (match === null) return { path };
  	const line = Number(match[1]);
  	const end = match[2] === void 0 ? line : Number(match[2]);
-@@ -10487,7 +10491,7 @@ function renderNode(node, key, context) {
+@@ -11101,7 +11105,7 @@ function renderNode(node, key, context) {
  				onClick: mention.open,
  				...mention.contextMenuProps,
  				children: [jsx(LinkIconMedium, {

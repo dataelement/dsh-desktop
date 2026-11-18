@@ -90,13 +90,13 @@ it('sends exact provider payloads for off, max and xhigh through installed pi-ai
 })
 
 it('executes the picker adoption action without overwriting existing user configuration', () => {
-  const start = client.indexOf('const configuredIds = new Set(')
-  const end = client.indexOf('\n\t\t\tconst toggle = (id) => {', start)
+  const start = client.indexOf('const configuredIds=new Set(')
+  const end = client.indexOf('const toggle=id=>{', start)
   const action = `${client.slice(start, end)}\nreturn adoptPicked`
   const existing = { id: 'model', input: ['text'], reasoningEfforts: false, compat: { thinkingFormat: 'manual' } }
   const candidate = openrouter({ mandatory: false, supported_efforts: ['high'] })
   let result
-  new Function('models', 'candidates', 'flipped', 'rowState', 'textOf', 'adopt', 'onChange', 'closePicker', action)([existing], [candidate, { ...candidate, id: 'new' }], new Set(['new']), { forget() {} }, (m, k) => m[k], adopt, next => { result = next }, () => {})()
+  new Function('models', 'candidates', 'flipped', 'rowState', 'textOf$1', 'adopt', 'onChange', 'closePicker', action)([existing], [candidate, { ...candidate, id: 'new' }], new Set(['new']), { forget() {} }, (m, k) => m[k], adopt, next => { result = next }, () => {})()
   expect(result[0]).toBe(existing)
   expect(result[1]).toMatchObject({ id: 'new', input: ['text', 'image'], reasoningEfforts: { high: 'high' } })
 })

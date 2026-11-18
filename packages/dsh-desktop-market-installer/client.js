@@ -338,6 +338,7 @@ window.__ModuleLoader__.load({
         'div',
         {
           className: 'dshDesktopMarketModalBackdrop',
+          'data-window-drag-exclude': true,
           role: 'presentation',
           onMouseDown: (event) => {
             if (event.target === event.currentTarget && !busy) onCancel()

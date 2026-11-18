@@ -1,19 +1,19 @@
 diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-index f0836c2..f4043f7 100644
+index 75070c1..0974f8f 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -1463,8 +1463,9 @@ function mapUsage(usage) {
- 	};
- }
+@@ -1473,8 +1473,9 @@ function mapUsage(usage) {
+ const LEADING_HTTP_STATUS = /^[45]\d\d\b/;
  function classifyPiAiError(message) {
--	if (/\b(?:401|403)\b/.test(message)) return "AUTH";
+ 	const statusSource = LEADING_HTTP_STATUS.exec(message)?.[0] ?? message;
+-	if (/\b(?:401|403)\b/.test(statusSource)) return "AUTH";
  	if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE;
-+	if (/\b401\b/.test(message)) return "AUTH";
-+	if (/\b403\b/.test(message)) return "FORBIDDEN";
- 	if (/\b429\b|rate.?limit/i.test(message)) return "RATE_LIMIT";
- 	if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return "INVALID_REQUEST";
- 	if (/\b400\b|invalid.?request/i.test(message)) return "INVALID_REQUEST";
-@@ -1539,6 +1540,14 @@ function mapStopReason(message, contextWindow) {
++	if (/\b401\b/.test(statusSource)) return "AUTH";
++	if (/\b403\b/.test(statusSource)) return "FORBIDDEN";
+ 	if (/\b429\b/.test(statusSource) || /rate.?limit/i.test(message)) return "RATE_LIMIT";
+ 	if (/\b413\b/.test(statusSource) || /failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return "INVALID_REQUEST";
+ 	if (/\b400\b/.test(statusSource) || /invalid.?request/i.test(message)) return "INVALID_REQUEST";
+@@ -1549,6 +1550,14 @@ function mapStopReason(message, contextWindow) {
  		}
  	}
  }
@@ -28,15 +28,15 @@ index f0836c2..f4043f7 100644
  /**
  * Translate the pi-ai event stream into StreamChunks. pi-ai never throws
  * mid-stream — failures arrive as `error` events, which become error/aborted
-@@ -1555,6 +1564,7 @@ function mapStopReason(message, contextWindow) {
+@@ -1566,6 +1575,7 @@ function mapStopReason(message, contextWindow) {
  */
- async function* toStreamChunks(events, contextWindow, callerSignal, requestedModel) {
+ async function* toStreamChunks(events, contextWindow, callerSignal, requestedModel, prefixDigest) {
  	const toolIds = /* @__PURE__ */ new Map();
 +	const completed = /* @__PURE__ */ new Map();
  	let argumentsError;
  	for await (const event of events) switch (event.type) {
  		case "start": break;
-@@ -1572,16 +1582,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
+@@ -1583,16 +1593,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
  				text: event.delta
  			};
  			break;
@@ -61,7 +61,7 @@ index f0836c2..f4043f7 100644
  		case "thinking_start":
  			yield {
  				type: "block-start",
-@@ -1596,16 +1609,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
+@@ -1607,16 +1620,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
  				text: event.delta
  			};
  			break;
@@ -86,7 +86,7 @@ index f0836c2..f4043f7 100644
  		case "toolcall_start": {
  			const partial = event.partial.content[event.contentIndex];
  			const id = partial?.type === "toolCall" ? partial.id : "";
-@@ -1633,6 +1649,7 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
+@@ -1644,6 +1660,7 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
  			break;
  		}
  		case "toolcall_end":
@@ -94,7 +94,7 @@ index f0836c2..f4043f7 100644
  			if (event.toolCall.argumentsError !== void 0) {
  				argumentsError ??= `Tool call "${event.toolCall.name}": ${event.toolCall.argumentsError}`;
  				break;
-@@ -1648,18 +1665,20 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
+@@ -1659,18 +1676,20 @@ async function* toStreamChunks(events, contextWindow, callerSignal, requestedMod
  				}
  			};
  			break;
@@ -111,16 +111,16 @@ index f0836c2..f4043f7 100644
  			yield {
  				type: "finish",
 -				reason: mapStopReason(event.message, contextWindow),
--				replayState: toPiReplayState(event.message, requestedModel)
+-				replayState: toPiReplayState(event.message, requestedModel, prefixDigest)
 +				reason: mapStopReason(message, contextWindow),
-+				replayState: toPiReplayState(message, requestedModel)
++				replayState: toPiReplayState(message, requestedModel, prefixDigest)
  			};
  			return;
 +		}
  		case "error":
  			yield {
  				type: "usage",
-@@ -1857,6 +1876,7 @@ function requestHeaders(configured, options, baseURL, prepare) {
+@@ -1965,6 +1984,7 @@ function requestHeaders(configured, options, baseURL, prepare) {
  		});
  		const headers = prepare === void 0 ? initial : prepare(request, initial);
  		for (const [name, value] of Object.entries(attributionHeaders())) headers.set(name, value);
@@ -128,7 +128,7 @@ index f0836c2..f4043f7 100644
  		return Object.fromEntries(headers);
  	} catch (error) {
  		throw new LlmError(`pi-ai request header preparation failed for provider "${options.provider}": ${requestHeaderDiagnostic(error)}`, "REQUEST_HEADERS", { cause: error });
-@@ -2371,7 +2391,64 @@ async function readBounded(response, url) {
+@@ -2497,7 +2517,64 @@ async function readBounded(response, url) {
  * a working endpoint's catalog. Missing names fall back to the adopted id so
  * the Web form receives a complete human-readable row.
  */
@@ -194,7 +194,7 @@ index f0836c2..f4043f7 100644
  	const listing = body;
  	const data = listing?.data;
  	let listed;
-@@ -2386,6 +2463,7 @@ function readListing(body) {
+@@ -2512,6 +2589,7 @@ function readListing(body) {
  	}
  	const models = [];
  	for (const { key, raw } of listed) {
@@ -202,7 +202,7 @@ index f0836c2..f4043f7 100644
  		const entry = raw;
  		const id = label(key, entry?.id);
  		if (id === void 0) continue;
-@@ -2396,7 +2474,8 @@ function readListing(body) {
+@@ -2522,7 +2600,8 @@ function readListing(body) {
  			id,
  			name,
  			...contextWindow === void 0 ? {} : { contextWindow },
@@ -212,7 +212,7 @@ index f0836c2..f4043f7 100644
  		});
  	}
  	return models;
-@@ -2432,7 +2511,8 @@ async function discoverModels(request, storedProfile) {
+@@ -2586,7 +2665,8 @@ async function discoverModels(request, storedProfile) {
  			name: model.name,
  			contextWindow: model.contextWindow,
  			maxTokens: model.maxTokens,
@@ -222,12 +222,3 @@ index f0836c2..f4043f7 100644
  		}));
  	}
  	if (request.baseURL === void 0 || request.baseURL.length === 0) throw new LlmError(`pi-ai ships no catalog for provider "${request.provider ?? ""}", so its models can only come from its endpoint; set a baseURL, or enter this provider's models by hand`, "DISCOVERY_FAILED");
-@@ -2474,7 +2554,7 @@ async function discoverModels(request, storedProfile) {
- 	} catch (error) {
- 		throw new LlmError(`${url} did not answer with JSON`, "DISCOVERY_FAILED", { cause: error });
- 	}
--	return readListing(body);
-+	return readListing(body, api);
- }
- //#endregion
- //#region lib/types/login.js

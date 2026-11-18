@@ -9,6 +9,8 @@ export interface DesktopMenuItem {
   role?: string
   enabled?: boolean
   accelerator?: string
+  visible?: boolean
+  acceleratorWorksWhenHidden?: boolean
   submenu?: DesktopMenuItem[]
   click?: () => void
 }
@@ -138,6 +140,9 @@ export function buildDarwinDesktopMenu(options: {
         { role: 'cut', label: standard.cut },
         { role: 'copy', label: standard.copy },
         { role: 'paste', label: standard.paste },
+        // Electron 44's default Edit menu binds Paste and Match Style to the wrong chord (#7782).
+        { role: 'pasteAndMatchStyle', accelerator: 'Shift+Command+V' },
+        { role: 'pasteAndMatchStyle', accelerator: 'Option+Shift+Command+V', visible: false, acceleratorWorksWhenHidden: true },
         { role: 'selectAll', label: standard.selectAll }
       ]
     },

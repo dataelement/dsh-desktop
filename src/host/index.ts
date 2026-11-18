@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { PluginOperationRunId } from '@deepseek-ai/dsh-plugin-manager/diagnostic'
 import { localDragResource } from './file-drag'
 import { installOperationDiagnostics } from './operation-diagnostics'
-import { pluginOperationHost } from './upstream-api'
+import { enabledPluginIds, pluginOperationHost } from './upstream-api'
 import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerOfficeEngineResolution } from '../../build/office-engine-resolution.mjs'
@@ -26,6 +26,10 @@ async function main(): Promise<void> {
   if (runtimeDir === undefined || projectDir === undefined) {
     throw new Error('dsh desktop host: runtime and project directories are required')
   }
+  // argv[4] is the desktop primary runtime. The default composition reads
+  // DSH_PRIMARY_RUNTIME while the profile is evaluated; setting it later leaves
+  // the bundled Python disabled.
+  process.env.DSH_PRIMARY_RUNTIME = process.argv[4] || join(runtimeDir, '..', 'runtime', 'primary-runtime')
   // The packaged engine is spawned by the OS, so it has to resolve under
   // app.asar.unpacked. This path only supplies the archive depth; bin.js is
   // not executed. Outside a package the registration does nothing.
@@ -107,7 +111,9 @@ async function main(): Promise<void> {
   sendIpc({
     type: 'ready',
     url,
-    injections: ctx.webServer.collectIndexInjections(ctx.connection.browserPeer)
+    injections: ctx.webServer.collectIndexInjections(ctx.connection.browserPeer),
+    // Named Loader ids, with anonymous ids replaced by their module name.
+    enabledPlugins: await enabledPluginIds(ctx)
   })
 }
 

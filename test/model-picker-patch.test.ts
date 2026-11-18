@@ -21,21 +21,21 @@ describe('DSH Desktop available-model picker', () => {
   it('ships one state-driven select-all toggle', async () => {
     const client = await readFile(settingsModelsClient, 'utf8')
 
-    expect(client).toContain('const allVisibleCandidatesPicked =')
-    expect(client).toContain('visibleCandidates.every((candidate) => isPicked(candidate.id))')
+    expect(client).toContain('const allVisibleCandidatesPicked=')
+    expect(client).toContain('visibleCandidates.every(candidate=>isPicked(candidate.id))')
     expect(client).toContain(
-      'children: t(allVisibleCandidatesPicked ? "fetchDeselectAll" : "fetchSelectAll")'
+      'children:t(allVisibleCandidatesPicked?`fetchDeselectAll`:`fetchSelectAll`)'
     )
-    expect(client).toContain('const toggleVisibleCandidates =')
+    expect(client).toContain('const toggleVisibleCandidates=')
   })
 
   it('includes English and Chinese copy for both toggle states', async () => {
     const client = await readFile(settingsModelsClient, 'utf8')
 
-    expect(client).toContain('fetchSelectAll: "Select all"')
-    expect(client).toContain('fetchDeselectAll: "Deselect all"')
-    expect(client).toContain('fetchSelectAll: "全选"')
-    expect(client).toContain('fetchDeselectAll: "取消全选"')
+    expect(client).toContain('fetchSelectAll:`Select all`')
+    expect(client).toContain('fetchDeselectAll:`Deselect all`')
+    expect(client).toContain('fetchSelectAll:`全选`')
+    expect(client).toContain('fetchDeselectAll:`取消全选`')
   })
 
   it('leaves the toggle to Harness rather than re-patching it', async () => {
