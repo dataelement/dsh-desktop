@@ -377,6 +377,13 @@ const DISABLED_PRODUCT_IDS = [
   'include:ui-brand-official'
 ]
 
+// dsh-base enables pwsh-sandbox on Windows and bash-sandbox on other platforms.
+// The snapshots keep bash-sandbox in sorted order; substitute before comparing.
+function expectedEnabledPlugins(plugins: readonly string[], platform = process.platform): string[] {
+  const shellSandbox = platform === 'win32' ? 'include:pwsh-sandbox' : 'include:bash-sandbox'
+  return plugins.map(id => id === 'include:bash-sandbox' ? shellSandbox : id).sort()
+}
+
 function expectEnabledBoundaries(ids: readonly string[] | undefined, mode: 'desktop' | 'safe'): void {
   expect(ids, 'Host did not report enabled plugins').toBeDefined()
   if (ids === undefined) return
@@ -397,6 +404,20 @@ const temporary: string[] = []
 
 afterEach(async () => {
   await Promise.all(temporary.splice(0).map(path => rm(path, { recursive: true, force: true })))
+})
+
+it('keeps one shell sandbox in sorted order for each platform', () => {
+  for (const plugins of [DESKTOP_ENABLED_PLUGINS, SAFE_MODE_ENABLED_PLUGINS]) {
+    const posix = expectedEnabledPlugins(plugins, 'darwin')
+    const windows = expectedEnabledPlugins(plugins, 'win32')
+    expect(posix).toContain('include:bash-sandbox')
+    expect(posix).not.toContain('include:pwsh-sandbox')
+    expect(windows).toContain('include:pwsh-sandbox')
+    expect(windows).not.toContain('include:bash-sandbox')
+    expect(windows.indexOf('include:pwsh-sandbox')).toBe(windows.indexOf('include:ptc-runtime') + 1)
+    expect(posix).toEqual([...posix].sort())
+    expect(windows).toEqual([...windows].sort())
+  }
 })
 
 it('boots runProfile on a temporary home and redirects the authenticated document', async () => {
@@ -436,7 +457,7 @@ it('boots runProfile on a temporary home and redirects the authenticated documen
     expect(injections).toContain('dsh-desktop-office')
     expect(injections).toContain('dsh-ppt-composer')
     expectEnabledBoundaries(ready.enabledPlugins, 'desktop')
-    expect(ready.enabledPlugins).toEqual(DESKTOP_ENABLED_PLUGINS)
+    expect(ready.enabledPlugins).toEqual(expectedEnabledPlugins(DESKTOP_ENABLED_PLUGINS))
   } finally {
     await host.stop()
   }
@@ -467,7 +488,7 @@ it('boots safe mode without creating the shared profile modules directory', asyn
     expect(injections).not.toContain('dsh-desktop-office')
     expect(injections).not.toContain('dsh-ppt-composer')
     expectEnabledBoundaries(ready.enabledPlugins, 'safe')
-    expect(ready.enabledPlugins).toEqual(SAFE_MODE_ENABLED_PLUGINS)
+    expect(ready.enabledPlugins).toEqual(expectedEnabledPlugins(SAFE_MODE_ENABLED_PLUGINS))
   } finally {
     await host.stop()
   }
