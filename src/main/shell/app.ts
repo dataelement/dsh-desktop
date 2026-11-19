@@ -8,7 +8,8 @@ import { DesktopStorageManager } from '../profile/desktop-storage'
 import { prepareGenerationsForLaunch } from '../profile/generation-launch'
 import { FATAL_REPORT_NAME, recordFatalFailure, redactFatalText } from '../recovery/fatal-entry'
 import { migrateWebProfile } from '../profile/profile-rename'
-import { initializeDesktopUpdateService } from '../desktop-service'
+import { desktopDiagnostics, initializeDesktopService } from '../desktop-service'
+import { emptyGpuExitContext, type GpuExitContext } from '../gpu-fallback'
 import { appBundlePathFromExecutable, quarantineAppBundleLaunchAgents } from '../desktop-service/launch-agent-audit'
 import { DESKTOP_SCHEME, installDesktopProtocol } from '../desktop-protocol'
 import { normalRelaunchArguments, relaunchArguments, shouldStartInSafeMode } from '../safe-mode'
@@ -42,6 +43,8 @@ import { buildWebImportViewModel } from '../web-import-view'
 import { DesktopBackendController } from './backend/backend-controller'
 import { DesktopBootSession, retainDesktopBoot } from './backend/boot-session'
 import { DesktopHostFatalError, DesktopHostProcess } from './backend/host-process'
+import { crashUploadProfile, createCrashUpload } from './crash-upload'
+import { HarnessLog } from './harness-log'
 import { continueAfterHostStartup, createHostFailureIntake } from './host-failure-intake'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './backend/login-shell-environment'
 import { attachDesktopStorage } from './desktop-storage-bridge'
@@ -189,6 +192,17 @@ function configureDesktopIdentity(): void {
 configureDesktopIdentity()
 app.setAppLogsPath()
 applyPersistedGpuFallback(app.getPath('userData'), app.commandLine, () => { app.disableHardwareAcceleration() })
+
+// Attach before app.whenReady so a main-process exception during startup is queued.
+// Every packaged build reports, including dshDesktopChannel=development. Unpackaged dev does not.
+let readGpuExitContext: () => GpuExitContext = () => emptyGpuExitContext()
+let reportStartupFailure: (error: unknown) => void = () => {}
+const desktopInstanceOwned = app.requestSingleInstanceLock()
+if (!desktopInstanceOwned) {
+  app.quit()
+} else if (app.isPackaged) {
+  initializeDesktopService({ getExitContext: () => readGpuExitContext() })
+}
 
 let quitting = false
 let pageRecovery: PageRecovery | undefined
@@ -347,6 +361,14 @@ function createWindow(
       additionalArguments: [...extraArguments]
     }
   })
+  if (process.platform === 'darwin') {
+    const notifyFullscreen = (): void => {
+      window.webContents.send(DESKTOP_IPC.windowFullscreen, window.isFullScreen())
+    }
+    window.on('enter-full-screen', notifyFullscreen)
+    window.on('leave-full-screen', notifyFullscreen)
+    window.webContents.on('did-finish-load', notifyFullscreen)
+  }
   window.on('page-title-updated', event => {
     event.preventDefault()
     window.setTitle(app.getName())
@@ -496,10 +518,25 @@ async function savedDesktopMenuLocale(
 }
 
 async function main(): Promise<void> {
-  if (!app.requestSingleInstanceLock()) {
-    app.quit()
-    return
-  }
+  if (!desktopInstanceOwned) return
+  const harnessLog = new HarnessLog(join(app.getPath('logs'), 'harness.log'))
+  const crashUpload = createCrashUpload({
+    diagnostics: () => desktopDiagnostics,
+    flushLog: () => harnessLog.flush(),
+    pluginNames: async (message, diagnostic) => {
+      const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
+      const installed = await listInstalledProfilePlugins(harnessHome(), crashUploadProfile(safeMode)).catch((error: unknown) => {
+        console.error(error)
+        return []
+      })
+      return startupRecoveryTargets(message, installed, diagnostic)
+    },
+    preserveFailureLog: diagnostic => {
+      harnessLog.finishProcessOutput()
+      if (diagnostic.length > 0) harnessLog.noteHostDiagnostic(diagnostic)
+    }
+  })
+  reportStartupFailure = error => { crashUpload.startupFailed(error) }
   await app.whenReady()
   // Cocoa has already consumed its argument domain. A saved choice therefore
   // needs one fresh process on a Dock/Finder launch, not a late --lang switch.
@@ -526,10 +563,6 @@ async function main(): Promise<void> {
       console.warn('[native-locale] unable to calibrate language; continuing', error)
     }
   }
-  // User data is already selected. A locale relaunch returns above, so this
-  // process does not create the service and then exit. Development packages
-  // stay without an update service; only the official package asks the policy.
-  if (app.isPackaged && !desktopDevelopmentBuild()) initializeDesktopUpdateService()
   // Only the final GUI process starts shell discovery and the Host.
   const loginShellAbort = new AbortController()
   const loginShell = readDesktopLoginShellEnvironment(
@@ -608,12 +641,18 @@ async function main(): Promise<void> {
     userData: app.getPath('userData'),
     quitting: () => quitting,
     locale: () => legacyLocale(menuLocale),
-    note: line => { console.error(line) },
+    note: line => {
+      console.error(line)
+      harnessLog.note(line)
+    },
     stopHost: () => stopRecoveredHost(),
     releasePage: () => releaseRecoveredPage(),
     showMessageBox: options => window.isDestroyed() ? dialog.showMessageBox(options) : dialog.showMessageBox(window, options),
     flushDiagnostics: async () => { await activeOperationJournal?.drain(500) },
-    relaunch: () => { app.relaunch({ args: clearNativeLocaleAttempt(process.argv).slice(1) }) },
+    relaunch: () => {
+      crashUpload.markCleanExit()
+      app.relaunch({ args: clearNativeLocaleAttempt(process.argv).slice(1) })
+    },
     quit: () => { app.quit() },
     probePage: async () => {
       const contents = window.webContents
@@ -621,13 +660,18 @@ async function main(): Promise<void> {
       return await contents.executeJavaScript('document.readyState === "complete" && document.body !== null') === true
     }
   })
+  readGpuExitContext = () => stability.processRecovery.exitContext
   stability.attachProcessWatch(app)
+  window.on('session-end', () => { crashUpload.markCleanExit() })
   app.on('child-process-gone', (_event, details) => {
     stability.handleGpuProcess({ type: details.type, reason: details.reason, exitCode: details.exitCode })
   })
   pageRecovery = attachMainWindowRecovery(window, stability, {
     onError: error => { stability.processRecovery.start('window') },
-    note: line => { console.error(line) }
+    note: line => {
+      console.error(line)
+      harnessLog.note(line)
+    }
   })
   const showMainWindow = (): void => {
     if (window.isDestroyed()) return
@@ -744,6 +788,7 @@ async function main(): Promise<void> {
     }
     const diagnostic = error instanceof DesktopHostFatalError ? error.diagnostic ?? '' : ''
     const plugins = startupRecoveryTargets(message, await listInstalledProfilePlugins(dshHome, DESKTOP_PROFILE), diagnostic)
+    harnessLog.note(`[desktop] plugin recovery detection: ${plugins.length > 0 ? plugins.join(', ') : 'unresolved'}`)
     if (plugins.length === 0 || owner.isDestroyed()) return false
     await persistCrashReport(error, 'host')
     const locale = legacyLocale(menuLocale)
@@ -904,11 +949,21 @@ async function main(): Promise<void> {
       },
       primaryRuntime,
       onFailure,
+      onOutput: (source, chunk) => { harnessLog.writeProcessOutput(source, chunk) },
+      onProcessExit: (code, signal) => {
+        harnessLog.finishProcessOutput()
+        harnessLog.note(`[node] Harness process exited (code ${String(code)}, signal ${String(signal)})`)
+      },
       onPluginOperation: record => { operationJournal.enqueue(JSON.stringify(record)) }
     })
     desktopHost = host
     return {
       start: async () => {
+        crashUpload.beginHostAttempt()
+        harnessLog.beginLaunch(safeMode ? 'safe-mode' : 'startup')
+        harnessLog.note(`[desktop] starting ${new Date().toISOString()}`)
+        harnessLog.note(`[desktop] profile ${safeMode ? SAFE_MODE_PROFILE : 'desktop'}`)
+        harnessLog.note(`[desktop] patch ${productPatch}`)
         const generation = bootSession.capture()
         const ready = await host.start()
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
@@ -921,7 +976,12 @@ async function main(): Promise<void> {
     }
   }, state => {
     retainDesktopBoot(bootSession, state.phase)
+    if (state.phase === 'ready') {
+      crashUpload.hostReady()
+      harnessLog.note('[desktop] Harness is ready')
+    }
     if (state.phase !== 'error' || quitting) return
+    void crashUpload.reportHostFailure(state.failure).catch((error: unknown) => { console.error(error) })
     hostFailures.enqueue(state.failure)
   })
   const disposeFileDrag = installDesktopFileDrag(event => {
@@ -931,6 +991,7 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['app'])
     return window
   }, (address, signal) => desktopHost?.resolveDragResource(address, signal) ?? Promise.resolve(null))
+  crashUpload.startSending()
   const startup = backend.start(async () => {
     const result = await loginShell
     hostEnvironment = result.environment
@@ -1322,6 +1383,7 @@ async function main(): Promise<void> {
     if (typeof message !== 'string' || message.length === 0 || message.length > 4_000) {
       throw new Error('dsh desktop: startup failure must be text')
     }
+    crashUpload.discardPendingPluginFailure()
     void reportFatal(new Error(message), 'web-boot')
   })
   ipcMain.handle(PLATFORM_IPC.open, (event, page: unknown, bounds: unknown) => {
@@ -1364,6 +1426,7 @@ async function main(): Promise<void> {
     startUpdateManager({
       canCheckAutomatically: () => hostReady && !quitting && !safeMode,
       prepareToInstall: async () => {
+        crashUpload.markCleanExit()
         quitting = true
         await backend.stop()
         const bundle = appBundlePathFromExecutable(process.execPath)
@@ -1583,5 +1646,6 @@ async function main(): Promise<void> {
 
 void main().catch((error: unknown) => {
   console.error(error)
+  reportStartupFailure(error)
   void reportFatal(error, 'main').finally(() => { app.exit(1) })
 })

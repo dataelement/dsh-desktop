@@ -22,7 +22,8 @@
     "react": "^19.2.0",
     "@deepseek-ai/dsh-client-connection": "0.2.2-rc.1 || 0.2.2-rc.4 || 0.2.2-rc.5",
     "@deepseek-ai/dsh-client-locale": "0.2.2-rc.1 || 0.2.2-rc.4 || 0.2.2-rc.5",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.1 || 0.2.2-rc.4 || 0.2.2-rc.5"
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.1 || 0.2.2-rc.4 || 0.2.2-rc.5",
+    "dsh-desktop-client-ui": "0.1.0"
   },
   "dsh": {
     "client": {
@@ -30,7 +31,8 @@
       "inject": [
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "dsh-desktop-client-ui"
       ]
     }
   }
