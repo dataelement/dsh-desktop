@@ -98,7 +98,7 @@ it('opens a conversation with an unsent draft and leaves active workbench mode',
   ui.service.state.active = 'existing-workbench'
   await act(async () => ui.button('Install in a conversation').click())
   expect(ui.service.leave).toHaveBeenCalledOnce()
-  expect(ui.ctx.uiWorkspace.startSession).toHaveBeenCalledWith('workspace-1', expect.objectContaining({ whenDraftExists: 'append', prompt: expect.stringContaining('I want to install a workbench.') }))
+  expect(ui.ctx.uiWorkspace.startSession).toHaveBeenCalledWith('workspace-1', expect.objectContaining({ whenDraftExists: 'replace', prompt: expect.stringContaining('I want to install a workbench.') }))
   const { prompt } = ui.ctx.uiWorkspace.startSession.mock.calls[0][1]
   expect(prompt).toContain('Ask one necessary question at a time and wait for my answer')
   expect(prompt).toContain('try one main operation')
@@ -107,13 +107,40 @@ it('opens a conversation with an unsent draft and leaves active workbench mode',
   expect(ui.ctx.layout.selectPanel.mock.invocationCallOrder[0]).toBeLessThan(ui.ctx.uiWorkspace.startSession.mock.invocationCallOrder[0])
   expect(ui.manager.installBundle).not.toHaveBeenCalled()
 })
+it.each(['zh', 'en'])('replaces an existing input draft without sending or accumulating instructions (%s)', async language => {
+  const ui = await mount(language)
+  const inputSource = await readFile(new URL('../node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js', import.meta.url), 'utf8')
+  const start = inputSource.indexOf('requestDraftInitialization(options) {')
+  const end = inputSource.indexOf('\n\t\t\tdraftInitializationBlocked()', start)
+  if (start < 0 || end < 0) throw new Error('Check the installed input draft initialization API')
+  const initializeDraft = vm.runInNewContext(`({${inputSource.slice(start, end)}}).requestDraftInitialization`)
+  const state = { draft: 'Previous workbench instructions and unfinished prompt' }
+  const input = {
+    snapshot: state, attachmentIds: [], draftInitializationBlocked: () => false,
+    setDraft: vi.fn(text => { state.draft = text }),
+    draftEditor: { appendDraft: vi.fn(text => { state.draft += '\n' + text }) },
+    submit: vi.fn()
+  }
+  ui.ctx.uiWorkspace.startSession.mockImplementation((_workspaceId, options) => initializeDraft.call(input, options))
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await ui.openMenu()
+    await act(async () => ui.button(language === 'zh' ? '通过会话安装' : 'Install in a conversation').click())
+    const { prompt } = ui.ctx.uiWorkspace.startSession.mock.calls.at(-1)[1]
+    expect(state.draft).toBe(prompt)
+    expect(state.draft).not.toContain('Previous workbench instructions')
+  }
+  expect(input.setDraft).toHaveBeenCalledTimes(2)
+  expect(input.draftEditor.appendDraft).not.toHaveBeenCalled()
+  expect(input.submit).not.toHaveBeenCalled()
+})
 it('prepares a default workspace so first use also carries the installation draft', async () => {
   const ui = await mount()
   ui.ctx.workspaces.list.getSnapshot = () => ({ items: [] })
   await ui.openMenu()
   await act(async () => ui.button('通过会话安装').click())
   expect(ui.ctx.workspaces.initializeDefault).toHaveBeenCalledOnce()
-  expect(ui.ctx.uiWorkspace.startSession).toHaveBeenCalledWith('default-workspace', expect.objectContaining({ whenDraftExists: 'append', prompt: expect.stringContaining('我想安装一个工作台') }))
+  expect(ui.ctx.uiWorkspace.startSession).toHaveBeenCalledWith('default-workspace', expect.objectContaining({ whenDraftExists: 'replace', prompt: expect.stringContaining('我想安装一个工作台') }))
   const { prompt } = ui.ctx.uiWorkspace.startSession.mock.calls[0][1]
   expect(prompt).toContain('每次只问一个影响下一步的必要问题，并等待我回答')
   expect(prompt).toContain('实际打开界面并试一次主要操作')
