@@ -16,11 +16,11 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
 @@ -116,6 +116,21 @@
-     "@deepseek-ai/dsh-experimental-forge-bundle": "0.2.2-rc.4",
-     "@deepseek-ai/dsh-deepseek-chat-import": "0.2.2-rc.4"
+     "@deepseek-ai/dsh-experimental-forge-bundle": "0.2.2-rc.5",
+     "@deepseek-ai/dsh-deepseek-chat-import": "0.2.2-rc.5"
    },
 +  "optionalDependencies": {
-+    "@deepseek-ai/dsh-deepseek-account": "0.2.2-rc.4",
++    "@deepseek-ai/dsh-deepseek-account": "0.2.2-rc.5",
 +    "dsh-ppt-composer": "0.1.1-rc.2",
 +    "dsh-desktop-client-ui": "0.1.0",
 +    "dsh-desktop-hmr-fallback": "0.1.0",
@@ -35,5 +35,5 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 +    "dsh-desktop-enterprise": "0.1.0"
 +  },
    "devDependencies": {
-     "@deepseek-ai/dsh-skill-badge": "0.2.2-rc.4",
-     "@deepseek-ai/dsh-webhook-github": "0.2.2-rc.4",
+     "@deepseek-ai/dsh-skill-badge": "0.2.2-rc.5",
+     "@deepseek-ai/dsh-webhook-github": "0.2.2-rc.5",
