@@ -14,7 +14,7 @@ Python 和 wheel 的固定 URL/SHA-256 来源：[上游固定提交的 primary-r
 
 当前锁定的 LibreOffice Kit 0.2.3 在 Linux 上优先探测开发用的 native glibc 引擎，没有安装兼容 native 包时使用它正式声明的 `wasm` 引擎；这不是调用系统 `soffice` 的兜底。其 worker 实现提供 PDF 转换、表格重算和图片渲染，但源码具有实现不等于目标机器已验收。发布包必须携带 `@deepseek-ai/libreoffice-kit-wasm` 的 loader / wasm / data / metadata，且与 native 引擎一样从 ASAR 外的物理目录解析。只携带 Python 不足以启用 Office/PPT 预览。`dsh-office-kit` 和 PPT 运行时解析到同一份 kit。
 
-LibreOffice Kit 0.2.3 的 API、CLI 和 editor，以及 `dsh-office-kit` 的引擎解析，仍用 `!== undefined` 判断安装目录。Electron 对 ASAR 中不存在的路径返回 `null`，普通 Node 返回 `undefined`。补丁 [libreoffice-kit](../patches/@deepseek-ai+libreoffice-kit+0.2.3.patch) 和 [dsh-office-kit](../patches/@deepseek-ai+dsh-office-kit+0.2.2-rc.4.patch) 改为 `!= null`。kit 补丁另外保留 `renderImages` 的第三参数 `onImage(image, pageCount)`：原生 PNG 写完并校验后通知，WASM 路径按结果顺序通知。上游同时处理 `null` 和逐页通知后可以去掉这些补丁。真实存在但丢失 package.json 的 native 目录、无效 manifest 仍须 fail closed 并保留原始 cause。
+LibreOffice Kit 0.2.3 的 API、CLI 和 editor，以及 `dsh-office-kit` 的引擎解析，仍用 `!== undefined` 判断安装目录。Electron 对 ASAR 中不存在的路径返回 `null`，普通 Node 返回 `undefined`。补丁 [libreoffice-kit](../patches/@deepseek-ai+libreoffice-kit+0.2.3.patch) 和 [dsh-office-kit](../patches/@deepseek-ai+dsh-office-kit+0.2.2-rc.5.patch) 改为 `!= null`。kit 补丁另外保留 `renderImages` 的第三参数 `onImage(image, pageCount)`：原生 PNG 写完并校验后通知，WASM 路径按结果顺序通知。上游同时处理 `null` 和逐页通知后可以去掉这些补丁。真实存在但丢失 package.json 的 native 目录、无效 manifest 仍须 fail closed 并保留原始 cause。
 
 [真实 ASAR 回归](../test/office-engine-asar.test.ts) 使用 Electron Node 模式、实际 kit 的 index.js / cli.js 两份 engine selection 源码及真实 ASAR 文件，覆盖未安装 native 时解析 unpacked WASM、损坏 native 目录、无效 native manifest；不替代完整 WASM 转换/PPT 门禁或重打包验收。该测试已登记 Windows serial；Windows 原生执行结果仍需独立验证。
 
