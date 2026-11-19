@@ -221,7 +221,7 @@ describe('uploaded file preview', () => {
       'utf8'
     )
 
-    expect(preview).toContain('renderSlot("sidebar.right.tab.document.unpreviewable", fileOwner)')
+    expect(preview).toContain('renderSlot(`sidebar.right.tab.document.unpreviewable`,fileOwner)')
     expect(desktop).toContain("ctx.slots.inject('sidebar.right.tab.document.unpreviewable'")
     expect(desktop).toContain("'data-textpreview-open-local': true")
     type Element = { props: Record<string, unknown>; children: Element[] }

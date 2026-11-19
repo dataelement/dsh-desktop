@@ -77,9 +77,15 @@ describe('assistant local path links', () => {
     expect(patch).toContain('presented.openFolder')
     expect(patch).toContain('在文件管理器中打开 {name}')
     // Upstream bails out of `forClosing` when the turn produced and presented
-    // nothing; the patch drops that guard so a mention still resolves against
-    // an empty deliverable set.
-    expect(patch).toContain('-\t\t\t\tif (paths === null && presented.length === 0) return void 0;')
+    // nothing. rc.4 ships that guard minified; the patch deletes it so a
+    // mention still resolves against an empty deliverable set.
+    const droppedGuard = patch
+      .split('\n')
+      .find(line => line.startsWith('-') && line.includes('if(paths===null&&presented.length===0)return void 0'))
+    expect(droppedGuard).toBeDefined()
+    expect(patch.split('\n').some(line =>
+      line.startsWith('+') && line.includes('if(paths===null&&presented.length===0)return void 0')
+    )).toBe(false)
     expect(primitives).toContain('mention.kind === "folder" ? "folder"')
     expect(primitives).toContain('kind?: "file" | "folder"')
     expect(chat).toContain('options?.revealInFileManager === true')

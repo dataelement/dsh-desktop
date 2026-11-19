@@ -178,7 +178,7 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
     const availableWidth = Math.max(0, bounds.width - 32), availableHeight = Math.max(0, bounds.height - 60)
     const paperHeight = spread ? Math.max(0, Math.min(availableHeight, Math.max(0, availableWidth - 16) / spreadRatio)) : 0
     const caption = page => [item.sheets?.find(sheet => sheet.pages.includes(page))?.name, t('pageNumber').replace('{page}', page)].filter(Boolean).join(' · ')
-    return h('dialog', { ref: dialog, className: 'dso-modal', 'data-spread': spread, tabIndex: -1, 'aria-modal': true, 'aria-label': titleOf(item, t), onCancel: event => { event.preventDefault(); if (!busy) close() },
+    return h('dialog', { ref: dialog, className: 'dso-modal', 'data-spread': spread, 'data-window-drag-exclude': true, tabIndex: -1, 'aria-modal': true, 'aria-label': titleOf(item, t), onCancel: event => { event.preventDefault(); if (!busy) close() },
       onClick: event => {
         if (event.target !== dialog.current || busy) return
         const rect = dialog.current.getBoundingClientRect()

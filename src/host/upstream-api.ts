@@ -1,5 +1,6 @@
 /** Version-sensitive Harness calls used by the desktop host. */
 import type { Context } from '@deepseek-ai/cordis'
+import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { SessionId, type SessionId as SessionIdentity } from '@deepseek-ai/dsh-session/types'
 
@@ -24,6 +25,17 @@ export function sessionDragAddress(address: string): { readonly sessionId: Sessi
   const parsed = parseFileAddress(address)
   if (parsed?.scope !== 'session') return undefined
   return { sessionId: SessionId(parsed.sessionId), path: parsed.path }
+}
+
+const UNSTABLE_ENTRY_ID = /^[0-9a-f]{8}$/u
+
+/** Enabled plugin ids after disabled expressions run. Anonymous Loader ids are replaced by their module name. */
+export async function enabledPluginIds(ctx: Context): Promise<string[]> {
+  const snapshot = await readPluginInventory(ctx)
+  return snapshot.entries.flatMap(entry => {
+    if (!entry.enabled) return []
+    return [UNSTABLE_ENTRY_ID.test(entry.entryId) ? entry.moduleName : entry.entryId]
+  }).sort()
 }
 
 /** The running profile context satisfies the diagnostic host surface. */

@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
-index 323d5acca5..12c39419f8 100644
+index 3aade0a..044271d 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
-@@ -540,6 +540,26 @@ var WorkspaceRegistry = class extends Service {
- 			if (options.stopActivity === true) await this.stopSessionActivity(sessionId);
+@@ -545,6 +545,26 @@ var WorkspaceRegistry = class extends Service {
+ 			}
  		});
  	}
 +	/** Remove a permanently deleted Session from Workspace and archive state. */
@@ -30,11 +30,11 @@ index 323d5acca5..12c39419f8 100644
  	* Unarchive one session durably by dropping it from the registry-global
  	* archive set; the accounting slot was never touched, so the session
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
-index 7da153b98e..f80242214e 100644
+index 7ab6c4e..f803ba3 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
-@@ -212,6 +212,8 @@ export declare class WorkspaceRegistry extends Service {
-      * @returns resolution after durability and, with `stopActivity`, after every stop request was issued.
+@@ -228,6 +228,8 @@ export declare class WorkspaceRegistry extends Service {
+      * @returns resolution after durability, any stop requests, and follow-up admission.
       */
      archiveSession(sessionId: SessionId, options?: ArchiveSessionOptions): Promise<void>;
 +    /** Remove a permanently deleted Session from Workspace and archive state. */
@@ -43,11 +43,11 @@ index 7da153b98e..f80242214e 100644
       * Unarchive one session durably by dropping it from the registry-global
       * archive set; the accounting slot was never touched, so the session
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
-index 86e46bfb98..c2695d2f64 100644
+index 6d837e0..eaa0c91 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
-@@ -303,6 +303,31 @@ export class WorkspaceRegistry extends Service {
-                 await this.stopSessionActivity(sessionId);
+@@ -309,6 +309,31 @@ export class WorkspaceRegistry extends Service {
+             }
          });
      }
 +    /** Remove a permanently deleted Session from Workspace and archive state. */

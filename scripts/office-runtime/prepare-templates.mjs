@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { electronExecutable } from '../verify/electron-node-loader.mjs'
 import { createTemplateLibrary } from '../../packages/dsh-desktop-office/lib/templates.js'
+import { templateOfficeFontOptions } from '../../packages/ppt-runtime/core/lib/office-font-options.js'
 
 const exec = promisify(execFile)
 const project = resolve(import.meta.dirname, '../..')
@@ -20,6 +21,25 @@ export const officeCliTimeoutMs = 30_000
 
 /** Fresh process after a hang. The same workbook then finishes on the next attempt. */
 export const officeCliAttempts = 3
+
+const fontOptionsPath = fileURLToPath(new URL('../../packages/ppt-runtime/core/lib/office-font-options.js', import.meta.url))
+
+/**
+ * Meeting minutes names Hiragino Sans GB W3. That face is installed on macOS.
+ * When it is absent, the Kit's default sans-serif group ranks Arial ahead of
+ * CJK faces, so the missing family is replaced by a Latin font and the title
+ * loses simplified Chinese glyphs. Keep the exact face first: an installed
+ * copy still wins. Do not insert the unweighted Hiragino Sans GB alias; the
+ * macOS engine matches that name to Japanese Hiragino Sans.
+ */
+export const officePreviewFontFallbacks = [
+  ['Hiragino Sans GB W3', 'Microsoft YaHei', 'Microsoft YaHei UI', '微软雅黑', 'PingFang SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Source Han Sans SC', 'SimHei', '黑体', 'SimSun', 'NSimSun', '宋体'],
+  ...templateOfficeFontOptions.fontFallbacks,
+]
+
+export function officePreviewFontArgs() {
+  return ['--font-fallbacks', JSON.stringify(officePreviewFontFallbacks)]
+}
 
 /** Electron startup happens before the Kit timer, so the process limit is longer than 30s. */
 export function officeCliCommand(executable, script, args, timeoutMs = officeCliTimeoutMs) {
@@ -68,7 +88,8 @@ export async function prepareOfficeTemplates({ runtime = join(project, '.build/o
   const inputs = await files(sources)
   const fingerprint = hash(Buffer.concat([
     Buffer.from(JSON.stringify({ format: 1, python: manifest.python, kit: kit.version })),
-    await readFile(fileURLToPath(import.meta.url)), await readFile(join(import.meta.dirname, 'normalize-package.py')),
+    await readFile(fileURLToPath(import.meta.url)), await readFile(fontOptionsPath),
+    await readFile(join(import.meta.dirname, 'normalize-package.py')),
     await readFile(join(import.meta.dirname, 'check-templates.py')),
     ...await Promise.all(inputs.map(async path => Buffer.concat([Buffer.from(path), await readFile(join(sources, path))])))
   ]))
@@ -92,7 +113,7 @@ export async function prepareOfficeTemplates({ runtime = join(project, '.build/o
         const produced = outputFlag >= 0 ? args[outputFlag + 1] : directoryFlag >= 0 ? args[directoryFlag + 1] : undefined
         // A timed-out helper may leave the exclusive output behind; the next call opens it with wx.
         if (produced) await rm(produced, { recursive: true, force: true })
-        const command = officeCliCommand(electronExecutable(project), join(project, 'build/office-cli.mjs'), args)
+        const command = officeCliCommand(electronExecutable(project), join(project, 'build/office-cli.mjs'), [...args, ...officePreviewFontArgs()])
         const { stdout } = await exec(command.file, command.args,
           { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: command.timeout, maxBuffer: 4 * 1024 * 1024, windowsHide: true })
         return JSON.parse(stdout.trim())
@@ -138,6 +159,7 @@ export async function prepareOfficeTemplates({ runtime = join(project, '.build/o
         const revisions = Object.fromEntries(await Promise.all((await files(directory)).map(async file => [file, hash(await readFile(join(directory, file)))])))
         catalog.push({ ...item, sampleFile, pages: images.length, pageAspectRatios: images.map(x => x.width / x.height),
           ...(sheets.length ? { sheets } : {}), missingFonts: [...missingFonts], revision: hash(Buffer.from(JSON.stringify(revisions))).slice(0, 24), files: revisions })
+        if (missingFonts.size) console.log(`Office missing fonts: ${item.id}: ${[...missingFonts].join(', ')}`)
         console.log(`Office example: ${item.id}, ${images.length} pages`)
       }
       for (const entry of await readdir(staging)) {

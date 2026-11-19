@@ -62,19 +62,22 @@ export function checkBaseline(baseline, { lockVersion, root }) {
 }
 
 export function diffReport(before, after, baseline) {
-  const registered = new Set([
-    ...baseline.modules.flatMap(module => module.upstream),
-    ...baseline.skipped
-  ])
+  const moduleFiles = new Set(baseline.modules.flatMap(module => module.upstream))
+  const skipped = new Set(baseline.skipped)
+  const registered = new Set([...moduleFiles, ...skipped])
   const unregistered = [...after.keys()]
     .filter(file => !before.has(file) && !registered.has(file))
     .sort()
+  const changedUnregistered = [...after.keys()]
+    .filter(file => before.has(file) && before.get(file) !== after.get(file) && !moduleFiles.has(file) && !skipped.has(file))
+    .sort()
+  const missingSkipped = [...skipped].filter(file => !after.has(file)).sort()
   const changes = []
   for (const module of baseline.modules) {
     const files = module.upstream.filter(file => before.get(file) !== after.get(file))
     if (files.length > 0) changes.push({ path: module.path, files })
   }
-  return { changes, unregistered }
+  return { changes, unregistered, changedUnregistered, missingSkipped }
 }
 
 export function isUpstreamDesktopSource(file) {

@@ -141,8 +141,16 @@ describe('settings provider editor sticky actions', () => {
 
     expect(client).toContain('.dshProviderEditorStickyFooter{')
     expect(client).toContain('position:sticky;bottom:-24px')
+    expect(client).toContain('align-items:center')
+    expect(client).toContain('.dshProviderEditorExpanded{padding-bottom:72px}')
+    expect(client).toContain('margin-bottom:-72px')
     expect(client).toContain(
-      '.dshProviderEditorExpanded .qy-_KG_customizedBody{padding-bottom:72px}'
+      '.dshProviderEditorStickyFooter{z-index:4;position:sticky;bottom:-24px;display:flex;align-items:center;gap:8px;box-sizing:border-box;margin-bottom:-72px;padding:8px 0;background:transparent}'
+    )
+    expect(client).toContain('height:36px')
+    expect(client).toContain('background:var(--dsw-alias-bg-layer-1)')
+    expect(client).toContain(
+      '.dshProviderEditorStickyFooter>button,.dshProviderEditorStickyFooter>div>button:first-child{'
     )
     expect(client).toContain('" dshProviderEditorExpanded"')
     expect(client).toContain(
@@ -166,6 +174,16 @@ describe('settings provider editor sticky actions', () => {
     )
     expect(patch).toContain('onModelQueryChange: setModelQuery')
     expect(patch).toContain('dshProviderEditorStickyFooter')
+    expect(patch).toContain('.dshProviderEditorExpanded{padding-bottom:72px}')
+    expect(patch).toContain('margin-bottom:-72px')
+    expect(patch).toContain(
+      '.dshProviderEditorStickyFooter{z-index:4;position:sticky;bottom:-24px;display:flex;align-items:center;gap:8px;box-sizing:border-box;margin-bottom:-72px;padding:8px 0;background:transparent}'
+    )
+    expect(patch).toContain('align-items:center')
+    expect(patch).toContain('background:var(--dsw-alias-bg-layer-1)')
+    expect(patch).not.toContain(
+      '.dshProviderEditorExpanded .qy-_KG_customizedBody{padding-bottom:72px}'
+    )
     expect(patch).toContain('onClick: addModel')
     expect(patch).toContain(
       'setModels((current) => [...current.map((model) => ({ ...model })), { id: "" }])'

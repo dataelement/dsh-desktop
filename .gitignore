@@ -30,6 +30,7 @@ __pycache__/
 docs/plugin-management.zh.md
 docs/default-capabilities.zh.md
 docs/mobile-connection-latency.zh.md
+docs/history/harness-0.2.2-rc.4-rc.5-test-cases.md
 
 # Local pnpm content store
 /.pnpm-store/

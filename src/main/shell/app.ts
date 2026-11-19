@@ -89,7 +89,7 @@ import { applyRepairNavigation, safeModeRepairPrompt, sidebarRepairPrompt } from
 import { runSafeModeManager } from './safe-mode-manager'
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME, assertDesktopSender } from './window/ipc'
 import { DesktopPlatformView, platformBounds } from './window/platform-view'
-import { authenticateWebHost, dispatchAppDocument } from './window/web-document'
+import { authenticateWebHost, dispatchAppDocument, removeLegacyHostCookies } from './window/web-document'
 import { desktopFileUrl } from '../desktop-navigation'
 import {
   applyPersistedGpuFallback,
@@ -314,8 +314,7 @@ function officeEnvironment(primaryRuntime: string): Record<string, string> {
   const office = officeLaunchPaths(primaryRuntime)
   if (office === undefined) return {}
   return {
-    DSH_DESKTOP_OFFICE_RESOURCES: office.resources,
-    DSH_DESKTOP_OFFICE_CLI: office.cli
+    DSH_DESKTOP_OFFICE_RESOURCES: office.resources
   }
 }
 
@@ -969,6 +968,8 @@ async function main(): Promise<void> {
         const ready = await host.start()
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
         const cookie = await authenticateWebHost(ready.url)
+        void removeLegacyHostCookies(session.defaultSession.cookies, ready.url)
+          .catch((error: unknown) => { console.error('desktop: legacy Host cookie cleanup failed', error) })
         bootSession.publish(generation, { url: ready.url, injections: ready.injections, cookie })
       },
       stop: () => host.stop()

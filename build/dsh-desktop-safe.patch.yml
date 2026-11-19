@@ -14,6 +14,8 @@
 # Match the normal Desktop settings/model setup during recovery.
 - id: ui-settings-account
   disabled: true
+- id: ui-account-notifications
+  disabled: true
 
 - id: agent-default-model
   disabled: false

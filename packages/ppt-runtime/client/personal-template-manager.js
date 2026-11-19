@@ -122,7 +122,7 @@ function TemplatePreviewCard({ template, selected, choose, client, t }) {
       h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true },
         h('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z' }),
         h('circle', { cx: 12, cy: 12, r: 3 }))),
-    open && h('dialog', { ref: dialog, className: 'ppt-template-viewer', 'aria-labelledby': titleId,
+    open && h('dialog', { ref: dialog, className: 'ppt-template-viewer', 'data-window-drag-exclude': true, 'aria-labelledby': titleId,
       onCancel: event => { event.preventDefault(); setOpen(false); },
       onClick: event => {
         if (event.target !== event.currentTarget) return;
@@ -467,7 +467,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
           h('button', { type: 'button', disabled: busy, title: t('personal.edit'), 'aria-label': t('personal.edit'), onClick: () => openEditor(template) }, icon('rename')),
           h('button', { type: 'button', disabled: busy, title: t('personal.delete'), 'aria-label': t('personal.delete'), onClick: () => { setError(''); setDeleting(template.id); setEditing(null); } }, icon('delete')))))),
       ...builtInCards),
-    h('dialog', { ref: dialog, className: `personal-dialog${importing ? ' personal-upload' : ''}`, 'aria-labelledby': `${dialogId}-title`, 'aria-modal': true,
+    h('dialog', { ref: dialog, className: `personal-dialog${importing ? ' personal-upload' : ''}`, 'data-window-drag-exclude': true, 'aria-labelledby': `${dialogId}-title`, 'aria-modal': true,
       onCancel: event => { event.preventDefault(); closeModal(); },
       onKeyDown: event => {
         if (event.key !== 'Tab') return;

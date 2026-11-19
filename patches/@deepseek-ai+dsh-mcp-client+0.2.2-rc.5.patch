@@ -1,0 +1,151 @@
+diff --git a/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js b/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+index c66cba6..2c466c4 100644
+--- a/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+@@ -148,7 +148,7 @@ var McpGeneration = class {
+ 	* @param timeoutMs - remaining operation budget; undefined leaves the SDK default.
+ 	* @returns completion of negotiation, or cancellation/deadline rejection.
+ 	*/
+-	connect(config, timeoutMs) {
++	connect(config, timeoutMs, timeoutMessage) {
+ 		this.lifetime.signal.throwIfAborted();
+ 		const transport = this.transport = createTransport(config);
+ 		const close = transport.close.bind(transport);
+@@ -170,7 +170,7 @@ var McpGeneration = class {
+ 				...timeoutMs === void 0 ? {} : { timeout: Math.max(1, timeoutMs) }
+ 			});
+ 			this.assertOpen();
+-		}, timeoutMs);
++		}, timeoutMs, timeoutMessage);
+ 	}
+ 	/** Reject when this generation was cancelled or its transport reported closure. */
+ 	assertOpen() {
+@@ -183,7 +183,7 @@ var McpGeneration = class {
+ 	* @param timeoutMs - optional caller deadline in milliseconds; does not cancel the work.
+ 	* @returns the operation's result, or a cancellation/deadline rejection.
+ 	*/
+-	run(operation, timeoutMs) {
++	run(operation, timeoutMs, timeoutMessage) {
+ 		const signal = this.lifetime.signal;
+ 		const task = Promise.resolve().then(() => {
+ 			signal.throwIfAborted();
+@@ -201,7 +201,7 @@ var McpGeneration = class {
+ 				signal.removeEventListener("abort", abort);
+ 			});
+ 		});
+-		return timeoutMs === void 0 ? interrupted : withDeadline(interrupted, timeoutMs, "MCP operation timed out");
++		return timeoutMs === void 0 ? interrupted : withDeadline(interrupted, timeoutMs, timeoutMessage ?? "MCP operation timed out");
+ 	}
+ 	/**
+ 	* Cancel callers, close the transport, and await owned work within the cleanup budget.
+@@ -896,6 +896,7 @@ function startConnection(ctx, config, policy, status) {
+ 		}
+ 		return closureFailure === void 0;
+ 	}
++	let startupSyncs = null;
+ 	function enqueueSync(record) {
+ 		const run = syncChain.then(async () => {
+ 			if (!isCurrent(record)) return;
+@@ -909,6 +910,7 @@ function startConnection(ctx, config, policy, status) {
+ 			});
+ 		});
+ 		syncChain = run.then(() => void 0, () => void 0);
++		if (startupSyncs !== null && record.connectedAt === void 0) startupSyncs.push(run);
+ 		return run;
+ 	}
+ 	function scheduleReconnect(error, connectedAt) {
+@@ -1044,19 +1046,29 @@ function startConnection(ctx, config, policy, status) {
+ 			}
+ 		}
+ 		try {
++			const startupTimeoutMs = config.startupTimeoutMs ?? 2e4;
+ 			const startedAt = Date.now();
+-			const remaining = () => config.startupTimeoutMs === void 0 ? void 0 : config.startupTimeoutMs - (Date.now() - startedAt);
+-			const resolved = await record.wire.run((signal) => binding.resolve(signal), remaining());
++			const remaining = () => startupTimeoutMs - (Date.now() - startedAt);
++			const deadlineMessage = (method) => `${label}: ${method} startup deadline exceeded after ${startupTimeoutMs}ms`;
++			const resolved = await record.wire.run((signal) => binding.resolve(signal), remaining(), deadlineMessage("initialize"));
+ 			bindingValue = { config: resolved };
+-			await record.wire.connect(resolved, remaining());
++			await record.wire.connect(resolved, remaining(), deadlineMessage("initialize"));
+ 			if (!isCurrent(record)) return;
+ 			const text = client.getInstructions()?.trimEnd() ?? "";
+ 			const instructions = text ? `### MCP server: ${config.serverName}\n\n${text}` : "";
+ 			const maxInstructionBytes = config.maxInstructionBytes ?? 32768;
+ 			if (Buffer.byteLength(instructions) > maxInstructionBytes) throw new McpLocalError(`${label}: server instructions exceed maxInstructionBytes (${maxInstructionBytes})`);
+-			const sync = enqueueSync(record);
+-			const budget = remaining();
+-			await (budget === void 0 ? sync : withDeadline(sync, budget, `${label}: startup timed out`));
++			startupSyncs = [];
++			let observed;
++			try {
++				do {
++					observed = startupSyncs.length;
++					if (startupSyncs.length === 0) enqueueSync(record);
++					await withDeadline(Promise.all(startupSyncs), Math.max(1, remaining()), deadlineMessage("tools/list"));
++				} while (observed !== startupSyncs.length);
++			} finally {
++				startupSyncs = null;
++			}
+ 			if (!isCurrent(record)) return;
+ 			record.wire.assertOpen();
+ 			serverInstructions = instructions;
+@@ -1071,6 +1083,9 @@ function startConnection(ctx, config, policy, status) {
+ 		} catch (error) {
+ 			if (current !== record) return;
+ 			current = void 0;
++			// A stalled tools/list can register a partial page before the shared
++			// startup budget rejects. Drop that page before the profile reports ready.
++			clearTools();
+ 			const confirmed = await close(record);
+ 			readiness.resolve({ error: config.expandTemplates ? new Error(diagnostic(error, "startup")) : error });
+ 			if (disposed || !confirmed) return;
+@@ -1439,7 +1454,7 @@ const Config = z.union([z.object({
+ 	env: z.dict(String).default({}),
+ 	cwd: z.string().default(""),
+ 	toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+-	startupTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS),
++	startupTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(2e4),
+ 	closeTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_CLOSE_TIMEOUT_MS),
+ 	expandTemplates: z.boolean().default(false),
+ 	failOnStartupError: z.boolean().default(false),
+@@ -1451,7 +1466,7 @@ const Config = z.union([z.object({
+ 	url: z.string().required(),
+ 	headers: z.dict(String).default({}),
+ 	toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+-	startupTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS),
++	startupTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(2e4),
+ 	closeTimeoutMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_CLOSE_TIMEOUT_MS),
+ 	expandTemplates: z.boolean().default(false),
+ 	failOnStartupError: z.boolean().default(false),
+@@ -1467,6 +1482,8 @@ const Config = z.union([z.object({
+ * @returns startup readiness after connection and initial tool discovery settle.
+ */
+ async function apply(ctx, config) {
++	const startupTimeoutMs = config.startupTimeoutMs ?? 2e4;
++	if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 1 || startupTimeoutMs > MAX_TIMER_DELAY_MS) throw new Error(`mcp-client(${config.serverName}): startupTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`);
+ 	const reconnect = resolveReconnectPolicy(config.reconnect, `mcp-client(${config.serverName}): reconnect`);
+ 	let status;
+ 	ctx.effect(() => {
+diff --git a/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts
+index a98feac..02724f9 100644
+--- a/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts
+@@ -58,7 +58,7 @@ export interface StdioConfig {
+     cwd: string;
+     /** Timeout per tool call or resource request in milliseconds. */
+     toolCallTimeoutMs: number;
+-    /** Optional budget for one connection attempt plus its initial tool sync, in milliseconds. */
++    /** Total connect + all initial tools/list pages per attempt (default 20000ms; finite 1..2147483647). */
+     startupTimeoutMs?: number;
+     /** Budget for transport closure and local cleanup, in milliseconds (default 5000). */
+     closeTimeoutMs: number;
+@@ -87,7 +87,7 @@ export interface StreamableHttpConfig {
+     headers: Record<string, string>;
+     /** Timeout per tool call or resource request in milliseconds. */
+     toolCallTimeoutMs: number;
+-    /** Optional budget for one connection attempt plus its initial tool sync, in milliseconds. */
++    /** Total connect + all initial tools/list pages per attempt (default 20000ms; finite 1..2147483647). */
+     startupTimeoutMs?: number;
+     /** Budget for transport closure and local cleanup, in milliseconds (default 5000). */
+     closeTimeoutMs: number;

@@ -1,6 +1,6 @@
 /** Run on the packaged Electron runtime, resolving every service from app.asar. */
 const { createRequire } = require('node:module')
-const { join, resolve } = require('node:path')
+const { dirname, join, resolve } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const assert = require('node:assert/strict')
 
@@ -23,8 +23,11 @@ async function probe(appRoot, resources) {
       fibers.push(await ctx.plugin((await load(name)).default))
     }
     fibers.push(await ctx.plugin(await load('dsh-desktop-office'), {
-      resources: join(resources, 'office-runtime'),
-      cli: join(resources, 'office-cli.mjs')
+      resources: join(resources, 'office-runtime')
+    }))
+    fibers.push(await ctx.plugin(await load('@deepseek-ai/dsh-skill-office'), {}))
+    fibers.push(await ctx.plugin(await load('@deepseek-ai/dsh-tool-workspace-dependencies'), {
+      source: join(resources, 'office-runtime', 'primary-runtime')
     }))
     const skills = await ctx.skills.list()
     for (const name of ['gov-doc-writing', 'meeting-recap', 'work-report-writer', 'research-writer', 'saas-metrics-coach', 'dataset-health-audit', 'data-viz-gen']) {
@@ -46,17 +49,11 @@ async function probe(appRoot, resources) {
     const client = await require('node:fs/promises').readFile(host.resolve('dsh-desktop-office/client'), 'utf8')
     assert(client.includes('window.__ModuleLoader__.load'))
     assert(client.includes('conversation.hero.options'))
-    for (const name of ['office', 'office-docx', 'office-pptx', 'office-xlsx', 'office-render', 'office-recalculate', 'office-export-pdf']) {
+    const officialSkillRoot = dirname(host.resolve('@deepseek-ai/dsh-skill-office/package.json'))
+    for (const name of ['office', 'office-docx', 'office-pptx', 'office-xlsx']) {
       assert(skills.some(skill => skill.name === name), `Missing packaged Office skill ${name}`)
       const skill = await ctx.skills.get(name)
-      // Upstream normalizes resource paths to forward slashes, including on Windows.
-      assert.equal(resolve(skill.resourceBase.path), join(resources, 'office-runtime', 'office-skills', name), `Unexpected resources for ${name}`)
-    }
-    for (const name of ['office-render', 'office-recalculate', 'office-export-pdf']) {
-      const skill = await ctx.skills.get(name)
-      // Upstream supplies command paths as JSON, escaping Windows separators.
-      assert(skill.content.includes(JSON.stringify(process.execPath)), 'Office CLI must use the current Electron runtime')
-      assert(skill.content.includes(JSON.stringify(join(resources, 'office-cli.mjs'))), 'Office CLI must resolve from the current installation')
+      assert.equal(resolve(skill.resourceBase.path), join(officialSkillRoot, 'assets', name), `Unexpected resources for ${name}`)
     }
     const tool = ctx.tools.get('load_workspace_dependencies')
     assert(tool, 'Missing packaged dependency tool')

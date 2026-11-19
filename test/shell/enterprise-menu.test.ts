@@ -76,9 +76,22 @@ describe('enterprise entry', () => {
     expect(unhideAll).toHaveBeenCalledOnce()
     expect(quit).toHaveBeenCalledOnce()
     const standard = standardMenuLabels(locale)
+    expect(standard.pasteAndMatchStyle).toBe(locale.startsWith('zh') ? '粘贴并匹配样式' : 'Paste and Match Style')
     expect(menu.map(item => item.label)).toEqual(['DSH Desktop Shell', standard.edit, standard.window])
     expect(menu[1]?.submenu?.[0]).toMatchObject({ role: 'undo', label: standard.undo })
-    expect(menu[1]?.submenu?.[6]).toMatchObject({ role: 'selectAll', label: standard.selectAll })
+    expect(menu[1]?.submenu?.[6]).toMatchObject({
+      role: 'pasteAndMatchStyle',
+      label: standard.pasteAndMatchStyle,
+      accelerator: 'Shift+Command+V'
+    })
+    expect(menu[1]?.submenu?.[7]).toMatchObject({
+      role: 'pasteAndMatchStyle',
+      label: standard.pasteAndMatchStyle,
+      accelerator: 'Option+Shift+Command+V',
+      visible: false,
+      acceleratorWorksWhenHidden: true
+    })
+    expect(menu[1]?.submenu?.[8]).toMatchObject({ role: 'selectAll', label: standard.selectAll })
     expect(menu[2]?.submenu?.[0]).toMatchObject({ role: 'minimize', label: standard.minimize })
     expect(menu[2]?.submenu?.[1]).toMatchObject({ role: 'close', label: standard.close })
     const withoutSafeMode = buildDarwinDesktopMenu({
