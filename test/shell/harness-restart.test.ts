@@ -207,3 +207,57 @@ describe('harness restart navigation', () => {
     expect(sessions.isCurrent(second.id)).toBe(true)
   })
 })
+
+describe('harness restart prepareStart', () => {
+  it('runs prepareStart after the stop settles and before start', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop') },
+      prepareStart: async () => { calls.push('prepareStart') },
+      start: async () => { calls.push('start') }
+    }))
+    expect(calls).toEqual(['stop', 'prepareStart', 'start'])
+  })
+
+  it('does not run prepareStart when the stop fails', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop'); throw new Error('stop failed') },
+      prepareStart: async () => { calls.push('prepareStart') },
+      start: async () => { calls.push('start') },
+      reportStopFailure: async () => { calls.push('report') }
+    }))
+    expect(calls).toEqual(['stop', 'report'])
+  })
+
+  it('continues into start when prepareStart fails', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    const ok = await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop') },
+      prepareStart: async () => { calls.push('prepareStart'); throw new Error('projection failed') },
+      start: async () => { calls.push('start') },
+      resume: async () => { calls.push('resume'); return true }
+    }))
+    expect(ok).toBe(true)
+    expect(calls).toEqual(['stop', 'prepareStart', 'start', 'resume'])
+  })
+
+  it('works without prepareStart', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    const ok = await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop') },
+      start: async () => { calls.push('start') },
+      resume: async () => true
+    }))
+    expect(ok).toBe(true)
+    expect(calls).toEqual(['stop', 'start'])
+  })
+})
