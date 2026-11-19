@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index b65bc4c..c76ac94 100644
+index b65bc4c..23fa04f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -1,5 +1,144 @@
@@ -11,7 +11,7 @@ index b65bc4c..c76ac94 100644
 +			const tag = document.createElement("style");
 +			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-models";
 +			tag.dataset.pluginCss = modelModalityTagId;
-+			tag.textContent = ".dshModelModalityToggleCompact:hover:after,.dshModelModalityToggleCompact:focus-within:after{visibility:visible;opacity:1}.qy-_KG_modelRow{grid-template-columns:auto minmax(0,1.3fr) minmax(0,1fr) auto auto auto}.dshProviderEditorExpanded .qy-_KG_customizedBody{padding-bottom:72px}.dshProviderEditorStickyFooter{z-index:4;position:sticky;bottom:-24px;display:flex}";
++			tag.textContent = ".dshModelModalityToggleCompact:hover:after,.dshModelModalityToggleCompact:focus-within:after{visibility:visible;opacity:1}.qy-_KG_modelRow{grid-template-columns:auto minmax(0,1.3fr) minmax(0,1fr) auto auto auto}.dshProviderEditorExpanded{padding-bottom:72px}.dshProviderEditorStickyFooter{z-index:4;position:sticky;bottom:-24px;display:flex;align-items:center;gap:8px;box-sizing:border-box;margin-bottom:-72px;padding:8px 0;background:transparent}.dshProviderEditorStickyFooter>button,.dshProviderEditorStickyFooter>div>button:first-child{align-self:center;box-sizing:border-box;height:36px;padding:0 14px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);font-size:14px;line-height:22px}.dshProviderEditorStickyFooter>div{display:flex;align-items:center;gap:8px}";
 +			document.head.appendChild(tag);
 +		}
 +		function imageInputEnabled(model, field) {
