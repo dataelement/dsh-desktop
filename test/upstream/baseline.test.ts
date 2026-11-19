@@ -68,7 +68,7 @@ describe('upstream baseline', () => {
     const baseline = parseBaseline(JSON.parse(await readFile(resolve(root, 'upstream-baseline.json'), 'utf8')))
     const lock = JSON.parse(await readFile(resolve(root, 'package-lock.json'), 'utf8'))
     expect(baseline.dshVersion).toBe(resolvedDshVersion(lock))
-    expect(baseline.commit).toBe('3f321d32bfe382212a8ed8785c1d47a5a300aa23')
+    expect(baseline.commit).toBe('9c2670d3bce5275e0d1610272958121af87787bb')
     expect(baseline.skipped).toEqual([...mandatory, ...officialUpdate, ...feishuAuth, ...productDecision].sort())
     expect(baseline.skipped.some(file => file.endsWith('update-http-executor.ts'))).toBe(false)
     for (const required of ['electron-updater', 'update-configuration.ts', 'update-settings.ts', 'update-cleanup-log.ts']) {
