@@ -88,7 +88,7 @@ describe('DSH Desktop client slot occupants', () => {
     }
     plugin.apply({ slots, locale: { register: () => () => undefined, bind: () => (key: string) => key }, effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() } })
 
-    expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs'])
+    expect(plugin.inject).toEqual(['locale', 'slots', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
       'conversation.input.dock',
       'sidebar.settings.action',
@@ -96,7 +96,6 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.brand.mark',
       'sidebar.brand.name',
       'conversation.hero.brand.mark',
-      'sidebar.right.tab.document.unpreviewable',
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item'
