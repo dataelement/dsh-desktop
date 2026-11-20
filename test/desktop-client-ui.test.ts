@@ -87,7 +87,7 @@ describe('DSH Desktop client slot occupants', () => {
     }
     plugin.apply({ slots, locale: { register: () => () => undefined, bind: () => (key: string) => key }, effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() } })
 
-    expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace'])
+    expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
       'conversation.input.dock',
       'sidebar.settings.action',
