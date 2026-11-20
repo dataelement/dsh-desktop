@@ -370,8 +370,67 @@ window.__ModuleLoader__.load({
       if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilityActions))
     }
 
-    const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace']
+    // Ordinary http(s) clicks follow Settings → General → link opening.
+    // Modifier clicks, the middle button, and explicit window.open stay with the browser.
+    function readHttpLink(value, baseHref) {
+      if (typeof value !== 'string' || value === '') return undefined
+      try {
+        const url = new URL(value, baseHref)
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+        if (url.username !== '' || url.password !== '') return undefined
+        return url.href
+      } catch {
+        return undefined
+      }
+    }
+
+    function configuredLinkDestination(linkOpening, browserAvailable) {
+      const opening = linkOpening === 'new-tab' ? 'new-tab' : 'sidebar'
+      return opening === 'sidebar' && browserAvailable ? 'sidebar' : 'external'
+    }
+
+    function linkClickFollowsSetting(event, baseHref) {
+      if (event.defaultPrevented || event.button !== 0) return undefined
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
+      const target = event.target
+      const anchor = target !== null && typeof target === 'object' && typeof target.closest === 'function'
+        ? target.closest('a[href]')
+        : undefined
+      if (anchor === undefined || anchor === null || anchor.hasAttribute('download')) return undefined
+      return readHttpLink(anchor.getAttribute('href'), baseHref)
+    }
+
+    function installConfiguredLinkClicks(ctx) {
+      const forms = ctx.configForms
+      const sidebar = ctx.sidebarRight
+      const tabs = ctx.sidebarRightTabs
+      if (forms === undefined || typeof forms.get !== 'function'
+        || sidebar === undefined || typeof sidebar.openTab !== 'function'
+        || tabs === undefined || typeof tabs.get !== 'function') return
+      const settings = forms.get('ui-chat')
+      if (settings === undefined || typeof settings.getSnapshot !== 'function') return
+      ctx.effect(() => {
+        if (typeof window.addEventListener !== 'function') return
+        const onClick = (event) => {
+          const url = linkClickFollowsSetting(event, window.location.href)
+          if (url === undefined) return
+          const linkOpening = settings.getSnapshot()?.value?.linkOpening
+          const destination = configuredLinkDestination(linkOpening, tabs.get('browser') !== undefined)
+          event.preventDefault()
+          if (destination === 'sidebar') {
+            sidebar.openTab('browser', { params: { url }, revealIfOpened: false })
+            return
+          }
+          window.open(url, '_blank', 'noopener,noreferrer')
+        }
+        window.addEventListener('click', onClick)
+        return () => window.removeEventListener('click', onClick)
+      })
+    }
+
+    const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs']
     function apply(ctx) {
+      installConfiguredLinkClicks(ctx)
       applyRepair(ctx)
       ctx.effect(() => ctx.locale.register(ACTIONS_NS, actionMessages))
       const actionText = ctx.locale.bind(ACTIONS_NS)
@@ -534,6 +593,9 @@ window.__ModuleLoader__.load({
     exports.TemplateLibraryControls = TemplateLibraryControls
     exports.apply = apply
     exports.inject = inject
+    exports.readHttpLink = readHttpLink
+    exports.configuredLinkDestination = configuredLinkDestination
+    exports.linkClickFollowsSetting = linkClickFollowsSetting
     return module.exports
   }
 })
