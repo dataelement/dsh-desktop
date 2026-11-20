@@ -76,10 +76,12 @@ export interface HarnessRestartSteps {
   /**
    * Runs after the old host has stopped and before the new one starts — the only
    * moment generation projections are safe (a running plugin may still import from
-   * a generation). A failure is logged and does not block the restart: the pending
+   * a generation). A failure is reported and does not block the restart: the pending
    * restart banner stays and the host still comes back.
    */
   prepareStart?: () => Promise<void>
+  /** prepareStart threw. The host still starts; the caller records the failure. */
+  reportPrepareStartFailure?: (error: unknown) => void
   start: () => Promise<void>
   /** Load the saved application document for this session. */
   resume: (sessionId: number) => Promise<boolean>
@@ -118,9 +120,11 @@ export async function runHarnessRestart(steps: HarnessRestartSteps): Promise<boo
     try {
       await steps.prepareStart()
     } catch (error) {
-      console.error('[harness-restart] prepareStart failed', error)
+      if (!steps.isCurrent(steps.sessionId)) return false
+      steps.reportPrepareStartFailure?.(error)
     }
   }
+  if (abandoned(steps)) return false
   try {
     await steps.start()
   } catch {

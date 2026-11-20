@@ -1249,7 +1249,15 @@ async function main(): Promise<void> {
       // is skipped in safe mode, matching the launch-time projection.
       prepareStart: () => {
         if (safeMode) return Promise.resolve()
-        return prepareGenerationsForLaunch(dshHome, line => { console.error(line) }, 'desktop')
+        return prepareGenerationsForLaunch(dshHome, line => {
+          console.error(line)
+          harnessLog.note(line)
+        }, 'desktop')
+      },
+      reportPrepareStartFailure: error => {
+        console.error('[harness-restart] prepareStart failed', error)
+        const detail = error instanceof Error ? error.message : String(error)
+        harnessLog.note(`[desktop] harness restart continued after projection failure: ${detail}`)
       },
       start: async () => {
         try {

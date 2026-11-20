@@ -15,8 +15,9 @@ afterEach(async () => {
 describe('patch lock', () => {
   it('matches the tracked patches to the lockfile release set', async () => {
     const patches = (await readdir(join(root, 'patches'))).filter(name => name.endsWith('.patch'))
-    expect(patches).toHaveLength(42)
+    expect(patches).toHaveLength(43)
     expect(patches).toContain('@deepseek-ai+dsh-client-ui-layout+0.2.2-rc.5.patch')
+    expect(patches).toContain('@deepseek-ai+dsh-client-ui-sidebar-browser+0.2.2-rc.5.patch')
     expect(patches).toEqual(expect.arrayContaining([
       '@deepseek-ai+node-addon-system+0.1.2.patch',
       'sherpa-onnx-node+1.13.8.patch',
