@@ -49,7 +49,8 @@ describe('Desktop account UI composition', () => {
       expect(entries.find((entry) => entry.id === 'dsh-desktop-office')).toMatchObject({
         name: 'dsh-desktop-office',
         config: {
-          resources: { __jsExpr: 'process.env.DSH_DESKTOP_OFFICE_RESOURCES' }
+          resources: { __jsExpr: 'process.env.DSH_DESKTOP_OFFICE_RESOURCES' },
+          cli: { __jsExpr: 'process.env.DSH_DESKTOP_OFFICE_CLI' }
         }
       })
       expect(entries.find((entry) => entry.id === 'hmr')?.disabled).not.toBe(true)

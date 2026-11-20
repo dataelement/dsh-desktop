@@ -88,7 +88,11 @@ async function loadHook(file, calls, failure) {
   const filename = require.resolve(`../scripts/verify/${file}`)
   const localRequire = createRequire(filename)
   const execFile = () => { throw new Error('Expected the promisified subprocess boundary') }
-  execFile[promisify.custom] = async (...args) => { calls.push(args); throw failure }
+  execFile[promisify.custom] = async (...args) => {
+    calls.push(args)
+    if (file === 'verify-office-runtime.cjs' && calls.length === 1) return { stdout: '' }
+    throw failure
+  }
   const module = { exports: {} }
   const scopedRequire = id => id === 'node:child_process' ? { execFile } : localRequire(id)
   runInNewContext(await readFile(filename, 'utf8'), { require: scopedRequire, module,
@@ -118,11 +122,13 @@ describe.each(['linux', 'darwin', 'win32'])('%s verifier dispatch', platform => 
       const exported = await loadHook(file, calls, failure)
       const hook = typeof exported === 'function' ? exported : exported.verifyPackagedHarness ?? exported.afterPack
       await expect(hook(context)).rejects.toBe(failure)
-      expect(calls).toHaveLength(1)
-      expect(calls[0][0]).toBe(executable)
-      expect(calls[0][1]).toContain(join(resources, 'app.asar'))
-      expect(calls[0][2].env.ELECTRON_RUN_AS_NODE).toBe('1')
-      expect(calls[0][2].timeout).toBe(120_000)
+      expect(calls).toHaveLength(file === 'verify-office-runtime.cjs' ? 2 : 1)
+      const [binary, args, options] = calls.at(-1)
+      expect(binary).toBe(executable)
+      expect(args).toContain(join(resources, 'app.asar'))
+      if (file === 'verify-office-runtime.cjs') expect(args.at(-1)).toBe(calls[0][2].cwd)
+      expect(options.env.ELECTRON_RUN_AS_NODE).toBe('1')
+      expect(options.timeout).toBe(120_000)
     }
   )
 })
