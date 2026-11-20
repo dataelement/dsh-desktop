@@ -370,8 +370,8 @@ window.__ModuleLoader__.load({
       if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilityActions))
     }
 
-    // Ordinary http(s) clicks follow Settings → General → link opening.
-    // Modifier clicks, the middle button, and explicit window.open stay with the browser.
+    // Ordinary http(s) clicks inside a conversation follow Settings → General → link opening.
+    // Links outside that conversation, modifier clicks, the middle button, and explicit window.open stay with the browser.
     function readHttpLink(value, baseHref) {
       if (typeof value !== 'string' || value === '') return undefined
       try {
@@ -400,31 +400,47 @@ window.__ModuleLoader__.load({
       return readHttpLink(anchor.getAttribute('href'), baseHref)
     }
 
+    function conversationSessionId(event) {
+      const target = event.target
+      const root = target !== null && typeof target === 'object' && typeof target.closest === 'function'
+        ? target.closest('[data-conversation-session]')
+        : undefined
+      if (root === undefined || root === null || typeof root.getAttribute !== 'function') return undefined
+      const sessionId = root.getAttribute('data-conversation-session')
+      return typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined
+    }
+
     function installConfiguredLinkClicks(ctx) {
       const forms = ctx.configForms
       const sidebar = ctx.sidebarRight
       const tabs = ctx.sidebarRightTabs
       if (forms === undefined || typeof forms.get !== 'function'
-        || sidebar === undefined || typeof sidebar.openTab !== 'function'
+        || sidebar === undefined || typeof sidebar.openTabIn !== 'function'
         || tabs === undefined || typeof tabs.get !== 'function') return
       const settings = forms.get('ui-chat')
       if (settings === undefined || typeof settings.getSnapshot !== 'function') return
       ctx.effect(() => {
         if (typeof window.addEventListener !== 'function') return
+        // Capture runs before a tool-row link stops the bubble, so search and fetch
+        // links use the same setting as markdown. Stopping the event keeps chat
+        // from opening the same address again and keeps the row from toggling.
         const onClick = (event) => {
           const url = linkClickFollowsSetting(event, window.location.href)
           if (url === undefined) return
+          const sessionId = conversationSessionId(event)
+          if (sessionId === undefined) return
           const linkOpening = settings.getSnapshot()?.value?.linkOpening
           const destination = configuredLinkDestination(linkOpening, tabs.get('browser') !== undefined)
           event.preventDefault()
+          event.stopPropagation()
           if (destination === 'sidebar') {
-            sidebar.openTab('browser', { params: { url }, revealIfOpened: false })
+            sidebar.openTabIn(sessionId, 'browser', { params: { url }, revealIfOpened: false })
             return
           }
           window.open(url, '_blank', 'noopener,noreferrer')
         }
-        window.addEventListener('click', onClick)
-        return () => window.removeEventListener('click', onClick)
+        window.addEventListener('click', onClick, true)
+        return () => window.removeEventListener('click', onClick, true)
       })
     }
 
@@ -596,6 +612,7 @@ window.__ModuleLoader__.load({
     exports.readHttpLink = readHttpLink
     exports.configuredLinkDestination = configuredLinkDestination
     exports.linkClickFollowsSetting = linkClickFollowsSetting
+    exports.conversationSessionId = conversationSessionId
     return module.exports
   }
 })

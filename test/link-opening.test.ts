@@ -10,6 +10,7 @@ interface LinkPlugin {
   readHttpLink: (value: string, baseHref: string) => string | undefined
   configuredLinkDestination: (linkOpening: unknown, browserAvailable: boolean) => 'sidebar' | 'external'
   linkClickFollowsSetting: (event: ClickEvent, baseHref: string) => string | undefined
+  conversationSessionId: (event: ClickEvent) => string | undefined
 }
 
 interface ClickEvent {
@@ -21,11 +22,13 @@ interface ClickEvent {
   altKey?: boolean
   target?: unknown
   preventDefault: () => void
+  stopPropagation: () => void
+  propagationStopped?: boolean
 }
 
 function loadPlugin(page: {
-  addEventListener?: (type: string, listener: (event: ClickEvent) => void) => void
-  removeEventListener?: (type: string, listener: (event: ClickEvent) => void) => void
+  addEventListener?: (type: string, listener: (event: ClickEvent) => void, capture?: boolean) => void
+  removeEventListener?: (type: string, listener: (event: ClickEvent) => void, capture?: boolean) => void
   location?: { href: string }
   open?: (url: string, target: string, features: string) => void
 }): LinkPlugin {
@@ -62,7 +65,24 @@ function click(target: unknown, extra: Partial<ClickEvent> = {}): ClickEvent {
     altKey: false,
     target,
     preventDefault() { this.defaultPrevented = true },
+    stopPropagation() { this.propagationStopped = true },
     ...extra
+  }
+}
+
+function sessionLink(href: string, sessionId: string | null) {
+  const root = sessionId === null ? undefined : {
+    getAttribute: (name: string) => name === 'data-conversation-session' ? sessionId : null
+  }
+  return {
+    href,
+    hasAttribute: () => false,
+    getAttribute: (name: string) => name === 'href' ? href : null,
+    closest(selector: string) {
+      if (selector === 'a[href]') return this
+      if (selector === '[data-conversation-session]') return root
+      return undefined
+    }
   }
 }
 
@@ -97,8 +117,15 @@ describe('configured http link clicks', () => {
     expect(plugin.linkClickFollowsSetting(click(anchor('https://example.com/file', true)), base)).toBeUndefined()
   })
 
-  it('opens an unhandled plain click in the docked sidebar when that is the setting', () => {
-    const listeners = new Map<string, (event: ClickEvent) => void>()
+  it('reads the conversation that owns the clicked link', () => {
+    expect(plugin.conversationSessionId(click(sessionLink('https://example.com/docs', 'session-a')))).toBe('session-a')
+    expect(plugin.conversationSessionId(click(sessionLink('https://example.com/docs', '')))).toBeUndefined()
+    expect(plugin.conversationSessionId(click(sessionLink('https://example.com/docs', null)))).toBeUndefined()
+    expect(plugin.conversationSessionId(click(anchor('https://example.com/docs')))).toBeUndefined()
+  })
+
+  it('opens a conversation link with that session and leaves links outside it alone', () => {
+    const listeners = new Map<string, { listener: (event: ClickEvent) => void, capture?: boolean }>()
     const opened: unknown[] = []
     const external = vi.fn()
     let linkOpening: unknown = 'sidebar'
@@ -106,8 +133,11 @@ describe('configured http link clicks', () => {
     const page = loadPlugin({
       location: { href: base },
       open: external,
-      addEventListener: (type, listener) => { listeners.set(type, listener) },
-      removeEventListener: (type, listener) => { if (listeners.get(type) === listener) listeners.delete(type) }
+      addEventListener: (type, listener, capture) => { listeners.set(type, { listener, capture }) },
+      removeEventListener: (type, listener, capture) => {
+        const registered = listeners.get(type)
+        if (registered?.listener === listener && registered.capture === capture) listeners.delete(type)
+      }
     })
     const disposers: Array<() => void> = []
     page.apply({
@@ -118,33 +148,48 @@ describe('configured http link clicks', () => {
         if (typeof dispose === 'function') disposers.push(dispose)
       },
       configForms: { get: () => ({ getSnapshot: () => ({ value: { linkOpening } }) }) },
-      sidebarRight: { openTab: (...args: unknown[]) => { opened.push(args) } },
+      sidebarRight: { openTabIn: (...args: unknown[]) => { opened.push(args) } },
       sidebarRightTabs: { get: (id: string) => browser && id === 'browser' ? {} : undefined }
     })
-    const listener = listeners.get('click')
-    expect(listener).toBeTypeOf('function')
-    const event = click(anchor('https://example.com/docs'))
-    listener!(event)
+    const registered = listeners.get('click')
+    expect(registered?.capture).toBe(true)
+    const listener = registered!.listener
+    const event = click(sessionLink('https://example.com/docs', 'session-a'))
+    listener(event)
     expect(event.defaultPrevented).toBe(true)
-    expect(opened).toEqual([['browser', { params: { url: 'https://example.com/docs' }, revealIfOpened: false }]])
+    expect(event.propagationStopped).toBe(true)
+    expect(opened).toEqual([['session-a', 'browser', { params: { url: 'https://example.com/docs' }, revealIfOpened: false }]])
     expect(external).not.toHaveBeenCalled()
 
     opened.length = 0
     linkOpening = 'new-tab'
-    const externalEvent = click(anchor('https://github.com/deepseek-ai/deepseek-harness'))
-    listener!(externalEvent)
+    const externalEvent = click(sessionLink('https://github.com/deepseek-ai/deepseek-harness', 'session-a'))
+    listener(externalEvent)
     expect(external).toHaveBeenCalledExactlyOnceWith('https://github.com/deepseek-ai/deepseek-harness', '_blank', 'noopener,noreferrer')
     expect(opened).toEqual([])
 
     external.mockClear()
     linkOpening = 'sidebar'
     browser = false
-    listener!(click(anchor('https://example.com/fallback')))
+    listener(click(sessionLink('https://example.com/fallback', 'session-a')))
     expect(external).toHaveBeenCalledOnce()
     expect(opened).toEqual([])
 
     external.mockClear()
-    listener!(click(anchor('https://example.com/docs'), { metaKey: true }))
+    browser = true
+    const outside = click(sessionLink('https://dshdesktop.com/zh/enterprise/', null))
+    listener(outside)
+    expect(outside.defaultPrevented).toBeUndefined()
+    expect(outside.propagationStopped).toBeUndefined()
+    expect(external).not.toHaveBeenCalled()
+    expect(opened).toEqual([])
+
+    const unnamed = click(sessionLink('https://example.com/docs', ''))
+    listener(unnamed)
+    expect(unnamed.defaultPrevented).toBeUndefined()
+    expect(opened).toEqual([])
+
+    listener(click(sessionLink('https://example.com/docs', 'session-a'), { metaKey: true }))
     expect(external).not.toHaveBeenCalled()
     expect(opened).toEqual([])
 
@@ -160,7 +205,8 @@ describe('sidebar browser popup docking', () => {
       'utf8'
     )
     expect(source).toContain('openTab:url=>{props.openDocked(url)}')
-    expect(source).toContain('controller.openDocked=url=>ctx.sidebarRight.openTab(`browser`,{params:{url},revealIfOpened:false})')
+    expect(source).toContain('controller.openDocked=url=>ctx.sidebarRight.openTabIn(sessionId,`browser`,{params:{url},revealIfOpened:false})')
+    expect(source).not.toContain('sidebarRight.openTab(`browser`')
     expect(source).not.toContain('tab.actions.openTab(`browser`')
     expect(source).toContain('window.open(externalUrl,`_blank`,`noopener,noreferrer`)')
   })
