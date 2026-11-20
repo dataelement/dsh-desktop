@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -13,6 +13,11 @@ type ProductEntryModule = {
   registerDesktopProduct?: (register: typeof registerDesktopProduct) => void | Promise<void>
 }
 
+function isOutsideRoot(root: string, target: string): boolean {
+  const rel = relative(root, target)
+  return rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(rel)
+}
+
 function productEntryPath(metadata: unknown, appPath: string): string | undefined {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined
   const entry = (metadata as Record<string, unknown>)[PRODUCT_ENTRY_FIELD]
@@ -22,12 +27,16 @@ function productEntryPath(metadata: unknown, appPath: string): string | undefine
   }
   const root = resolve(appPath)
   const resolved = resolve(root, entry)
-  const outside = relative(root, resolved)
-  if (outside === '..' || outside.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(outside)) {
+  if (isOutsideRoot(root, resolved)) {
     throw new Error(`${PRODUCT_ENTRY_FIELD} must stay inside the installed application.`)
   }
   if (!existsSync(resolved)) throw new Error(`Desktop product entry does not exist: ${entry}`)
-  return resolved
+  const canonicalRoot = realpathSync(root)
+  const canonicalResolved = realpathSync(resolved)
+  if (isOutsideRoot(canonicalRoot, canonicalResolved)) {
+    throw new Error(`${PRODUCT_ENTRY_FIELD} must stay inside the installed application.`)
+  }
+  return canonicalResolved
 }
 
 export async function loadDesktopProductEntry(metadata: unknown, appPath: string): Promise<void> {

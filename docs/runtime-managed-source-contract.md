@@ -1,6 +1,6 @@
 # Root runtime composition and managed bundle sources
 
-These compatibility extensions target Harness 0.2.2-rc.1. Public mountRootInclude, recomposeProfile, reconcileProfilePatches and composeEntries already own ordinary Profile composition and runtime resolution. They do not expose temporary owner-bound overlays or non-package source routing. The extensions reuse their Loader tree and patch preparation rather than installing another composer.
+These compatibility extensions target Harness 0.2.2-rc.5. Public mountRootInclude, recomposeProfile, reconcileProfilePatches and composeEntries already own ordinary Profile composition and runtime resolution. They do not expose temporary owner-bound overlays or non-package source routing. The extensions reuse their Loader tree and patch preparation rather than installing another composer.
 
 ## Transient root layers
 

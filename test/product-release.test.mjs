@@ -103,6 +103,9 @@ describe('generic release product API', () => {
       const result = run({})
       expect(result.status).toBe(0)
       expect(result.stdout).toContain('--name Sample Desktop --url https://example.org/desktop/')
+      const fallbackResult = run({ JSIGN_NAME: '', JSIGN_URL: '' })
+      expect(fallbackResult.status).toBe(0)
+      expect(fallbackResult.stdout).toContain('--name DSH Desktop --url https://www.dshdesktop.com')
       expect(run({ JSIGN_URL: 'https://user:secret@example.org/' }).status).not.toBe(0)
       expect(run({ JSIGN_NAME: 'Bad\nName' }).status).not.toBe(0)
     } finally { await rm(root, { recursive: true, force: true }) }

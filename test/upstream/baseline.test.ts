@@ -26,16 +26,24 @@ const officialUpdate = [
   'apps/desktop-host/src/update-tasks.ts',
   'apps/desktop/src/preload-update-dialog.ts',
   'apps/desktop/src/update-attention.ts',
+  'apps/desktop/src/locale.ts',
+  'apps/desktop/src/settings.ts',
   'apps/desktop/src/update-channel.ts',
   'apps/desktop/src/update-coordinator.ts',
   'apps/desktop/src/update-dialog.ts',
+  'apps/desktop/src/settings-file.ts',
+  'apps/desktop/src/update-cleanup-log.ts',
+  'apps/desktop/src/update-configuration.ts',
   'apps/desktop/src/update-error.ts',
-  'apps/desktop/src/update-http-executor.ts',
   'apps/desktop/src/update-journal.ts',
+  'apps/desktop/src/update-settings.ts',
   'apps/desktop/src/update-overlay.ts',
   'apps/desktop/src/update-presentation.ts',
   'apps/desktop/src/update-schedule.ts',
-  'apps/desktop/src/update-window.ts'
+  'apps/desktop/src/update-window.ts',
+  'apps/desktop/src/updates/electron-updater/channel.ts',
+  'apps/desktop/src/updates/electron-updater/discard.ts',
+  'apps/desktop/src/updates/electron-updater/http-executor.ts'
 ]
 const feishuAuth = ['apps/desktop/src/policy-test-auth.ts']
 const productDecision = [
@@ -60,10 +68,11 @@ describe('upstream baseline', () => {
     const baseline = parseBaseline(JSON.parse(await readFile(resolve(root, 'upstream-baseline.json'), 'utf8')))
     const lock = JSON.parse(await readFile(resolve(root, 'package-lock.json'), 'utf8'))
     expect(baseline.dshVersion).toBe(resolvedDshVersion(lock))
-    expect(baseline.commit).toBe('66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db')
+    expect(baseline.commit).toBe('9c2670d3bce5275e0d1610272958121af87787bb')
     expect(baseline.skipped).toEqual([...mandatory, ...officialUpdate, ...feishuAuth, ...productDecision].sort())
-    for (const absent of ['electron-updater', 'update-configuration.ts', 'update-settings.ts', 'update-cleanup-log.ts']) {
-      expect(baseline.skipped.some(file => file.includes(absent))).toBe(false)
+    expect(baseline.skipped.some(file => file.endsWith('update-http-executor.ts'))).toBe(false)
+    for (const required of ['electron-updater', 'update-configuration.ts', 'update-settings.ts', 'update-cleanup-log.ts']) {
+      expect(baseline.skipped.some(file => file.includes(required))).toBe(true)
     }
     const errors = checkBaseline(baseline, { lockVersion: baseline.dshVersion, root })
     expect(errors).toEqual([])
@@ -94,6 +103,26 @@ describe('upstream baseline', () => {
     const report = diffReport(before, after, baseline)
     expect(report.unregistered).toEqual(['apps/desktop/src/new-feature.ts'])
     expect(report.changes).toEqual([])
+    expect(report.changedUnregistered).toEqual([])
+    expect(report.missingSkipped).toEqual(['apps/desktop/src/policy-test-auth.ts'])
+  })
+
+  it('lists a modified desktop file that is neither ported nor skipped', () => {
+    const baseline = sampleBaseline()
+    const before = new Map([
+      ['apps/desktop/src/main.ts', 'old'],
+      ['apps/desktop/src/locale.ts', 'old'],
+      ['apps/desktop/src/policy-test-auth.ts', 'kept']
+    ])
+    const after = new Map([
+      ['apps/desktop/src/main.ts', 'new'],
+      ['apps/desktop/src/locale.ts', 'changed'],
+      ['apps/desktop/src/policy-test-auth.ts', 'kept']
+    ])
+    const report = diffReport(before, after, baseline)
+    expect(report.changedUnregistered).toEqual(['apps/desktop/src/locale.ts'])
+    expect(report.missingSkipped).toEqual([])
+    expect(report.unregistered).toEqual([])
   })
 
   it('reads two commits from a local repository and ignores the cache directory contents as source', async () => {

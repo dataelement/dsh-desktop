@@ -1,6 +1,6 @@
 # Settings shell navigation 扩展
 
-目标版本为 Harness @deepseek-ai/dsh-client-ui-settings-general 与 @deepseek-ai/dsh-client-ui-settings 的 0.2.2-rc.1。运行时补丁与公共类型补丁分别保存在对应的 patch-package 原子补丁中；同文件原有 sidebar footer 与 onboarding 修复保留。
+目标版本为 Harness @deepseek-ai/dsh-client-ui-settings-general 与 @deepseek-ai/dsh-client-ui-settings 的 0.2.2-rc.5。运行时补丁与公共类型补丁分别保存在对应的 patch-package 原子补丁中；同文件原有 sidebar footer 与 onboarding 修复保留。
 
 ## 问题与边界
 

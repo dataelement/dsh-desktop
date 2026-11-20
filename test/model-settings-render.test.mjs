@@ -6,7 +6,7 @@ import { expect, it } from 'vitest'
 it.each(['DeepSeekModelsEditor', 'ModelListEditor'])('%s expands options and edits capacity without losing other capabilities', async (editorName) => {
   const require = createRequire(import.meta.url)
   const path = require.resolve('@deepseek-ai/dsh-client-ui-settings-models/package.json').replace('package.json', 'lib/client.js')
-  const source = (await readFile(path, 'utf8')).replace('exports.apply = apply;', `exports.editor = ${editorName}; exports.apply = apply;`)
+  const source = (await readFile(path, 'utf8')).replace(/exports\.apply\s*=\s*apply;/, `exports.editor = ${editorName}; exports.apply = apply;`)
   const states = []
   let cursor = 0
   let editor
@@ -94,7 +94,7 @@ it.each(['DeepSeekModelsEditor', 'ModelListEditor'])('%s expands options and edi
 it.each(['loading', 'missing-key', 'ready', 'error'])('onboarding handles %s without an undefined readiness state', async status => {
   const require = createRequire(import.meta.url)
   const path = require.resolve('@deepseek-ai/dsh-client-ui-settings-models/package.json').replace('package.json', 'lib/client.js')
-  const source = (await readFile(path, 'utf8')).replace('exports.apply = apply;', 'exports.dialog = DeepSeekOnboardingDialog; exports.apply = apply;')
+  const source = (await readFile(path, 'utf8')).replace(/exports\.apply\s*=\s*apply;/, 'exports.dialog = DeepSeekOnboardingDialog; exports.apply = apply;')
   let dialog
   const effects = []
   const react = { useState: initial => [initial, () => {}], useEffect: fn => effects.push(fn) }

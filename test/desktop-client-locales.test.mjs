@@ -56,11 +56,8 @@ it('uses Harness locale for desktop actions, preserves the local deletion dialog
       register: (config, component) => { registrations.push({ config, component }); return () => {} }
     }
   })
-  for (const [namespace, messages] of dictionaries) {
-    const languages = ['dsh-desktop-actions', 'dsh-desktop-repair'].includes(namespace)
-      ? ['de', 'en', 'es', 'fr', 'ja', 'pt', 'ru', 'zh']
-      : ['en', 'zh']
-    expect(Object.keys(messages).sort()).toEqual(languages)
+  for (const [, messages] of dictionaries) {
+    expect(Object.keys(messages).sort()).toEqual(['de', 'en', 'es', 'fr', 'ja', 'pt', 'ru', 'zh'])
     for (const entries of Object.values(messages)) {
       expect(Object.keys(entries).sort()).toEqual(Object.keys(messages.en ?? {}).sort())
       for (const [key, value] of Object.entries(entries)) {
@@ -73,8 +70,7 @@ it('uses Harness locale for desktop actions, preserves the local deletion dialog
   const injected = deletion.config.inject()
   const sessionProps = { ...injected, sessionId: 'session', displayTitle: '<My session>', useMenuOpenState: () => [true, vi.fn()] }
   const japanese = deletion.component(sessionProps)
-  // The local shell-owned dialog intentionally has zh/en copy, with locale fallback.
-  expect(japanese.children).toContain('Delete session permanently')
+  expect(japanese.children).toContain('セッションを完全に削除')
   japanese.props.onSelect()
   expect(injected.deletion.getSnapshot()).toMatchObject({ sessionId: 'session', displayTitle: '<My session>' })
   expect(confirm).not.toHaveBeenCalled()
@@ -85,7 +81,7 @@ it('uses Harness locale for desktop actions, preserves the local deletion dialog
   expect(description).not.toContain('{name}')
   expect(registrations.some(item => item.config.name === 'settings.sidebar.footer')).toBe(true)
   active = 'fr'
-  expect(deletion.component(sessionProps).children).toContain('Delete session permanently')
+  expect(deletion.component(sessionProps).children).toContain('Supprimer définitivement la session')
   const unread = registrations.find(item => item.config.id === 'desktop-unread-session')
   expect(unread.component({ ...unread.config.inject(), unread: false, useMenuOpenState: () => [true, vi.fn()] }).children).toContain('Marquer comme non lu')
   for (const dispose of effects) dispose()

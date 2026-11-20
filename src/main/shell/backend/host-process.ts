@@ -8,6 +8,7 @@ interface ReadyEvent {
   readonly type: 'ready'
   readonly url: string
   readonly injections?: readonly unknown[]
+  readonly enabledPlugins?: readonly string[]
 }
 
 interface FatalEvent {
@@ -58,6 +59,7 @@ const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 export interface DesktopHostReady {
   readonly url: string
   readonly injections?: readonly unknown[]
+  readonly enabledPlugins?: readonly string[]
 }
 
 /** The child exited, but task teardown did not finish successfully. */
@@ -94,6 +96,13 @@ export interface DesktopHostProcessOptions {
   onFailure?: (error: Error) => void
   onPlatformSession?: (session: PlatformSession | null) => void
   onPluginOperation?: (record: PluginOperationRecord) => void
+  /** Raw child output, before the harness log prefixes it. */
+  onOutput?: (source: 'stdout' | 'stderr', chunk: string) => void
+  /**
+   * Child has exited. Finish a partial log line. Stop and restart do not wait
+   * for this, and an inherited pipe that never closes must not block them.
+   */
+  onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void
 }
 
 /** One Web backend running under the Electron executable in Node mode. */
@@ -121,6 +130,9 @@ export class DesktopHostProcess {
 
   async start(): Promise<DesktopHostReady> {
     if (this.child !== undefined) return this.readyPromise
+    // argv[4] is exposed as DSH_PRIMARY_RUNTIME before profile evaluation.
+    // An empty value would make the Host look beside its runtime directory. This
+    // install keeps the payload under office-runtime, so the shell always passes that path.
     const primaryRuntime = this.options.primaryRuntime ?? join(this.options.runtimeDir, '..', 'runtime', 'primary-runtime')
     const child = spawn(this.options.node, [
       '--expose-internals',
@@ -139,13 +151,18 @@ export class DesktopHostProcess {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     })
     this.child = child
-    const capture = (chunk: string): void => {
+    const capture = (source: 'stdout' | 'stderr') => (chunk: string): void => {
       this.stderr = redactHostOutput(this.stderr + chunk).slice(-MAX_HOST_DIAGNOSTIC_CHARS)
+      try {
+        this.options.onOutput?.(source, chunk)
+      } catch (error) {
+        console.error('desktop host log sink failed', error)
+      }
     }
     child.stdout?.setEncoding('utf8')
-    child.stdout?.on('data', capture)
+    child.stdout?.on('data', capture('stdout'))
     child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', capture)
+    child.stderr?.on('data', capture('stderr'))
     child.on('message', (message: unknown) => { this.receive(child, message) })
     child.once('error', error => { this.fail(error) })
     this.exitPromise = new Promise(resolve => {
@@ -155,7 +172,12 @@ export class DesktopHostProcess {
       // after the Host exits. Waiting for `close` then makes a successful stop
       // time out and prevents restart even after SIGKILL. Process lifetime ends
       // at `exit`; pipe cleanup is not proof that the old Host is still alive.
-      child.once('exit', code => {
+      child.once('exit', (code, signal) => {
+        try {
+          this.options.onProcessExit?.(code, signal)
+        } catch (error) {
+          console.error('desktop host log finish failed', error)
+        }
         const suffix = this.stderr.trim() === '' ? '' : `: ${this.stderr.trim()}`
         if (code !== 0 && code !== null) this.fail(new Error(`dsh desktop host exited with ${String(code)}${suffix}`))
         else this.fail(new Error(`dsh desktop host stopped${suffix}`))
@@ -241,7 +263,11 @@ export class DesktopHostProcess {
       return
     }
     if (event.type === 'starting') this.runId = event.runId
-    else if (event.type === 'ready') this.readyResolve({ url: event.url, injections: event.injections })
+    else if (event.type === 'ready') this.readyResolve({
+      url: event.url,
+      injections: event.injections,
+      ...(event.enabledPlugins === undefined ? {} : { enabledPlugins: event.enabledPlugins })
+    })
     else if (event.type === 'platform-session') this.options.onPlatformSession?.(event.session)
     else if (event.type === 'shutdown-complete') {
       if (this.stopping) this.shutdownCompleted = true
@@ -324,7 +350,12 @@ export function readDesktopHostEvent(message: unknown): DesktopHostEvent | undef
     case 'shutdown-complete':
       return { type: 'shutdown-complete' }
     case 'ready':
-      return typeof candidate.url === 'string' ? { type: 'ready', url: candidate.url, injections: injections(candidate.injections) } : undefined
+      return typeof candidate.url === 'string' ? {
+        type: 'ready',
+        url: candidate.url,
+        injections: injections(candidate.injections),
+        ...pluginIds(candidate.enabledPlugins)
+      } : undefined
     case 'platform-session':
       return platformSession(candidate.session)
     case 'fatal':
@@ -362,6 +393,11 @@ export function readDesktopHostEvent(message: unknown): DesktopHostEvent | undef
 
 function injections(value: unknown): readonly unknown[] | undefined {
   return Array.isArray(value) ? value : undefined
+}
+
+function pluginIds(value: unknown): { readonly enabledPlugins: readonly string[] } | Record<string, never> {
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) return {}
+  return { enabledPlugins: value }
 }
 
 function platformSession(session: unknown): PlatformSessionEvent | undefined {

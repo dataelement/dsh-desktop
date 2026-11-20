@@ -1,6 +1,6 @@
-# Plugin Manager verified install 契约（rc.1）
+# Plugin Manager verified install 契约（rc.5）
 
-目标包：`@deepseek-ai/dsh-plugin-manager@0.2.2-rc.1`。实现由现有 patch-package 补丁维护；企业目录、凭据、制品下载和 Web package backend 保留在下游。
+目标包：`@deepseek-ai/dsh-plugin-manager@0.2.2-rc.5`。实现由现有 patch-package 补丁维护；企业目录、凭据、制品下载和 Web package backend 保留在下游。
 
 ## 公开边界
 

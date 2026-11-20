@@ -16,8 +16,9 @@ async function verifyOfficeRuntime(resources, executable, smokeScript = path.joi
   const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-office-smoke-'))
   const options = { cwd: scratch, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 120_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true }
   try {
-    await execFile(executable, [path.join(__dirname, '..', 'office-runtime', 'probe.cjs'), path.join(resources, 'app.asar'), resources], options)
     await execFile(python, ['-I', '-B', smokeScript, scratch, metadata], options)
+    const probe = await execFile(executable, [path.join(__dirname, '..', 'office-runtime', 'probe.cjs'), path.join(resources, 'app.asar'), resources, scratch], options)
+    if (probe.stdout) process.stdout.write(probe.stdout)
     await execFile(python, ['-I', '-B', '-m', 'pip', 'check'], options)
     const cli = path.join(resources, 'office-cli.mjs')
     await execFile(executable, [cli, 'capabilities', '--json'], options)

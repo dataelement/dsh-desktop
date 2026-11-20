@@ -8,16 +8,16 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const source = readFileSync(path.resolve('node_modules/@deepseek-ai/dsh-client-ui-input-trigger/lib/client.js'), 'utf8')
-function region(name) {
-  const start = source.indexOf(`//#region ${name}`)
-  const end = source.indexOf('//#endregion', start)
-  if (start < 0 || end < 0) throw new Error(`Missing runtime region: ${name}`)
+function sliceBetween(startMarker, endMarker) {
+  const start = source.indexOf(startMarker)
+  const end = source.indexOf(endMarker, start)
+  if (start < 0 || end < 0) throw new Error(`Missing runtime slice: ${startMarker} .. ${endMarker}`)
   return source.slice(start, end)
 }
 
 const { menuReduce, MenuView } = vm.runInNewContext(`(() => {
-  ${region('lib/types/core/menu.js')}
-  ${region('lib/types/client/MenuView.js')}
+  ${sliceBetween('const MENU_CLOSED=', 'function dismissedHit(')}
+  ${sliceBetween('const MAX_HEIGHT=', 'const zh=')}
   return { menuReduce, MenuView }
 })()`, {
   react: React,

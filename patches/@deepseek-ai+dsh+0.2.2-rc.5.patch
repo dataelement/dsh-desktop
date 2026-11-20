@@ -1,0 +1,63 @@
+diff --git a/node_modules/@deepseek-ai/dsh/lib/bin-CwxESKe-.js b/node_modules/@deepseek-ai/dsh/lib/bin-CwxESKe-.js
+index 2296e66..ef17192 100644
+--- a/node_modules/@deepseek-ai/dsh/lib/bin-CwxESKe-.js
++++ b/node_modules/@deepseek-ai/dsh/lib/bin-CwxESKe-.js
+@@ -226,7 +226,8 @@ async function runCli(options = {}) {
+ 					version,
+ 					profile: invocation.profile
+ 				});
+-				process.exit(1);
++				process.exitCode = 1;
++				throw error;
+ 			}
+ 			break;
+ 		}
+diff --git a/node_modules/@deepseek-ai/dsh/lib/profile-boot-QhDEDXsF.js b/node_modules/@deepseek-ai/dsh/lib/profile-boot-QhDEDXsF.js
+index 01109f4..41a442b 100644
+--- a/node_modules/@deepseek-ai/dsh/lib/profile-boot-QhDEDXsF.js
++++ b/node_modules/@deepseek-ai/dsh/lib/profile-boot-QhDEDXsF.js
+@@ -241,6 +241,7 @@ async function composeProfile(name, patchFiles, fromDefaultProfile, resolvedProf
+ 		profile,
+ 		resolution: await createRuntimeResolution({
+ 			installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
++			installationPlugins: resolvedProfile?.installationPlugins,
+ 			profile
+ 		}),
+ 		overlays: patchFiles.flatMap((file) => loadOverlayPatches(NAME, resolve(file)))
+diff --git a/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts b/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts
+index b4131a6..40c4cb9 100644
+--- a/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts
++++ b/node_modules/@deepseek-ai/dsh/lib/types/profile-boot.d.ts
+@@ -65,6 +65,8 @@ export interface ResolvedProfileRuntime {
+     profile: Profile;
+     /** Absolute package.json path of the application's dsh installation. */
+     installAnchor: string;
++    /** Explicit host plugins resolved from the owning application manifest. */
++    installationPlugins?: { anchor: string; names: readonly string[] };
+ }
+ /** Options for {@link runProfile}. */
+ export interface RunProfileOptions {
+diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
+--- a/node_modules/@deepseek-ai/dsh/package.json
++++ b/node_modules/@deepseek-ai/dsh/package.json
+@@ -116,6 +116,20 @@
+     "@deepseek-ai/dsh-experimental-forge-bundle": "0.2.2-rc.5",
+     "@deepseek-ai/dsh-deepseek-chat-import": "0.2.2-rc.5"
+   },
++  "optionalDependencies": {
++    "@deepseek-ai/dsh-deepseek-account": "0.2.2-rc.5",
++    "dsh-ppt-composer": "0.1.1-rc.2",
++    "dsh-desktop-client-ui": "0.1.0",
++    "dsh-desktop-hmr-fallback": "0.1.0",
++    "dsh-desktop-log-bridge": "0.1.0",
++    "dsh-desktop-market-installer": "0.1.0",
++    "dsh-desktop-preset-transfer": "0.1.0",
++    "dsh-image-generation": "0.1.0",
++    "react-dom": "18.3.1",
++    "dsh-desktop-onboarding": "0.1.0",
++    "dsh-desktop-workbenches": "0.1.0",
++    "dsh-desktop-office": "0.1.0"
++  },
+   "devDependencies": {
+     "@deepseek-ai/dsh-skill-badge": "0.2.2-rc.5",
+     "@deepseek-ai/dsh-webhook-github": "0.2.2-rc.5",

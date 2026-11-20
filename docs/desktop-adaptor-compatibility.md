@@ -1,6 +1,6 @@
 # Desktop 适配基线兼容修复
 
-目标 Harness 版本 0.2.2-rc.1。公共客户端已经贡献的 sidebar.primaryNavigation、desktop.mode.content 和 conversation.hero.brand.title 缺少对应 owner 声明/出口，表现为贡献项不挂载而非企业后端一定导入失败。补丁分别保存在 sidebar、layout、conversation 三个标准原子补丁，升级发现等价公开能力后删除对应 hunk，不能整体删除仍有独立用途的旧补丁。
+目标 Harness 版本 0.2.2-rc.5。公共客户端已经贡献的 sidebar.primaryNavigation、desktop.mode.content 和 conversation.hero.brand.title 缺少对应 owner 声明/出口，表现为贡献项不挂载而非企业后端一定导入失败。补丁分别保存在 sidebar、layout、conversation 三个标准原子补丁，升级发现等价公开能力后删除对应 hunk，不能整体删除仍有独立用途的旧补丁。
 
 - 主导航为 root/single，向贡献项提供当前面板、选择操作、展开侧栏和原生 renderAction；无贡献使用原面板列表。NavigationRow 沿用原 panelTitle 样式和 Tooltip.side API。声明与公开类型同批更新。
 - 主内容包裹为 root/single，接收 work、columns、resizeHandle。work 是主区和右栏的同一份内容节点；包裹模式使用两列内部坐标，无贡献沿用外部三列坐标。原右栏拖动柄只随选定分支渲染一次，左侧栏拖动柄保留在外层。Web 未提供原生 present 能力时不注册桌面内容贡献。

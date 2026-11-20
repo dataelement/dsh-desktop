@@ -12,7 +12,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 // Evaluate the installed factory, exposing its actual native controllers only to tests.
 const source = readFileSync(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-client-ui-conversation/package.json').replace(/package[.]json$/, 'lib/client.js'), 'utf8')
 let definition
-runInNewContext(source.replace('exports.apply = apply;', 'exports.native = { InputHub, SessionInputShell }; exports.apply = apply;'), {
+runInNewContext(source.replace(/exports\.apply\s*=\s*apply;/, 'exports.native = { InputHub, SessionInputShell }; exports.apply = apply;'), {
   window: { __ModuleLoader__: { load: value => { definition = value } } }, document,
   AbortController, Promise, Error, TypeError, setTimeout, clearTimeout, console, navigator, Node, MutationObserver
 })

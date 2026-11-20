@@ -5,9 +5,36 @@ import { describe, expect, it } from 'vitest'
 
 function bundledFunction(source, name) {
   const start = source.indexOf('function ' + name + '(')
-  const end = source.indexOf('\n\t\t}', start)
-  if (start < 0 || end < 0) throw new Error('Missing bundled function: ' + name)
-  return source.slice(start, end + 4)
+  if (start < 0) throw new Error('Missing bundled function: ' + name)
+  let depth = 0
+  let quote = ''
+  let escaped = false
+  let templateExpr = 0
+  for (let index = source.indexOf('{', start); index < source.length; index += 1) {
+    const char = source[index]
+    if (quote === '`') {
+      if (escaped) { escaped = false; continue }
+      if (char === '\\') { escaped = true; continue }
+      if (char === '`' && templateExpr === 0) { quote = ''; continue }
+      if (char === '$' && source[index + 1] === '{') { templateExpr += 1; index += 1; continue }
+      if (char === '{' && templateExpr > 0) { templateExpr += 1; continue }
+      if (char === '}' && templateExpr > 0) { templateExpr -= 1; continue }
+      continue
+    }
+    if (quote) {
+      if (escaped) { escaped = false; continue }
+      if (char === '\\') { escaped = true; continue }
+      if (char === quote) quote = ''
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') { quote = char; continue }
+    if (char === '{') depth += 1
+    else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, index + 1)
+    }
+  }
+  throw new Error('Unclosed bundled function: ' + name)
 }
 async function helpers() {
   const chat = await readFile(new URL('../node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js', import.meta.url), 'utf8')

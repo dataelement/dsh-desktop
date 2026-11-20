@@ -1,6 +1,6 @@
 # 技能展示名与调用键契约
 
-目标版本为 Harness 0.2.2-rc.1。当前官方 SkillSummary、skills/list 与输入候选链仅携带调用 name，无法表达独立的人类可读名称；候选已有 label 但默认总显示内部 alias，不能直接用于提供方的隔离调用键。
+目标版本为 Harness 0.2.2-rc.5。当前官方 SkillSummary、skills/list 与输入候选链仅携带调用 name，无法表达独立的人类可读名称；候选已有 label 但默认总显示内部 alias，不能直接用于提供方的隔离调用键。
 
 本次兼容层在 dsh-skill 增加可选 displayName 并验证类型，保留 runtime 注册、provider 发现、加载与 summary 的字段；api-session-controller 同步实际投影、声明、host/remote typert codec、JSON Schema 和 FaceModel 声明。api-remotes 的生成客户端内联 codec/JSON Schema 同步此字段，避免客户端校验时剥离展示名。所有 name 与调用键保持不变。
 

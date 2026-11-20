@@ -44,7 +44,7 @@ const patchedPackages = [
   {
     name: 'dsh-client-ui-workspace',
     file: 'lib/client.js',
-    markers: ['async deleteSession(sessionId)', 'this.clearMain()', 'const retention = this.sessions.retainInfo(sessionId)', 'timer = setTimeout(finish, 250)', 'await this.sessions.delete(sessionId)']
+    markers: ['async deleteSession(sessionId)', 'this.clearMain()', 'const retention=this.sessions.retainInfo(sessionId)', 'timer=setTimeout(finish,250)', 'await this.sessions.delete(sessionId)']
   }
 ] as const
 

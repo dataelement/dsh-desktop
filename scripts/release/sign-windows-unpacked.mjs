@@ -233,8 +233,8 @@ async function main() {
       jsignJar: jsignJar ?? 'jsign.jar',
       pinFile: pinFile ?? 'pin.txt',
       tsaUrl: process.env.TSA_URL,
-      name: process.env.JSIGN_NAME,
-      url: process.env.JSIGN_URL,
+      name: process.env.JSIGN_NAME || undefined,
+      url: process.env.JSIGN_URL || undefined,
       dryRun
     })
   }

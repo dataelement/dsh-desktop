@@ -1,10 +1,10 @@
-# 模型准备与输入提交前校验（Harness 0.2.2-rc.1）
+# 模型准备与输入提交前校验（Harness 0.2.2-rc.5）
 
 这两处接缝是通用的可等待业务准入边界，不包含企业身份、知识库或工具目录规则。Desktop/Web 共用同一实现。补丁归属三个独立 package：dsh-system-prompt、dsh-agent-loop、dsh-client-ui-conversation。
 
 ## 模型准备
 
-0.2.2-rc.1 的原始 AgentLoop 顺序为 tools.resolve → systemPrompt.assemble → agent/pre-step。官方 agent/pre-step 是针对已准备好的输入的决策 waterfall；其语义保持不变。工具 register 的 when 条件只能选择已存在的注册，不能在快照后补入新增工具。因此这两个 API 都不能承担“异步刷新后立即进入本次工具快照”。
+0.2.2-rc.5 的原始 AgentLoop 顺序为 tools.resolve → systemPrompt.assemble → agent/pre-step。官方 agent/pre-step 是针对已准备好的输入的决策 waterfall；其语义保持不变。工具 register 的 when 条件只能选择已存在的注册，不能在快照后补入新增工具。因此这两个 API 都不能承担“异步刷新后立即进入本次工具快照”。
 
 新增 SystemPrompt.prepare(context): Promise<PreparedPrompt>：按 context.scope 派发可等待的 system-prompt/prepare，开始和结束检查 signal。失败直接拒绝，不读取任何 provider，不调用模型。
 

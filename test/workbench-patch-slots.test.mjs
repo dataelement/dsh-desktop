@@ -39,6 +39,15 @@ function loadSidebar() {
 }
 
 describe('0.2.2 workbench patch slots', () => {
+  it('gives the workbench switcher its own sidebar grid row', async () => {
+    const source = await readFile(sidebarPath, 'utf8')
+    expect(source).toContain('grid-template-rows:8px max-content max-content 2px max-content')
+    expect(source).toContain('.hHd-Xa_quickSwitcher{grid-area:2/2;min-width:0}')
+    expect(source).toContain('.hHd-Xa_panelList{flex-direction:column;flex:none;grid-area:3/2;')
+    expect(source).toContain('.hHd-Xa_scrollArea:after{grid-row:4}')
+    expect(source).toContain('.hHd-Xa_regionArea{flex-direction:column;grid-area:5/2;')
+  })
+
   it.each([
     { panels: [], unpinned: [], hasActions: false, collapsed: true },
     { panels: [], unpinned: [], hasActions: false, collapsed: false },
@@ -101,6 +110,15 @@ describe('0.2.2 workbench patch slots', () => {
     dom.window.close()
 
     expect(markup).toContain('Workbench switcher')
+    const placed = new JSDOM(`<body>${markup}</body>`)
+    const scrollArea = placed.window.document.querySelector('.hHd-Xa_scrollArea')
+    const switcher = scrollArea?.querySelector('[data-dsh-sidebar-quick-switcher]')
+    expect(switcher?.textContent ?? '').toContain('Workbench switcher')
+    const panelList = scrollArea?.querySelector('.hHd-Xa_panelList')
+    if (panelList) {
+      expect(panelList.compareDocumentPosition(switcher) & placed.window.Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    }
+    placed.window.close()
     expect(markup).toContain('<div data-dsh-sidebar-settings-content=""><button>Settings contribution</button></div>')
     expect(markup).toContain('<div data-dsh-sidebar-settings-actions=""><button>Recovery contribution</button></div>')
     expect(markup.match(/data-dsh-sidebar-settings=""/g)).toHaveLength(1)

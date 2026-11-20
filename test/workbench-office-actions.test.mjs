@@ -6,6 +6,7 @@ import * as ReactDOM from 'react-dom'
 import * as jsx from 'react/jsx-runtime'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it } from 'vitest'
+import { desktopUi } from './helpers/template-library-controls.mjs'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const workbenchSource = await readFile(resolve('packages/dsh-desktop-workbenches/client.js'), 'utf8')
@@ -41,6 +42,7 @@ it.each([
     window.__ModuleLoader__ = { load({ factory }) { plugin = factory(name => {
       if (name === 'react') return React
       if (name === 'react-dom') return ReactDOM
+      if (name === 'dsh-desktop-client-ui') return desktopUi
       if (name === 'react/jsx-runtime') return jsx
       if (name === '@deepseek-ai/cordis') return { Service: { tracker: Symbol('tracker') } }
       return {}

@@ -20,7 +20,7 @@ interface ShellRuntime {
   Context: new () => ShellContext
   boot(options: { ctx: ShellContext; modules: ClientModuleSystem; manifest: ClientModuleSystem['manifest'] }): Promise<void>
   mount(ctx: ShellContext, container: object): Promise<void>
-  audit(ctx: ShellContext, modules: ClientModuleSystem): void
+  audit(ctx: ShellContext, modules: ClientModuleSystem): void | Promise<void>
 }
 
 interface Registration {
@@ -82,10 +82,14 @@ async function loadShellRuntime(): Promise<ShellRuntime> {
     selected.add(name)
     for (const dependency of references(definition.node)) select(dependency)
   }
-  // Minified names belong to the locked 0.2.2-rc.1 asset index-BgUyXZcc.js.
-  // Execute its actual boot, audit, mount and vendored Cordis dependency closure
-  // without starting the DOM shell.
-  for (const name of ['ut', 'KZ', 'qZ', 'GZ']) select(name)
+  // Names are minified and change with the web shell asset. Pick the boot,
+  // audit, mount and Cordis context by the behavior the shell still exposes.
+  const context = [...definitions.values()].find((unit) => unit.text.includes('Symbol.for("cordis.is")'))
+  const boot = [...definitions.values()].find((unit) => unit.text.includes('entries.start') && unit.text.includes('onEntryState'))
+  const audit = [...definitions.values()].find((unit) => unit.text.includes('did not activate') && unit.text.includes('required'))
+  const mount = [...definitions.values()].find((unit) => unit.text.includes('uiRenderer.mount'))
+  if (!context || !boot || !audit || !mount) throw new Error('web shell boot surface missing')
+  for (const name of [context.name, boot.name, audit.name, mount.name]) select(name)
   let changed = true
   while (changed) {
     changed = false
@@ -99,7 +103,7 @@ async function loadShellRuntime(): Promise<ShellRuntime> {
     }
   }
   const executable = units.filter((unit) => selected.has(unit.name)).map((unit) => unit.text).join(String.fromCharCode(10))
-  return vm.runInNewContext(`${executable};({ Context: ut, boot: KZ, audit: qZ, mount: GZ })`, {
+  return vm.runInNewContext(`${executable};({ Context: ${context.name}, boot: ${boot.name}, audit: ${audit.name}, mount: ${mount.name} })`, {
     console: { ...console, error: vi.fn() }, setTimeout, clearTimeout
   }) as ShellRuntime
 }
@@ -198,7 +202,7 @@ describe('real web shell workbench failure isolation', () => {
       test.target.load({ id: 'conflicting-plugin', factory: first })
       expect(() => test.target.load?.({ id: 'conflicting-plugin', factory: second })).toThrow('duplicate factory registration')
       await test.ctx.loader.create({ name: 'unknown-required-plugin' })
-      expect(() => test.shell.audit(test.ctx, test.modules)).toThrow('unknown-required-plugin')
+      await expect(test.shell.audit(test.ctx, test.modules)).rejects.toThrow('unknown-required-plugin')
     } finally {
       await test.ctx.fiber.dispose()
     }

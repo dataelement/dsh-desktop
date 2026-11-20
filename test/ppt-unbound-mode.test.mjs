@@ -247,13 +247,13 @@ describe('unbound PPT mode', () => {
 describe('PPT hero and session dock routing', () => {
   it('mounts only the hero dock without a session and only the shared dock with input', async () => {
     const runtime = await readFile(path.resolve('node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js'), 'utf8')
-    const expression = /children: \[([^\n]+), activity \?/.exec(runtime)?.[1]
+    const expression = /input !== void 0 && sessionId !== void 0 \? renderSlot\("conversation\.composer\.dock", extensionZone \?\? \{\}\) : null/.exec(runtime)?.[0]
     expect(expression).toBeDefined()
     const render = new Function('sessionId', 'input', 'extensionZone', 'renderSlot', `return ${expression}`)
     const zone = { marker: 'owner' }
     const calls = []
     const renderSlot = (name, owner) => { calls.push({ name, owner }); return name }
-    const heroExpression = /sessionId === void 0 \? renderSlot\("conversation.hero.dock", zone \?\? \{\}\) : null/.exec(runtime)?.[0]
+    const heroExpression = /sessionId===void 0\?renderSlot\("conversation\.hero\.dock", zone \?\? \{\}\):null/.exec(runtime)?.[0]
     expect(heroExpression).toBeDefined()
     const hero = new Function('sessionId', 'zone', 'renderSlot', `return ${heroExpression}`)
     expect(hero(undefined, zone, renderSlot)).toBe('conversation.hero.dock')

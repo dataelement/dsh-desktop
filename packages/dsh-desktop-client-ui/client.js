@@ -8,6 +8,84 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const { BrandWordmark, FishLogo, MenuItemButton, Modal, Button, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
+
+    // Small presentation-only primitives shared by PPT and native Office templates.
+    // Callers own file import, persistence, translations and template state.
+    const templateElement = React.createElement
+    function TemplateIcon({ name }) {
+      const paths = name === 'create' ? ['m4 20 11-11 3 3L7 23z', 'm14 10 3 3', 'M6 3v4M4 5h4M18 2v4M16 4h4M21 8v4M19 10h4']
+        : name === 'edit' ? ['m15 4 5 5', 'M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z']
+        : name === 'delete' ? ['M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'] : ['m6 6 12 12M6 18 18 6']
+      return templateElement('svg', { width: name === 'create' ? 28 : 16, height: name === 'create' ? 28 : 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.65, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        ...paths.map((d, key) => templateElement('path', { key, d })))
+    }
+    function TemplateCreateButton({ label, hint, disabled, onClick }) {
+      return templateElement('button', { type: 'button', className: 'dsh-template-create', disabled, title: hint, onClick }, templateElement(TemplateIcon, { name: 'create' }), templateElement('span', null, label))
+    }
+    function TemplateCardActions({ busy, editLabel, deleteLabel, onEdit, onDelete }) {
+      return templateElement('div', { className: 'dsh-template-actions' },
+        templateElement('button', { type: 'button', disabled: busy, title: editLabel, 'aria-label': editLabel, onClick: onEdit }, templateElement(TemplateIcon, { name: 'edit' })),
+        templateElement('button', { type: 'button', disabled: busy, title: deleteLabel, 'aria-label': deleteLabel, onClick: onDelete }, templateElement(TemplateIcon, { name: 'delete' })))
+    }
+    function TemplateManagementDialog({ deleting, name, description, onNameChange, onDescriptionChange, onSave, onDelete, onRequestDelete, onClose, onCancelDelete, busy, error, t }) {
+      const dialog = React.useRef(null), first = React.useRef(null), title = React.useId()
+      React.useLayoutEffect(() => {
+        const node = dialog.current
+        node.showModal(); first.current?.focus()
+        return () => { if (node.open) node.close() }
+      }, [])
+      React.useLayoutEffect(() => { first.current?.focus() }, [deleting])
+      const close = () => { if (!busy) onClose() }
+      const button = (label, onClick, props = {}) => templateElement('button', { type: 'button', disabled: busy, onClick, ...props }, label)
+      return templateElement('dialog', { ref: dialog, className: 'dsh-template-dialog', 'aria-modal': true, 'aria-labelledby': title,
+        onCancel: event => { event.preventDefault(); close() },
+        onClick: event => {
+          if (event.target !== event.currentTarget) return
+          const rect = event.currentTarget.getBoundingClientRect()
+          if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) close()
+        },
+        onKeyDown: event => {
+          if (event.key !== 'Tab') return
+          const fields = [...event.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled)')]
+          const first = fields[0], last = fields.at(-1)
+          if (!first) { event.preventDefault(); return }
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+        } },
+        templateElement('header', null, templateElement('h2', { id: title }, t(deleting ? 'deleteTitle' : 'editTitle')),
+          templateElement('button', { type: 'button', className: 'dsh-template-close', disabled: busy, 'aria-label': t('close'), onClick: close }, templateElement(TemplateIcon, { name: 'close' }))),
+        deleting ? templateElement('div', { className: 'dsh-template-fields' },
+          templateElement('p', { className: 'dsh-template-delete-copy' },
+            templateElement('bdi', null, name), templateElement('br'), t('deleteHint')),
+          error ? templateElement('div', { role: 'alert', className: 'dsh-template-error' }, error) : null,
+          templateElement('footer', null, button(t('cancel'), onCancelDelete ?? close, { ref: first }), button(t(busy ? 'processing' : 'confirmDelete'), onDelete)))
+        : templateElement('form', { 'aria-busy': busy, onSubmit: event => { event.preventDefault(); if (!busy && name.trim()) onSave() } },
+          templateElement('label', null, t('name'), templateElement('input', { ref: first, value: name, maxLength: 80, required: true, disabled: busy, autoComplete: 'off', onChange: event => onNameChange(event.target.value) })),
+          templateElement('label', null, t('description'), templateElement('textarea', { value: description, maxLength: 1000, disabled: busy, placeholder: t('descriptionPlaceholder'), onChange: event => onDescriptionChange(event.target.value) })),
+          error ? templateElement('div', { role: 'alert', className: 'dsh-template-error' }, error) : null,
+          templateElement('footer', null, button(t('delete'), onRequestDelete), templateElement('button', { type: 'submit', disabled: busy || !name.trim() }, t(busy ? 'processing' : 'update')))))
+    }
+    const templateControlsCss = `
+.dsh-template-create{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;aspect-ratio:16/9;width:100%;padding:20px;border:2px solid transparent;border-radius:14px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;cursor:pointer;transition:background .15s,color .15s}
+.dsh-template-create:hover{background:color-mix(in srgb,var(--dsw-alias-label-primary) 10%,var(--dsw-alias-bg-base));color:var(--dsw-alias-label-primary)}
+.dsh-template-create:disabled{opacity:.55;cursor:default}
+.dsh-template-actions{position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:2;opacity:0;pointer-events:none;transition:opacity .12s}
+[data-template-card]:hover .dsh-template-actions,[data-template-card]:focus-within .dsh-template-actions{opacity:1;pointer-events:auto}
+.dsh-template-actions button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid color-mix(in srgb,var(--dsw-alias-label-primary-foreground) 15%,transparent);border-radius:7px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 80%,transparent);color:var(--dsw-alias-label-primary-foreground);cursor:pointer;backdrop-filter:blur(8px)}
+.dsh-template-actions button:hover{background:var(--dsw-alias-label-primary)}.dsh-template-actions button:disabled{opacity:.5;cursor:default}
+.dsh-template-dialog{box-sizing:border-box;width:min(560px,calc(100vw - 40px));max-height:calc(100dvh - 48px);margin:auto;padding:26px;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:20px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;box-shadow:0 24px 80px color-mix(in srgb,var(--dsw-alias-label-primary) 20%,transparent);overflow-y:auto;overscroll-behavior:contain}
+.dsh-template-dialog::backdrop{background:color-mix(in srgb,var(--dsw-alias-label-primary) 50%,transparent)}
+.dsh-template-dialog header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:26px}.dsh-template-dialog h2{margin:0;font-size:18px;line-height:26px;font-weight:600}
+.dsh-template-dialog .dsh-template-close{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.dsh-template-dialog form,.dsh-template-fields{display:grid;gap:22px}.dsh-template-dialog label{display:grid;gap:9px;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:20px}
+.dsh-template-dialog input,.dsh-template-dialog textarea{box-sizing:border-box;width:100%;margin:0;padding:12px 14px;border:1px solid transparent;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:21px}.dsh-template-dialog textarea{min-height:112px;resize:vertical;max-height:260px}.dsh-template-dialog input::placeholder,.dsh-template-dialog textarea::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dsh-template-dialog footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:4px}.dsh-template-dialog footer button{min-height:38px;padding:8px 16px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);border-radius:10px;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:transform 120ms cubic-bezier(.23,1,.32,1)}
+.dsh-template-dialog :disabled{cursor:default;opacity:.55}.dsh-template-delete-copy{margin:0 0 26px;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:1.65;overflow-wrap:anywhere}.dsh-template-error{margin:0;padding:10px 12px;border-radius:10px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.dsh-template-create:focus-visible,.dsh-template-actions button:focus-visible,.dsh-template-dialog :is(button,input,textarea):focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+@media(hover:none){.dsh-template-actions{opacity:1;pointer-events:auto}}@media(hover:hover) and (pointer:fine){.dsh-template-dialog button:hover:not(:disabled){filter:brightness(.94)}.dsh-template-dialog .dsh-template-close:hover{background:var(--dsw-alias-interactive-bg-hover)}}@media(prefers-reduced-motion:reduce){.dsh-template-create,.dsh-template-actions,.dsh-template-dialog footer button{transition:none}}
+`
+    const TemplateLibraryControls = { CreateButton: TemplateCreateButton, CardActions: TemplateCardActions, ManagementDialog: TemplateManagementDialog }
+
     // Tight bounds of the mark inside its 1000x1000 source artwork.
     const BRAND_MARK_VIEWBOX = { x: 42, y: 218, width: 898, height: 564 }
     // DSH Desktop whale mark: a window with a tail, drawn in currentColor so
@@ -61,6 +139,54 @@ window.__ModuleLoader__.load({
         revealedWindows: 'Shown in File Explorer',
         revealedOther: 'Shown in the file manager',
         failed: 'Could not open with a local app'
+      },
+      ja: {
+        label: 'ローカルアプリで開く',
+        pending: '開いています…',
+        revealedDarwin: 'Finder に表示しました',
+        revealedWindows: 'エクスプローラーに表示しました',
+        revealedOther: 'ファイルマネージャーに表示しました',
+        failed: 'ローカルアプリで開けませんでした'
+      },
+      es: {
+        label: 'Abrir con una aplicación local',
+        pending: 'Abriendo…',
+        revealedDarwin: 'Mostrado en Finder',
+        revealedWindows: 'Mostrado en el Explorador de archivos',
+        revealedOther: 'Mostrado en el administrador de archivos',
+        failed: 'No se pudo abrir con una aplicación local'
+      },
+      fr: {
+        label: 'Ouvrir avec une application locale',
+        pending: 'Ouverture…',
+        revealedDarwin: 'Affiché dans le Finder',
+        revealedWindows: 'Affiché dans l’Explorateur de fichiers',
+        revealedOther: 'Affiché dans le gestionnaire de fichiers',
+        failed: 'Impossible d’ouvrir avec une application locale'
+      },
+      de: {
+        label: 'Mit lokaler Anwendung öffnen',
+        pending: 'Wird geöffnet…',
+        revealedDarwin: 'Im Finder angezeigt',
+        revealedWindows: 'Im Datei-Explorer angezeigt',
+        revealedOther: 'Im Dateimanager angezeigt',
+        failed: 'Konnte nicht mit einer lokalen Anwendung geöffnet werden'
+      },
+      ru: {
+        label: 'Открыть в локальном приложении',
+        pending: 'Открытие…',
+        revealedDarwin: 'Показано в Finder',
+        revealedWindows: 'Показано в Проводнике',
+        revealedOther: 'Показано в файловом менеджере',
+        failed: 'Не удалось открыть в локальном приложении'
+      },
+      pt: {
+        label: 'Abrir com aplicativo local',
+        pending: 'Abrindo…',
+        revealedDarwin: 'Mostrado no Finder',
+        revealedWindows: 'Mostrado no Explorador de Arquivos',
+        revealedOther: 'Mostrado no gerenciador de arquivos',
+        failed: 'Não foi possível abrir com um aplicativo local'
       }
     }
     // macOS Archive Utility extracts a zip and then closes, so a successful
@@ -78,7 +204,7 @@ window.__ModuleLoader__.load({
     function revealedCopyKey() {
       const platform = document.documentElement?.dataset?.platform
       if (platform === 'darwin') return 'revealedDarwin'
-      if (platform === 'windows') return 'revealedWindows'
+      if (platform === 'win32' || platform === 'windows') return 'revealedWindows'
       return 'revealedOther'
     }
 
@@ -463,18 +589,6 @@ window.__ModuleLoader__.load({
       if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilityActions))
     }
 
-    function PlusIcon() {
-      return React.createElement('svg', {
-        width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none',
-        style: { flex: 'none' }
-      }, React.createElement('path', {
-        d: 'M8 3V13M3 8H13',
-        stroke: 'currentColor',
-        strokeWidth: '1.5',
-        strokeLinecap: 'round'
-      }))
-    }
-
     const inject = ['slots', 'locale', 'remote', 'remote.session', 'sessions', 'uiWorkspace']
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(DELETE_SESSION_NS, {
@@ -487,6 +601,36 @@ window.__ModuleLoader__.load({
           menu: 'Delete session permanently', title: 'Delete session', close: 'Close', cancel: 'Cancel', confirm: 'Delete session',
           description: 'Delete “{name}”? Workspace files are kept. This can’t be undone.',
           pending: 'Deleting session…', failed: 'Deletion failed. Please try again.'
+        },
+        ja: {
+          menu: 'セッションを完全に削除', title: 'セッションを削除', close: '閉じる', cancel: 'キャンセル', confirm: 'セッションを削除',
+          description: '「{name}」を削除しますか？ワークスペースのファイルは保持されます。この操作は取り消せません。',
+          pending: 'セッションを削除しています…', failed: '削除に失敗しました。もう一度お試しください。'
+        },
+        es: {
+          menu: 'Eliminar sesión permanentemente', title: 'Eliminar sesión', close: 'Cerrar', cancel: 'Cancelar', confirm: 'Eliminar sesión',
+          description: '¿Eliminar «{name}»? Se conservan los archivos del espacio de trabajo. No se puede deshacer.',
+          pending: 'Eliminando sesión…', failed: 'No se pudo eliminar. Inténtelo de nuevo.'
+        },
+        fr: {
+          menu: 'Supprimer définitivement la session', title: 'Supprimer la session', close: 'Fermer', cancel: 'Annuler', confirm: 'Supprimer la session',
+          description: 'Supprimer « {name} » ? Les fichiers de l’espace de travail sont conservés. Cette action est irréversible.',
+          pending: 'Suppression de la session…', failed: 'La suppression a échoué. Veuillez réessayer.'
+        },
+        de: {
+          menu: 'Sitzung endgültig löschen', title: 'Sitzung löschen', close: 'Schließen', cancel: 'Abbrechen', confirm: 'Sitzung löschen',
+          description: '„{name}“ löschen? Die Arbeitsbereichsdateien bleiben erhalten. Dies kann nicht rückgängig gemacht werden.',
+          pending: 'Sitzung wird gelöscht…', failed: 'Löschen fehlgeschlagen. Bitte erneut versuchen.'
+        },
+        ru: {
+          menu: 'Удалить сеанс навсегда', title: 'Удалить сеанс', close: 'Закрыть', cancel: 'Отмена', confirm: 'Удалить сеанс',
+          description: 'Удалить «{name}»? Файлы рабочей области сохранятся. Это действие нельзя отменить.',
+          pending: 'Удаление сеанса…', failed: 'Не удалось удалить. Повторите попытку.'
+        },
+        pt: {
+          menu: 'Excluir sessão permanentemente', title: 'Excluir sessão', close: 'Fechar', cancel: 'Cancelar', confirm: 'Excluir sessão',
+          description: 'Excluir “{name}”? Os arquivos do espaço de trabalho serão mantidos. Não é possível desfazer.',
+          pending: 'Excluindo sessão…', failed: 'Falha ao excluir. Tente novamente.'
         }
       }))
       const deletion = createSessionDeletion((sessionId) => {
@@ -507,7 +651,10 @@ window.__ModuleLoader__.load({
       ctx.effect(() => locale.register(LOCAL_OPEN_NS, LOCAL_OPEN_COPY), 'desktop local open locale')
       applyRepair(ctx)
       ctx.effect(() => ctx.locale.register(ENTERPRISE_NS, {
-        zh: { learnMore: '了解企业版' }, en: { learnMore: 'Explore Enterprise' }
+        zh: { learnMore: '了解企业版' }, en: { learnMore: 'Explore Enterprise' },
+        ja: { learnMore: 'エンタープライズ版について' }, es: { learnMore: 'Conocer la edición empresarial' },
+        fr: { learnMore: 'Découvrir la version entreprise' }, de: { learnMore: 'Enterprise-Version entdecken' },
+        ru: { learnMore: 'Корпоративная версия' }, pt: { learnMore: 'Conhecer a versão empresarial' }
       }))
       const enterpriseText = ctx.locale.bind(ENTERPRISE_NS)
       ctx.slots.inject('settings.sidebar.footer', () => ctx.slots.register({
@@ -519,20 +666,28 @@ window.__ModuleLoader__.load({
       ctx.effect(() => {
         const id = 'dsh-desktop-preset-toolbar-style'
         let style = document.getElementById(id)
-        if (!style || style.tagName !== 'STYLE') {
+        const created = !style || style.tagName !== 'STYLE'
+        if (created) {
           style = document.createElement('style')
           style.dataset.plugin = 'dsh-desktop-client-ui'
           style.id = id
         }
-        style.textContent = `
+        style.textContent = `${templateControlsCss}
           [data-dsh-sidebar-brand-identity] { display:none !important; }
-          /* Third-party plugins (dshmarket, dsh-better-sidebar) draw custom icons via ::before on settings nav rows,
-             expecting direct > svg to hide the fallback gear. In 0.2.2-rc.1, navIcon wraps the fallback in a span,
-             so ensure the fallback gear container is hidden when custom nav marker is present. */
+          /* Third-party plugins (dshmarket, dsh-better-sidebar) draw custom icons via ::before on settings nav rows
+             and expect the fallback gear to disappear. rc.4's official sidebar no longer uses a navIcon class;
+             keep both the old span wrapper and a direct svg so either structure stays hidden. */
           [data-dsh-market-nav-icon] span[class*="navIcon"],
           [data-dsh-market-nav-icon] svg,
           [data-dsh-better-sidebar-settings-nav] span[class*="navIcon"],
           [data-dsh-better-sidebar-settings-nav] svg { display:none !important; }
+          [data-dsh-enterprise-entry] {
+            display:flex; align-items:center; gap:4px; min-height:36px; padding:0 12px;
+            border-radius:8px; color:var(--dsw-alias-label-secondary); font-size:13px;
+            line-height:20px; text-decoration:none;
+          }
+          [data-dsh-enterprise-entry]:hover { color:var(--dsw-alias-label-primary); background:var(--dsw-alias-interactive-bg-hover); }
+          [data-dsh-enterprise-entry]:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:1px; }
           :root { --dsh-page-title-top-spacing:56px; }
           /* Keep Desktop actions beside Settings, without relocating other slot contributions. */
           [data-dsh-sidebar-settings]:has([data-dsh-desktop-utilities]) {
@@ -621,7 +776,7 @@ window.__ModuleLoader__.load({
             color:var(--dsw-alias-state-error-primary);
           }
         `
-        document.head.appendChild(style)
+        if (created || !style.isConnected) document.head.appendChild(style)
         return () => style.remove()
       })
       ctx.slots.inject('sidebar.brand.mark', () =>
@@ -647,7 +802,7 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
-          id: 'desktop-delete-session', locale: ACTIONS_NS,
+          id: 'desktop-delete-session',
           order: 900,
           locale: DELETE_SESSION_NS,
           inject: () => ({ deletion, t: deletionText })
@@ -678,6 +833,7 @@ window.__ModuleLoader__.load({
       )
     }
 
+    exports.TemplateLibraryControls = TemplateLibraryControls
     exports.apply = apply
     exports.inject = inject
     return module.exports

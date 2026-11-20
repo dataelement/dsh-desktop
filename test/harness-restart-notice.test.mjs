@@ -30,10 +30,11 @@ describe('global Harness restart notice', () => {
       getSnapshot: () => snapshot,
       refreshRestartStatus: vi.fn(async () => {}),
       load: vi.fn(async () => publish({ ...snapshot, error: '' })),
+      reloadPage: vi.fn(),
       run: promise => void promise,
       dismissError: () => publish({ ...snapshot, errorDismissed: true })
     }
-    const copy = { installationDrift: '安装状态异常', installationDriftDescription: '停止外部更新并通过插件管理器修复。重启无法修复。', close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', market: '插件市场安装变更', interrupted: '重启将中断正在执行的任务。' }
+    const copy = { installationDrift: '安装状态异常', installationDriftDescription: '停止外部更新并通过插件管理器修复。重启无法修复。', close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', registrationRecovery: '请查看详情。修复后，保存未提交的内容，再重新加载页面。', reloadPage: '重新加载页面', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', market: '插件市场安装变更', interrupted: '重启将中断正在执行的任务。' }
     const root = createRoot(dom.window.document.getElementById('root'))
     try {
       await React.act(async () => root.render(React.createElement(Notice, { service, t: key => copy[key] })))
@@ -87,7 +88,15 @@ describe('global Harness restart notice', () => {
       await React.act(async () => doc.querySelector('.dshWbOperationNotice .dshRestartPrimary').click())
       expect(service.load).toHaveBeenCalledOnce()
       expect(doc.querySelector('.dshWbOperationNotice')).toBeNull()
-      await React.act(async () => publish({ ...snapshot, restartNeeded: true, error: '重启后可恢复。', errorDismissed: false }))
+      service.ctx = { locale: { bind: () => key => key === 'diagnostic' ? '错误代码' : key } }
+      const timeoutMessage = '安装包下载连接超时，请重试；若多次失败，请检查网络或代理设置。'
+      await React.act(async () => publish({ ...snapshot, error: timeoutMessage, errorDiagnostic: 'UND_ERR_CONNECT_TIMEOUT', errorDismissed: false }))
+      expect(doc.querySelector('.dshWbOperationNotice').textContent).toContain(timeoutMessage)
+      expect(doc.querySelector('.dshWbOperationNotice').textContent).not.toContain('UND_ERR_CONNECT_TIMEOUT')
+      await React.act(async () => doc.querySelector('[aria-haspopup="dialog"]').click())
+      expect(doc.querySelector('[role="dialog"]').textContent).toContain('错误代码: UND_ERR_CONNECT_TIMEOUT')
+      await React.act(async () => doc.querySelector('[role="dialog"] button').click())
+      await React.act(async () => publish({ ...snapshot, restartNeeded: true, error: '重启后可恢复。', errorDiagnostic: '', errorDismissed: false }))
       expect(doc.querySelector('.dshWbOperationNotice')).toBeNull()
       expect(doc.querySelector('.dshRestartTitle').textContent).toBe(copy.title)
       await React.act(async () => doc.querySelector('[aria-haspopup="dialog"]').click())
@@ -116,6 +125,12 @@ describe('global Harness restart notice', () => {
       service.ctx = {}
       await React.act(async () => publish({ restartNeeded: false, registrationFailures: [registration] }))
       expect(doc.querySelector('.dshRestartTitle').textContent).toBe(copy.registrationFailed)
+      expect(doc.querySelector('.dshRestartDescription').textContent).toBe(copy.registrationRecovery)
+      expect(doc.querySelector('.dshRestartPrimary').textContent).toBe(copy.reloadPage)
+      expect(service.reloadPage).not.toHaveBeenCalled()
+      await React.act(async () => doc.querySelector('.dshWbOperationNotice .dshRestartPrimary').click())
+      expect(service.reloadPage).toHaveBeenCalledOnce()
+      expect(service.load).toHaveBeenCalledOnce() // Only the earlier operation-error recovery rereads state.
       expect(doc.querySelector('.dshRestartNotice').textContent).not.toContain('@team/broken')
       await React.act(async () => doc.querySelector('[aria-haspopup="dialog"]').click())
       const registrationDialog = doc.querySelector('[role="dialog"]')

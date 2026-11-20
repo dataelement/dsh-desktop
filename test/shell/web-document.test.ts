@@ -2,7 +2,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { authenticateWebHost, dispatchAppDocument, forwardWebRequest, serveWebDocument } from '../../src/main/shell/window/web-document'
+import { authenticateWebHost, dispatchAppDocument, forwardWebRequest, removeLegacyHostCookies, serveWebDocument } from '../../src/main/shell/window/web-document'
 import { resolveDesktopPaths } from '../../src/main/shell/paths'
 import { desktopErrorState } from '../../src/main/shell/backend/startup-error'
 import { readDesktopHostEvent } from '../../src/main/shell/backend/host-process'
@@ -43,6 +43,19 @@ describe('shell document and paths', () => {
     await expect(authenticateWebHost('http://127.0.0.1:9/')).resolves.toBe('dsh=token')
   })
 
+  it('removes leftover host auth cookies for the hostname and keeps unrelated cookies', async () => {
+    const removed: string[] = []
+    await removeLegacyHostCookies({
+      get: async () => [
+        { name: 'dsh-auth-old' },
+        { name: 'dsh-auth-older' },
+        { name: 'other' }
+      ],
+      remove: async (_url, name) => { removed.push(name) }
+    }, 'http://127.0.0.1:4312/ready')
+    expect(removed).toEqual(['dsh-auth-old', 'dsh-auth-older'])
+  })
+
   it('refuses a foreign origin and drops the host set-cookie', async () => {
     const foreign = await forwardWebRequest(new Request('dsh-app://app/api', { headers: { origin: 'https://example.test' } }), 'http://127.0.0.1:9/', 'dsh=token')
     expect(foreign.status).toBe(403)
@@ -80,6 +93,10 @@ describe('shell document and paths', () => {
   it('rejects a host event without the lifecycle type', () => {
     expect(readDesktopHostEvent({ type: 'ready' })).toBeUndefined()
     expect(readDesktopHostEvent({ type: 'ready', url: 'http://127.0.0.1:9/' })?.type).toBe('ready')
+    expect(readDesktopHostEvent({ type: 'ready', url: 'http://127.0.0.1:9/', enabledPlugins: ['skill-office'] }))
+      .toMatchObject({ enabledPlugins: ['skill-office'] })
+    expect(readDesktopHostEvent({ type: 'ready', url: 'http://127.0.0.1:9/', enabledPlugins: ['skill-office', 1] }))
+      .not.toHaveProperty('enabledPlugins')
     expect(readDesktopHostEvent({ type: 'fatal', message: 'stopped', diagnostic: 'activate failed' })).toEqual({
       type: 'fatal', message: 'stopped', diagnostic: 'activate failed'
     })
