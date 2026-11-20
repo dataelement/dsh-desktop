@@ -15,6 +15,7 @@ describe('Desktop platform adaptation', () => {
     expect(desktopWindowChrome(adapter.platform).titleBarStyle).toBe('hidden')
     // Unsupported remote protocols do not turn into a Desktop startup prohibition.
     expect(adapter.officialAccount).toBe(false)
+    expect(adapter.officialDiagnostics).toBe(false)
     expect(supportsAutoUpdates(true, adapter.platform)).toBe(false)
   })
 
@@ -24,10 +25,12 @@ describe('Desktop platform adaptation', () => {
     expect(mac.clientPlatform).toBe('macos')
     expect(mac.nodeExecutable).toBe('helper')
     expect(mac.loginEnvironment).toBe('posix-shell')
+    expect(mac.officialDiagnostics).toBe(true)
     expect(usesDesktopCaption(mac.platform)).toBe(false)
     expect(windows.clientPlatform).toBe('windows')
     expect(windows.nodeExecutable).toBe('self')
     expect(windows.loginEnvironment).toBe('inherited')
+    expect(windows.officialDiagnostics).toBe(true)
     expect(supportsAutoUpdates(true, mac.platform)).toBe(true)
     expect(supportsAutoUpdates(true, windows.platform)).toBe(true)
     expect(supportsAutoUpdates(false, windows.platform)).toBe(false)

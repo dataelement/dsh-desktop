@@ -145,10 +145,13 @@ export function initializeDesktopUpdateService(): void {
 
 /** Call only after the single-instance lock, before bootstrap writes this session's log. */
 export function initializeDesktopService(options: { getExitContext?: () => GpuExitContext } = {}): void {
-  if (!app.isPackaged || !desktopPlatformAdapter(process.platform)?.officialUpdates || updateServiceFailure) return
+  const adapter = desktopPlatformAdapter(process.platform)
+  const enableUpdates = adapter?.officialUpdates === true
+  const enableDiagnostics = adapter?.officialDiagnostics === true
+  if (!app.isPackaged || (!enableUpdates && !enableDiagnostics) || updateServiceFailure) return
   try {
     if (!service) service = openDesktopService()
-    if (desktopDiagnostics || !service) return
+    if (!enableDiagnostics || desktopDiagnostics || !service) return
     void app.whenReady().then(async () => {
       gpuInfo = graphicsSnapshot(await app.getGPUInfo('basic'))
     }).catch(error => console.warn('[desktop-service] GPU metadata unavailable', error instanceof Error ? error.name : 'unknown'))
@@ -163,6 +166,9 @@ export function initializeDesktopService(options: { getExitContext?: () => GpuEx
   }
 }
 export async function checkDesktopUpdate(manual = false) {
+  if (!desktopPlatformAdapter(process.platform)?.officialUpdates) {
+    throw new Error('Desktop update service is unavailable')
+  }
   if (!service) throw new Error(updateServiceFailure ?? 'Desktop update service is unavailable')
   return service.checkUpdate(manual)
 }

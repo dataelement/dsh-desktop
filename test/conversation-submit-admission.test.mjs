@@ -34,7 +34,7 @@ const { InputHub } = definition.factory(name => {
   return externals[name]
 }).native
 const cleanups = []
-afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); localStorage.clear() })
+afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); window.localStorage.clear() })
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 
 function fixture(admit = async () => {}) {

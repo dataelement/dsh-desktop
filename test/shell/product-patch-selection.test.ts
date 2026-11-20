@@ -31,8 +31,7 @@ describe('explicit Desktop product plugin selection', () => {
     null,
     {},
     [],
-    { dependencies: { 'dsh-desktop-enterprise': '*' } },
-    { dshDesktopHostPlugins: 'dsh-desktop-enterprise' }
+    { dependencies: { 'dsh-desktop-enterprise': '*' } }
   ])('does not activate enterprise from incidental dependencies: %j', metadata => {
     const parsed = parse(buildDesktopProductPatch(metadata), { logLevel: 'silent' }) as unknown[]
     expect(insertRows(parsed).some(row => row.name === 'dsh-desktop-enterprise')).toBe(false)
@@ -41,7 +40,9 @@ describe('explicit Desktop product plugin selection', () => {
   it('mounts each declared host plugin once and produces valid YAML for scoped packages', async () => {
     const home = await mkdtemp(join(tmpdir(), 'desktop-product-selection-'))
     try {
-      const file = await writeDesktopProductPatch(home, 'desktop', declared)
+      const file = await writeDesktopProductPatch(home, 'desktop', {
+        dshDesktopHostPlugins: [...declared.dshDesktopHostPlugins, '@valid/scoped-plugin~1.0']
+      })
       const entries = loadOverlayPatches('test', file)
       const rows = insertRows(entries)
       expect(rows.filter(row => row.name === 'dsh-desktop-enterprise')).toEqual([
@@ -49,6 +50,9 @@ describe('explicit Desktop product plugin selection', () => {
       ])
       expect(rows.filter(row => row.name === '@example/desktop-plugin')).toEqual([
         { id: '@example/desktop-plugin', name: '@example/desktop-plugin' }
+      ])
+      expect(rows.filter(row => row.name === '@valid/scoped-plugin~1.0')).toEqual([
+        { id: '@valid/scoped-plugin~1.0', name: '@valid/scoped-plugin~1.0' }
       ])
       expect(rows.find(row => row.id === 'dsh-desktop-workbenches')).toEqual({
         id: 'dsh-desktop-workbenches',
@@ -65,21 +69,23 @@ describe('explicit Desktop product plugin selection', () => {
     }
   })
 
-  it('filters non-string and invalid plugin names without corrupting generated YAML', async () => {
+  it.each([
+    'dsh-desktop-enterprise',
+    123,
+    [123],
+    [null],
+    [{}],
+    ['../escape'],
+    ['UPPER'],
+    ['@bad/name\n- id: evil']
+  ])('fails closed on malformed dshDesktopHostPlugins declaration %j', async invalid => {
     const home = await mkdtemp(join(tmpdir(), 'desktop-product-selection-'))
     try {
-      const file = await writeDesktopProductPatch(home, 'desktop', {
-        dshDesktopHostPlugins: [123, null, {}, '../escape', 'UPPER', '@bad/name\n- id: evil', '@valid/scoped-plugin.v1']
-      })
-      const rows = insertRows(loadOverlayPatches('test', file))
-      expect(rows.map(row => row.name)).toEqual([
-        'dsh-desktop-client-ui',
-        '@valid/scoped-plugin.v1',
-        'dsh-desktop-workbenches',
-        'dsh-desktop-market-installer',
-        'dsh-desktop-office',
-        'dsh-ppt-composer'
-      ])
+      const metadata = { dshDesktopHostPlugins: invalid }
+      expect(() => buildDesktopProductPatch(metadata)).toThrow('bare package names')
+      await expect(writeDesktopProductPatch(home, 'desktop', metadata)).rejects.toThrow('bare package names')
+      const safe = await writeDesktopProductPatch(home, 'safe', metadata)
+      expect(insertRows(loadOverlayPatches('test', safe)).map(row => row.name)).toEqual(['dsh-desktop-client-ui'])
     } finally {
       await rm(home, { recursive: true, force: true })
     }

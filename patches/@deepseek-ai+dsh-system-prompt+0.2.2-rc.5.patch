@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js b/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
-index e2ac609..5cfc56d 100644
+index e2ac609..77c52fa 100644
 --- a/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
 @@ -224,6 +224,7 @@ var SystemPrompt = class extends Service {
@@ -10,11 +10,10 @@ index e2ac609..5cfc56d 100644
  	constructor(ctx, config) {
  		super(ctx, "systemPrompt");
  		this.toolOrder = validateToolOrder(config.toolOrder);
-@@ -355,7 +356,30 @@ var SystemPrompt = class extends Service {
- 	* @param context - the optional scope, step tool set, and plugin-defined assembly fields.
- 	* @returns the post-waterfall assembly with ordered tool declarations and any complete prompt enforced.
- 	*/
--	async assemble(context = {}) {
+@@ -346,6 +347,15 @@ var SystemPrompt = class extends Service {
+ 			contexts
+ 		};
+ 	}
 +	/** Await scope-filtered preparation before any registry or tool snapshot. Handles are single-use and bound to this exact context. */
 +	async prepare(context = {}) {
 +		context.signal?.throwIfAborted();
@@ -24,15 +23,17 @@ index e2ac609..5cfc56d 100644
 +		this.preparations.set(handle, { context, fields: Object.entries(context) });
 +		return handle;
 +	}
-+	/**
-+	* Assemble global and scoped providers, detach tool parameters, apply
-+	* canonical ordering, then run the presentation waterfall. Scoped sections
-+	* and variables shadow globals. The waterfall's text is authoritative except
-+	* that an effective complete section is restored afterwards as the sole
-+	* prompt section; tool declarations stay provider-owned.
-+	* @param context - the optional scope, step tool set, and plugin-defined assembly fields.
-+	* @returns the post-waterfall assembly with ordered tool declarations and any complete prompt enforced.
-+	*/
+ 	/**
+ 	* Assemble global and scoped providers, detach tool parameters, apply
+ 	* canonical ordering, then run the presentation waterfall. Scoped sections
+@@ -353,9 +363,15 @@ var SystemPrompt = class extends Service {
+ 	* that an effective complete section is restored afterwards as the sole
+ 	* prompt section; tool declarations stay provider-owned.
+ 	* @param context - the optional scope, step tool set, and plugin-defined assembly fields.
++	* @param prepared - an optional single-use handle from {@link prepare} to skip duplicate preparation after step tool resolution.
+ 	* @returns the post-waterfall assembly with ordered tool declarations and any complete prompt enforced.
+ 	*/
+-	async assemble(context = {}) {
 +	async assemble(context = {}, prepared) {
 +		const handle = prepared ?? await this.prepare(context);
 +		const admission = this.preparations.get(handle);
@@ -43,7 +44,7 @@ index e2ac609..5cfc56d 100644
  		const scopeLayers = this.layers.chainLayers(scope);
  		const runtimeContextSuppressed = !this.layers.global.runtimeContextSuppressors.isEmpty() || scopeLayers.some((layer) => !layer.runtimeContextSuppressors.isEmpty());
 diff --git a/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts
-index b49dbda..2fd3233 100644
+index b49dbda..ccf15b6 100644
 --- a/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts
 @@ -12,6 +12,8 @@ declare module '@deepseek-ai/cordis' {
@@ -80,12 +81,14 @@ index b49dbda..2fd3233 100644
      /**
       * Assemble global and scoped providers, detach tool parameters, apply
       * canonical ordering, then run the presentation waterfall. Scoped sections
-@@ -317,7 +325,8 @@ export declare class SystemPrompt extends Service {
+@@ -315,9 +323,10 @@ export declare class SystemPrompt extends Service {
+      * that an effective complete section is restored afterwards as the sole
+      * prompt section; tool declarations stay provider-owned.
       * @param context - the optional scope, step tool set, and plugin-defined assembly fields.
++     * @param prepared - an optional single-use handle from {@link prepare} to skip duplicate preparation after step tool resolution. Existing callers still prepare automatically.
       * @returns the post-waterfall assembly with ordered tool declarations and any complete prompt enforced.
       */
 -    assemble(context?: AssembleContext): Promise<PromptAssembly>;
-+    /** An optional single-use handle skips duplicate preparation after step tool resolution. Existing callers still prepare automatically. */
 +    assemble(context?: AssembleContext, prepared?: PreparedPrompt): Promise<PromptAssembly>;
  }
  export default SystemPrompt;

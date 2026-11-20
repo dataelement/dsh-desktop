@@ -7,23 +7,24 @@ export interface DesktopPlatformAdapter {
   /** The official remote protocols currently define no Linux desktop identity. */
   readonly officialAccount: boolean
   readonly officialUpdates: boolean
+  readonly officialDiagnostics: boolean
 }
 
 const PLATFORMS: Readonly<Record<string, DesktopPlatformAdapter>> = {
   darwin: {
     platform: 'darwin', clientPlatform: 'macos', caption: 'macos',
     nodeExecutable: 'helper', loginEnvironment: 'posix-shell',
-    officialAccount: true, officialUpdates: true
+    officialAccount: true, officialUpdates: true, officialDiagnostics: true
   },
   win32: {
     platform: 'win32', clientPlatform: 'windows', caption: 'overlay',
     nodeExecutable: 'self', loginEnvironment: 'inherited',
-    officialAccount: true, officialUpdates: true
+    officialAccount: true, officialUpdates: true, officialDiagnostics: true
   },
   linux: {
     platform: 'linux', clientPlatform: 'linux', caption: 'overlay',
     nodeExecutable: 'self', loginEnvironment: 'posix-shell',
-    officialAccount: false, officialUpdates: false
+    officialAccount: false, officialUpdates: false, officialDiagnostics: false
   }
 }
 

@@ -39,7 +39,8 @@ function productEntryPath(metadata: unknown, appPath: string): string | undefine
   return canonicalResolved
 }
 
-export async function loadDesktopProductEntry(metadata: unknown, appPath: string): Promise<void> {
+export async function loadDesktopProductEntry(metadata: unknown, appPath: string, safeMode = false): Promise<void> {
+  if (safeMode) return
   const entry = productEntryPath(metadata, appPath)
   if (entry === undefined) return
   let module: ProductEntryModule

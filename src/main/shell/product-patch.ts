@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Scalar, stringify } from 'yaml'
-import { HOST_PLUGIN_NAME } from '../../shared/host-plugin-name'
+import { parseDeclaredHostPlugins } from '../../shared/host-plugin-name'
 
 /** Product metadata is authoritative; never discover a product through a parent checkout. */
 
@@ -23,15 +23,7 @@ function jsExpr(expression: string): Scalar<string> {
 }
 
 function declaredHostPluginRows(metadata: unknown): DesktopInsertRow[] {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return []
-  const plugins = (metadata as Record<string, unknown>).dshDesktopHostPlugins
-  if (!Array.isArray(plugins)) return []
-  const names = [
-    ...new Set(
-      plugins.filter((plugin): plugin is string => typeof plugin === 'string' && HOST_PLUGIN_NAME.test(plugin))
-    )
-  ]
-  return names.map(name => ({ id: name, name }))
+  return (parseDeclaredHostPlugins(metadata) ?? []).map(name => ({ id: name, name }))
 }
 
 /**

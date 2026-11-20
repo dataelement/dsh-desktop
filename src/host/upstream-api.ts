@@ -1,6 +1,7 @@
 /** Version-sensitive Harness calls used by the desktop host. */
 import type { Context } from '@deepseek-ai/cordis'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
+import { SAFE_MODE_PROFILE } from '../shared/safe-mode-profile'
 import { readInstallationPlugins } from './installation-plugins'
 import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -16,7 +17,7 @@ export function runHostProfile(
     ...options,
     resolvedProfile: {
       ...resolvedProfile,
-      installationPlugins: readInstallationPlugins(runtimeDir, options.profile === 'desktop-safe-mode')
+      installationPlugins: readInstallationPlugins(runtimeDir, options.profile === SAFE_MODE_PROFILE)
     }
   })
 }

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { open, readdir, rm, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -242,7 +243,7 @@ async function main() {
   console.log(`[sign-windows] Scanned ${targets.length} PE binaries; signed ${targets.length - retained}, retained ${retained} existing signatures.`)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   main().catch((error) => {
     console.error(`[sign-windows] Fatal: ${error.message}`)
     if (error.stderr) console.error(error.stderr)

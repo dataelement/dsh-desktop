@@ -35,6 +35,6 @@ with tempfile.TemporaryDirectory() as temporary:
  assert subprocess.run(command+['final.xlsx'],cwd=root,capture_output=True).returncode==0
  assert (root/'final.xlsx').is_file()
 print('native-cache-boundaries-pass')`
-  const result = spawnSync(resolve('.build/office-runtime/primary-runtime/dependencies/python/bin/python3'), ['-I', '-B', '-c', program], { encoding: 'utf8' })
+  const result = spawnSync(resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3'), ['-I', '-B', '-c', program], { encoding: 'utf8' })
   expect(result.stderr).toBe(''); expect(result.status).toBe(0); expect(result.stdout).toContain('native-cache-boundaries-pass')
 })

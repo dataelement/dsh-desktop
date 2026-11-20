@@ -1,3 +1,4 @@
+import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../packages/dsh-desktop-office/lib/templates.js', () => ({ createTemplateLibrary: vi.fn(async () => ({})) }))
@@ -17,13 +18,18 @@ function fixture() {
   return { modes, runtime, routes, scoped, ctx }
 }
 
+const payload = resolve('/payload')
+const primaryRuntime = join(payload, 'primary-runtime')
+const cli = join(payload, 'cli.mjs')
+const otherCli = resolve('/cli')
+
 describe('Office composition seam', () => {
   it('shares workflows with caller-owned modes and runtime registration, without requiring officeModes', async () => {
     const { modes, runtime, ctx, scoped, routes } = fixture()
-    await composeOffice(ctx, { resources: '/payload', cli: '/payload/cli.mjs' }, modes, runtime)
-    expect(runtime.workspaceDependencies.resolvePrimaryRuntime).toHaveBeenCalledWith('/payload/primary-runtime')
-    expect(ctx.plugin).toHaveBeenNthCalledWith(1, runtime.workspaceDependencies, { source: '/payload/primary-runtime' })
-    expect(ctx.plugin).toHaveBeenNthCalledWith(2, runtime.officeSkills, expect.objectContaining({ cli: '/payload/cli.mjs' }))
+    await composeOffice(ctx, { resources: payload, cli }, modes, runtime)
+    expect(runtime.workspaceDependencies.resolvePrimaryRuntime).toHaveBeenCalledWith(primaryRuntime)
+    expect(ctx.plugin).toHaveBeenNthCalledWith(1, runtime.workspaceDependencies, { source: primaryRuntime })
+    expect(ctx.plugin).toHaveBeenNthCalledWith(2, runtime.officeSkills, expect.objectContaining({ cli }))
     expect(ctx.inject.mock.calls[0][0]).not.toContain('officeModes')
     expect(registerOfficeContext).toHaveBeenLastCalledWith(scoped, {}, modes)
     expect(registerOfficeRoutes).toHaveBeenLastCalledWith(routes, {}, modes)
@@ -31,16 +37,16 @@ describe('Office composition seam', () => {
   })
   it('retains native injected modes when no override is supplied', async () => {
     const { runtime, ctx, scoped } = fixture()
-    await composeOffice(ctx, { resources: '/payload', cli: '/payload/cli.mjs' }, undefined, runtime)
+    await composeOffice(ctx, { resources: payload, cli }, undefined, runtime)
     expect(ctx.inject.mock.calls[0][0]).toContain('officeModes')
     expect(registerOfficeContext).toHaveBeenLastCalledWith(scoped, {}, scoped.officeModes)
   })
   it('does not register runtime or workflows for relative paths or failed payload validation', async () => {
     const { runtime, ctx } = fixture()
-    await composeOffice(ctx, { resources: 'relative', cli: '/cli' }, {}, runtime)
+    await composeOffice(ctx, { resources: 'relative', cli: otherCli }, {}, runtime)
     expect(ctx.plugin).not.toHaveBeenCalled()
     runtime.workspaceDependencies.resolvePrimaryRuntime.mockRejectedValueOnce(new Error('bad payload'))
-    await composeOffice(ctx, { resources: '/payload', cli: '/cli' }, {}, runtime)
+    await composeOffice(ctx, { resources: payload, cli: otherCli }, {}, runtime)
     expect(ctx.plugin).not.toHaveBeenCalled()
     expect(ctx.inject).not.toHaveBeenCalled()
     expect(ctx.logger.warn).toHaveBeenLastCalledWith(expect.stringContaining('bad payload'))

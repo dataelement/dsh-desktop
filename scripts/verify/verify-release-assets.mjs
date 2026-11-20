@@ -6,18 +6,30 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { parse } from 'yaml'
 
-export function releaseAssetNames(artifactPrefix = 'dsh-desktop') {
+function releaseAssetManifest(artifactPrefix = 'dsh-desktop') {
   if (typeof artifactPrefix !== 'string' || artifactPrefix.length > 64 ||
       artifactPrefix.trim() !== artifactPrefix || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(artifactPrefix) ||
       /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(artifactPrefix)) {
     throw new Error('Invalid portable release artifact prefix')
   }
-  return [
-    ...['arm64', 'x64'].flatMap(arch => ['dmg', 'zip', 'zip.blockmap'].map(ext => artifactPrefix + '-mac-' + arch + '.' + ext)),
-    artifactPrefix + '-windows-x64-setup.exe',
-    artifactPrefix + '-windows-x64-setup.exe.blockmap',
-    'latest-mac.yml', 'latest.yml'
-  ]
+  const macArm64Zip = `${artifactPrefix}-mac-arm64.zip`
+  const macX64Zip = `${artifactPrefix}-mac-x64.zip`
+  const windowsSetupExe = `${artifactPrefix}-windows-x64-setup.exe`
+  return {
+    macArm64Zip,
+    macX64Zip,
+    windowsSetupExe,
+    all: [
+      `${artifactPrefix}-mac-arm64.dmg`, macArm64Zip, `${macArm64Zip}.blockmap`,
+      `${artifactPrefix}-mac-x64.dmg`, macX64Zip, `${macX64Zip}.blockmap`,
+      windowsSetupExe, `${windowsSetupExe}.blockmap`,
+      'latest-mac.yml', 'latest.yml'
+    ]
+  }
+}
+
+export function releaseAssetNames(artifactPrefix = 'dsh-desktop') {
+  return releaseAssetManifest(artifactPrefix).all
 }
 
 // A complete DSH Desktop runtime is substantially larger than these floors.
@@ -97,11 +109,11 @@ async function assertUpdateEntry(root, metadataName, version, assetName) {
 }
 
 export async function verifyReleaseAssets(releaseDir, version, options = {}) {
-  const requiredAssets = releaseAssetNames(options.artifactPrefix)
+  const assets = releaseAssetManifest(options.artifactPrefix)
   const root = resolve(releaseDir)
   const minimumBytes = { ...DEFAULT_MINIMUM_BYTES, ...options.minimumBytes }
 
-  for (const name of requiredAssets) {
+  for (const name of assets.all) {
     const kind = assetKind(name)
     const file = join(root, name)
     const fileStat = await stat(file).catch(() => undefined)
@@ -112,9 +124,9 @@ export async function verifyReleaseAssets(releaseDir, version, options = {}) {
     await assertFileHeader(file, kind, fileStat.size)
   }
 
-  await assertUpdateEntry(root, 'latest.yml', version, requiredAssets[6])
-  await assertUpdateEntry(root, 'latest-mac.yml', version, requiredAssets[1])
-  await assertUpdateEntry(root, 'latest-mac.yml', version, requiredAssets[4])
+  await assertUpdateEntry(root, 'latest.yml', version, assets.windowsSetupExe)
+  await assertUpdateEntry(root, 'latest-mac.yml', version, assets.macArm64Zip)
+  await assertUpdateEntry(root, 'latest-mac.yml', version, assets.macX64Zip)
 }
 
 async function main() {

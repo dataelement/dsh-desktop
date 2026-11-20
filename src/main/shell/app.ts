@@ -503,12 +503,12 @@ async function main(): Promise<void> {
     app.exit(1)
     return
   }
+  const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   const harnessLog = new HarnessLog(join(app.getPath('logs'), 'harness.log'))
   const crashUpload = createCrashUpload({
     diagnostics: () => desktopDiagnostics,
     flushLog: () => harnessLog.flush(),
     pluginNames: async (message, diagnostic) => {
-      const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
       const installed = await listInstalledProfilePlugins(harnessHome(), crashUploadProfile(safeMode)).catch((error: unknown) => {
         console.error(error)
         return []
@@ -522,7 +522,7 @@ async function main(): Promise<void> {
   })
   reportStartupFailure = error => { crashUpload.startupFailed(error) }
   try {
-    await loadDesktopProductEntry(readDesktopPackageMetadata(), app.getAppPath())
+    await loadDesktopProductEntry(readDesktopPackageMetadata(), app.getAppPath(), safeMode)
   } catch (error: unknown) {
     reportStartupFailure(error)
     await app.whenReady()
@@ -533,14 +533,13 @@ async function main(): Promise<void> {
   await app.whenReady()
   // Cocoa has already consumed its argument domain. A saved choice therefore
   // needs one fresh process on a Dock/Finder launch, not a late --lang switch.
-  const startupSafeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   const nativeLocaleValue = app.getLocale()
   const nativeLocale = matchDesktopLocale(nativeLocaleValue)
   if (process.platform === 'darwin') {
     try {
       // Use Electron's resolved locale, not merely the Cocoa preference array.
       const preference = effectiveNativeLocale(
-        await savedDesktopLocaleValue(harnessHome(), startupSafeMode ? SAFE_MODE_PROFILE : 'desktop'),
+        await savedDesktopLocaleValue(harnessHome(), safeMode ? SAFE_MODE_PROFILE : 'desktop'),
         app.getPreferredSystemLanguages()
       )
       if (shouldCalibrateNativeLocale({ platform: process.platform, preference, actual: nativeLocaleValue, argv: process.argv }) && preference !== undefined) {
@@ -571,7 +570,6 @@ async function main(): Promise<void> {
   registerUpdateHandlers({ locale: () => menuLocale })
   let shortcuts: DesktopShortcutController | undefined
   const dshHome = harnessHome()
-  const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   menuLocale = await savedDesktopMenuLocale(dshHome, safeMode, reportedLocale)
   const refreshApplicationMenu = (): void => {
     if (usesDesktopCaption(process.platform)) {
@@ -579,7 +577,7 @@ async function main(): Promise<void> {
         locale: menuLocale,
         connectPhone: () => { void openMobilePairing().catch((error: unknown) => { console.error(error) }) },
         restart: () => { void restartDesktop() },
-        ...(shouldStartInSafeMode(process.argv) || process.env.DSH_DESKTOP_SAFE_MODE === '1'
+        ...(safeMode
           ? {}
           : { restartSafeMode: () => { restartInSafeMode() } }),
         showHarnessLog: () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
@@ -606,7 +604,7 @@ async function main(): Promise<void> {
         void checkForUpdates(true).catch((error: unknown) => { console.error(error) })
       },
       restart: () => { void restartDesktop() },
-      ...(shouldStartInSafeMode(process.argv) || process.env.DSH_DESKTOP_SAFE_MODE === '1'
+      ...(safeMode
         ? {}
         : { restartSafeMode: () => { restartInSafeMode() } }),
       showHarnessLog: () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
@@ -936,7 +934,7 @@ async function main(): Promise<void> {
       profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
       environment: {
         ...hostEnvironment,
-        ...readDesktopProductEnvironment(),
+        ...(safeMode ? {} : readDesktopProductEnvironment()),
         DSH_CLIENT_VERSION: app.getVersion(),
         DSH_DESKTOP_PATCH_FILE: productPatch,
         ...(safeMode ? {} : officeEnvironment(primaryRuntime))
@@ -990,14 +988,16 @@ async function main(): Promise<void> {
   async function prepareDesktopHost(): Promise<void> {
     const result = await loginShell
     hostEnvironment = result.environment
-    await startDesktopProduct({ userDataPath: app.getPath('userData'), dshHome, safeMode, version: app.getVersion() })
-    if (!productWindowAttached) {
-      productWindowAttached = true
-      attachDesktopProductWindow(window, {
-        checkForUpdates: async () => { await checkForUpdates(true) },
-        showLogs: async () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
-        restartInSafeMode: () => { if (!safeMode) restartInSafeMode() }
-      })
+    if (!safeMode) {
+      await startDesktopProduct({ userDataPath: app.getPath('userData'), dshHome, safeMode, version: app.getVersion() })
+      if (!productWindowAttached) {
+        productWindowAttached = true
+        attachDesktopProductWindow(window, {
+          checkForUpdates: async () => { await checkForUpdates(true) },
+          showLogs: async () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
+          restartInSafeMode: () => { restartInSafeMode() }
+        })
+      }
     }
     if (result.failures.length > 0) {
       console.error(`[desktop] login shell: ${result.failures.map(item => `${item.shell} (${item.reason})`).join('; ')}`)

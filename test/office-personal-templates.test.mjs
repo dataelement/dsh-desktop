@@ -24,7 +24,7 @@ const input = mode => ({ mode, fileName: mode === 'word' ? '企业模板.docx' :
 
 it('returns a stable external-data error without exposing a worker traceback or filesystem paths', async () => {
   const { root } = await setup(), input = join(root, 'linked.docx')
-  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python/bin/python3')
+  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
   const prepared = spawnSync(python, ['-I', '-B', '-c', `import zipfile
 with zipfile.ZipFile(${JSON.stringify(input)}, 'w') as z:
  z.writestr('[Content_Types].xml','<Types/>')
@@ -111,7 +111,7 @@ it('admits bounded authenticated native uploads above the previous 16K request l
 })
 
 it('inspects native packages while allowing ordinary links and rejecting active/external content', () => {
-  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python/bin/python3')
+  const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
   const worker = resolve('packages/dsh-desktop-office/lib/personal-template.py')
   const program = `import io, json, pathlib, runpy, tempfile, zipfile
 w=runpy.run_path(${JSON.stringify(worker)})

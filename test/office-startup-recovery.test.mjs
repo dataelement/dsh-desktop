@@ -8,7 +8,8 @@ it('keeps the Office plugin import and built-ins usable when the personal-librar
   const root = await mkdtemp(join(tmpdir(), 'office-recovery-'))
   const previous = process.env.DSH_HOME
   try {
-    await cp(resolve('packages/dsh-desktop-office'), root, { recursive: true, filter: source => !source.endsWith('/personal-templates.js') })
+    const skippedModule = resolve('packages/dsh-desktop-office/lib/personal-templates.js')
+    await cp(resolve('packages/dsh-desktop-office'), root, { recursive: true, filter: source => resolve(source) !== skippedModule })
     await symlink(resolve('node_modules'), join(root, 'node_modules'))
     process.env.DSH_HOME = join(root, 'profile')
     const plugin = await import(pathToFileURL(join(root, 'index.js')).href)
