@@ -314,7 +314,8 @@ function officeEnvironment(primaryRuntime: string): Record<string, string> {
   const office = officeLaunchPaths(primaryRuntime)
   if (office === undefined) return {}
   return {
-    DSH_DESKTOP_OFFICE_RESOURCES: office.resources
+    DSH_DESKTOP_OFFICE_RESOURCES: office.resources,
+    DSH_DESKTOP_OFFICE_CLI: office.cli
   }
 }
 

@@ -2,9 +2,8 @@ import { lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from
 import { join, resolve, isAbsolute, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 import { digest, MAX_PERSONAL_OFFICE_BYTES, MAX_OFFICE_REQUEST_BYTES } from './templates.js'
-import { docxWorkerPython } from './docx-workflow.js'
+import { docxWorkerArgv, docxWorkerEnvironment, docxWorkerPython } from './docx-workflow.js'
 import { officePreviewFontArguments } from './preview-fonts.js'
 
 export { MAX_PERSONAL_OFFICE_BYTES, MAX_OFFICE_REQUEST_BYTES } from './templates.js'
@@ -152,12 +151,14 @@ export async function createPersonalOfficeLibrary(root, builtins, render, onInva
 
 /** Only fixed installation-owned code processes untrusted Office packages. */
 export function personalOfficeRenderer(resources, cli) {
-  const python = docxWorkerPython(resources), worker = fileURLToPath(new URL('./personal-template.py', import.meta.url))
-  let fontArguments
+  const [python, ...pythonArgs] = docxWorkerArgv(docxWorkerPython(resources))
+  let worker, fontArguments
   return async ({ directory, input, mode, signal }) => {
     const combined = AbortSignal.any([AbortSignal.timeout(120_000), ...(signal ? [signal] : [])])
+    // Electron can read the worker from app.asar; the external Python process cannot.
+    worker ??= await readFile(new URL('./personal-template.py', import.meta.url), 'utf8')
     const run = (file, args, request) => new Promise((accept, reject) => {
-      const env = { ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot } : {}), ...(file === process.execPath && process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) }
+      const env = file === python ? docxWorkerEnvironment(process, worker) : { ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot } : {}), ...(file === process.execPath && process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) }
       const child = execFile(file, args, { cwd: directory, env, signal: combined, timeout: 120_000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
         if (error) reject(new Error(/External linked data|external linked data|External formula data|External Word fields/.test(stderr)
           ? 'OFFICE_TEMPLATE_EXTERNAL_DATA' : combined.aborted ? 'OFFICE_TEMPLATE_TIMEOUT'
@@ -166,13 +167,13 @@ export function personalOfficeRenderer(resources, cli) {
       })
       child.stdin.end(request ? JSON.stringify(request) : undefined)
     })
-    await run(python, ['-I', '-B', worker], { command: 'inspect', input, mode })
+    await run(python, pythonArgs, { command: 'inspect', input, mode })
     const output = join(directory, 'rendered')
     const rendered = await run(process.execPath, [cli, 'render', ...await (fontArguments ??= officePreviewFontArguments()), '--input', input, '--output-dir', output, ...(mode === 'word' ? ['--pages', 'all'] : []), '--dpi', '100', '--max-pages', '50'])
     if (!Array.isArray(rendered.images) || !rendered.images.length || rendered.images.length > 50 || (rendered.pageCount ?? 0) > 50) throw new Error('Office template has no bounded preview')
     const images = rendered.images.map(image => typeof image === 'string' ? image : image.path)
     if (images.some(path => typeof path !== 'string' || !resolve(path).startsWith(output + sep))) throw new Error('Office renderer returned an invalid preview path')
-    const result = await run(python, ['-I', '-B', worker], { command: 'previews', directory, images })
+    const result = await run(python, pythonArgs, { command: 'previews', directory, images })
     await rm(output, { recursive: true, force: true })
     return result
   }

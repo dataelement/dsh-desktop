@@ -55,6 +55,7 @@ const DESKTOP_OFFICE_ROW = `    - id: dsh-desktop-office
       name: dsh-desktop-office
       config:
         resources: !!js process.env.DSH_DESKTOP_OFFICE_RESOURCES
+        cli: !!js process.env.DSH_DESKTOP_OFFICE_CLI
 `
 
 // Keep the existing kimi-ppt directory so projects created by the previous shell still open.

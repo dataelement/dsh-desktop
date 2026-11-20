@@ -12,7 +12,7 @@ async function confinedRuntime(resources) {
   return require('node:fs/promises').realpath(join(resources, 'office-runtime'))
 }
 
-async function probe(appRoot, resources) {
+async function probe(appRoot, resources, fixtures) {
   const host = createRequire(join(appRoot, 'package.json'))
   const load = name => import(pathToFileURL(host.resolve(name)).href)
   const { Context } = await load('@deepseek-ai/cordis')
@@ -46,6 +46,23 @@ async function probe(appRoot, resources) {
     for (const template of templates) {
       for (const file of Object.keys(library.entry(template.id).files)) await library.asset(template.id, file)
     }
+    const { createPersonalOfficeLibrary, personalOfficeRenderer } = await import(new URL('./lib/personal-templates.js', entry).href)
+    const personal = await createPersonalOfficeLibrary(
+      join(fixtures, 'personal-templates'), library,
+      personalOfficeRenderer(join(resources, 'office-runtime'), join(resources, 'office-cli.mjs'))
+    )
+    for (const [mode, fileName] of [['word', 'sample.docx'], ['excel', 'sample.xlsx']]) {
+      const original = await require('node:fs/promises').readFile(join(fixtures, fileName))
+      const item = await personal.import({ mode, fileName, data: original.toString('base64') })
+      assert.equal(item.mode, mode)
+      const preview = await personal.preview(item.id, 1)
+      assert(preview.image.startsWith('data:image/webp;base64,'))
+      const prepared = await personal.prepare(item.id, item)
+      const workingCopy = prepared.files.find(file => file.path === personal.entry(item.id).sampleFile)
+      assert(workingCopy)
+      assert.deepEqual(Buffer.from(workingCopy.data, 'base64'), original)
+    }
+    console.log('Packaged personal DOCX and XLSX import, preview and native working copy passed')
     const client = await require('node:fs/promises').readFile(host.resolve('dsh-desktop-office/client'), 'utf8')
     assert(client.includes('window.__ModuleLoader__.load'))
     assert(client.includes('conversation.hero.options'))
@@ -91,7 +108,7 @@ async function probe(appRoot, resources) {
 module.exports = { confinedRuntime }
 
 if (require.main === module) {
-  probe(process.argv[2], process.argv[3]).catch(error => {
+  probe(process.argv[2], process.argv[3], process.argv[4]).catch(error => {
     console.error(error)
     process.exitCode = 1
   })
