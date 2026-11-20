@@ -10,10 +10,12 @@ describe('packaged conversation input CSS', () => {
     const entry = require.resolve('@deepseek-ai/dsh-client-ui-conversation/package.json')
       .replace(/package\.json$/u, 'lib/client.js')
     const bundle = await readFile(entry, 'utf8')
-    const start = bundle.lastIndexOf('//#region', bundle.indexOf('const css$1 ='))
-    const end = bundle.indexOf('var InputBar_module_css_default', start)
+    // rc.4 drops the //#region marker and appends the accessory rules onto the minified stylesheet.
+    const start = bundle.indexOf('const css$1 =')
+    const end = bundle.indexOf('document.head.appendChild(tag)}', start)
     expect(start).toBeGreaterThan(-1)
     expect(end).toBeGreaterThan(start)
+    const injection = bundle.slice(start, end + 'document.head.appendChild(tag)}'.length)
 
     const styles: Array<{ textContent?: string }> = []
     const document = {
@@ -21,7 +23,7 @@ describe('packaged conversation input CSS', () => {
       createElement: () => ({ dataset: {}, textContent: '' }),
       head: { appendChild: (style: { textContent?: string }) => { styles.push(style) } }
     }
-    runInNewContext(bundle.slice(start, end), { document })
+    runInNewContext(injection, { document })
     expect(styles).toHaveLength(1)
     expect(styles[0]?.textContent).toContain('.uV2eYG_promptRow>.uV2eYG_accessory:has(>[data-slot]:only-child:empty){display:none}')
     expect(styles[0]?.textContent).toContain('.uV2eYG_input{padding-left:12px}')

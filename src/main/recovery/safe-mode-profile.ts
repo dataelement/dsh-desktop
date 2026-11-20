@@ -2,8 +2,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isMap, isSeq, parseDocument, type YAMLMap } from 'yaml'
 import { validModelEndpoint } from './startup-config-recovery'
+import { SAFE_MODE_PROFILE } from '../../shared/safe-mode-profile'
 
-export const SAFE_MODE_PROFILE = 'desktop-safe-mode'
+export { SAFE_MODE_PROFILE }
 export const SAFE_MODE_BUNDLES = [
   '@deepseek-ai/dsh-base',
   '@deepseek-ai/dsh-web-app'

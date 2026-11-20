@@ -3121,7 +3121,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(1)
   })
 
-  it('migrates an old-only installed ID to its unique live market provider and preserves owned data', async () => {
+  it('does not infer an unauthorized repository migration from a shared package name', async () => {
     const initial = { ...emptyState(), added: ['o/old'], pinned: ['o/old'], favorites: ['o/old'], active: 'o/old',
       notes: { 'o/old': 'Keep notes' }, sessionBindings: { old: 'o/old' }, recentSessions: { 'o/old': 'old' } }
     const { service, ctx, saved } = await fixture(initial)
@@ -3132,13 +3132,15 @@ describe('workbench market screenshot and metadata display', () => {
     service.register({ title: 'Helper', repository: 'https://github.com/o/new' }, () => null)
     await service.queue
 
-    expect(saved().state).toMatchObject({ added: ['o/new'], pinned: ['o/new'], favorites: ['o/new'], active: 'o/new',
-      notes: { 'o/new': 'Keep notes' }, sessionBindings: { old: 'o/new' }, recentSessions: { 'o/new': 'old' } })
+    expect(saved().state).toEqual(initial)
+    service.migrateLegacyWorkbenchIds()
+    await service.queue
+    expect(saved().state).toEqual(initial)
     expect(service.knownProviders['o/old'].sourcePackage).toBe('helper')
     const ui = interactiveMarket(service, 'mine')
-    expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(0)
+    expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(1)
     expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/new')).toHaveLength(1)
-    await expect(service.open('o/new')).resolves.toBeUndefined()
+    await expect(service.open('o/new')).rejects.toThrow() // No automatic add or ownership transfer.
   })
 
   it('defaults market cards to descending stars and offers downloads, update time and name sorting', async () => {

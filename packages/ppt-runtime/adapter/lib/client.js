@@ -740,6 +740,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("dialog", {
 				ref: dialogRef,
 				className: "dsh-ppt-opening-dialog",
+				"data-window-drag-exclude": true,
 				"aria-modal": true,
 				"aria-labelledby": "dsh-ppt-opening-title",
 				onCancel: (event) => {

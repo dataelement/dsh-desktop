@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { open, readdir, rm, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -111,6 +112,14 @@ export function buildJsignArgs({
   name = 'DSH Desktop',
   url = 'https://www.dshdesktop.com'
 }) {
+  if (typeof name !== 'string' || name.trim() !== name || !/^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$/u.test(name)) {
+    throw new Error('Invalid signing product name')
+  }
+  if (typeof url !== 'string') throw new Error('Invalid signing product URL')
+  const source = new URL(url)
+  if (source.protocol !== 'https:' || source.username || source.password || source.search || source.hash || /\s/.test(url)) {
+    throw new Error('Signing product URL must be credential-free HTTPS')
+  }
   return [
     '-jar',
     jsignJar,
@@ -225,6 +234,8 @@ async function main() {
       jsignJar: jsignJar ?? 'jsign.jar',
       pinFile: pinFile ?? 'pin.txt',
       tsaUrl: process.env.TSA_URL,
+      name: process.env.JSIGN_NAME || undefined,
+      url: process.env.JSIGN_URL || undefined,
       dryRun
     })
   }
@@ -232,7 +243,7 @@ async function main() {
   console.log(`[sign-windows] Scanned ${targets.length} PE binaries; signed ${targets.length - retained}, retained ${retained} existing signatures.`)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   main().catch((error) => {
     console.error(`[sign-windows] Fatal: ${error.message}`)
     if (error.stderr) console.error(error.stderr)

@@ -5,3 +5,7 @@ patches/*.patch whitespace=-space-before-tab,-blank-at-eol
 
 # Preserve pinned third-party inputs byte-for-byte, including upstream whitespace.
 packages/ppt-runtime/upstream/** -whitespace
+
+# This approved font license is audited by its exact upstream LF SHA-256.
+# Windows core.autocrlf must not alter the attributed source before packaging.
+packages/dsh-desktop-office/sources/curated/government-notice/OFL.txt text eol=lf

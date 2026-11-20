@@ -3,13 +3,11 @@
  */
 import { createHash } from 'node:crypto'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { unzipSync } from 'fflate'
 import { x as extractTar } from 'tar'
 
-const require = createRequire(import.meta.url)
 const project = resolve(import.meta.dirname, '../..')
 const lock = JSON.parse(await readFile(new URL('./lock.json', import.meta.url), 'utf8'))
 
@@ -146,19 +144,9 @@ export async function prepareOfficeRuntime({ target = officeTarget(), output = j
       pythonPackages: lock.pythonPackages
     }
     await writeFile(join(runtime, 'runtime.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-    const skillRoot = dirname(require.resolve('@deepseek-ai/dsh-skill-office/package.json'))
-    await cp(join(skillRoot, 'assets'), join(staging, 'office-skills'), { recursive: true, dereference: true })
+    // Official Office skills stay in @deepseek-ai/dsh-skill-office. Word template
+    // routing is injected by the composer, and PPT routing lives in PPT mode.
     await cp(join(project, 'packages/dsh-desktop-office/business-skills'), join(staging, 'business-skills'), { recursive: true })
-    // Keep upstream skills intact; add the Windows packaging constraint at the
-    // generated deployment boundary, where all three workflows can see it.
-    for (const skill of ['office-docx', 'office-pptx', 'office-xlsx']) {
-      const path = join(staging, 'office-skills', skill, 'SKILL.md')
-      const source = await readFile(path, 'utf8')
-      const route = skill === 'office-pptx'
-        ? '\n\n## Desktop PPT workflow\n\nUse this general presentation workflow in ordinary conversation. When the current Desktop PPT composer state enables PPT mode, follow the dsh-ppt skill and selected template, using pptd_* tools and pptd_render. Do not recreate a template deck with python-pptx or switch engines after validation/export failure. Follow an explicit user request to change workflows; otherwise retain the active route.\n'
-        : skill === 'office-docx' ? '\n\n## Desktop Word template workflow\n\nWhen the current Desktop Word composer selects a template, call office_template and use its editable_paragraphs with office_template_write. Fill current issuing organizations and content using replacements, additions cloned from template paragraphs, and removals for unused paragraphs. The Host preserves native page geometry, embedded fonts, borders and page-number footers and checks the current DOCX again at present. Use office-docx for native chart/image updates, content review and rendering of that resulting DOCX. Ordinary Word tasks use the general creation workflow.\n' : ''
-      await writeFile(path, `${source}${route}\n\n## Desktop runtime\n\nCall load_workspace_dependencies and use its absolute Python path. For the general Office workflow, generate files with python-docx, python-pptx, openpyxl or XlsxWriter; active Desktop templates use pptd_* tools for PPT and office_template_write for Word. Do not hand-assemble OOXML with Windows PowerShell Compress-Archive: its ZIP entries can contain backslashes and fail Office preview. For deliberate low-level OOXML work, use Python zipfile with forward-slash entry names.\n\nThe supplied LibreOffice Kit node is the Desktop Electron runtime in Node mode. Set ELECTRON_RUN_AS_NODE=1 when invoking it (POSIX: prefix the command with ELECTRON_RUN_AS_NODE=1; PowerShell: set $env:ELECTRON_RUN_AS_NODE='1' before & <node> <cli>). Keep the supplied CLI path; it resolves the bundled engine outside ASAR.\n`)
-    }
     await rename(staging, output)
     console.log(`Office runtime prepared: ${manifest.platform}/${manifest.arch}, Python ${manifest.python}`)
   } finally {

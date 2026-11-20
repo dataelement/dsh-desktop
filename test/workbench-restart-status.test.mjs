@@ -26,6 +26,13 @@ async function fixture() {
 }
 
 describe('local workbench restart detection', () => {
+  it('passes external installation diagnostics through without requesting restart', async () => {
+    const installationDrift = [{ name: 'fixture-plugin', code: 'external-modification', path: '/temporary/plugin', expectedPath: '/temporary/generation/plugin', recovery: 'Back up and reinstall.' }]
+    const status = createRestartStatus(async () => ({}), { minimumInterval: 0,
+      readPendingGenerations: async () => ({ restartRequired: false, packages: [], installationDrift }) })
+    expect(await status.read()).toEqual({ restartRequired: false, packages: [], installationDrift })
+  })
+
   it('ignores existing installed packages and detects a new local install without an Agent API', async () => {
     const { home, install } = await fixture()
     const directory = await install('my-workbench')

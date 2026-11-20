@@ -1,0 +1,28 @@
+diff --git a/node_modules/@deepseek-ai/dsh-office-kit/lib/index.js b/node_modules/@deepseek-ai/dsh-office-kit/lib/index.js
+index 37e0d02..9322e48 100644
+--- a/node_modules/@deepseek-ai/dsh-office-kit/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-office-kit/lib/index.js
+@@ -45,7 +45,8 @@ function createEnginePackageResolver(kitEntry) {
+ 			manifest = fromKit.resolve(`${name}/package.json`);
+ 		} catch (error) {
+ 			if (error instanceof Error && "code" in error && error.code === "MODULE_NOT_FOUND") {
+-				if ((fromKit.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) !== void 0)) throw new Error(`Installed LibreOfficeKit package is incomplete: ${name}. Reinstall the package.`, { cause: error });
++				// Electron ASAR returns null for missing entries; Node returns undefined.
++				if ((fromKit.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) != null)) throw new Error(`Installed LibreOfficeKit package is incomplete: ${name}. Reinstall the package.`, { cause: error });
+ 			}
+ 			throw error;
+ 		}
+diff --git a/node_modules/@deepseek-ai/dsh-office-kit/lib/types/locate.js b/node_modules/@deepseek-ai/dsh-office-kit/lib/types/locate.js
+index 3d67a6d..cf41b91 100644
+--- a/node_modules/@deepseek-ai/dsh-office-kit/lib/types/locate.js
++++ b/node_modules/@deepseek-ai/dsh-office-kit/lib/types/locate.js
+@@ -35,7 +35,8 @@ export function createEnginePackageResolver(kitEntry) {
+         }
+         catch (error) {
+             if (error instanceof Error && 'code' in error && error.code === 'MODULE_NOT_FOUND') {
+-                const installed = (fromKit.resolve.paths(name) ?? []).some(directory => lstatSync(join(directory, name), { throwIfNoEntry: false }) !== undefined);
++                // Electron ASAR returns null for missing entries; Node returns undefined.
++                const installed = (fromKit.resolve.paths(name) ?? []).some(directory => lstatSync(join(directory, name), { throwIfNoEntry: false }) != null);
+                 if (installed)
+                     throw new Error(`Installed LibreOfficeKit package is incomplete: ${name}. Reinstall the package.`, { cause: error });
+             }

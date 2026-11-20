@@ -70,8 +70,8 @@ Start by asking for the first piece of information still missing.`,
     }
     const DOWNLOAD_NS = 'dsh-desktop-workbenches.download'
     const downloadCopy = {
-      zh: { download_failed: '无法下载工作台安装包', download_interrupted: '工作台安装包下载中断', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
-      en: { download_failed: 'Could not download the workbench package', download_interrupted: 'Workbench package download interrupted', invalid_download_url: 'The workbench download URL is invalid.', unsafe_download_url: 'The workbench download URL must use HTTPS without credentials or a custom port.' }
+      zh: { download_failed: '安装包下载失败，请重试；若多次失败，请检查网络或代理设置。', download_timeout: '安装包下载连接超时，请重试；若多次失败，请检查网络或代理设置。', download_interrupted: '安装包下载中断，请重新下载；若多次失败，请检查网络或代理设置。', diagnostic: '错误代码', invalid_download_url: '工作台下载地址无效。', unsafe_download_url: '工作台下载地址必须使用 HTTPS，且不能包含凭据或自定义端口。' },
+      en: { download_failed: 'Package download failed. Retry; if it keeps failing, check your network or proxy settings.', download_timeout: 'The package download connection timed out. Retry; if it keeps failing, check your network or proxy settings.', download_interrupted: 'Package download interrupted. Download again; if it keeps failing, check your network or proxy settings.', diagnostic: 'Error code', invalid_download_url: 'The workbench download URL is invalid.', unsafe_download_url: 'The workbench download URL must use HTTPS without credentials or a custom port.' }
     }
     const CREATE_NS = 'dsh-desktop-workbenches.creation'
     const createCopy = {
@@ -85,8 +85,8 @@ Start by asking for the first piece of information still missing.`,
     }
     const RESTART_NS = 'dsh-desktop-restart'
     const restartCopy = {
-      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。' },
-      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', operationFailed: 'Workbench operation could not finish', registrationFailed: 'A workbench could not load', diagnostics: 'View details for the full reason. Fix the issue, then reload workbenches.', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.' }
+      zh: { title: '有更改需重启 Harness 后生效', description: '会话记录和数据将保留', restart: '重启 Harness', restarting: '正在重启…', details: '查看详情', hide: '收起详情', close: '关闭', operationFailed: '工作台操作未完成', registrationFailed: '有工作台加载失败', reloadPage: '重新加载页面', registrationRecovery: '请查看详情。修复后，保存未提交的内容，再重新加载页面。', diagnostics: '查看详情以获取完整原因；修复后重新加载工作台。', failed: '无法重启 Harness，请重试。', unavailable: '请从菜单 Harness → 重启 Harness。', workbenches: '工作台安装变更', market: '插件市场安装变更', image: '内置生图插件变更', interrupted: '重启将中断正在执行的任务。', installationDrift: '安装状态异常', installationDriftDescription: '检测到安装目录被外部修改，重启无法修复。请停止外部更新并备份需要保留的文件，然后从插件管理器重新安装。', installationDriftDetails: '安装状态异常详情' },
+      en: { title: 'Restart Harness to apply changes', description: 'Session history and data will be preserved', restart: 'Restart Harness', restarting: 'Restarting…', details: 'View details', hide: 'Hide details', close: 'Close', operationFailed: 'Workbench operation incomplete', registrationFailed: 'A workbench failed to load', reloadPage: 'Reload page', registrationRecovery: 'View the details. After fixing the issue, save any unsaved work and reload the page.', diagnostics: 'View details for the full cause, then reload the workbench after fixing it.', failed: 'Could not restart Harness. Please try again.', unavailable: 'Use Harness → Restart Harness in the menu.', workbenches: 'Workbench installation changes', market: 'Plugin market installation changes', image: 'Built-in image plugin changes', interrupted: 'Restarting interrupts running tasks.', installationDrift: 'Installation state is abnormal', installationDriftDescription: 'The installation directory was modified externally. Restarting cannot fix this. Stop external updates, back up files you need, then reinstall from Plugin Manager.', installationDriftDetails: 'Installation state details' }
     }
     const registrationText = (ctx, key) => ctx.locale?.bind
       ? ctx.locale.bind(REGISTRATION_NS)(key)
@@ -102,13 +102,18 @@ Start by asking for the first piece of information still missing.`,
       const named = lines.filter(line => /EPERM|EBUSY|EEXIST|ENOENT|error/i.test(line))
       return (coded || named.at(-1) || lines.at(-1) || '').slice(0, 400)
     }
+    function downloadDiagnostic(data) {
+      const diagnostic = data?.params?.diagnostic
+      return (data?.code === 'download_failed' || data?.code === 'download_interrupted') && typeof diagnostic === 'string' && /^(?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR)(?:, (?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR))*$/.test(diagnostic) ? diagnostic : ''
+    }
     function installErrorMessage(ctx, data, status) {
       if ((data?.code === 'invalid_download_url' || data?.code === 'unsafe_download_url') && ctx.locale?.bind && data.params === undefined) {
         return ctx.locale.bind(DOWNLOAD_NS)(data.code)
       }
-      const diagnostic = data?.params?.diagnostic
-      if ((data?.code === 'download_failed' || data?.code === 'download_interrupted') && ctx.locale?.bind && typeof diagnostic === 'string' && /^(?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR)(?:, (?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55}|TIMEOUT|ABORTED|NETWORK_ERROR))*$/.test(diagnostic)) {
-        return `${ctx.locale.bind(DOWNLOAD_NS)(data.code)}: ${diagnostic}`
+      const diagnostic = downloadDiagnostic(data)
+      if (diagnostic && ctx.locale?.bind) {
+        const timedOut = diagnostic.split(', ').some(code => ['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'ETIMEDOUT', 'ERR_CONNECTION_TIMED_OUT', 'ERR_TIMED_OUT', 'TIMEOUT'].includes(code))
+        return ctx.locale.bind(DOWNLOAD_NS)(timedOut ? 'download_timeout' : data.code)
       }
       const reported = typeof data?.error === 'string' ? data.error.trim() : ''
       const code = typeof data?.code === 'string' ? data.code : ''
@@ -344,6 +349,7 @@ Start by asking for the first piece of information still missing.`,
         this.applicationOutcomes = new Map()
         this.hostRestartNeeded = false
         this.restartPackages = []
+        this.installationDrift = []
         this.extraRestartSources = new Set()
         try {
           const pending = JSON.parse(window.sessionStorage?.getItem('dsh-desktop-pending-restart') || 'null')
@@ -513,9 +519,11 @@ Start by asking for the first piece of information still missing.`,
           if (this.disposed) return
           const restarted = typeof data.runtimeId === 'string' && this.restartRuntimeId && data.runtimeId !== this.restartRuntimeId
           if (typeof data.runtimeId === 'string') this.restartRuntimeId = data.runtimeId
-          const before = JSON.stringify(this.restartReasons())
+          const before = JSON.stringify([this.restartReasons(), this.installationDrift])
           if (typeof data.restartRequired === 'boolean') this.hostRestartNeeded = data.restartRequired
           if (Array.isArray(data.packages)) this.restartPackages = data.packages.filter(name => typeof name === 'string')
+          this.installationDrift = Array.isArray(data.installationDrift)
+            ? data.installationDrift.filter(item => item && typeof item.name === 'string' && item.code === 'external-modification') : []
           if (restarted) this.extraRestartSources.delete('image')
           if (restarted && data.restartRequired === false) {
             this.hostRestartNeeded = false
@@ -526,7 +534,7 @@ Start by asking for the first piece of information still missing.`,
             }
           }
           this.persistRestartSources()
-          if (before !== JSON.stringify(this.restartReasons())) this.publish()
+          if (before !== JSON.stringify([this.restartReasons(), this.installationDrift])) this.publish()
         })().catch(() => {
           // Restart guidance is supplementary; a disconnected host must not
           // replace the user's conversation with a polling error.
@@ -575,7 +583,7 @@ Start by asking for the first piece of information still missing.`,
         if (!workspace) throw new Error(t('workspaceUnavailable'))
         if (this.state.active) await this.leave()
         this.setMarketOpen(false)
-        const options = { prompt: t('chatDraft'), whenDraftExists: 'append' }
+        const options = { prompt: t('chatDraft'), whenDraftExists: 'replace' }
         // Clear the panel first: selecting it after startSession aborts the
         // workspace navigation before its draft can be initialized.
         this.ctx.layout.selectPanel(null)
@@ -922,19 +930,6 @@ Start by asking for the first piece of information still missing.`,
             if (typeof legacy === 'string' && legacy !== entry.id && referenced(legacy)) migrations[legacy] = entry.id
           }
         }
-        if (this.native.status === NATIVE_STATUS.ready) {
-          for (const [legacy, remembered] of Object.entries(this.knownProviders)) {
-            const source = remembered?.sourcePackage
-            const bundle = source && this.native.bundles[source]
-            if (legacy.startsWith('local:') || !source || !bundle || bundle.installed === false || bundle.error || this.catalog.has(legacy) || !referenced(legacy) || migrations[legacy]) continue
-            // A distinct market receipt may represent a different workbench
-            // that reused this package name. Do not transfer its owned data.
-            if (this.installs[legacy]?.pluginName === source) continue
-            const current = [...this.catalog.values()].filter((provider) => provider.sourcePackage === source &&
-              this.remoteCatalog.some((entry) => entry.id === provider.id))
-            if (current.length === 1 && current[0].id !== legacy) migrations[legacy] = current[0].id
-          }
-        }
         if (!Object.keys(migrations).length) return
         this.run(this.commit((state) => {
           const replace = id => migrations[id] || id
@@ -977,15 +972,16 @@ Start by asking for the first piece of information still missing.`,
           }
         }
         const error = this.error instanceof UnavailableWorkbenchError ? this.error.message : this.error
-        this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDismissed: this.errorDismissed,
+        this.snapshot = { state: this.state, localInstall: this.localInstall, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error, errorDiagnostic: error ? this.errorDiagnostic || '' : '', errorDismissed: this.errorDismissed,
 
           catalogLoaded: this.catalogLoaded, catalogError: this.catalogError, catalogStale: this.catalogStale, catalogRefreshing: this.catalogRefreshing, checkingUpdates: this.checkingUpdates, pending: this.pending, marketOpen: this.marketOpen,
-          registrationFailures: [...this.registrationFailures.values()], catalog, categories: this.marketCategories, installs: this.installs, installing: this.installing || this.firstMarketInstall, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, restartReasons: this.restartReasons(), reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
+          registrationFailures: [...this.registrationFailures.values()], catalog, categories: this.marketCategories, installs: this.installs, installing: this.installing || this.firstMarketInstall, native: this.native, togglingPlugin: this.togglingPlugin, removingPlugin: this.removingPlugin, removedWorkbenchIds: [...this.removedWorkbenchIds], restartNeeded: this.restartNeeded, restartReasons: this.restartReasons(), installationDrift: this.installationDrift, reloadNeeded: this.reloadNeeded, switcherHint: this.switcherHint === true }
         for (const listener of this.listeners) listener()
       }
       report(error) {
         if (this.disposed) return
         this.error = error instanceof UnavailableWorkbenchError ? error : error instanceof Error ? error.message : String(error)
+        this.errorDiagnostic = downloadDiagnostic({ code: 'download_failed', params: { diagnostic: error?.diagnostic } })
         this.errorDismissed = false
         this.publish()
       }
@@ -1086,6 +1082,7 @@ Start by asking for the first piece of information still missing.`,
           }
           if (!response.ok) {
             const error = new Error(installErrorMessage(this.ctx, data, response.status))
+            error.diagnostic = downloadDiagnostic(data)
             error.result = data.result
             error.application = data.application || data.result?.application
             if (response.status === 409 && data.code === 'confirmation_required' && (data.params?.updateRisk === 'local' || data.params?.updateRisk === 'modified')) {
@@ -1862,7 +1859,11 @@ Start by asking for the first piece of information still missing.`,
         font-size:13px; line-height:20px; text-align:left; white-space:normal;
       }
       /* Version updates and workbench notifications share the lower-right corner. */
-      html:has([data-dsh-update-corner-visible]) .dshRestartNotice { bottom:180px; max-height:calc(100vh - 208px); }
+      html:has([data-dsh-update-corner-visible][data-update-phase="downloading"]) .dshRestartNotice,
+      html:has([data-dsh-update-corner-visible][data-update-phase="downloaded"]) .dshRestartNotice { display:none; }
+      .dshRestartDialog .dshRestartDetails { max-height:55vh; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+      .dshRestartDialog h2 { margin:0; font-size:18px; line-height:26px; }
+      .dshRestartDialog button:focus-visible { outline:2px solid var(--dsw-alias-label-primary); outline-offset:3px; }
       .dshRestartRow { display:flex; gap:12px; align-items:center; }
       .dshRestartIcon {
         display:grid; place-items:center; flex:none; width:36px; height:36px;
@@ -2032,7 +2033,7 @@ Start by asking for the first piece of information still missing.`,
       html[data-platform=darwin]:not([data-fullscreen=true]) [data-sidebar-collapsed] [data-dsh-compact-toolbar]{padding-inline-start:var(--dsh-frame-leading-clearance,160px)}
       /* Provider drag styles must not consume controls or their nested icons. */
       html[data-platform=darwin] [data-dsh-compact-toolbar] :is(button,a,input,select,textarea,label,summary,iframe,[role=button],[role=tab],[role=combobox],[role=slider],[role=menu],[role=menuitem],[role=checkbox],[role=radio],[role=switch],[role=spinbutton],[role=listbox],[role=option],[role=dialog],[role=tree],[role=treeitem],[contenteditable]:not([contenteditable=false]),[tabindex],[draggable=true],[data-dsh-no-drag],[data-window-drag=false]),html[data-platform=darwin] [data-dsh-compact-toolbar] :is(button,a,input,select,textarea,label,summary,iframe,[role=button],[role=tab],[role=combobox],[role=slider],[role=menu],[role=menuitem],[role=checkbox],[role=radio],[role=switch],[role=spinbutton],[role=listbox],[role=option],[role=dialog],[role=tree],[role=treeitem],[contenteditable]:not([contenteditable=false]),[tabindex],[draggable=true],[data-dsh-no-drag],[data-window-drag=false]) *{-webkit-app-region:no-drag!important}
-.dshWbSidebarSwitcher{position:relative;z-index:30;display:flex;align-items:center;gap:8px;box-sizing:border-box;min-width:0;min-height:36px;margin:0 2px 8px;padding:0;overflow:visible}.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;min-width:88px;box-sizing:border-box;min-height:36px;padding:7px 8px;font:inherit;line-height:22px;cursor:pointer;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);text-align:left;white-space:nowrap}.dshWbSidebarSwitcher.dshWb{font-size:14px;line-height:22px}.dshWbSidebarSwitcher .dshWbWorkbenchHome{font:inherit;line-height:22px}.dshWbWorkbenchHome svg{flex:0 0 auto}.dshWbSidebarSwitcher:is([data-selected=true],:hover,:focus-within){border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}.dshWbCurrentMode{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1 1 0;min-width:0;max-width:none;padding:0 8px;color:var(--dsw-alias-label-secondary);font-size:12px}.dshWbCurrentModeLabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}.dshWbModeSwitch{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1 1 0;min-width:0;max-width:none;box-sizing:border-box;height:36px;padding:7px 8px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:pointer}.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}.dshWbModeSwitch:focus-visible,.dshWbWorkbenchHome:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;top:calc(100% + 5px);display:grid;grid-auto-rows:max-content;gap:2px;box-sizing:border-box;max-height:calc(100dvh - 16px);overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-label-tertiary) transparent;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 28px rgba(0,0,0,.14)}.dshWbModeMenu::-webkit-scrollbar{width:8px}.dshWbModeMenu::-webkit-scrollbar-thumb{background:var(--dsw-alias-label-tertiary);border:2px solid var(--dsw-alias-bg-layer-1);border-radius:4px}.dshWbModeOptionRow{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:0;min-width:0}.dshWbModeOptionRow[data-dragging=true]{opacity:.46}.dshWbModeOptionRow[data-drop-edge=before]::before,.dshWbModeOptionRow[data-drop-edge=after]::after{content:"";position:absolute;z-index:1;left:8px;right:6px;height:2px;border-radius:1px;background:var(--dsw-alias-label-primary);pointer-events:none}.dshWbModeOptionRow[data-drop-edge=before]::before{top:-2px}.dshWbModeOptionRow[data-drop-edge=after]::after{bottom:-2px}.dshWbModeOption{display:grid;grid-template-columns:18px minmax(0,1fr) 16px;align-items:center;gap:8px;width:100%;min-width:0;min-height:34px;padding:6px 8px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left}.dshWbModeOption:hover:not(:disabled),.dshWbModeOption:focus-visible{background:var(--dsw-alias-bg-layer-2)}.dshWbModeOptionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.dshWbModeOptionCheck{font-size:12px;text-align:center;color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle{display:grid;place-items:center;width:24px;height:34px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:grab}.dshWbModeDragHandle:hover:not(:disabled),.dshWbModeDragHandle:focus-visible{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}.dshWbModeDragHandle:active{cursor:grabbing}.dshWbModeDragHandle:disabled{cursor:default;opacity:.35}.dshWbSrOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.dshWbSidebarSwitcher{position:relative;z-index:30;flex:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;min-width:0;min-height:36px;margin:0 2px 8px;padding:0;overflow:visible}.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;min-width:88px;box-sizing:border-box;min-height:36px;padding:7px 8px;font:inherit;line-height:22px;cursor:pointer;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);text-align:left;white-space:nowrap}.dshWbSidebarSwitcher.dshWb{font-size:14px;line-height:22px}.dshWbSidebarSwitcher .dshWbWorkbenchHome{font:inherit;line-height:22px}.dshWbWorkbenchHome svg{flex:0 0 auto}.dshWbSidebarSwitcher:is([data-selected=true],:hover,:focus-within){border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}.dshWbCurrentMode{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1 1 0;min-width:0;max-width:none;padding:0 8px;color:var(--dsw-alias-label-secondary);font-size:12px}.dshWbCurrentModeLabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}.dshWbModeSwitch{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1 1 0;min-width:0;max-width:none;box-sizing:border-box;height:36px;padding:7px 8px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:pointer}.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}.dshWbModeSwitch:focus-visible,.dshWbWorkbenchHome:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;top:calc(100% + 5px);display:grid;grid-auto-rows:max-content;gap:2px;box-sizing:border-box;max-height:calc(100dvh - 16px);overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-label-tertiary) transparent;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 28px rgba(0,0,0,.14)}.dshWbModeMenu::-webkit-scrollbar{width:8px}.dshWbModeMenu::-webkit-scrollbar-thumb{background:var(--dsw-alias-label-tertiary);border:2px solid var(--dsw-alias-bg-layer-1);border-radius:4px}.dshWbModeOptionRow{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:0;min-width:0}.dshWbModeOptionRow[data-dragging=true]{opacity:.46}.dshWbModeOptionRow[data-drop-edge=before]::before,.dshWbModeOptionRow[data-drop-edge=after]::after{content:"";position:absolute;z-index:1;left:8px;right:6px;height:2px;border-radius:1px;background:var(--dsw-alias-label-primary);pointer-events:none}.dshWbModeOptionRow[data-drop-edge=before]::before{top:-2px}.dshWbModeOptionRow[data-drop-edge=after]::after{bottom:-2px}.dshWbModeOption{display:grid;grid-template-columns:18px minmax(0,1fr) 16px;align-items:center;gap:8px;width:100%;min-width:0;min-height:34px;padding:6px 8px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left}.dshWbModeOption:hover:not(:disabled),.dshWbModeOption:focus-visible{background:var(--dsw-alias-bg-layer-2)}.dshWbModeOptionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.dshWbModeOptionCheck{font-size:12px;text-align:center;color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle{display:grid;place-items:center;width:24px;height:34px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:grab}.dshWbModeDragHandle:hover:not(:disabled),.dshWbModeDragHandle:focus-visible{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}.dshWbModeDragHandle:active{cursor:grabbing}.dshWbModeDragHandle:disabled{cursor:default;opacity:.35}.dshWbSrOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
       .dshWbBody{display:flex;flex:1;min-height:0;min-width:0}.dshWbConversation{container-type:inline-size;container-name:workbench-conversation;overflow:hidden;order:1;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
       .dshWbBusiness{order:2;width:var(--workbench-business-width,36%);min-width:220px;border-left:1px solid var(--dsw-alias-border-l2);overflow:auto;padding:18px;box-sizing:border-box}
       .dshWbBusiness[data-side=left]{order:0;border-left:0;border-right:1px solid var(--dsw-alias-border-l2)}
@@ -2116,18 +2117,40 @@ Start by asking for the first piece of information still missing.`,
       return null
     }
     function RestartNotice({ service, t }) {
-      const { error: workbenchError, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], registrationFailures = [] } = useWorkbench(service)
-      const operationError = workbenchError && !errorDismissed ? workbenchError : null
-      const failureKey = JSON.stringify(registrationFailures)
-      const [dismissedFailures, setDismissedFailures] = React.useState(null)
-      const showRegistration = registrationFailures.length > 0 && dismissedFailures !== failureKey
-      React.useEffect(() => { setDismissedFailures(null) }, [failureKey])
+      const { error: workbenchError, errorDiagnostic, errorDismissed, pending: workbenchPending = 0, restartNeeded, restartReasons = [], installationDrift = [], registrationFailures = [] } = useWorkbench(service)
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState('')
       const pending = React.useRef(false)
       const live = React.useRef(true)
       const details = React.useId()
       const [expanded, setExpanded] = React.useState(false)
+      const [dismissedFailures, setDismissedFailures] = React.useState(null)
+      const failureKey = JSON.stringify(registrationFailures)
+      const driftError = installationDrift.length
+        ? `${t('installationDriftDescription')}\n${installationDrift.map(item => `${item.name}\n${item.path || ''}`).join('\n')}` : null
+      const operationError = driftError || (workbenchError && !errorDismissed ? workbenchError : null)
+      const showRegistration = registrationFailures.length > 0 && dismissedFailures !== failureKey
+      const registrationOnly = showRegistration && !operationError
+      const hasFailure = !!operationError || showRegistration
+      const noticeKey = JSON.stringify([operationError, showRegistration ? failureKey : null, restartNeeded])
+      React.useEffect(() => { setExpanded(false) }, [noticeKey])
+      const dialogRef = React.useRef(null)
+      const closeDetails = () => { if (!busy) setExpanded(false) }
+      useDialogFocus(expanded && (hasFailure || restartNeeded), closeDetails, dialogRef)
+      React.useEffect(() => { if (expanded) dialogRef.current?.querySelector('button')?.focus() }, [expanded])
+      const dialog = expanded && (hasFailure || restartNeeded) && require('react-dom').createPortal(
+        h('div', { className: 'dshWbModalBackdrop', 'data-window-drag-exclude': true, onClick: closeDetails },
+          h('section', { ref: dialogRef, id: details, className: 'dshWbModal dshRestartDialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${details}-title`, 'data-dsh-workbench-notice': '', tabIndex: -1, onClick: event => event.stopPropagation() },
+            h('div', { className: 'dshWbActions' }, h('h2', { id: `${details}-title` }, t(hasFailure ? (operationError ? 'operationFailed' : 'registrationFailed') : 'title')),
+              h(Button, { disabled: busy, onClick: closeDetails }, t('close'))),
+            h('div', { className: 'dshRestartDetails', tabIndex: 0 },
+              operationError && h('p', null, tr(operationError)),
+              !driftError && operationError && errorDiagnostic && h('p', null, `${service.ctx.locale.bind(DOWNLOAD_NS)('diagnostic')}: ${errorDiagnostic}`),
+              showRegistration && h(React.Fragment, null,
+                h('p', null, registrationText(service.ctx, 'guidance')),
+                ...registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` }, `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`))),
+              restartNeeded && h(React.Fragment, null,
+                h('ul', null, ...restartReasons.map(reason => h('li', { key: reason }, ['workbenches', 'market', 'image'].includes(reason) ? t(reason) : reason))), h('p', null, t('interrupted')))))), document.body)
       React.useEffect(() => { live.current = true; return () => { live.current = false } }, [])
       const restart = async () => {
         if (pending.current) return
@@ -2146,31 +2169,24 @@ Start by asking for the first piece of information still missing.`,
           if (live.current) setBusy(false)
         }
       }
-      const diagnosticItems = () => [
-        operationError && h('div', { key: 'operation', className: 'dshRestartDiagnostic' }, h('strong', null, t('operationFailed')), h('p', null, tr(operationError))),
-        showRegistration && h('div', { key: 'registration', className: 'dshRestartDiagnostic' },
-          h('strong', null, registrationText(service.ctx, 'failed')),
-          h('p', null, registrationText(service.ctx, 'guidance')),
-          ...registrationFailures.map(failure => h('p', { key: `${failure.sourcePackage}:${failure.stage}` }, `${failure.sourcePackage} · ${registrationText(service.ctx, failure.stage)}: ${failure.message}`)))
-      ]
-      const diagnostics = () => h('div', { id: details, className: 'dshRestartDetails' }, ...diagnosticItems())
-      if (!restartNeeded && (operationError || showRegistration)) {
-        return h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert' },
+      // Installation drift is not a restart request, even if another package
+      // independently has a pending change. Keep that reason in the details.
+      if (driftError || (!restartNeeded && hasFailure)) {
+        return h(React.Fragment, null, h('aside', { className: 'dshRestartNotice dshWbOperationNotice', role: 'alert', 'data-dsh-workbench-notice': '' },
           h('div', { className: 'dshRestartRow' },
             h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
               h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' },
                 h('circle', { cx: 12, cy: 12, r: 9 }),
                 h('path', { d: 'M12 8v4m0 4h.01' }))),
-            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(operationError ? 'operationFailed' : 'registrationFailed')), h('p', { className: 'dshRestartDescription' }, t('diagnostics'))),
+            h('div', { className: 'dshRestartBody' }, h('p', { className: 'dshRestartTitle' }, t(driftError ? 'installationDrift' : operationError ? 'operationFailed' : 'registrationFailed')),
+              h('p', { className: 'dshRestartDescription' }, !driftError && operationError && errorDiagnostic ? tr(operationError) : t(driftError ? 'installationDriftDescription' : registrationOnly ? 'registrationRecovery' : 'diagnostics'))),
             h('div', { className: 'dshRestartActions' },
-              h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => { service.dismissError(); setDismissedFailures(failureKey) } }, both('关闭', 'Dismiss')),
-              h('button', { type: 'button', className: 'dshRestartToggle', 'aria-expanded': expanded, 'aria-controls': details, onClick: () => setExpanded(value => !value) }, t(expanded ? 'hide' : 'details')),
-              h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => service.run(service.load()) }, tr('重新加载')))),
-          expanded && diagnostics(),
-          error && h('p', { className: 'dshRestartError', role: 'alert' }, error))
+              !driftError && h('button', { type: 'button', className: 'dshRestartToggle', onClick: () => { setExpanded(false); service.dismissError(); setDismissedFailures(failureKey) } }, t('close')),
+              h('button', { type: 'button', className: 'dshRestartToggle', 'aria-haspopup': 'dialog', 'aria-controls': expanded ? details : undefined, onClick: () => setExpanded(true) }, t('details')),
+              !driftError && h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => registrationOnly ? service.reloadPage() : service.run(service.load()) }, registrationOnly ? t('reloadPage') : tr('重新加载'))))), dialog)
       }
       if (!restartNeeded) return null
-      return h('aside', { className: 'dshRestartNotice', 'aria-label': t('title'), 'aria-live': 'polite', 'aria-busy': busy },
+      return h(React.Fragment, null, h('aside', { className: 'dshRestartNotice', 'data-dsh-workbench-notice': '', 'aria-label': t('title'), 'aria-live': 'polite', 'aria-busy': busy },
         h('div', { className: 'dshRestartRow' },
           h('span', { className: 'dshRestartIcon', 'aria-hidden': true },
             h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
@@ -2181,12 +2197,11 @@ Start by asking for the first piece of information still missing.`,
           h('div', { className: 'dshRestartBody' },
             h('p', { className: 'dshRestartTitle' }, t('title')),
             h('p', { className: 'dshRestartDescription' }, t('description')),
-            (operationError || showRegistration) && h('p', { className: 'dshRestartDescription' }, t(operationError ? 'operationFailed' : 'registrationFailed'))),
+            hasFailure && h('p', { className: 'dshRestartDescription' }, t(operationError ? 'operationFailed' : 'registrationFailed'))),
           h('div', { className: 'dshRestartActions' },
-            h('button', { type: 'button', className: 'dshRestartToggle', disabled: busy, 'aria-expanded': expanded, 'aria-controls': details, onClick: () => setExpanded(value => !value) }, t(expanded ? 'hide' : 'details')),
+            h('button', { type: 'button', className: 'dshRestartToggle', disabled: busy, 'aria-haspopup': 'dialog', 'aria-controls': expanded ? details : undefined, onClick: () => setExpanded(true) }, t('details')),
             h('button', { type: 'button', className: 'dshRestartPrimary', disabled: busy || workbenchPending > 0, onClick: () => void restart() }, t(busy ? 'restarting' : 'restart')))),
-        expanded && h('div', { id: details, className: 'dshRestartDetails' }, h('ul', null, ...restartReasons.map(reason => h('li', { key: reason }, ['workbenches', 'market', 'image'].includes(reason) ? t(reason) : reason))), h('p', null, t('interrupted')), ...diagnosticItems()),
-        error && h('p', { className: 'dshRestartError', role: 'alert' }, error))
+        error && h('p', { className: 'dshRestartError', role: 'alert' }, error)), dialog)
     }
     function screenshotsFor(entry) {
       const images = Array.isArray(entry?.screenshots) ? entry.screenshots.filter(image => typeof image === 'string' && image) : []
@@ -2461,7 +2476,7 @@ Start by asking for the first piece of information still missing.`,
         many && h('div', { className: 'dshWbCarouselDots', 'aria-hidden': true }, screenshots.map((src, i) => h('span', { key: src, 'data-active': i === index }))),
         many && h('span', { className: 'dshWbCarouselCount', 'aria-live': 'polite' }, `${index + 1} / ${screenshots.length}`))
       if (!lightbox) return carousel
-      return h(React.Fragment, null, carousel, h('div', { className: 'dshWbDetailLightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('截图放大预览'), onClick: () => setLightbox(null) },
+      return h(React.Fragment, null, carousel, h('div', { className: 'dshWbDetailLightbox', role: 'dialog', 'aria-modal': 'true', 'data-window-drag-exclude': true, 'aria-label': tr('截图放大预览'), onClick: () => setLightbox(null) },
         h('button', { ref: lightboxCloseRef, type: 'button', className: 'dshWbLightboxClose', 'aria-label': tr('关闭截图预览'), onClick: () => setLightbox(null) }, '×'),
         h('img', { src: lightbox, alt: both(`${entry.title || tr('工作台')}截图放大`, `Enlarged ${entry.title || tr('工作台')} screenshot`), onClick: (event) => event.stopPropagation() })))
     }
@@ -2510,7 +2525,7 @@ Start by asking for the first piece of information still missing.`,
       // which would otherwise resolve a fixed-position overlay against that panel
       // and clip it with its own overflow.
       return require('react-dom').createPortal(
-        h('div', { className: 'dshWbModalBackdrop', onClick: onClose },
+        h('div', { className: 'dshWbModalBackdrop', 'data-window-drag-exclude': true, onClick: onClose },
           h('div', { ref: dialogRef, className: 'dshWbModal', role: 'dialog', 'aria-modal': 'true', 'aria-label': both(`${entry.title || tr('工作台')} 详情`, `${entry.title || tr('工作台')} details`), tabIndex: -1, onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbActions', style: { marginBottom: 14 } },
               h('h2', { style: { fontSize: 18, lineHeight: '26px', flex: 1, display: 'flex', alignItems: 'center', gap: 8 } }, h('span', { className: 'dshWbCardIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })), h(EntryTitle, { entry })),
@@ -2530,7 +2545,7 @@ Start by asking for the first piece of information still missing.`,
       const dismiss = () => { if (!disabled) onCancel() }
       useDialogFocus(true, dismiss, dialogRef)
       return require('react-dom').createPortal(
-        h('div', { className: 'dshWbModalBackdrop', onClick: dismiss },
+        h('div', { className: 'dshWbModalBackdrop', 'data-window-drag-exclude': true, onClick: dismiss },
           h('div', { ref: dialogRef, className: 'dshWbModal dshWbConfirm', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-wb-replacement-title', 'aria-describedby': 'dsh-wb-replacement-description', tabIndex: -1, onClick: event => event.stopPropagation() },
             h('div', { className: 'dshWbConfirmIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'refresh', size: 18 })),
             h('h2', { id: 'dsh-wb-replacement-title', style: { fontSize: 18, lineHeight: '26px' } }, both(`更新「${entry.title || entry.id}」？`, `Update “${entry.title || entry.id}”?`)),
@@ -2544,7 +2559,7 @@ Start by asking for the first piece of information still missing.`,
       useDialogFocus(!!entry, dismiss, dialogRef)
       if (!entry) return null
       return require('react-dom').createPortal(
-        h('div', { className: 'dshWbModalBackdrop', onClick: dismiss },
+        h('div', { className: 'dshWbModalBackdrop', 'data-window-drag-exclude': true, onClick: dismiss },
           h('div', { ref: dialogRef, className: 'dshWbModal dshWbConfirm', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-remove-title', 'aria-describedby': 'dsh-workbench-remove-description', tabIndex: -1, onClick: (event) => event.stopPropagation() },
             h('div', { className: 'dshWbConfirmIcon', 'aria-hidden': true }, h(MarketIcon, { name: 'remove', size: 18 })),
             h('h2', { id: 'dsh-workbench-remove-title', style: { fontSize: 18, lineHeight: '26px' } }, both(`${uninstall || nativeUninstall ? tr('卸载') : tr('移除')}「${entry.title || entry.id}」？`, `${uninstall || nativeUninstall ? tr('卸载') : tr('移除')} “${entry.title || entry.id}”?`)),

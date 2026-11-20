@@ -17,6 +17,7 @@ import {
   type UpdateLocale
 } from './update-view'
 import brandMark from '../../build/brand-mark.svg?raw'
+import { watchWorkbenchNoticePriority } from './workbench-notice-priority'
 const t = (key: Parameters<typeof updateText>[1], values: Readonly<Record<string, string | number>> = {}) => updateText(locale, key, values)
 const ROOT_ID = 'dsh-desktop-update-root'
 let locale: UpdateLocale = 'en'
@@ -48,6 +49,8 @@ let aboutOpen = false
 let aboutInfo: AboutInfo | null = null
 let receivedStatusEvent = false
 let themeObserver: MutationObserver | undefined
+let workbenchNoticeActive = false
+let stopNoticePriorityWatch: (() => void) | undefined
 
 // The host is attached to documentElement, outside the node that owns Harness
 // tokens. Copy the resolved Desktop theme instead of following the OS scheme.
@@ -130,6 +133,9 @@ function render(): void {
   if (!host || !content || !currentStatus) return
 
   if (
+    // Defer only passive release offers. Manual checks, active downloads and
+    // actionable update errors must remain available while a workbench is broken.
+    (workbenchNoticeActive && !detailOpen && !currentStatus.manual && currentStatus.phase === 'available') ||
     (!shouldShowUpdate(currentStatus, detailOpen) && !(detailOpen && currentStatus.phase === 'error')) ||
     (currentStatus.manual && currentStatus.presentationId !== undefined && currentStatus.presentationId === dismissedPresentationId) ||
     isUpdateDismissed(currentStatus, dismissedVersion, dismissedTransientPhase)
@@ -753,6 +759,7 @@ function stopDesktopThemeWatch(): void {
 
 window.addEventListener('unload', () => {
   stopDesktopThemeWatch()
+  stopNoticePriorityWatch?.()
   window.removeEventListener('pointerdown', onOutsidePointer)
   window.removeEventListener('keydown', onKeydown)
   ipcRenderer.removeListener('updates:status-changed', onUpdateStatus)
@@ -772,4 +779,9 @@ export function mountDesktopUpdateUi(): void {
   mount()
   mountAbout()
   watchDesktopTheme()
+  stopNoticePriorityWatch?.()
+  stopNoticePriorityWatch = watchWorkbenchNoticePriority(document, active => {
+    workbenchNoticeActive = active
+    render()
+  })
 }

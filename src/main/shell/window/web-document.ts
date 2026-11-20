@@ -72,6 +72,24 @@ export async function serveWebDocument(request: Request, root: string): Promise<
   })
 }
 
+/** Cookie store operations used to remove legacy Host authentication cookies. */
+export interface HostCookieStore {
+  get(filter: { url: string }): Promise<readonly { readonly name: string }[]>
+  remove(url: string, name: string): Promise<void>
+}
+
+/**
+ * Remove every `dsh-auth-*` cookie that earlier releases left for the Host hostname.
+ * Cookies ignore ports, so an earlier random-port Host would otherwise send those
+ * cookies on every later request to that hostname until they expire.
+ */
+export async function removeLegacyHostCookies(cookies: HostCookieStore, url: string): Promise<void> {
+  const origin = new URL(url).origin
+  for (const { name } of await cookies.get({ url: origin })) {
+    if (name.startsWith('dsh-auth-')) await cookies.remove(origin, name)
+  }
+}
+
 /** Exchange the Host launch URL for the cookie the shell keeps out of the page. */
 export async function authenticateWebHost(url: string): Promise<string> {
   const response = await fetch(url, { redirect: 'manual' })

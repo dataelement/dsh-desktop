@@ -76,9 +76,22 @@ describe('enterprise entry', () => {
     expect(unhideAll).toHaveBeenCalledOnce()
     expect(quit).toHaveBeenCalledOnce()
     const standard = standardMenuLabels(locale)
+    expect(standard.pasteAndMatchStyle).toBe(locale.startsWith('zh') ? '粘贴并匹配样式' : 'Paste and Match Style')
     expect(menu.map(item => item.label)).toEqual(['DSH Desktop Shell', standard.edit, standard.window])
     expect(menu[1]?.submenu?.[0]).toMatchObject({ role: 'undo', label: standard.undo })
-    expect(menu[1]?.submenu?.[6]).toMatchObject({ role: 'selectAll', label: standard.selectAll })
+    expect(menu[1]?.submenu?.[6]).toMatchObject({
+      role: 'pasteAndMatchStyle',
+      label: standard.pasteAndMatchStyle,
+      accelerator: 'Shift+Command+V'
+    })
+    expect(menu[1]?.submenu?.[7]).toMatchObject({
+      role: 'pasteAndMatchStyle',
+      label: standard.pasteAndMatchStyle,
+      accelerator: 'Option+Shift+Command+V',
+      visible: false,
+      acceleratorWorksWhenHidden: true
+    })
+    expect(menu[1]?.submenu?.[8]).toMatchObject({ role: 'selectAll', label: standard.selectAll })
     expect(menu[2]?.submenu?.[0]).toMatchObject({ role: 'minimize', label: standard.minimize })
     expect(menu[2]?.submenu?.[1]).toMatchObject({ role: 'close', label: standard.close })
     const withoutSafeMode = buildDarwinDesktopMenu({
@@ -154,8 +167,9 @@ describe('enterprise entry', () => {
     expect(source.includes('externalUrlToOpen(')).toBe(true)
     expect(source.includes('registerUpdateHandlers(')).toBe(true)
     expect(source.includes('startUpdateManager(')).toBe(true)
-    expect(source.includes('if (app.isPackaged && !desktopDevelopmentBuild()) initializeDesktopUpdateService()')).toBe(true)
-    expect(source.includes('initializeDesktopService(')).toBe(false)
+    expect(source.includes('initializeDesktopService({ getExitContext: () => readGpuExitContext() })')).toBe(true)
+    expect(source.includes('initializeDesktopUpdateService()')).toBe(false)
+    expect(source.includes('crashUpload.startSending()')).toBe(true)
     expect(source.includes('checkForUpdates(true)')).toBe(true)
     expect(source.includes('desktop:show-about')).toBe(true)
     expect(source.includes('presentAbout(target, menuLocale)')).toBe(true)
@@ -165,8 +179,13 @@ describe('enterprise entry', () => {
     expect(source.includes('restartInSafeMode()')).toBe(true)
     expect(source.includes('shouldStartInSafeMode(process.argv)')).toBe(true)
     expect(source.includes('bundledHarnessVersion(')).toBe(true)
-    expect(source.includes("app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))")).toBe(true)
+    expect(source.includes("app.setPath('userData', identity.userData)")).toBe(true)
     expect(source.includes('configureDesktopIdentity()')).toBe(true)
+    expect(source.includes('requireDesktopPlatform(process.platform)')).toBe(true)
+    expect(source.includes('adapter.clientPlatform')).toBe(true)
+    expect(source.includes('supports only macOS and Windows')).toBe(false)
+    const preload = await readFile(join(import.meta.dirname, '../../src/preload/app.ts'), 'utf8')
+    expect(preload.includes('if (usesDesktopCaption(process.platform))')).toBe(true)
     expect(source.includes('mandatory-update')).toBe(false)
     expect(source.includes('autoDownload = true')).toBe(false)
   })

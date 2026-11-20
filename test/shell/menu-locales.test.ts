@@ -27,6 +27,7 @@ describe('eight-language desktop menus', () => {
     expect(darwin[0]?.submenu?.[5]?.label).toBe(text.log)
     expect(darwin[0]?.submenu?.[7]?.label).toBe(text.hide.replace('{app}', 'DSH'))
     expect(darwin[1]?.submenu?.[0]).toMatchObject({ role: 'undo', label: text.undo })
+    expect(darwin[1]?.submenu?.[6]).toMatchObject({ role: 'pasteAndMatchStyle', label: text.pasteAndMatchStyle })
     darwin[0]?.submenu?.[1]?.click?.()
     expect(action).toHaveBeenCalledOnce()
     expect(shortcutFileMenuLabels(locale)).toEqual({ fileMenu: text.fileMenu, closePage: text.closePage })

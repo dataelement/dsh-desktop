@@ -91,6 +91,20 @@ describe('createAggregatedUploadConfirmation', () => {
 
     expect(capturedOptions.detail).toContain('本次聚合 3 项故障报告')
   })
+
+  it('uses English copy when the locale is not Chinese', async () => {
+    let capturedOptions: { buttons?: string[] } | undefined
+    const showMessageBox = vi.fn().mockImplementation(async opts => {
+      capturedOptions = opts
+      return { response: 0 }
+    })
+    const confirmation = createAggregatedUploadConfirmation({
+      showMessageBox,
+      locale: () => 'en-US'
+    })
+    await confirmation.confirmUpload(JSON.stringify({ version: '0.13.1', kind: 'startup-failure', lines: [] }))
+    expect(capturedOptions?.buttons).toEqual(["Don't send", 'Send once'])
+  })
 })
 
 describe('diagnostics rapid error deduplication', () => {
