@@ -44,6 +44,14 @@
       "types": "./lib/types/pptd.d.ts",
       "default": "./lib/pptd.js"
     },
+    "./web-mode-policy": {
+      "types": "./lib/web-mode-policy.d.ts",
+      "default": "./lib/web-mode-policy.js"
+    },
+    "./office-pptx-scope-policy": {
+      "types": "./lib/office-pptx-scope-policy.d.ts",
+      "default": "./lib/office-pptx-scope-policy.js"
+    },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },

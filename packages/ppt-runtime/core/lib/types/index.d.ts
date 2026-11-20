@@ -23,3 +23,10 @@ export declare const Config: z<Config>;
 /** Compose storage, browser RPC, and bounded model tools. */
 export declare function apply(ctx: Context, config: Config): Promise<void>;
 export type { PptService } from './ppt-service.ts';
+export { installWebModePolicy, type PresentationModeState } from '../web-mode-policy.js';
+export {
+    createOfficePptxScopePolicyController,
+    registerOfficePptxScopePolicy,
+    type OfficePptxScopePolicy,
+    type OfficePptxScopePolicyController
+} from '../office-pptx-scope-policy.js';

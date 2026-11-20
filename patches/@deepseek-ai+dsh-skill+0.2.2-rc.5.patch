@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-skill/lib/index.js b/node_modules/@deepseek-ai/dsh-skill/lib/index.js
-index 7d9c3656b3..014ec3f53d 100644
+index 7d9c365..28450ff 100644
 --- a/node_modules/@deepseek-ai/dsh-skill/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-skill/lib/index.js
 @@ -1,6 +1,6 @@
@@ -35,11 +35,69 @@ index 7d9c3656b3..014ec3f53d 100644
  	}
  	async collect(options) {
  		throwIfAborted(options.signal);
+@@ -437,6 +444,7 @@ const RUNTIME_SKILL_PROVIDER = {
+ function runtimeCandidate(skill) {
+ 	return {
+ 		name: skill.name,
++		...skill.displayName === void 0 ? {} : { displayName: skill.displayName },
+ 		description: skill.description,
+ 		...skill.whenToUse !== void 0 ? { whenToUse: skill.whenToUse } : {},
+ 		invocation: skill.invocation,
+@@ -450,6 +458,7 @@ function runtimeCandidate(skill) {
+ 	};
+ }
+ function validateCandidate(candidate, providerName) {
++	validateDisplayName(candidate);
+ 	if (typeof candidate.name !== "string") throw new TypeError(`skill provider "${providerName}" returned a non-string skill name`);
+ 	if (!SKILL_NAME.test(candidate.name)) throw new Error(`skill provider "${providerName}" returned invalid skill name "${candidate.name}"`);
+ 	if (typeof candidate.description !== "string") throw new TypeError(`skill provider "${providerName}" returned skill "${candidate.name}" with a non-string description`);
+@@ -463,12 +472,14 @@ function validateCandidate(candidate, providerName) {
+ 	if (candidate.path !== void 0 && typeof candidate.path !== "string") throw new TypeError(`skill provider "${providerName}" returned skill "${candidate.name}" with a non-string path`);
+ }
+ function validateRuntimeSkill(skill) {
++	validateDisplayName(skill);
+ 	if (!SKILL_NAME.test(skill.name)) throw new Error(`invalid skill name "${skill.name}"`);
+ 	if (skill.description.length === 0) throw new Error(`skill "${skill.name}" requires a description`);
+ 	validateInvocation(skill.invocation, `runtime skill "${skill.name}"`);
+ }
+ /** Validate a definition loaded from a provider-controlled parser or remote source. */
+ function validateDefinition(skill) {
++	validateDisplayName(skill);
+ 	const name = skill.name;
+ 	const description = skill.description;
+ 	const whenToUse = skill.whenToUse;
+@@ -492,6 +503,7 @@ function toSummary(skill) {
+ 	const { name, description, whenToUse, invocation, source, provider, resourceBase } = skill;
+ 	return {
+ 		name,
++		...skill.displayName === void 0 ? {} : { displayName: skill.displayName },
+ 		...skill.path === void 0 ? {} : { path: skill.path },
+ 		description,
+ 		...whenToUse !== void 0 ? { whenToUse } : {},
+@@ -501,6 +513,9 @@ function toSummary(skill) {
+ 		...resourceBase !== void 0 ? { resourceBase } : {}
+ 	};
+ }
++function validateDisplayName(skill) {
++	if (skill.displayName !== void 0 && typeof skill.displayName !== "string") throw new TypeError("skill displayName must be a string");
++}
+ function validateInvocation(invocation, subject) {
+ 	if (invocation === void 0) return;
+ 	if (typeof invocation !== "object" || invocation === null || Array.isArray(invocation)) throw new TypeError(`${subject} with a non-object invocation policy`);
 diff --git a/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts
-index b809c1b7ca..20a2bc8240 100644
+index b809c1b..b3df4fc 100644
 --- a/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts
-@@ -96,6 +96,8 @@ export interface SkillLookupOptions {
+@@ -46,6 +46,8 @@ export interface SkillSummary {
+     readonly path?: string;
+     /** Kebab-case identifier used to address the skill. */
+     readonly name: string;
++    /** Optional human-facing label; invocation always uses name. */
++    readonly displayName?: string;
+     /** Short routing description shown by discovery consumers. */
+     readonly description: string;
+     /** Optional extra routing guidance. */
+@@ -96,6 +98,8 @@ export interface SkillLookupOptions {
   * contract from it.
   */
  export interface SkillViewOptions extends SkillLookupOptions {
@@ -48,7 +106,7 @@ index b809c1b7ca..20a2bc8240 100644
      /** Viewing scope (the calling agent); omitted reads the global layer alone. */
      readonly scope?: ScopeKey | undefined;
  }
-@@ -209,6 +211,10 @@ declare module '@deepseek-ai/cordis' {
+@@ -209,6 +213,10 @@ declare module '@deepseek-ai/cordis' {
           * @mode emit
           */
          'skills/change'(): void;
@@ -59,7 +117,7 @@ index b809c1b7ca..20a2bc8240 100644
      }
  }
  /**
-@@ -282,6 +288,7 @@ export declare class SkillRegistry extends Service {
+@@ -282,6 +290,7 @@ export declare class SkillRegistry extends Service {
       * @returns the full skill, including body content, or `undefined`.
       */
      get(name: string, options?: SkillViewOptions): Promise<SkillDefinition | undefined>;

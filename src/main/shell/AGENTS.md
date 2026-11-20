@@ -1,9 +1,9 @@
 # 新壳约束
 
-继承 `src/main/AGENTS.md`。这里是按官方 Desktop 移植的 Electron 主进程，也是正式包入口。`npm run build` 打进 `out/main/index.js`，应用身份是 `io.dsh.desktop` / `DSH Desktop`。正式包的用户数据目录固定为 `dsh-desktop`；未打包启动和带 `dshDesktopChannel=development` 的开发包使用 `dsh-desktop-dev`。
+继承 `src/main/AGENTS.md`。这里是按官方 Desktop 移植的 Electron 主进程，也是正式包入口。`npm run build` 打进 `out/main/index.js`，默认应用身份是 `io.dsh.desktop` / `DSH Desktop`。默认正式包的用户数据目录为 `dsh-desktop`；未打包启动和带 `dshDesktopChannel=development` 的开发包使用 `dsh-desktop-dev`。下游可通过顶层 `dshDesktopIdentity` 显式配置显示名及正式/开发目录，契约见 [产品身份配置](../../../docs/desktop-product-identity.md)；不得通过品牌字段或插件包名猜测身份。
 
 - 不导入官方强制更新。产品更新使用 `update/update-manager`：安装包里才会自动检查，下载要等用户同意，可以跳过一个版本，也可以从更新卡片安装历史版本。已打包的应用在拿到单实例锁之后、`app.whenReady()` 之前调用 `initializeDesktopService`，包含 `dshDesktopChannel=development` 的测试包。它创建更新策略服务，并附带故障诊断。未打包的 `npm run dev` 不调用它。用户同意后，把与 0.13.2 相同的 JSON POST 到 `https://dshdesktop.com/crash`，正文的 `lines` 是 `harness.log` 最后最多 100 行。读取这份日志前，会先落下未写完的子进程行，并把 Host IPC 的 diagnostic 写入文件，同时附在 POST 的 message 后面。插件启动失败是否丢弃，按这次实际启动的 profile：普通启动是 `desktop`，Safe Mode 是 `desktop-safe-mode`。致命失败交给 `recovery/fatal-entry`，不导入官方恢复对话框。
-- `DSH_HOME` 由组装处传入，取 `userData/harness`。正式包的 `userData` 是 `dsh-desktop`，所以现有会话在 `dsh-desktop/harness`。不调用会落到 `~/.dsh` 的默认解析。
+- `DSH_HOME` 由组装处传入，取 `userData/harness`。默认正式包的 `userData` 是 `dsh-desktop`，所以现有会话在 `dsh-desktop/harness`；显式下游身份使用其配置的目录，保持 `userData/harness` 关系。不调用会落到 `~/.dsh` 的默认解析。
 - 对版本敏感的上游类型和调用集中到 `upstream-api.ts`。该文件还没有；新增这类调用时先建它，不要散落到各个模块。
 - 窗口保持 `contextIsolation`、sandbox、`webSecurity`，`nodeIntegration` 关闭。
 - Host 尚未给出认证 Cookie 时，应用请求返回 503，不转发。Host 离开就绪后清掉这一次的启动注入和 Cookie；页面再取启动数据时不会拿到上一次的注入，失败的那次刷新也不会把已经离开的注入交回去。

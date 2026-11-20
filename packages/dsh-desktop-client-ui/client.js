@@ -115,30 +115,6 @@ window.__ModuleLoader__.load({
       return React.createElement(FishLogo, props)
     }
 
-    function OpenUnpreviewableFile({ absolutePath, openWorkspacePath, t }) {
-      const [error, setError] = React.useState('')
-      const label = t('openLocal')
-      return React.createElement(
-        React.Fragment,
-        null,
-        React.createElement('button', {
-          type: 'button',
-          'data-textpreview-open-local': true,
-          onClick: () => {
-            setError('')
-            // Archive utilities may extract and close without a visible window.
-            const request = /\.(zip|7z|rar|tar|gz|tgz|bz2)$/i.test(absolutePath)
-              ? { path: absolutePath, action: 'reveal' }
-              : { path: absolutePath }
-            void openWorkspacePath(request).catch((reason) => {
-              setError(reason instanceof Error ? reason.message : String(reason))
-            })
-          }
-        }, label),
-        error && React.createElement('span', { role: 'alert' }, error)
-      )
-    }
-
     function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState, deleteSession, t }) {
       const [, setMenuOpen] = useMenuOpenState()
       const label = t('deleteSession')
@@ -182,7 +158,6 @@ window.__ModuleLoader__.load({
     const ACTIONS_NS = 'dsh-desktop-actions'
     const actionMessages = {
       zh: {
-        openLocal: '用本地应用打开',
         deleteSession: '永久删除会话',
         deleteWarning: '确定删除“{title}”？工作区文件会保留。此操作无法撤销。',
         openFolder: '在文件管理器中打开',
@@ -192,7 +167,6 @@ window.__ModuleLoader__.load({
         directoryUnavailable: '会话工作区目录不可用'
       },
       en: {
-        openLocal: 'Open with local app',
         deleteSession: 'Delete session permanently',
         deleteWarning: 'Delete “{title}”? Workspace files are kept. This can’t be undone.',
         openFolder: 'Open in file manager',
@@ -202,7 +176,6 @@ window.__ModuleLoader__.load({
         directoryUnavailable: 'Session workspace directory is unavailable'
       },
       ja: {
-        openLocal: 'ローカルアプリで開く',
         deleteSession: 'セッションを完全に削除',
         deleteWarning: '「{title}」を削除しますか？ワークスペースのファイルは保持されます。この操作は取り消せません。',
         openFolder: 'ファイルマネージャーで開く',
@@ -212,7 +185,6 @@ window.__ModuleLoader__.load({
         directoryUnavailable: 'セッションのワークスペースディレクトリを利用できません'
       },
       es: {
-        openLocal: 'Abrir con una aplicación local',
         deleteSession: 'Eliminar sesión permanentemente',
         deleteWarning: '¿Eliminar «{title}»? Se conservan los archivos del espacio de trabajo. No se puede deshacer.',
         openFolder: 'Abrir en el administrador de archivos',
@@ -222,7 +194,6 @@ window.__ModuleLoader__.load({
         directoryUnavailable: 'El directorio de la sesión no está disponible'
       },
       fr: {
-        openLocal: 'Ouvrir avec une application locale',
         deleteSession: 'Supprimer définitivement la session',
         deleteWarning: 'Supprimer « {title} » ? Les fichiers de l’espace de travail sont conservés. Cette action est irréversible.',
         openFolder: 'Ouvrir dans le gestionnaire de fichiers',
@@ -232,7 +203,6 @@ window.__ModuleLoader__.load({
         directoryUnavailable: 'Le dossier de la session est indisponible'
       },
       de: {
-        openLocal: 'Mit lokaler Anwendung öffnen',
         deleteSession: 'Sitzung endgültig löschen',
         deleteWarning: '„{title}“ löschen? Die Arbeitsbereichsdateien bleiben erhalten. Dies kann nicht rückgängig gemacht werden.',
         openFolder: 'Im Dateimanager öffnen',
@@ -242,7 +212,6 @@ window.__ModuleLoader__.load({
         directoryUnavailable: 'Das Arbeitsbereichsverzeichnis der Sitzung ist nicht verfügbar'
       },
       ru: {
-        openLocal: 'Открыть в локальном приложении',
         deleteSession: 'Удалить сеанс навсегда',
         deleteWarning: 'Удалить «{title}»? Файлы рабочей области сохранятся. Это действие нельзя отменить.',
         openFolder: 'Открыть в файловом менеджере',
@@ -252,7 +221,6 @@ window.__ModuleLoader__.load({
         directoryUnavailable: 'Каталог рабочей области сеанса недоступен'
       },
       pt: {
-        openLocal: 'Abrir com aplicativo local',
         deleteSession: 'Excluir sessão permanentemente',
         deleteWarning: 'Excluir “{title}”? Os arquivos do espaço de trabalho serão mantidos. Não é possível desfazer.',
         openFolder: 'Abrir no gerenciador de arquivos',
@@ -444,7 +412,7 @@ window.__ModuleLoader__.load({
       })
     }
 
-    const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs']
+    const inject = ['locale', 'slots', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs']
     function apply(ctx) {
       installConfiguredLinkClicks(ctx)
       applyRepair(ctx)
@@ -555,16 +523,6 @@ window.__ModuleLoader__.load({
             )
           })
         )
-      )
-      ctx.slots.inject('sidebar.right.tab.document.unpreviewable', () =>
-        ctx.slots.register({
-          name: 'sidebar.right.tab.document.unpreviewable',
-          id: 'desktop-open-local', locale: ACTIONS_NS,
-          inject: () => ({
-            t: actionText,
-            openWorkspacePath: (request) => ctx.remote.session.openWorkspacePath(request)
-          })
-        }, OpenUnpreviewableFile)
       )
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({

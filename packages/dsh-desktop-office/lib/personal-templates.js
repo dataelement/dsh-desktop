@@ -122,8 +122,11 @@ export async function createPersonalOfficeLibrary(root, builtins, render, onInva
         if (!item.pages || item.pages > 50 || item.pageAspectRatios.some(ratio => !Number.isFinite(ratio) || ratio <= 0 || ratio > 20)) throw new Error('Personal Office preview exceeds its page budget')
         await writeFile(join(staging, 'template.json'), JSON.stringify(item), { flag: 'wx', mode: 0o600 })
         try { await rename(staging, join(root, id)) } catch (error) {
-          if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error
-          const previous = await loadRecord(id)
+          const existsConflict = ['EEXIST', 'ENOTEMPTY'].includes(error.code)
+            || (process.platform === 'win32' && (error.code === 'EPERM' || error.code === 'EACCES'))
+          if (!existsConflict) throw error
+          let previous
+          try { previous = await loadRecord(id) } catch { throw error }
           if (!previous.archived || previous.sourceSha256 !== sha256) throw error
           const restored = { ...previous, archived: false }
           await persist(restored); records.set(id, restored)
