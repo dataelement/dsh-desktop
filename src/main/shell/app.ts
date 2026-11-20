@@ -92,6 +92,7 @@ import { applyRepairNavigation, safeModeRepairPrompt, sidebarRepairPrompt } from
 import { runSafeModeManager } from './safe-mode-manager'
 import { DESKTOP_IPC, PLATFORM_IPC, SCHEME, assertDesktopSender } from './window/ipc'
 import { DesktopPlatformView, platformBounds } from './window/platform-view'
+import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, WindowStateManager } from './window/window-state'
 import { authenticateWebHost, dispatchAppDocument, removeLegacyHostCookies } from './window/web-document'
 import { desktopFileUrl } from '../desktop-navigation'
 import {
@@ -166,6 +167,7 @@ let reportStartupFailure: (error: unknown) => void = () => {}
 
 let quitting = false
 let pageRecovery: PageRecovery | undefined
+let windowState: WindowStateManager | undefined
 let windowsTray: Tray | undefined
 let backendReady = false
 let recoveryReceiver: ((url: string) => void) | undefined
@@ -301,17 +303,31 @@ function packagedPagePath(name: string): string {
   return fileURLToPath(new URL(`../../build/${name}`, import.meta.url))
 }
 
+/** Chromium stores zoom per host. Only the application document should be saved or restored. */
+function tracksApplicationZoom(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === `${SCHEME}:` && parsed.hostname === 'app'
+  } catch {
+    return false
+  }
+}
+
 function createWindow(
   preload: string,
   importPage: string,
   splashPage: string,
   extraArguments: readonly string[]
 ): BrowserWindow {
+  windowState ??= new WindowStateManager(app.getPath('userData'))
+  const initialBounds = windowState.validateBounds(windowState.getState())
   const window = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 520,
-    minHeight: 600,
+    width: initialBounds.width,
+    height: initialBounds.height,
+    ...(initialBounds.x !== undefined ? { x: initialBounds.x } : {}),
+    ...(initialBounds.y !== undefined ? { y: initialBounds.y } : {}),
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     show: false,
     title: app.getName(),
     ...desktopWindowChrome(process.platform, nativeTheme.shouldUseDarkColors),
@@ -374,6 +390,7 @@ function createWindow(
       if (external !== undefined) void shell.openExternal(external).catch((error: unknown) => { console.error(error) })
     }
   })
+  windowState.track(window, { tracksZoom: tracksApplicationZoom })
   return window
 }
 
@@ -404,7 +421,9 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
 async function showSplash(window: BrowserWindow, pagePath: string): Promise<void> {
   if (window.isDestroyed()) return
   if (!isSplashPageUrl(window.webContents.getURL(), pagePath) && !await loadDesktopPage(window, pathToFileURL(pagePath).href)) return
-  if (!window.isDestroyed()) window.show()
+  if (window.isDestroyed()) return
+  windowState?.restoreMaximized(window)
+  window.show()
 }
 
 async function loadDesktopPage(window: BrowserWindow, url: string): Promise<boolean> {
@@ -653,7 +672,10 @@ async function main(): Promise<void> {
   })
   readGpuExitContext = () => stability.processRecovery.exitContext
   stability.attachProcessWatch(app)
-  window.on('session-end', () => { crashUpload.markCleanExit() })
+  window.on('session-end', () => {
+    crashUpload.markCleanExit()
+    windowState?.flushSync()
+  })
   app.on('child-process-gone', (_event, details) => {
     stability.handleGpuProcess({ type: details.type, reason: details.reason, exitCode: details.exitCode })
   })
@@ -1479,6 +1501,7 @@ async function main(): Promise<void> {
     windowsTray = undefined
     stability.dispose()
     desktopStorage.flushSync()
+    windowState?.flushSync()
     // Safe Mode has no phone bridge. Each step is awaited on its own so
     // closing the Host and the second quit still run.
     void runQuitSteps([
