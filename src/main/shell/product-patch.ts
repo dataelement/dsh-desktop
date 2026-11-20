@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Scalar, stringify } from 'yaml'
+import { HOST_PLUGIN_NAME } from '../../shared/host-plugin-name'
 
 /** Product metadata is authoritative; never discover a product through a parent checkout. */
-const HOST_PLUGIN_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
 
 interface DesktopInsertRow {
   id: string

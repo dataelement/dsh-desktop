@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
+import { HOST_PLUGIN_NAME as PACKAGE_NAME } from '../shared/host-plugin-name'
 
 /** Only the running application's metadata grants installation scope, never a Profile. */
 export function readInstallationPlugins(runtimeDir: string, safeMode: boolean): { anchor: string, names: readonly string[] } | undefined {

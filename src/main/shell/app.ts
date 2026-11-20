@@ -144,11 +144,20 @@ function desktopDevelopmentBuild(metadata: unknown = readDesktopPackageMetadata(
   return typeof metadata === 'object' && metadata !== null && (metadata as Record<string, unknown>).dshDesktopChannel === 'development'
 }
 
+// False until userData points at the configured identity. Fatal handling must not
+// write recovery or crash records while paths still resolve to Electron defaults.
+let desktopIdentityConfigured = false
+
 function configureDesktopIdentity(): void {
   const identity = resolveDesktopIdentity(readDesktopPackageMetadata(), app.isPackaged, app.getPath('appData'))
   app.setName(identity.name)
   app.setPath('userData', identity.userData)
+  desktopIdentityConfigured = true
 }
+
+// The lock owner must answer later launches from the moment it holds the lock;
+// the real handler replaces this once the main window controller exists.
+let focusExistingInstance: () => void = () => {}
 
 // Attach before app.whenReady so a main-process exception during startup is queued.
 // Every packaged build reports, including dshDesktopChannel=development. Unpackaged dev does not.
@@ -174,18 +183,22 @@ async function reportFatal(error: unknown, source: CrashReportSource = 'host'): 
   const message = redactFatalText(error instanceof Error && error.message.length > 0 ? error.message : 'Desktop host failed')
   console.error(error)
   let saved = false
-  try {
-    await recordFatalFailure(harnessHome(), error)
-    saved = true
-  } catch (failure) {
-    console.error(failure)
+  let crashPath: string | undefined
+  if (desktopIdentityConfigured) {
+    try {
+      await recordFatalFailure(harnessHome(), error)
+      saved = true
+    } catch (failure) {
+      console.error(failure)
+    }
+    crashPath = await persistCrashReport(error, source)
   }
-  const crashPath = await persistCrashReport(error, source)
   const parent = BrowserWindow.getFocusedWindow() ?? undefined
   const chinese = app.getLocale().toLowerCase().startsWith('zh')
   const crashNote = crashPath === undefined ? '' : `\n${chinese ? '崩溃记录：' : 'Crash log: '}${crashPath}`
   const detail = (saved ? 'The desktop host stopped. A recovery report was saved.' : 'The desktop host stopped.') + crashNote
-  const alreadySafe = process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
+  // Safe Mode cannot repair an unresolved identity, so offer Close only.
+  const alreadySafe = !desktopIdentityConfigured || process.env.DSH_DESKTOP_SAFE_MODE === '1' || shouldStartInSafeMode(process.argv)
   const box = {
     type: 'error' as const,
     message,
@@ -480,6 +493,7 @@ async function main(): Promise<void> {
       app.quit()
       return
     }
+    app.on('second-instance', () => { focusExistingInstance() })
     if (app.isPackaged) {
       initializeDesktopService({ getExitContext: () => readGpuExitContext() })
     }
@@ -1410,7 +1424,7 @@ async function main(): Promise<void> {
     }
     callback({ requestHeaders: { ...headers, origin: target.origin, cookie, 'sec-fetch-site': 'same-origin' } })
   })
-  app.on('second-instance', () => { showMainWindow() })
+  focusExistingInstance = showMainWindow
   app.on('activate', () => { showMainWindow() })
   let hostReady = false
   if (app.isPackaged) {
