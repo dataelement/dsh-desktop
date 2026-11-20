@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const React = require('react')
-    const { BrandWordmark, FishLogo, MenuItemButton, Modal, Button, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { BrandWordmark, FishLogo, MenuItemButton, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
 
     // Small presentation-only primitives shared by PPT and native Office templates.
@@ -114,270 +114,45 @@ window.__ModuleLoader__.load({
     function ConversationBrandMark(props) {
       return React.createElement(FishLogo, props)
     }
-    const ENTERPRISE_NS = 'dsh-desktop-enterprise-entry'
-    function EnterpriseEntry({ t }) {
-      return React.createElement('a', {
-        href: 'https://dshdesktop.com/zh/enterprise/', target: '_blank', rel: 'noopener noreferrer',
-        'data-dsh-enterprise-entry': true
-      }, t('learnMore'), React.createElement('span', { 'aria-hidden': true }, ' ↗'))
-    }
-
-    const LOCAL_OPEN_NS = 'desktop.localOpen'
-    const LOCAL_OPEN_COPY = {
-      zh: {
-        label: '用本地应用打开',
-        pending: '正在打开…',
-        revealedDarwin: '已在访达中显示',
-        revealedWindows: '已在文件资源管理器中显示',
-        revealedOther: '已在文件管理器中显示',
-        failed: '无法用本地应用打开'
-      },
-      en: {
-        label: 'Open with local app',
-        pending: 'Opening…',
-        revealedDarwin: 'Shown in Finder',
-        revealedWindows: 'Shown in File Explorer',
-        revealedOther: 'Shown in the file manager',
-        failed: 'Could not open with a local app'
-      },
-      ja: {
-        label: 'ローカルアプリで開く',
-        pending: '開いています…',
-        revealedDarwin: 'Finder に表示しました',
-        revealedWindows: 'エクスプローラーに表示しました',
-        revealedOther: 'ファイルマネージャーに表示しました',
-        failed: 'ローカルアプリで開けませんでした'
-      },
-      es: {
-        label: 'Abrir con una aplicación local',
-        pending: 'Abriendo…',
-        revealedDarwin: 'Mostrado en Finder',
-        revealedWindows: 'Mostrado en el Explorador de archivos',
-        revealedOther: 'Mostrado en el administrador de archivos',
-        failed: 'No se pudo abrir con una aplicación local'
-      },
-      fr: {
-        label: 'Ouvrir avec une application locale',
-        pending: 'Ouverture…',
-        revealedDarwin: 'Affiché dans le Finder',
-        revealedWindows: 'Affiché dans l’Explorateur de fichiers',
-        revealedOther: 'Affiché dans le gestionnaire de fichiers',
-        failed: 'Impossible d’ouvrir avec une application locale'
-      },
-      de: {
-        label: 'Mit lokaler Anwendung öffnen',
-        pending: 'Wird geöffnet…',
-        revealedDarwin: 'Im Finder angezeigt',
-        revealedWindows: 'Im Datei-Explorer angezeigt',
-        revealedOther: 'Im Dateimanager angezeigt',
-        failed: 'Konnte nicht mit einer lokalen Anwendung geöffnet werden'
-      },
-      ru: {
-        label: 'Открыть в локальном приложении',
-        pending: 'Открытие…',
-        revealedDarwin: 'Показано в Finder',
-        revealedWindows: 'Показано в Проводнике',
-        revealedOther: 'Показано в файловом менеджере',
-        failed: 'Не удалось открыть в локальном приложении'
-      },
-      pt: {
-        label: 'Abrir com aplicativo local',
-        pending: 'Abrindo…',
-        revealedDarwin: 'Mostrado no Finder',
-        revealedWindows: 'Mostrado no Explorador de Arquivos',
-        revealedOther: 'Mostrado no gerenciador de arquivos',
-        failed: 'Não foi possível abrir com um aplicativo local'
-      }
-    }
-    // macOS Archive Utility extracts a zip and then closes, so a successful
-    // default open looks like a no-op. Revealing the archive keeps a visible result.
-    const ARCHIVE_EXTENSIONS = new Set(['zip', '7z', 'rar', 'tar', 'gz', 'tgz', 'bz2'])
-
-    function isArchivePath(absolutePath) {
-      if (typeof absolutePath !== 'string' || absolutePath.length === 0) return false
-      const name = absolutePath.replace(/\\/g, '/').split('/').pop()?.toLowerCase() ?? ''
-      const dot = name.lastIndexOf('.')
-      if (dot < 0 || dot === name.length - 1) return false
-      return ARCHIVE_EXTENSIONS.has(name.slice(dot + 1))
-    }
-
-    function revealedCopyKey() {
-      const platform = document.documentElement?.dataset?.platform
-      if (platform === 'darwin') return 'revealedDarwin'
-      if (platform === 'win32' || platform === 'windows') return 'revealedWindows'
-      return 'revealedOther'
-    }
-
-    function feedbackMessage(reason) {
-      if (typeof reason === 'string') return reason.trim()
-      if (reason instanceof Error) return reason.message.trim()
-      if (reason && typeof reason === 'object' && typeof reason.message === 'string') {
-        return reason.message.trim()
-      }
-      return ''
-    }
 
     function OpenUnpreviewableFile({ absolutePath, openWorkspacePath, t }) {
-      const [phase, setPhase] = React.useState('idle')
-      const [feedback, setFeedback] = React.useState(null)
-      const alive = React.useRef(true)
-      const generation = React.useRef(0)
-      const timer = React.useRef(0)
-      const copy = (key) => t(key)
-      React.useEffect(() => {
-        setPhase('idle')
-        setFeedback(null)
-        return () => {
-          generation.current += 1
-          window.clearTimeout(timer.current)
-        }
-      }, [absolutePath])
-      React.useEffect(() => {
-        alive.current = true
-        return () => {
-          alive.current = false
-        }
-      }, [])
-      const label = phase === 'pending' ? copy('pending') : copy('label')
+      const [error, setError] = React.useState('')
+      const label = t('openLocal')
       return React.createElement(
-        'div',
-        { 'data-textpreview-open-local-wrap': true },
+        React.Fragment,
+        null,
         React.createElement('button', {
           type: 'button',
           'data-textpreview-open-local': true,
-          'aria-busy': phase === 'pending' || undefined,
-          disabled: phase === 'pending',
           onClick: () => {
-            if (phase === 'pending') return
-            const ticket = generation.current + 1
-            generation.current = ticket
-            window.clearTimeout(timer.current)
-            setFeedback(null)
-            setPhase('pending')
-            const request = isArchivePath(absolutePath)
+            setError('')
+            // Archive utilities may extract and close without a visible window.
+            const request = /\.(zip|7z|rar|tar|gz|tgz|bz2)$/i.test(absolutePath)
               ? { path: absolutePath, action: 'reveal' }
               : { path: absolutePath }
-            let opened
-            try {
-              opened = openWorkspacePath(request)
-            } catch (reason) {
-              if (!alive.current || generation.current !== ticket) return
-              setPhase('idle')
-              setFeedback({
-                kind: 'error',
-                message: feedbackMessage(reason) || copy('failed')
-              })
-              return
-            }
-            void Promise.resolve(opened).then((result) => {
-                if (!alive.current || generation.current !== ticket) return
-                if (result && result.ok === false) {
-                  setPhase('idle')
-                  setFeedback({
-                    kind: 'error',
-                    message: feedbackMessage(result.error) || copy('failed')
-                  })
-                  return
-                }
-                setPhase('idle')
-                if (!isArchivePath(absolutePath)) return
-                setFeedback({ kind: 'success', message: copy(revealedCopyKey()) })
-                timer.current = window.setTimeout(() => {
-                  if (!alive.current || generation.current !== ticket) return
-                  setFeedback((current) => current && current.kind === 'success' ? null : current)
-                }, 2000)
-              }, (reason) => {
-                if (!alive.current || generation.current !== ticket) return
-                setPhase('idle')
-                setFeedback({
-                  kind: 'error',
-                  message: feedbackMessage(reason) || copy('failed')
-                })
-              })
+            void openWorkspacePath(request).catch((reason) => {
+              setError(reason instanceof Error ? reason.message : String(reason))
+            })
           }
-        },
-          React.createElement('span', { 'data-textpreview-open-local-label': true }, label),
-          React.createElement('span', {
-            'data-textpreview-open-local-sizer': true,
-            'aria-hidden': 'true'
-          }, copy('label'))
-        ),
-        feedback && React.createElement('span', {
-          role: feedback.kind === 'error' ? 'alert' : 'status',
-          'data-textpreview-open-local-feedback': true,
-          'data-kind': feedback.kind
-        }, feedback.message)
+        }, label),
+        error && React.createElement('span', { role: 'alert' }, error)
       )
     }
 
-    const DELETE_SESSION_NS = 'dsh-desktop-delete-session'
-
-    // The shell owns the request: closing a row menu unmounts its occupants.
-    function createSessionDeletion(deleteSession) {
-      let state = null
-      let active = true
-      const listeners = new Set()
-      const publish = (next) => {
-        state = next
-        listeners.forEach(listener => listener())
-      }
-      return {
-        subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
-        getSnapshot: () => state,
-        request: (sessionId, displayTitle, context) => {
-          if (active && state === null) publish({ sessionId, displayTitle, context, busy: false, error: null })
-        },
-        close: () => { if (state && state.busy === false) publish(null) },
-        confirm: async () => {
-          if (state === null || state.busy || active === false) return
-          const pending = { ...state, busy: true, error: null }
-          publish(pending)
-          try {
-            await deleteSession(pending.sessionId, pending.context)
-            if (active && state === pending) publish(null)
-          } catch (reason) {
-            if (active && state === pending) {
-              publish({ ...pending, busy: false, error: reason instanceof Error ? reason.message : String(reason) })
-            }
-          }
-        },
-        reset: () => publish(null),
-        dispose: () => { active = false; publish(null); listeners.clear() }
-      }
-    }
-
-    function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState, deletion, t }) {
+    function DeleteSessionMenuItem({ sessionId, displayTitle, useMenuOpenState, deleteSession, t }) {
       const [, setMenuOpen] = useMenuOpenState()
+      const label = t('deleteSession')
+      const warning = t('deleteWarning', { title: displayTitle || sessionId })
       return React.createElement(MenuItemButton, {
         danger: true,
         onSelect: () => {
           setMenuOpen(false)
-          // Let Menu restore its trigger focus before Modal captures return focus.
-          setTimeout(() => deletion.request(sessionId, displayTitle), 0)
+          if (!window.confirm(warning)) return
+          void Promise.resolve().then(() => deleteSession(sessionId)).catch((reason) => {
+            window.alert(reason instanceof Error ? reason.message : String(reason))
+          })
         }
-      }, t('menu'))
-    }
-
-    function DeleteSessionDialog({ deletion, t }) {
-      const request = React.useSyncExternalStore(deletion.subscribe, deletion.getSnapshot)
-      return React.createElement(Modal, {
-        open: request !== null,
-        onClose: deletion.close,
-        title: t('title'),
-        closeLabel: t('close'),
-        description: request ? t('description', { name: request.displayTitle || request.sessionId }) : '',
-        footer: request && React.createElement(React.Fragment, null,
-          React.createElement(Button, {
-            variant: 'outline', disabled: request.busy, onClick: deletion.close,
-            'data-modal-autofocus': true
-          }, t('cancel')),
-          React.createElement(Button, {
-            variant: 'primary', disabled: request.busy, onClick: deletion.confirm
-          }, t(request.busy ? 'pending' : 'confirm')))
-      }, request?.busy && React.createElement('p', { role: 'status' }, t('pending')),
-      request && request.error !== null && React.createElement('div', { role: 'alert' },
-        React.createElement('p', null, t('failed')),
-        React.createElement('p', null, request.error)))
+      }, label)
     }
 
     function OpenSessionFolderMenuItem({ sessionId, useMenuOpenState, openInFinder, t }) {
@@ -488,6 +263,14 @@ window.__ModuleLoader__.load({
       }
     }
 
+    const ENTERPRISE_NS = 'dsh-desktop-enterprise-entry'
+    function EnterpriseEntry({ t }) {
+      return React.createElement('a', {
+        href: 'https://dshdesktop.com/zh/enterprise/', target: '_blank', rel: 'noopener noreferrer',
+        'data-dsh-enterprise-entry': true
+      }, t('learnMore'), React.createElement('span', { 'aria-hidden': true }, ' ↗'))
+    }
+
     const REPAIR_NS = 'dsh-desktop-repair'
     function DesktopUtilityActions({ t, wide }) {
       const [busy, setBusy] = React.useState(false)
@@ -535,18 +318,16 @@ window.__ModuleLoader__.load({
         typeof bridge.openRepairAgent === 'function' && React.createElement(Tooltip, {
           label: t(busy ? 'opening' : 'description'), side: 'top', align: 'end',
           portal: true, maxWidth: 280, delayMs: 0, focusDelayMs: 0
-        }, React.createElement(Button, {
-          type: 'button', variant: 'ghost', size: 'sm', className: 'dshDesktopUtilityButton', disabled: busy, 'aria-busy': busy,
+        }, React.createElement('button', {
+          type: 'button', disabled: busy,
           'aria-label': t(busy ? 'opening' : 'open'), 'aria-description': t('description'), 'data-dsh-repair-entry': true,
           onClick: () => { void open(() => bridge.openRepairAgent()) }
         }, icon('repair'))),
-        typeof bridge.openMobilePairing === 'function' && (wide || connected) && React.createElement(Tooltip, {
-          label: t(connected ? 'phoneManage' : 'phone'), side: 'top', align: 'end', portal: true
-        }, React.createElement(Button, {
-          type: 'button', variant: 'ghost', size: 'sm', className: 'dshDesktopUtilityButton', disabled: busy, 'aria-busy': busy,
+        typeof bridge.openMobilePairing === 'function' && (wide || connected) && React.createElement('button', {
+          type: 'button', disabled: busy, title: t(connected ? 'phoneManage' : 'phone'),
           'aria-label': t(connected ? 'phoneManage' : 'phone'), 'data-dsh-mobile-entry': true,
           onClick: () => { void open(() => bridge.openMobilePairing()) }
-        }, icon('phone'), connected && React.createElement('span', { 'data-connected': true, 'aria-hidden': true }))),
+        }, icon('phone'), connected && React.createElement('span', { 'data-connected': true, 'aria-hidden': true })),
         error && React.createElement('span', { role: 'alert', 'data-dsh-utility-error': true }, error.key ? t(error.key) : error.diagnostic))
     }
 
@@ -589,67 +370,86 @@ window.__ModuleLoader__.load({
       if (typeof bridge?.openRepairAgent === 'function' || typeof bridge?.openMobilePairing === 'function') ctx.slots.inject('sidebar.settings.action', () => ctx.slots.register({ name: 'sidebar.settings.action', id: 'desktop-utilities', locale: REPAIR_NS, inject: () => ({ t: ctx.locale.bind(REPAIR_NS) }) }, DesktopUtilityActions))
     }
 
-    const inject = ['slots', 'locale', 'remote', 'remote.session', 'sessions', 'uiWorkspace']
-    function apply(ctx) {
-      ctx.effect(() => ctx.locale.register(DELETE_SESSION_NS, {
-        zh: {
-          menu: '永久删除会话', title: '删除会话', close: '关闭', cancel: '取消', confirm: '删除会话',
-          description: '确定删除“{name}”？工作区文件会保留。此操作无法撤销。',
-          pending: '正在删除会话…', failed: '删除失败，请重试。'
-        },
-        en: {
-          menu: 'Delete session permanently', title: 'Delete session', close: 'Close', cancel: 'Cancel', confirm: 'Delete session',
-          description: 'Delete “{name}”? Workspace files are kept. This can’t be undone.',
-          pending: 'Deleting session…', failed: 'Deletion failed. Please try again.'
-        },
-        ja: {
-          menu: 'セッションを完全に削除', title: 'セッションを削除', close: '閉じる', cancel: 'キャンセル', confirm: 'セッションを削除',
-          description: '「{name}」を削除しますか？ワークスペースのファイルは保持されます。この操作は取り消せません。',
-          pending: 'セッションを削除しています…', failed: '削除に失敗しました。もう一度お試しください。'
-        },
-        es: {
-          menu: 'Eliminar sesión permanentemente', title: 'Eliminar sesión', close: 'Cerrar', cancel: 'Cancelar', confirm: 'Eliminar sesión',
-          description: '¿Eliminar «{name}»? Se conservan los archivos del espacio de trabajo. No se puede deshacer.',
-          pending: 'Eliminando sesión…', failed: 'No se pudo eliminar. Inténtelo de nuevo.'
-        },
-        fr: {
-          menu: 'Supprimer définitivement la session', title: 'Supprimer la session', close: 'Fermer', cancel: 'Annuler', confirm: 'Supprimer la session',
-          description: 'Supprimer « {name} » ? Les fichiers de l’espace de travail sont conservés. Cette action est irréversible.',
-          pending: 'Suppression de la session…', failed: 'La suppression a échoué. Veuillez réessayer.'
-        },
-        de: {
-          menu: 'Sitzung endgültig löschen', title: 'Sitzung löschen', close: 'Schließen', cancel: 'Abbrechen', confirm: 'Sitzung löschen',
-          description: '„{name}“ löschen? Die Arbeitsbereichsdateien bleiben erhalten. Dies kann nicht rückgängig gemacht werden.',
-          pending: 'Sitzung wird gelöscht…', failed: 'Löschen fehlgeschlagen. Bitte erneut versuchen.'
-        },
-        ru: {
-          menu: 'Удалить сеанс навсегда', title: 'Удалить сеанс', close: 'Закрыть', cancel: 'Отмена', confirm: 'Удалить сеанс',
-          description: 'Удалить «{name}»? Файлы рабочей области сохранятся. Это действие нельзя отменить.',
-          pending: 'Удаление сеанса…', failed: 'Не удалось удалить. Повторите попытку.'
-        },
-        pt: {
-          menu: 'Excluir sessão permanentemente', title: 'Excluir sessão', close: 'Fechar', cancel: 'Cancelar', confirm: 'Excluir sessão',
-          description: 'Excluir “{name}”? Os arquivos do espaço de trabalho serão mantidos. Não é possível desfazer.',
-          pending: 'Excluindo sessão…', failed: 'Falha ao excluir. Tente novamente.'
+    // Ordinary http(s) clicks inside a conversation follow Settings → General → link opening.
+    // Links outside that conversation, modifier clicks, the middle button, and explicit window.open stay with the browser.
+    function readHttpLink(value, baseHref) {
+      if (typeof value !== 'string' || value === '') return undefined
+      try {
+        const url = new URL(value, baseHref)
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+        if (url.username !== '' || url.password !== '') return undefined
+        return url.href
+      } catch {
+        return undefined
+      }
+    }
+
+    function configuredLinkDestination(linkOpening, browserAvailable) {
+      const opening = linkOpening === 'new-tab' ? 'new-tab' : 'sidebar'
+      return opening === 'sidebar' && browserAvailable ? 'sidebar' : 'external'
+    }
+
+    function linkClickFollowsSetting(event, baseHref) {
+      if (event.defaultPrevented || event.button !== 0) return undefined
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
+      const target = event.target
+      const anchor = target !== null && typeof target === 'object' && typeof target.closest === 'function'
+        ? target.closest('a[href]')
+        : undefined
+      if (anchor === undefined || anchor === null || anchor.hasAttribute('download')) return undefined
+      return readHttpLink(anchor.getAttribute('href'), baseHref)
+    }
+
+    function conversationSessionId(event) {
+      const target = event.target
+      const root = target !== null && typeof target === 'object' && typeof target.closest === 'function'
+        ? target.closest('[data-conversation-session]')
+        : undefined
+      if (root === undefined || root === null || typeof root.getAttribute !== 'function') return undefined
+      const sessionId = root.getAttribute('data-conversation-session')
+      return typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined
+    }
+
+    function installConfiguredLinkClicks(ctx) {
+      const forms = ctx.configForms
+      const sidebar = ctx.sidebarRight
+      const tabs = ctx.sidebarRightTabs
+      if (forms === undefined || typeof forms.get !== 'function'
+        || sidebar === undefined || typeof sidebar.openTabIn !== 'function'
+        || tabs === undefined || typeof tabs.get !== 'function') return
+      const settings = forms.get('ui-chat')
+      if (settings === undefined || typeof settings.getSnapshot !== 'function') return
+      ctx.effect(() => {
+        if (typeof window.addEventListener !== 'function') return
+        // Capture runs before a tool-row link stops the bubble, so search and fetch
+        // links use the same setting as markdown. Stopping the event keeps chat
+        // from opening the same address again and keeps the row from toggling.
+        const onClick = (event) => {
+          const url = linkClickFollowsSetting(event, window.location.href)
+          if (url === undefined) return
+          const sessionId = conversationSessionId(event)
+          if (sessionId === undefined) return
+          const linkOpening = settings.getSnapshot()?.value?.linkOpening
+          const destination = configuredLinkDestination(linkOpening, tabs.get('browser') !== undefined)
+          event.preventDefault()
+          event.stopPropagation()
+          if (destination === 'sidebar') {
+            sidebar.openTabIn(sessionId, 'browser', { params: { url }, revealIfOpened: false })
+            return
+          }
+          window.open(url, '_blank', 'noopener,noreferrer')
         }
-      }))
-      const deletion = createSessionDeletion((sessionId) => {
-        const workspace = ctx.get('uiWorkspace')
-        if (!workspace) throw new Error('Workspace navigation is unavailable')
-        return workspace.deleteSession(sessionId)
+        window.addEventListener('click', onClick, true)
+        return () => window.removeEventListener('click', onClick, true)
       })
-      ctx.effect(() => () => deletion.dispose())
-      const deletionText = ctx.locale.bind(DELETE_SESSION_NS)
-      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-        name: 'shell.overlay', id: 'desktop-delete-session-dialog', locale: DELETE_SESSION_NS,
-        inject: () => ({ deletion, t: deletionText })
-      }, DeleteSessionDialog))
-      // `remote` and `remote.session` are separate inject names. Reading
-      // `ctx.remote` without declaring `remote` throws and unmounts this slot.
-      const remote = ctx.remote
-      const locale = ctx.locale
-      ctx.effect(() => locale.register(LOCAL_OPEN_NS, LOCAL_OPEN_COPY), 'desktop local open locale')
+    }
+
+    const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs']
+    function apply(ctx) {
+      installConfiguredLinkClicks(ctx)
       applyRepair(ctx)
+      ctx.effect(() => ctx.locale.register(ACTIONS_NS, actionMessages))
+      const actionText = ctx.locale.bind(ACTIONS_NS)
       ctx.effect(() => ctx.locale.register(ENTERPRISE_NS, {
         zh: { learnMore: '了解企业版' }, en: { learnMore: 'Explore Enterprise' },
         ja: { learnMore: 'エンタープライズ版について' }, es: { learnMore: 'Conocer la edición empresarial' },
@@ -661,17 +461,12 @@ window.__ModuleLoader__.load({
         name: 'settings.sidebar.footer', id: 'desktop-enterprise-entry', locale: ENTERPRISE_NS,
         inject: () => ({ t: enterpriseText })
       }, EnterpriseEntry))
-      ctx.effect(() => ctx.locale.register(ACTIONS_NS, actionMessages))
-      const actionText = ctx.locale.bind(ACTIONS_NS)
+
       ctx.effect(() => {
         const id = 'dsh-desktop-preset-toolbar-style'
-        let style = document.getElementById(id)
-        const created = !style || style.tagName !== 'STYLE'
-        if (created) {
-          style = document.createElement('style')
-          style.dataset.plugin = 'dsh-desktop-client-ui'
-          style.id = id
-        }
+        if (document.getElementById(id)) return
+        const style = document.createElement('style')
+        style.id = id
         style.textContent = `${templateControlsCss}
           [data-dsh-sidebar-brand-identity] { display:none !important; }
           /* Third-party plugins (dshmarket, dsh-better-sidebar) draw custom icons via ::before on settings nav rows
@@ -745,38 +540,8 @@ window.__ModuleLoader__.load({
             outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:2px;
             background:var(--dsw-alias-bg-base);
           }
-          [data-textpreview-open-local-wrap] {
-            display:flex; flex-direction:column; align-items:center; gap:8px;
-            min-width:0; max-width:100%;
-          }
-          [data-textpreview-open-local] {
-            box-sizing:border-box; appearance:none; -webkit-appearance:none;
-            display:inline-grid; place-items:center;
-            height:36px; margin:0; padding:6px 14px;
-            border:.5px solid var(--dsw-alias-border-l2); border-radius:var(--dsw-radius-md);
-            background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary);
-            font-family:var(--dsw-font-family); font-size:14px; line-height:20px;
-            white-space:nowrap; cursor:pointer;
-          }
-          [data-textpreview-open-local] > span { grid-area:1 / 1; }
-          [data-textpreview-open-local-sizer] { visibility:hidden; }
-          [data-textpreview-open-local]:hover:not(:disabled),
-          [data-textpreview-open-local]:focus:not(:disabled) {
-            background:var(--dsw-alias-interactive-bg-hover);
-          }
-          [data-textpreview-open-local]:focus-visible {
-            outline:2px solid var(--dsw-alias-label-primary); outline-offset:2px;
-          }
-          [data-textpreview-open-local]:disabled { cursor:default; }
-          [data-textpreview-open-local-feedback] {
-            margin:0; max-width:100%; color:var(--dsw-alias-label-secondary);
-            font-size:12px; line-height:1.5; text-align:center; overflow-wrap:anywhere;
-          }
-          [data-textpreview-open-local-feedback][data-kind='error'] {
-            color:var(--dsw-alias-state-error-primary);
-          }
         `
-        if (created || !style.isConnected) document.head.appendChild(style)
+        document.head.appendChild(style)
         return () => style.remove()
       })
       ctx.slots.inject('sidebar.brand.mark', () =>
@@ -784,28 +549,36 @@ window.__ModuleLoader__.load({
           ctx.slots.inject('conversation.hero.brand.mark', function* () {
             yield ctx.slots.register({ name: 'sidebar.brand.mark' }, DesktopBrandMark)
             yield ctx.slots.register({ name: 'sidebar.brand.name' }, DesktopBrandName)
-            yield ctx.slots.register({ name: 'conversation.hero.brand.mark' }, ConversationBrandMark)
+            yield ctx.slots.register(
+              { name: 'conversation.hero.brand.mark' },
+              ConversationBrandMark
+            )
           })
         )
       )
       ctx.slots.inject('sidebar.right.tab.document.unpreviewable', () =>
         ctx.slots.register({
           name: 'sidebar.right.tab.document.unpreviewable',
-          id: 'desktop-open-local',
-          locale: LOCAL_OPEN_NS,
+          id: 'desktop-open-local', locale: ACTIONS_NS,
           inject: () => ({
-            t: locale.bind(LOCAL_OPEN_NS),
-            openWorkspacePath: (request) => remote.session.openWorkspacePath(request)
+            t: actionText,
+            openWorkspacePath: (request) => ctx.remote.session.openWorkspacePath(request)
           })
         }, OpenUnpreviewableFile)
       )
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item',
-          id: 'desktop-delete-session',
+          id: 'desktop-delete-session', locale: ACTIONS_NS,
           order: 900,
-          locale: DELETE_SESSION_NS,
-          inject: () => ({ deletion, t: deletionText })
+          inject: () => ({
+            t: actionText,
+            deleteSession: (sessionId) => {
+              const workspace = ctx.get('uiWorkspace')
+              if (!workspace) throw new Error(actionText('workspaceUnavailable'))
+              return workspace.deleteSession(sessionId)
+            }
+          })
         }, DeleteSessionMenuItem)
       )
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
@@ -836,6 +609,10 @@ window.__ModuleLoader__.load({
     exports.TemplateLibraryControls = TemplateLibraryControls
     exports.apply = apply
     exports.inject = inject
+    exports.readHttpLink = readHttpLink
+    exports.configuredLinkDestination = configuredLinkDestination
+    exports.linkClickFollowsSetting = linkClickFollowsSetting
+    exports.conversationSessionId = conversationSessionId
     return module.exports
   }
 })
