@@ -74,6 +74,43 @@ async function mount(language = 'zh') {
   return { ctx, service, manager, onInstalled, pathFor, openMenu, openUpload, text: () => dom.window.document.body.textContent,
     button: text => [...dom.window.document.querySelectorAll('button')].find(button => button.textContent === text) }
 }
+function installedRequestDraftInitialization(source) {
+  const signature = 'requestDraftInitialization(options)'
+  const start = source.indexOf(signature)
+  const open = start < 0 ? -1 : source.indexOf('{', start + signature.length)
+  if (start < 0 || open < 0 || source.slice(start + signature.length, open).trim() !== '') {
+    throw new Error('Check the installed input draft initialization API')
+  }
+  let depth = 0
+  let quote = ''
+  let escaped = false
+  let templateExpr = 0
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index]
+    if (quote === '`') {
+      if (escaped) { escaped = false; continue }
+      if (char === '\\') { escaped = true; continue }
+      if (char === '`' && templateExpr === 0) { quote = ''; continue }
+      if (char === '$' && source[index + 1] === '{') { templateExpr += 1; index += 1; continue }
+      if (char === '{' && templateExpr > 0) { templateExpr += 1; continue }
+      if (char === '}' && templateExpr > 0) { templateExpr -= 1; continue }
+      continue
+    }
+    if (quote) {
+      if (escaped) { escaped = false; continue }
+      if (char === '\\') { escaped = true; continue }
+      if (char === quote) quote = ''
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') { quote = char; continue }
+    if (char === '{') depth += 1
+    else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return vm.runInNewContext(`({${source.slice(start, index + 1)}}).requestDraftInitialization`)
+    }
+  }
+  throw new Error('Check the installed input draft initialization API')
+}
 async function selectFile(name = 'shared.tgz') {
   const input = dom.window.document.querySelector('input[type=file]')
   Object.defineProperty(input, 'files', { configurable: true, value: name ? [new dom.window.File(['package'], name)] : [] })
@@ -110,10 +147,8 @@ it('opens a conversation with an unsent draft and leaves active workbench mode',
 it.each(['zh', 'en'])('replaces an existing input draft without sending or accumulating instructions (%s)', async language => {
   const ui = await mount(language)
   const inputSource = await readFile(new URL('../node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js', import.meta.url), 'utf8')
-  const start = inputSource.indexOf('requestDraftInitialization(options) {')
-  const end = inputSource.indexOf('\n\t\t\tdraftInitializationBlocked()', start)
-  if (start < 0 || end < 0) throw new Error('Check the installed input draft initialization API')
-  const initializeDraft = vm.runInNewContext(`({${inputSource.slice(start, end)}}).requestDraftInitialization`)
+  // rc.5 publishes this method on one line. Match the signature and braces so the test runs the installed replace behavior.
+  const initializeDraft = installedRequestDraftInitialization(inputSource)
   const state = { draft: 'Previous workbench instructions and unfinished prompt' }
   const input = {
     snapshot: state, attachmentIds: [], draftInitializationBlocked: () => false,
