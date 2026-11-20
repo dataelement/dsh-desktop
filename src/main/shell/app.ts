@@ -1243,6 +1243,14 @@ async function main(): Promise<void> {
       blocked: () => stability.blocksNavigation(),
       showWaiting: showHarnessRestartWaiting,
       stop: () => backend.stop(),
+      // Issue #912: the "restart Harness" entry point must apply the pending
+      // generation changes its banner announces. The projection runs while the
+      // host is stopped (generation removals are unsafe under a running host) and
+      // is skipped in safe mode, matching the launch-time projection.
+      prepareStart: () => {
+        if (safeMode) return Promise.resolve()
+        return prepareGenerationsForLaunch(dshHome, line => { console.error(line) }, 'desktop')
+      },
       start: async () => {
         try {
           await backend.start(async () => {})
