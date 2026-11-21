@@ -80,6 +80,20 @@
     ; Without this override NSIS rejects non-existent paths before the user
     ; can click Next.
     !macro preInit
+      ; The template's .onInit points the working directory at $INSTDIR
+      ; before this hook runs, and the outer instance then parks inside
+      ; UAC_RunElevated waiting for the elevated inner instance that performs
+      ; the install. That open CWD handle blocks the $INSTDIR ->
+      ; $INSTDIR.old-* backup rename in dshPromoteDirectories, so in-app
+      ; updates fail with "Could not back up the installed version" whenever
+      ; the install directory is locked only by the waiting outer instance.
+      ; Move the working directory off $INSTDIR here: preInit is the last
+      ; hook that runs in the outer instance before either elevation path
+      ; (the assisted install-mode page and the silent per-machine upgrade),
+      ; and $TEMP needs no InitPluginsDir, unlike $PLUGINSDIR. The inner
+      ; instance re-runs .onInit and already releases its own handle before
+      ; renaming via dshPromoteDirectories.
+      SetOutPath "$TEMP"
     !macroend
     Function .onVerifyInstDir
       ; Always pass — we create the directory in DshEnsureInstDirExists.

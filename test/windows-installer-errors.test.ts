@@ -28,6 +28,18 @@ describe('Windows installation error dialogs', () => {
     expect(source).toContain('Call dshRollbackDirectories')
   })
 
+  it('releases the inherited $INSTDIR working directory before elevation', async () => {
+    const source = await readFile(resolve('build/installer.nsh'), 'utf8')
+    // The template's .onInit points the working directory at $INSTDIR before
+    // preInit, and the outer instance then waits inside UAC_RunElevated. A
+    // CWD handle into $INSTDIR blocks the $INSTDIR -> $INSTDIR.old-* backup
+    // rename in dshPromoteDirectories, so preInit must move it off the
+    // install directory. $TEMP requires no InitPluginsDir, unlike
+    // $PLUGINSDIR.
+    expect(source).toMatch(/!macro preInit\b[\s\S]*?SetOutPath "\$TEMP"[\s\S]*?!macroend/)
+    expect(source).not.toMatch(/!macro preInit\b[\s\S]*?SetOutPath "\$INSTDIR"[\s\S]*?!macroend/)
+  })
+
   it.skipIf(!compiler && process.env.DSH_TEST_NSIS !== '1')('compiles the real installer includes and preserves old files on silent failure', async () => {
     const tool: { path: string, env?: Record<string, string> } = compiler
       ? { path: compiler }
