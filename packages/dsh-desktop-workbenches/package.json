@@ -8,6 +8,7 @@
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./source-provider": "./source-provider.mjs",
     "./package.json": "./package.json"
   },
   "dsh": {

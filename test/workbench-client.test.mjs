@@ -280,6 +280,15 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
+  it('supports product-owned Market collection tabs with lifecycle cleanup', async () => {
+    const { service } = await fixture()
+    const render = vi.fn()
+    const dispose = service.registerMarketCollection({ id: 'enterprise', label: '企业工作台', order: 10, render })
+    expect(service.getMarketCollections()).toEqual([expect.objectContaining({ id: 'enterprise', label: '企业工作台' })])
+    dispose()
+    expect(service.getMarketCollections()).toEqual([])
+  })
+
   it('declares the native plugin manager injection and keeps the market available when access fails', async () => {
     expect(clientInject).toContain('remote.pluginManager')
     const { service, ctx } = await fixture()
