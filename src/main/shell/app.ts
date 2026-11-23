@@ -427,6 +427,7 @@ async function showSplash(window: BrowserWindow, pagePath: string): Promise<void
 }
 
 async function loadDesktopPage(window: BrowserWindow, url: string): Promise<boolean> {
+  windowState?.captureApplicationZoom()
   try {
     if (pageRecovery === undefined) {
       await window.loadURL(url)
@@ -1146,6 +1147,7 @@ async function main(): Promise<void> {
     desktopStorage.flushSync()
     if (window.isDestroyed() || window.webContents.isDestroyed()) return
     window.webContents.stop()
+    windowState?.captureApplicationZoom()
     let timer: ReturnType<typeof setTimeout> | undefined
     await Promise.race([
       window.loadURL('about:blank').catch((error: unknown) => { console.error(error) }),
@@ -1526,6 +1528,7 @@ async function main(): Promise<void> {
     if (!quitting && !stability.blocksNavigation()) stability.processRecovery.start('window')
     return
   }
+  windowState?.restoreMaximized(window)
   window.show()
   let desktopHealthReports: PluginHealthReport[] = []
   let desktopHealthLoaded = false

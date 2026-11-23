@@ -39,7 +39,7 @@ function createFakeWindow(initialUrl: string, initialZoom: number) {
     getURL: () => url,
     getZoomLevel: () => zoomLevel,
     setZoomLevel,
-    on(event: 'zoom-changed' | 'did-finish-load', listener: () => void) {
+    on(event: 'zoom-changed' | 'did-finish-load' | 'will-navigate', listener: () => void) {
       const listeners = contentsListeners.get(event) ?? []
       listeners.push(listener)
       contentsListeners.set(event, listeners)
@@ -51,11 +51,13 @@ function createFakeWindow(initialUrl: string, initialZoom: number) {
     fullScreen: false,
     destroyed: false,
     bounds: { x: 10, y: 20, width: 1400, height: 900 },
+    normalBounds: { x: 10, y: 20, width: 1400, height: 900 },
     isDestroyed: () => window.destroyed,
     isMaximized: () => window.maximized,
     isMinimized: () => window.minimized,
     isFullScreen: () => window.fullScreen,
     getBounds: () => ({ ...window.bounds }),
+    getNormalBounds: () => ({ ...window.normalBounds }),
     maximize,
     on(event: 'resize' | 'move' | 'maximize' | 'unmaximize' | 'close', listener: () => void) {
       const listeners = windowListeners.get(event) ?? []
@@ -232,6 +234,7 @@ describe('WindowStateManager', () => {
     const fake = createFakeWindow('dsh-app://app/', 0)
     manager.track(fake.window, { tracksZoom: tracksApplicationZoom })
     fake.window.bounds = { x: 12, y: 34, width: 1637, height: 999 }
+    fake.window.normalBounds = { x: 12, y: 34, width: 1637, height: 999 }
     fake.emit('resize')
     fake.emit('close')
     expect(readSaved()).toMatchObject({ x: 12, y: 34, width: 1637, height: 999 })
@@ -241,6 +244,43 @@ describe('WindowStateManager', () => {
     fake.emit('resize')
     fake.emit('close')
     expect(readSaved()).toMatchObject({ x: 12, y: 34, width: 1637, height: 999, isMaximized: true })
+  })
+
+  it('keeps the restored size when resize reports the maximized work area first', () => {
+    const manager = new WindowStateManager(tempDir)
+    const fake = createFakeWindow('dsh-app://app/', 0)
+    manager.track(fake.window, { tracksZoom: tracksApplicationZoom })
+    fake.window.normalBounds = { x: 12, y: 34, width: 1637, height: 999 }
+    fake.window.bounds = { x: 0, y: 0, width: 1920, height: 1080 }
+    fake.emit('resize')
+    fake.emit('close')
+    expect(readSaved()).toMatchObject({ x: 12, y: 34, width: 1637, height: 999, isMaximized: false })
+  })
+
+  it('captures the application zoom before a page navigation leaves it', () => {
+    writeState({ width: 1280, height: 820, zoomLevel: 1 })
+    const manager = new WindowStateManager(tempDir)
+    const fake = createFakeWindow('dsh-app://app/', 2)
+    manager.track(fake.window, { tracksZoom: tracksApplicationZoom })
+
+    fake.emitContents('will-navigate')
+    fake.setUrl('file:///splash.html')
+    fake.setZoom(0)
+    manager.flushSync()
+    expect(readSaved().zoomLevel).toBe(2)
+  })
+
+  it('captures zoom for a programmatic load that does not emit will-navigate', () => {
+    writeState({ width: 1280, height: 820, zoomLevel: 0.5 })
+    const manager = new WindowStateManager(tempDir)
+    const fake = createFakeWindow('dsh-app://app/', 2.5)
+    manager.track(fake.window, { tracksZoom: tracksApplicationZoom })
+
+    manager.captureApplicationZoom()
+    fake.setUrl('file:///splash.html')
+    fake.setZoom(0)
+    manager.flushSync()
+    expect(readSaved().zoomLevel).toBe(2.5)
   })
 
   it('maximizes once, and skips a destroyed window', () => {

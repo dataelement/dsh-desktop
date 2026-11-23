@@ -27,9 +27,8 @@ export interface DisplayWorkArea {
 export interface TrackedWindow {
   isDestroyed(): boolean
   isMaximized(): boolean
-  isMinimized(): boolean
-  isFullScreen(): boolean
-  getBounds(): { x: number; y: number; width: number; height: number }
+  /** Bounds of the restored window, including while maximized, minimized, or fullscreen. */
+  getNormalBounds(): { x: number; y: number; width: number; height: number }
   on(event: 'resize' | 'move' | 'maximize' | 'unmaximize' | 'close', listener: () => void): void
   webContents: TrackedWebContents
 }
@@ -39,7 +38,7 @@ interface TrackedWebContents {
   getURL(): string
   getZoomLevel(): number
   setZoomLevel(zoomLevel: number): void
-  on(event: 'zoom-changed' | 'did-finish-load', listener: () => void): void
+  on(event: 'zoom-changed' | 'did-finish-load' | 'will-navigate', listener: () => void): void
 }
 
 interface MaximizableWindow {
@@ -119,9 +118,11 @@ export class WindowStateManager {
 
   /**
    * Remember bounds, maximized, and the application-page zoom.
-   * Zoom is sampled at flush time: the Windows menu roles change zoom inside
-   * Chromium and do not emit `zoom-changed`, and that event can run before
-   * `getZoomLevel()` has caught up.
+   * Menu zoom does not emit `zoom-changed` (that event is the mouse wheel), and
+   * the wheel event can run before `getZoomLevel()` has caught up, so zoom is
+   * read when leaving the application page and again at flush time.
+   * `getNormalBounds()` stays at the restored size while a maximize `resize`
+   * already reports the filled work area.
    */
   public track(window: TrackedWindow, options: WindowTrackOptions): void {
     this.trackedWindow = window
@@ -129,15 +130,12 @@ export class WindowStateManager {
 
     const updateState = (): void => {
       if (window.isDestroyed()) return
-      const isMaximized = window.isMaximized()
-      if (!isMaximized && !window.isMinimized() && !window.isFullScreen()) {
-        const bounds = window.getBounds()
-        this.state.width = bounds.width
-        this.state.height = bounds.height
-        this.state.x = bounds.x
-        this.state.y = bounds.y
-      }
-      this.state.isMaximized = isMaximized
+      const bounds = window.getNormalBounds()
+      this.state.width = bounds.width
+      this.state.height = bounds.height
+      this.state.x = bounds.x
+      this.state.y = bounds.y
+      this.state.isMaximized = window.isMaximized()
       this.scheduleSave()
     }
 
@@ -149,6 +147,10 @@ export class WindowStateManager {
       if (window.isDestroyed() || window.webContents.isDestroyed()) return
       this.scheduleSave()
     })
+    // Page-initiated navigations only. `loadURL` does not emit this event.
+    window.webContents.on('will-navigate', () => {
+      this.captureApplicationZoom()
+    })
     window.webContents.on('did-finish-load', () => {
       this.restoreZoomOnce()
     })
@@ -159,10 +161,22 @@ export class WindowStateManager {
   }
 
   /**
-   * Maximize only once the first page is ready to paint. Calling `maximize()`
-   * before the window is shown also shows it, which would flash an empty frame
-   * ahead of the splash page. A failed splash leaves the saved flag untouched
-   * because this is never called on that path.
+   * Store the application zoom before the document changes.
+   * Call this before `webContents.loadURL`: that path skips `will-navigate`,
+   * and a later flush on the splash or recovery page would otherwise keep the
+   * previous zoom and put it back on the next launch.
+   */
+  public captureApplicationZoom(): void {
+    if (!this.sampleZoom()) return
+    this.scheduleSave()
+  }
+
+  /**
+   * Maximize once a document is ready to paint. Calling `maximize()` before
+   * the window is shown also shows it, which would flash an empty frame ahead
+   * of the splash page. The splash page calls this after its document loads.
+   * If that load fails, the application page calls it before show. Later calls
+   * do nothing.
    */
   public restoreMaximized(window: MaximizableWindow): void {
     if (this.maximizedRestored || window.isDestroyed()) return
@@ -203,10 +217,11 @@ export class WindowStateManager {
   }
 
   /** Read the live zoom only while the application document is showing. */
-  private sampleZoom(): void {
+  private sampleZoom(): boolean {
     const zoomLevel = this.applicationZoom()
-    if (zoomLevel === undefined) return
+    if (zoomLevel === undefined) return false
     this.state.zoomLevel = clampZoom(zoomLevel)
+    return true
   }
 
   /**
