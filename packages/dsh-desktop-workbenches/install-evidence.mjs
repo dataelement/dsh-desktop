@@ -56,10 +56,10 @@ async function fingerprint(directory, sourceSpec) {
  * @param {Record<string, import('./market-install.mjs').MarketInstallRecord>} installs
  * @param {string} [home]
  * @param {string[]} [requestedNames]
+ * @param {string} [profile] Active profile directory.
  * @returns {Promise<Record<string, import('./market-install.mjs').WorkbenchInstallEvidence>>}
  */
-export async function readInstallEvidence(installs, home = process.env.DSH_HOME || join(homedir(), '.dsh'), requestedNames = []) {
-  const profile = join(home, 'profiles', 'web')
+export async function readInstallEvidence(installs, home = process.env.DSH_HOME || join(homedir(), '.dsh'), requestedNames = [], profile = join(home, 'profiles', 'web')) {
   const dependencies = await json(join(profile, 'package.json')).then(value => value.dependencies || {}, () => ({}))
   const generations = new Map()
   try {
