@@ -242,10 +242,17 @@ export class LanMobileBridge {
         // the renderers in step without polling either of them.
         .finally(() => this.syncConnected())
     })
-    await new Promise<void>((resolve, reject) => {
-      this.server?.once('error', reject)
-      this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
-    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.server?.once('error', reject)
+        this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
+      })
+    } catch (error) {
+      // A failed listen is not a running bridge. Release its state so the next
+      // click retries and preserves the original bind error if still occupied.
+      await this.stop()
+      throw error
+    }
     this.port = (this.server.address() as AddressInfo).port
     try { this.detachProduct = this.options.product?.attach?.(this.productTransport()) || undefined }
     catch (error) { await this.stop(); throw error }
@@ -1124,9 +1131,19 @@ export class LanMobileBridge {
     }
   }
 
+  private productRemoteAuthorized(request: IncomingMessage): boolean {
+    try {
+      return this.options.product?.authorizeRemote(request.headers) === true
+    } catch {
+      // Account lookup failures must deny access; do not log account headers or error secrets.
+      console.warn('[mobile-product] Authorization check failed; remote access denied.')
+      return false
+    }
+  }
+
   private async handleProductChannel(request: IncomingMessage, response: ServerResponse, url: URL, address: string): Promise<void> {
     const token = firstHeaderValue(request.headers['x-dsh-mobile-channel-token']) ?? ''
-    if (!isLoopbackAddress(address) || !this.pinsEqual(token, this.accessChannelToken) || !this.options.product?.authorizeRemote(request.headers)) {
+    if (!isLoopbackAddress(address) || !this.pinsEqual(token, this.accessChannelToken) || !this.productRemoteAuthorized(request)) {
       return this.json(response, 401, { ok: false, error: 'account_switched' })
     }
     this.remoteMuxUntil = this.now() + 120_000
@@ -1145,7 +1162,7 @@ export class LanMobileBridge {
     if (request.method === 'GET' && url.pathname === '/api/v1/session/stream') {
       const sessionId = url.searchParams.get('sessionId')
       if (!sessionId) return this.text(response, 400, 'Session id is required.')
-      return this.streamSession(request, response, sessionId)
+      return this.streamSession(request, response, sessionId, () => this.productRemoteAuthorized(request))
     }
     return this.json(response, 404, { ok: false, error: 'Not found.' })
   }
@@ -1660,11 +1677,13 @@ export class LanMobileBridge {
   private async streamSession(
     request: IncomingMessage,
     response: ServerResponse,
-    sessionId: string
+    sessionId: string,
+    authorized?: () => boolean
   ): Promise<void> {
     const base = this.options.harnessUrl()
     if (!base) return this.text(response, 503, 'Harness is not ready.')
     const cookie = await this.harnessSession(base)
+    if (authorized && !authorized()) return this.json(response, 401, { ok: false, error: 'account_switched' })
     const url = new URL(REMOTE_STREAM_MUX_PATH, base)
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     const streamId = `mobile-session-${randomUUID()}`
@@ -1691,7 +1710,9 @@ export class LanMobileBridge {
       // same close pattern with the identical sink; keep the two in lockstep.
       socket.addEventListener('error', () => {})
       let settled = false
+      let authorizationTimer: ReturnType<typeof setInterval> | undefined
       const cleanup = (): void => {
+        if (authorizationTimer) clearInterval(authorizationTimer)
         request.removeListener('close', finish)
         abort.signal.removeEventListener('abort', finish)
         socket.removeEventListener('open', handleOpen)
@@ -1708,7 +1729,14 @@ export class LanMobileBridge {
         if (!response.writableEnded) response.end()
         resolve()
       }
+      const checkAuthorization = (): boolean => {
+        if (settled) return false
+        if (!authorized || authorized()) return true
+        finish()
+        return false
+      }
       const handleOpen = (): void => {
+        if (!checkAuthorization()) return
         socket.send(JSON.stringify({
           type: 'open',
           streamId,
@@ -1721,6 +1749,7 @@ export class LanMobileBridge {
         }))
       }
       const handleMessage = (event: { data: unknown }): void => {
+        if (!checkAuthorization()) return
         const text = typeof event.data === 'string'
           ? event.data
           : Buffer.isBuffer(event.data) ? event.data.toString('utf8') : undefined
@@ -1732,7 +1761,7 @@ export class LanMobileBridge {
           let value: unknown
           try { value = projection ? projection.project(frame.value) : frame.value }
           catch (error) { this.options.tunnelLog?.('Mobile stream projection failed: ' + (error instanceof Error ? error.message : 'unknown error')); finish(); return }
-          if (value === undefined) return
+          if (value === undefined || !checkAuthorization()) return
           const eventName = isRecord(value) && value.type === 'snapshot' ? 'snapshot' : 'event'
           response.write(`event: ${eventName}\ndata: ${JSON.stringify(value)}\n\n`)
         } else if (frame.type === 'error' || frame.type === 'end') {
@@ -1747,6 +1776,11 @@ export class LanMobileBridge {
       socket.addEventListener('message', handleMessage)
       socket.addEventListener('close', handleClose, { once: true })
       socket.addEventListener('error', handleError, { once: true })
+      // Idle streams also expire; no frame can pass after authorization is lost.
+      if (authorized) {
+        authorizationTimer = setInterval(checkAuthorization, 1000)
+        authorizationTimer.unref?.()
+      }
       if (abort.signal.aborted) finish()
     })
   }

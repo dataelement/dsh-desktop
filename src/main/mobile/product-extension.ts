@@ -10,7 +10,9 @@ export interface MobileProductTransport {
   forward(method: string, payload: unknown): Promise<MobileRpcResult>
 }
 export interface MobileProductExtension {
-  /** Additional product authorization; the bridge always checks loopback and its capability first. */
+  /** Rechecked before stream frames and every second while idle; must be synchronous and side-effect free.
+   * Validate the request account against the current account. False or a thrown error revokes access.
+   * The bridge always checks loopback and its capability before accepting a request. */
   authorizeRemote(headers: IncomingHttpHeaders): boolean
   attach?(transport: MobileProductTransport): (() => void | Promise<void>) | void
   rpc?(input: { method?: unknown; payload?: unknown }, transport: MobileProductTransport): Promise<MobileRpcResult | undefined>

@@ -314,6 +314,41 @@ describe('desktop workbench client navigation', () => {
     expect(() => service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: 'hidden' })).toThrow('controls')
   })
 
+  it('ignores retained search on collections without controls and restores it on return', async () => {
+    const { service } = await fixture(boundState())
+    const ui = interactiveMarket(service, 'mine')
+    const cards = tree => ui.find(tree, node => node.props?.className === 'dshWbCard').length
+    const baseline = cards(ui.render())
+    expect(baseline).toBeGreaterThan(0)
+    ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-market-tab')[0].props.onClick()
+    ui.find(ui.render(), node => node.props?.type === 'search')[0].props.onChange({ target: { value: 'no-such-workbench' } })
+    const dispose = service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: false,
+      render: ({ renderDefault }) => renderDefault() })
+    ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-mine-tab')[0].props.onClick()
+    expect(cards(ui.render())).toBe(baseline)
+    expect(ui.find(ui.render(), node => node.props?.type === 'search')).toHaveLength(0)
+    ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-market-tab')[0].props.onClick()
+    expect(ui.find(ui.render(), node => node.props?.type === 'search')[0].props.value).toBe('no-such-workbench')
+    expect(cards(ui.render())).toBe(0)
+    dispose()
+  })
+
+  it('ignores retained category when controls are hidden and restores it on disposal', async () => {
+    const { service } = await fixture(boundState())
+    const ui = interactiveMarket(service, 'mine')
+    const cards = tree => ui.find(tree, node => node.props?.className === 'dshWbCard').length
+    const baseline = cards(ui.render())
+    expect(baseline).toBeGreaterThan(0)
+    ui.find(ui.render(), node => node.props?.['aria-label'] === '按分类筛选')[0].props.onChange({ target: { value: 'unavailable-category' } })
+    expect(cards(ui.render())).toBe(0)
+    const dispose = service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: false,
+      render: ({ renderDefault }) => renderDefault() })
+    expect(cards(ui.render())).toBe(baseline)
+    dispose()
+    expect(cards(ui.render())).toBe(0)
+    expect(ui.find(ui.render(), node => node.props?.['aria-label'] === '按分类筛选')[0].props.value).toBe('unavailable-category')
+  })
+
   it('uses visible tab order for selection and falls back when the selected collection disappears', async () => {
     const { service } = await fixture()
     const disposeSource = service.registerMarketCollection({ id: 'source', label: 'Source', order: -10, render: () => null })

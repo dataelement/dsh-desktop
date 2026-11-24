@@ -2862,10 +2862,15 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         : tab === 'favorites'
           ? favorites.map((id) => localizedCatalog.find((entry) => entry.catalogId === id || entry.id === id) || unavailableEntry(id))
           : tab === 'market' ? marketEntries : []
+      const activeCollection = marketCollections.find(collection => collection.id === tab)
+      const collectionRenderer = activeCollection?.render
+      const defaultControls = activeCollection?.controls !== false
       const categoryKey = (entry) => entry.categoryId || (entry.local ? 'local' : entry.categoryNames?.zh || entry.category || 'other')
       const categories = [{ id: 'all', name: tr('全部') }, ...[...new Set(allEntries.map(categoryKey))].map((id) => ({ id, name: id === 'local' ? tr('本地') : allEntries.find((entry) => categoryKey(entry) === id)?.category || tr('其他') }))]
-      const query = search.toLowerCase().trim()
-      const entries = sortMarketEntries(allEntries.filter((entry) => (category === 'all' || categoryKey(entry) === category) && `${entry.title || ''} ${entry.titleEn || ''} ${entry.name || ''} ${entry.description || ''} ${entry.descriptionEn || ''} ${entry.author || ''} ${entry.category || ''} ${entry.categoryNames?.zh || ''}`.toLowerCase().includes(query)), sortBy)
+      // Hidden host controls must not keep filtering the product's default cards.
+      const query = defaultControls ? search.toLowerCase().trim() : ''
+      const effectiveCategory = defaultControls ? category : 'all'
+      const entries = sortMarketEntries(allEntries.filter((entry) => (effectiveCategory === 'all' || categoryKey(entry) === effectiveCategory) && `${entry.title || ''} ${entry.titleEn || ''} ${entry.name || ''} ${entry.description || ''} ${entry.descriptionEn || ''} ${entry.author || ''} ${entry.category || ''} ${entry.categoryNames?.zh || ''}`.toLowerCase().includes(query)), defaultControls ? sortBy : 'stars')
       const displayedEntries = entries.slice(0, visibleCount)
       const hasMore = visibleCount < entries.length
       const selected = (tab === 'mine' ? catalog.map(displayEntry) : allEntries).find((entry) => (entry.catalogId || entry.id) === detail)
@@ -2889,9 +2894,6 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         try { await copySubmissionPrompt(text); setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: tr('已复制'), tone: 'success' }) }
         catch { setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: tr('复制失败，请展开指令手动复制。'), developmentFallback: text === completeDevelopmentPrompt }) }
       }
-      const activeCollection = marketCollections.find(collection => collection.id === tab)
-      const collectionRenderer = activeCollection?.render
-      const defaultControls = activeCollection?.controls !== false
       const renderDefault = () => h(React.Fragment, null,
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, displayedEntries.map((entry) => {
             const catalogId = entry.catalogId || entry.id
