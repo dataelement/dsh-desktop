@@ -291,10 +291,27 @@ describe('desktop workbench client navigation', () => {
     const ui = interactiveMarket(service, 'favorites')
     const tree = ui.render()
     expect(ui.find(tree, node => node.props?.role === 'tab')).toHaveLength(5)
-    expect(render).toHaveBeenCalledWith({ service })
+    expect(render).toHaveBeenCalledWith({ service, renderDefault: expect.any(Function) })
     disposeFavorites(); disposeA(); disposeB()
     expect(service.getMarketTabs().map(item => item.id)).toEqual(['market', 'favorites', 'mine'])
     expect(service.getMarketTabs().find(item => item.id === 'favorites').render).toBeUndefined()
+  })
+
+  it('composes default cards inside a custom collection and explicitly controls host filters', async () => {
+    const { service } = await fixture()
+    const ui = interactiveMarket(service, 'mine')
+    const before = ui.render()
+    const cards = ui.find(before, node => node.props?.className === 'dshWbCard').length
+    const dispose = service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: false,
+      render: ({ renderDefault }) => React.createElement(React.Fragment, null, renderDefault(), React.createElement('aside', { id: 'product-entries' }, 'Product entries')) })
+    const composed = ui.render()
+    expect(ui.find(composed, node => node.props?.id === 'product-entries')).toHaveLength(1)
+    expect(ui.find(composed, node => node.props?.className === 'dshWbCard')).toHaveLength(cards)
+    expect(ui.find(composed, node => node.props?.className === 'dshWbBrowseTools')).toHaveLength(0)
+    expect(ui.find(composed, node => node.props?.className === 'dshWbSearch')).toHaveLength(0)
+    dispose()
+    expect(ui.find(ui.render(), node => node.props?.className === 'dshWbBrowseTools')).toHaveLength(1)
+    expect(() => service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: 'hidden' })).toThrow('controls')
   })
 
   it('uses visible tab order for selection and falls back when the selected collection disappears', async () => {
