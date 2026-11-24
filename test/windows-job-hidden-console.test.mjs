@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { launchWindowsJob } from '@deepseek-ai/dsh-subprocess-local/src/windows-job.ts'
 import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/src/spawn.ts'
 
@@ -31,6 +31,25 @@ function jobSpec() {
 describe('Windows subprocess console inheritance', () => {
   afterEach(() => {
     delete process.env[marker]
+    vi.restoreAllMocks()
+  })
+
+  it('preloads the hidden console on both Electron hops without modifying target arguments', () => {
+    process.env[marker] = '1'
+    vi.spyOn(process, 'versions', 'get').mockReturnValue({ ...process.versions, electron: '44.7.0' })
+    const preload = 'file:///C:/Desktop/build/windows-hide-console-import.mjs'
+    vi.spyOn(process, 'execArgv', 'get').mockReturnValue(['--import', preload])
+    let args
+    const spec = { ...jobSpec(), argv: [process.execPath, 'codex.js', 'app-server'] }
+    launchWindowsJob(spec, {}, {
+      runnerInvocation: [process.execPath, 'runner.js'],
+      spawn(_command, actualArgs) {
+        args = actualArgs
+        return fakeProcess()
+      }
+    })
+    expect(args).toEqual(['--import', preload, 'runner.js', '--', process.execPath, '--import', preload, 'codex.js', 'app-server'])
+    expect(spec.argv).toEqual([process.execPath, 'codex.js', 'app-server'])
   })
 
   it('inherits the Host console for the Job runner when the marker is set', () => {
