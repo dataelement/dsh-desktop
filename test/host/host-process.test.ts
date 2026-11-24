@@ -1,10 +1,12 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { electronNodeExecutable } from '../../src/main/shell/backend/electron-node-executable'
-import { DesktopHostFatalError, DesktopHostProcess, redactHostOutput } from '../../src/main/shell/backend/host-process'
+import { DesktopHostFatalError, DesktopHostProcess, hostLaunchArguments, redactHostOutput } from '../../src/main/shell/backend/host-process'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron') as string
@@ -106,6 +108,28 @@ describe('desktop host process', () => {
     await host.stop()
   })
 
+  it('passes the console bootstrap to the Host and imports it only on Windows', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
+    temporary.push(directory)
+    const report = join(directory, 'report.json')
+    const bootstrap = join(directory, 'windows-hide-console-import.mjs')
+    writeFileSync(bootstrap, 'export {}\n')
+    const host = new DesktopHostProcess({
+      node: electron,
+      entry: fixture,
+      runtimeDir: directory,
+      projectDir: directory,
+      dshHome: directory,
+      hideConsoleBootstrapPath: bootstrap,
+      environment: { FIXTURE_MODE: 'launch-args', FIXTURE_REPORT: report }
+    })
+    await host.start()
+    const launched = JSON.parse(await readFile(report, 'utf8')) as { bootstrap: string, execArgv: string[] }
+    expect(launched.bootstrap).toBe(bootstrap)
+    expect(launched.execArgv.includes('--import')).toBe(process.platform === 'win32')
+    await host.stop()
+  })
+
   it('rejects a fatal host message', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
     temporary.push(directory)
@@ -119,6 +143,45 @@ describe('desktop host process', () => {
     })
     await expect(host.start()).rejects.toBeInstanceOf(DesktopHostFatalError)
     await host.stop()
+  })
+})
+
+describe('host launch arguments', () => {
+  it('places the Windows console import before the Host entry', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'shell-host-argv-'))
+    temporary.push(directory)
+    const bootstrap = join(directory, 'windows-hide-console-import.mjs')
+    writeFileSync(bootstrap, 'export {}\n')
+    const entry = join(directory, 'host.js')
+    const options = {
+      entry,
+      runtimeDir: directory,
+      projectDir: directory,
+      primaryRuntime: join(directory, 'primary'),
+      hideConsoleBootstrapPath: bootstrap,
+      inspectPort: 9
+    }
+    const args = hostLaunchArguments(options, {}, 'win32')
+    expect(args.slice(0, 4)).toEqual([
+      '--expose-internals',
+      '--import',
+      pathToFileURL(bootstrap).href,
+      '--inspect=127.0.0.1:9'
+    ])
+    expect(args[4]).toBe(entry)
+    expect(hostLaunchArguments(options, {}, 'darwin')).toEqual([
+      '--expose-internals',
+      '--inspect=127.0.0.1:9',
+      entry,
+      directory,
+      directory,
+      join(directory, 'primary')
+    ])
+    expect(hostLaunchArguments({
+      ...options,
+      hideConsoleBootstrapPath: undefined,
+      inspectPort: undefined
+    }, {}, 'win32')[1]).toBe(entry)
   })
 })
 

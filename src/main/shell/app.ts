@@ -970,6 +970,7 @@ async function main(): Promise<void> {
         DSH_DESKTOP_PATCH_FILE: productPatch,
         ...(safeMode ? {} : officeEnvironment(primaryRuntime))
       },
+      hideConsoleBootstrapPath: packagedPagePath('windows-hide-console-import.mjs'),
       primaryRuntime,
       onFailure,
       onOutput: (source, chunk) => { harnessLog.writeProcessOutput(source, chunk) },
