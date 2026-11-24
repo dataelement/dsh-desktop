@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url)
 const { verifySherpaOverlay, withSherpaOverlay } = require('../scripts/release/sherpa-linux-overlay.cjs')
 
 test('Linux configs preserve production/development identity and overlay before ASAR creation', () => {
-  for (const [file, id] of [['../electron-builder.linux.cjs', 'io.dsh.desktop'], ['../electron-builder.linux-dev.cjs', 'io.dsh.desktop.dev']]) {
+  for (const [file, id] of [['../electron-builder.linux.cjs', require('../package.json').build.appId], ['../electron-builder.linux-dev.cjs', require('../electron-builder.dev.cjs').appId]]) {
     const config = require(file)
     expect(config.appId).toBe(id)
     expect(config.files).toContain('!node_modules/sherpa-onnx-linux-x64/sherpa-onnx.node')
