@@ -13,6 +13,7 @@ import { createSidebarBrowserBridge } from './sidebar-browser'
 import { usesDesktopCaption } from '../shared/desktop-menu'
 import { markDesktopPlatform } from './desktop-platform'
 import { mountMacosPreviewChrome } from './macos-window-chrome'
+import { mountMacosWindowTheme } from './macos-window-theme'
 import { mountDesktopUpdateUi } from './desktop-update-ui'
 import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'
 import { mountSafeModeFrame } from './safe-mode-frame'
@@ -49,6 +50,15 @@ if (appDocument) {
       ipcRenderer.on(DESKTOP_IPC.windowFullscreen, receive)
       return () => ipcRenderer.off(DESKTOP_IPC.windowFullscreen, receive)
     })
+    // The page publishes data-ds-theme-source before the sidebar paints.
+    // Native vibrancy follows that source only after the main process sees it.
+    const mountTheme = (): void => {
+      if (document.body === null) return
+      const dispose = mountMacosWindowTheme(document, ipcRenderer)
+      window.addEventListener('unload', dispose, { once: true })
+    }
+    if (document.body !== null) mountTheme()
+    else document.addEventListener('DOMContentLoaded', mountTheme, { once: true })
   }
   setupDesktopStoragePersistence()
   // The custom-scheme preload runs before documentElement exists. Mounting the
