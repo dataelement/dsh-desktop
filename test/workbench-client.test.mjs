@@ -4775,3 +4775,23 @@ it('keeps opt-in collection search in the host header and forwards changes acros
   expect(() => service.registerMarketCollection({ id: 'invalid', label: 'Invalid', search: 'yes', render: first })).toThrow('search must be a boolean')
   service.dispose()
 })
+
+it('renders product collection labels with unfiltered native counts and restores the built-in label', async () => {
+  const { service } = await fixture(boundState())
+  const ui = interactiveMarket(service, 'mine')
+  const renderLabel = vi.fn(({ count }) => `Combined (${count + 2})`)
+  const dispose = service.registerMarketCollection({ id: 'mine', replace: true, label: 'Installed', renderLabel })
+  const before = ui.render()
+  expect(service.collectionLabels).toBe(true)
+  const count = renderLabel.mock.calls.at(-1)[0].count
+  expect(count).toBeGreaterThan(0)
+  const tab = ui.find(before, node => node.props?.id === 'dsh-workbench-mine-tab')[0]
+  expect(tab.props.children).toContain(`Combined (${count + 2})`)
+  const search = ui.find(before, node => node.type === 'input' && node.props.type === 'search')[0]
+  search.props.onChange({ target: { value: 'no match' } })
+  ui.render()
+  expect(renderLabel.mock.calls.at(-1)[0]).toMatchObject({ count })
+  dispose()
+  expect(service.getMarketTabs().find(item => item.id === 'mine').renderLabel).toBeUndefined()
+  expect(() => service.registerMarketCollection({ id: 'bad-label', label: 'Bad', render: () => null, renderLabel: 'text' })).toThrow('renderLabel')
+})
