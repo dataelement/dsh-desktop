@@ -18,6 +18,7 @@ import { mountDesktopUpdateUi } from './desktop-update-ui'
 import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'
 import { mountSafeModeFrame } from './safe-mode-frame'
 import { isSafeModeRenderer } from '../main/shell/mobile-pairing'
+import { installScrollDragRegionRefresh } from './scroll-drag-region-refresh'
 
 const appDocument = location.protocol === `${SCHEME}:` && location.hostname === 'app'
 const webImportDocument = location.protocol === 'file:' && location.pathname.endsWith('/web-import.html')
@@ -177,3 +178,4 @@ if (appDocument) {
   })
 }
 contextBridge.exposeInMainWorld('dshDesktop', desktopBridge)
+if (appDocument && process.platform === 'darwin') installScrollDragRegionRefresh(document)
