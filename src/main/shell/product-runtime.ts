@@ -1,3 +1,4 @@
+import type { MobileProductExtension } from '../mobile/product-extension'
 import type { BrowserWindow } from 'electron'
 
 export interface DesktopProductContext {
@@ -14,6 +15,8 @@ export interface DesktopProductServices {
 }
 
 export interface DesktopProductRuntime {
+  mobileExtension?(): MobileProductExtension
+
   /** Called before every Host launch; return only this product's environment overrides. */
   hostEnvironment(): NodeJS.ProcessEnv
   attachWindow(window: BrowserWindow, services: DesktopProductServices): void
@@ -88,4 +91,9 @@ export function disposeDesktopProduct(): Promise<void> {
     await product?.dispose()
   })
   return stopping
+}
+
+/** Products configure only the main-process extension; transport authentication stays in the bridge. */
+export function readDesktopProductMobileExtension(): MobileProductExtension | undefined {
+  return closing ? undefined : runtime?.mobileExtension?.()
 }

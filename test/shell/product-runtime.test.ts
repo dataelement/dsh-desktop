@@ -215,3 +215,14 @@ describe('desktop product lifecycle', () => {
     expect(instance.dispose).toHaveBeenCalledTimes(1)
   })
 })
+
+it('exposes the optional mobile product extension only during the runtime lifetime', async () => {
+  const api = await import('../../src/main/shell/product-runtime')
+  const extension = { authorizeRemote: () => false }
+  api.registerDesktopProduct(() => ({ ...product(), mobileExtension: () => extension }))
+  expect(api.readDesktopProductMobileExtension()).toBeUndefined()
+  await api.startDesktopProduct(context)
+  expect(api.readDesktopProductMobileExtension()).toBe(extension)
+  await api.disposeDesktopProduct()
+  expect(api.readDesktopProductMobileExtension()).toBeUndefined()
+})
