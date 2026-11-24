@@ -6,6 +6,15 @@ const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
 const MODAL_OPEN_ATTRIBUTE = 'data-dsh-modal-open'
 
+/** Controls inside a real drag row, plus an explicit opt-out. A page-wide rule
+ * lets scrolled-away buttons keep a no-drag box over the 40px caption, because
+ * Chromium does not clip app-regions to a scrollport. */
+const CAPTION_CONTROL_SELECTOR = 'button, a, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"], [role="switch"]'
+export const WINDOWS_CAPTION_NO_DRAG_SELECTOR = [
+  `body.dsh-desktop-windows-titlebar-layout :is([data-window-drag], [data-window-drag-controls]) :is(${CAPTION_CONTROL_SELECTOR})`,
+  'body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag]'
+].join(', ')
+
 interface TitlebarLayoutMountOptions {
   document: Document
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
@@ -96,15 +105,7 @@ function installLayout(document: Document): void {
       -webkit-app-region: no-drag !important;
     }
     html[${MODAL_OPEN_ATTRIBUTE}] #${DRAG_REGION_ID} { display: none !important; }
-    body.dsh-desktop-windows-titlebar-layout button,
-    body.dsh-desktop-windows-titlebar-layout a,
-    body.dsh-desktop-windows-titlebar-layout input,
-    body.dsh-desktop-windows-titlebar-layout select,
-    body.dsh-desktop-windows-titlebar-layout textarea,
-    body.dsh-desktop-windows-titlebar-layout [role="button"],
-    body.dsh-desktop-windows-titlebar-layout [role="tab"],
-    body.dsh-desktop-windows-titlebar-layout [role="menuitem"],
-    body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
+    ${WINDOWS_CAPTION_NO_DRAG_SELECTOR} {
       -webkit-app-region: no-drag !important;
     }
     #${DRAG_REGION_ID} {
