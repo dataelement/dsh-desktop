@@ -48,7 +48,8 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
     states.set(payload.sessionId, state)
     return { ok: true, value: { ...state, templates: examples } }
   } } }
-  const ctx = { get: () => connection, effect(run) { cleanup.push(run()) }, on(name, hook) { hooks.set(name, hook) }, locale: { register(_ns, value) { dictionaries = value; return () => {} } },
+  let published
+  const ctx = { provide: (name, value) => { expect(name).toBe('desktopOffice'); published = value }, get: () => connection, effect(run) { cleanup.push(run()) }, on(name, hook) { hooks.set(name, hook) }, locale: { register(_ns, value) { dictionaries = value; return () => {} } },
     slots: { inject(_seat, run) { run() }, register(meta, component) { store = meta.inject().store; seats.set(meta.name, component) } } }
   plugin.apply(ctx)
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
@@ -66,7 +67,7 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
     const button = [...scope.querySelectorAll('button')].find(element => element.textContent === label || element.getAttribute('aria-label') === label)
     expect(button, label).toBeDefined(); await act(async () => button.click())
   }
-  return { calls, store, click, states, async reset() { await act(async () => hooks.get('connection/reset')()) },
+  return { calls, store, published, click, states, async reset() { await act(async () => hooks.get('connection/reset')()) },
     async releaseInitial() { await act(async () => { held.delete('state'); releaseInitial?.() }) }, fail(endpoint, message) { failures.set(endpoint, message) },
     hold(endpoint) { let release; held.set(endpoint, new Promise(resolve => release = resolve)); return async () => { await act(async () => { held.delete(endpoint); release() }) } },
     async setBlank(value) { blank = value; await act(async () => render()) },
@@ -445,4 +446,17 @@ it('loads an Excel pair atomically and retries both pages after a worksheet fail
   expect(f.calls.filter(call => call.endpoint === 'preview').map(call => call.payload.page)).toEqual([1, 2, 1, 2])
   await f.click('做同款')
   expect(container.querySelector('[data-office-selected]').dataset.officeSelected).toBe('annual-business')
+})
+
+it('shares template mutations with extension clients and the visible picker', async () => {
+  const f = await fixture()
+  expect(f.published).toBe(f.store)
+  const snapshots = []
+  const dispose = f.published.subscribe('session-a', () => snapshots.push(f.published.snapshot('session-a')))
+  await act(async () => { expect(await f.published.mutate('session-a', 'mode', { mode: 'word' })).toBe(true) })
+  await act(async () => { expect(await f.published.mutate('session-a', 'select', { templateId: templates[0].id, revision: templates[0].revision })).toBe(true) })
+  expect(f.published.snapshot('session-a').selectedTemplateId).toBe(templates[0].id)
+  expect(container.querySelector('.dso-selected')).not.toBeNull()
+  expect(snapshots.some(state => state.busy)).toBe(true)
+  dispose()
 })
