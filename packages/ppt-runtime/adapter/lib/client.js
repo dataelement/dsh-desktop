@@ -1330,6 +1330,41 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), "dsh-ppt: dictionaries");
 			const connection = ctx.get("connection");
 			const mode = new OfficePptHeroStore();
+            // Product extensions use this same store, so the picker and RPC state
+            // cannot diverge after an external mode/template selection.
+            let alive = true;
+            ctx.effect(() => () => { alive = false; }, 'PPT presentation controls');
+            ctx.provide?.('desktopPresentation', {
+                snapshot: sessionId => mode.snapshot(sessionId),
+                subscribe: (sessionId, listener) => mode.subscribe(sessionId, listener),
+                async change(sessionId, selection, signal) {
+                    if (!alive || typeof sessionId !== 'string' || !sessionId) throw new Error('An active presentation session is required.');
+                    if (!selection || !['ppt', null].includes(selection.mode) || (selection.templateId !== undefined && typeof selection.templateId !== 'string')) throw new Error('Invalid presentation selection.');
+                    if (selection.clearTemplate !== undefined && typeof selection.clearTemplate !== 'boolean') throw new Error('Invalid presentation selection.');
+                    signal?.throwIfAborted();
+                    mode.bump(sessionId);
+                    const revision = mode.revision(sessionId);
+                    const client = createOfficePptClient(connection.rpc, sessionId);
+                    mode.setLoading(sessionId, true);
+                    try {
+                        if (selection.clearTemplate) await client.call('template/deselect', {}, signal);
+                        signal?.throwIfAborted();
+                        if (!alive || mode.revision(sessionId) !== revision) return false;
+                        await client.call(selection.templateId ? 'template/select' : 'presentation/mode', selection.templateId ? { mode: selection.mode, templateId: selection.templateId } : { mode: selection.mode }, signal);
+                        signal?.throwIfAborted();
+                        const state = await client.call('state', {}, signal);
+                        signal?.throwIfAborted();
+                        if (!alive || mode.revision(sessionId) !== revision) return false;
+                        mode.update(sessionId, current => ({ ...current, activeMode: selection.mode }));
+                        mode.setTemplateState(sessionId, state);
+                        announcePptMode(sessionId);
+                        return true;
+                    } catch (error) {
+                        if (alive && mode.revision(sessionId) === revision) { mode.setLoading(sessionId, false); mode.setError(sessionId, error instanceof Error ? error.message : String(error)); }
+                        throw error;
+                    }
+                }
+            });
             ctx.effect(() => {
                 const listener = event => {
                     const detail = event.detail;
