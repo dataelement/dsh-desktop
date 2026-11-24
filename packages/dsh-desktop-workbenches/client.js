@@ -376,6 +376,7 @@ Start by asking for the first piece of information still missing.`,
       getSnapshot = () => this.snapshot
       subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
       collectionSearch = true
+      collectionLabels = true
       registerMarketCollection = (collection) => {
         if (!collection || typeof collection.id !== 'string' || !collection.id.trim()) throw new TypeError('A Workbench collection id is required.')
         const builtIn = ['market', 'favorites', 'mine'].includes(collection.id)
@@ -384,6 +385,7 @@ Start by asking for the first piece of information still missing.`,
         if ((!builtIn || collection.render !== undefined) && typeof collection.render !== 'function') throw new TypeError('A Workbench collection render function is required.')
         if (collection.order !== undefined && !Number.isFinite(collection.order)) throw new TypeError('A finite collection order is required.')
         if (collection.visible !== undefined && typeof collection.visible !== 'boolean') throw new TypeError('Collection visibility must be a boolean.')
+        if (collection.renderLabel !== undefined && typeof collection.renderLabel !== 'function') throw new TypeError('Collection renderLabel must be a function.')
         if (collection.search !== undefined && typeof collection.search !== 'boolean') throw new TypeError('Collection search must be a boolean.')
         if (collection.controls !== undefined && typeof collection.controls !== 'boolean') throw new TypeError('Collection controls must be a boolean.')
         if (this.marketCollections.has(collection.id)) throw new Error(`Workbench collection ${collection.id} is already registered.`)
@@ -2981,7 +2983,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h(Notice, { service, showCatalogStatus: true }),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': tr('工作台集合') },
-            ...marketTabs.map(collection => h(Button, { key: collection.id, id: `dsh-workbench-${collection.id}-tab`, role: 'tab', tabIndex: tab === collection.id ? 0 : -1, 'aria-selected': tab === collection.id, 'aria-controls': `dsh-workbench-${collection.id}-panel`, onKeyDown: navigateCollections, onClick: () => selectCollection(collection.id) }, collection.label || (collection.id === 'market' ? tr('市场') : collection.id === 'favorites' ? `${tr('我的收藏')} (${favorites.length})` : `${tr('已安装')} (${installedEntries.length})`))))),
+            ...marketTabs.map(collection => h(Button, { key: collection.id, id: `dsh-workbench-${collection.id}-tab`, role: 'tab', tabIndex: tab === collection.id ? 0 : -1, 'aria-selected': tab === collection.id, 'aria-controls': `dsh-workbench-${collection.id}-panel`, onKeyDown: navigateCollections, onClick: () => selectCollection(collection.id) }, collection.renderLabel ? collection.renderLabel({ service, count: collection.id === 'favorites' ? favorites.length : collection.id === 'mine' ? installedEntries.length : undefined }) : collection.label || (collection.id === 'market' ? tr('市场') : collection.id === 'favorites' ? `${tr('我的收藏')} (${favorites.length})` : `${tr('已安装')} (${installedEntries.length})`))))),
           defaultControls && h('div', { className: 'dshWbBrowseTools' },
             h('span', { className: 'dshWbRefreshHint' }, h(Button, { className: 'dshWbBtn dshWbRefresh', 'aria-describedby': 'dsh-workbench-refresh-tooltip', 'aria-label': checkingUpdates ? tr('正在检查更新') : tab === 'mine' ? tr('检查更新') : tr('刷新目录'), 'aria-busy': catalogRefreshing || checkingUpdates, disabled: catalogRefreshing || checkingUpdates, onClick: () => service.run(tab === 'mine' ? service.checkUpdates() : service.refreshCatalog()) }, h(MarketIcon, { name: 'refresh', size: 17 })), h('span', { id: 'dsh-workbench-refresh-tooltip', className: 'dshWbControlTooltip', role: 'tooltip' }, checkingUpdates ? tr('正在检查更新') : tab === 'mine' ? tr('检查更新') : tr('刷新目录'))),
             h('label', { className: 'dshWbSort' }, h('select', { 'aria-label': tr('按分类筛选'), value: category, onChange: (event) => { setCategory(event.target.value); setVisibleCount(PAGE_SIZE) } }, categories.map((value) => h('option', { key: value.id, value: value.id }, value.id === 'all' ? tr('全部类型') : value.name)))),
