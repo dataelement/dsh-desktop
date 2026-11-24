@@ -2,6 +2,10 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { parsePluginOperationRecord, type PluginOperationRecord } from '@deepseek-ai/dsh-plugin-manager/diagnostic'
+import {
+  HIDE_CONSOLE_BOOTSTRAP_ENV,
+  hideConsoleImportArguments
+} from 'dsh-desktop-market-installer/windows-hide-console'
 import { desktopNodeEnvironment } from './node-environment'
 
 interface ReadyEvent {
@@ -91,6 +95,11 @@ export interface DesktopHostProcessOptions {
   profile?: string
   inspectPort?: number
   environment?: NodeJS.ProcessEnv
+  /**
+   * Windows-only `--import` that attaches one hidden console before the Host
+   * entry. Absent, non-Windows, or missing files leave argv unchanged.
+   */
+  hideConsoleBootstrapPath?: string
   primaryRuntime?: string
   packageManager?: { readonly pnpm: string, readonly nodeBin: string }
   onFailure?: (error: Error) => void
@@ -103,6 +112,29 @@ export interface DesktopHostProcessOptions {
    * for this, and an inherited pipe that never closes must not block them.
    */
   onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void
+}
+
+/** Node argv for one Host. `--import` stays ahead of the script so Node consumes it. */
+export function hostLaunchArguments(
+  options: Pick<DesktopHostProcessOptions, 'entry' | 'runtimeDir' | 'projectDir' | 'inspectPort' | 'packageManager' | 'hideConsoleBootstrapPath'> & {
+    primaryRuntime: string
+  },
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform
+): string[] {
+  const bootstrapEnvironment = options.hideConsoleBootstrapPath === undefined
+    ? environment
+    : { ...environment, [HIDE_CONSOLE_BOOTSTRAP_ENV]: options.hideConsoleBootstrapPath }
+  return [
+    '--expose-internals',
+    ...hideConsoleImportArguments(bootstrapEnvironment, platform),
+    ...(options.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(options.inspectPort)}`]),
+    options.entry,
+    options.runtimeDir,
+    options.projectDir,
+    options.primaryRuntime,
+    ...(options.packageManager === undefined ? [] : [options.packageManager.pnpm, options.packageManager.nodeBin])
+  ]
 }
 
 /** One Web backend running under the Electron executable in Node mode. */
@@ -133,21 +165,21 @@ export class DesktopHostProcess {
     // argv[4] is exposed as DSH_PRIMARY_RUNTIME before profile evaluation.
     // An empty value would make the Host look beside its runtime directory. This
     // install keeps the payload under office-runtime, so the shell always passes that path.
+    // `--import` is a Node flag and is not part of that argv.
     const primaryRuntime = this.options.primaryRuntime ?? join(this.options.runtimeDir, '..', 'runtime', 'primary-runtime')
-    const child = spawn(this.options.node, [
-      '--expose-internals',
-      ...(this.options.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.options.inspectPort)}`]),
-      this.options.entry,
-      this.options.runtimeDir,
-      this.options.projectDir,
-      primaryRuntime,
-      ...(this.options.packageManager === undefined ? [] : [this.options.packageManager.pnpm, this.options.packageManager.nodeBin])
-    ], {
+    const environment: NodeJS.ProcessEnv = {
+      ...this.options.environment,
+      DSH_DESKTOP_PROFILE: this.options.profile ?? 'desktop',
+      ...(this.options.hideConsoleBootstrapPath === undefined
+        ? {}
+        : { [HIDE_CONSOLE_BOOTSTRAP_ENV]: this.options.hideConsoleBootstrapPath })
+    }
+    const child = spawn(this.options.node, hostLaunchArguments({
+      ...this.options,
+      primaryRuntime
+    }, environment), {
       cwd: this.options.projectDir,
-      env: desktopNodeEnvironment(this.options.node, undefined, {
-        ...this.options.environment,
-        DSH_DESKTOP_PROFILE: this.options.profile ?? 'desktop'
-      }, this.options.dshHome),
+      env: desktopNodeEnvironment(this.options.node, undefined, environment, this.options.dshHome),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     })
     this.child = child

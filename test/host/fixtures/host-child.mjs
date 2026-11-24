@@ -3,11 +3,16 @@ import { writeFileSync } from 'node:fs'
 
 const report = process.env.FIXTURE_REPORT
 if (typeof report === 'string' && report.length > 0) {
-  writeFileSync(report, JSON.stringify({
-    home: process.env.DSH_HOME ?? '',
-    profile: process.env.DSH_DESKTOP_PROFILE ?? '',
-    execPath: process.execPath
-  }))
+  writeFileSync(report, JSON.stringify(process.env.FIXTURE_MODE === 'launch-args'
+    ? {
+      bootstrap: process.env.DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP ?? '',
+      execArgv: process.execArgv
+    }
+    : {
+      home: process.env.DSH_HOME ?? '',
+      profile: process.env.DSH_DESKTOP_PROFILE ?? '',
+      execPath: process.execPath
+    }))
 }
 
 process.send?.({ type: 'starting', runId: '00000000-0000-4000-8000-000000000001' })

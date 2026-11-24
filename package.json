@@ -422,6 +422,10 @@
         "to": "office-engine-resolution.mjs"
       },
       {
+        "from": "build/windows-hide-console-import.mjs",
+        "to": "windows-hide-console-import.mjs"
+      },
+      {
         "from": "build/dsh-desktop.patch.yml",
         "to": "dsh-desktop.patch.yml"
       },
