@@ -1,5 +1,5 @@
 import { requireDesktopPlatform } from '../../shared/desktop-platform'
-import { attachDesktopProductWindow, disposeDesktopProduct, readDesktopProductEnvironment, startDesktopProduct } from './product-runtime'
+import { attachDesktopProductWindow, readDesktopProductMobileExtension, disposeDesktopProduct, readDesktopProductEnvironment, startDesktopProduct } from './product-runtime'
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -1121,6 +1121,7 @@ async function main(): Promise<void> {
   })
   let mobileWindow: BrowserWindow | undefined
   const mobileBridge = safeMode ? undefined : new LanMobileBridge({
+    product: readDesktopProductMobileExtension(),
     harnessUrl: () => loopbackHarnessOrigin(hostUrl()),
     harnessCookie: () => hostSessionCookie(hostCookie()),
     locale: () => legacyLocale(menuLocale),
