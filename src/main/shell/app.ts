@@ -41,6 +41,7 @@ import { desktopDailyText } from '../../shared/desktop-daily-messages'
 import { desktopMenuMessages } from './menu-messages'
 import { usesDesktopCaption, type DesktopMenuCommand } from '../../shared/desktop-menu'
 import { parseWindowsMenuRequest, windowsMenuTemplate } from '../windows-menu'
+import { applyMacosWindowBackdrop } from '../macos-window-backdrop'
 import { desktopWindowChrome, windowsChromeBackground, windowsTitleBarOverlay } from './window-chrome'
 import { buildWebImportViewModel } from '../web-import-view'
 import { DesktopBackendController } from './backend/backend-controller'
@@ -349,6 +350,13 @@ function createWindow(
     window.on('enter-full-screen', notifyFullscreen)
     window.on('leave-full-screen', notifyFullscreen)
     window.webContents.on('did-finish-load', notifyFullscreen)
+    // Hidden windows cannot show sidebar vibrancy; remember the palette for restore.
+    const applyBackdrop = (): void => { applyMacosWindowBackdrop(window) }
+    applyMacosWindowBackdrop(window, nativeTheme.shouldUseDarkColors)
+    window.on('minimize', applyBackdrop)
+    window.on('hide', applyBackdrop)
+    window.on('restore', applyBackdrop)
+    window.on('show', applyBackdrop)
   }
   window.on('page-title-updated', event => {
     event.preventDefault()
@@ -1354,9 +1362,17 @@ async function main(): Promise<void> {
     })
   })
   ipcMain.removeHandler('desktop-titlebar:set-theme')
-  ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
+  ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown, source: unknown) => {
     const owner = assertMain(event)
     if (typeof isDark !== 'boolean') throw new Error('The DSH Desktop titlebar theme must be a boolean.')
+    const themeSource = source === 'light' || source === 'dark' || source === 'system' ? source : undefined
+    if (source !== undefined && themeSource === undefined) {
+      throw new Error('The DSH Desktop native theme source must be light, dark or system.')
+    }
+    // macOS sidebar material follows the published source. A resolved boolean
+    // would freeze "system". Windows and Linux keep the opaque caption path.
+    if (process.platform === 'darwin' && themeSource !== undefined) nativeTheme.themeSource = themeSource
+    if (process.platform === 'darwin') applyMacosWindowBackdrop(owner, isDark)
     if (usesDesktopCaption(process.platform)) {
       owner.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
       owner.setBackgroundColor(windowsChromeBackground(isDark))
