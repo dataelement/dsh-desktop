@@ -377,15 +377,24 @@ Start by asking for the first piece of information still missing.`,
       subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
       registerMarketCollection = (collection) => {
         if (!collection || typeof collection.id !== 'string' || !collection.id.trim()) throw new TypeError('A Workbench collection id is required.')
-        if (['market', 'favorites', 'mine', 'submit'].includes(collection.id)) throw new Error(`Workbench collection ${collection.id} is reserved.`)
+        const builtIn = ['market', 'favorites', 'mine'].includes(collection.id)
+        if (collection.id === 'submit' || (builtIn && collection.replace !== true)) throw new Error(`Workbench collection ${collection.id} is reserved.`)
         if (typeof collection.label !== 'string' || !collection.label.trim()) throw new TypeError('A Workbench collection label is required.')
-        if (typeof collection.render !== 'function') throw new TypeError('A Workbench collection render function is required.')
+        if ((!builtIn || collection.render !== undefined) && typeof collection.render !== 'function') throw new TypeError('A Workbench collection render function is required.')
+        if (collection.order !== undefined && !Number.isFinite(collection.order)) throw new TypeError('A finite collection order is required.')
+        if (collection.visible !== undefined && typeof collection.visible !== 'boolean') throw new TypeError('Collection visibility must be a boolean.')
         if (this.marketCollections.has(collection.id)) throw new Error(`Workbench collection ${collection.id} is already registered.`)
         this.marketCollections.set(collection.id, collection)
         this.publish()
         return () => { if (this.marketCollections.get(collection.id) === collection) { this.marketCollections.delete(collection.id); this.publish() } }
       }
       getMarketCollections = () => [...this.marketCollections.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      getMarketTabs = () => {
+        const defaults = [{ id: 'market', order: 0 }, { id: 'favorites', order: 10 }, { id: 'mine', order: 20 }]
+        const merged = new Map(defaults.map(item => [item.id, item]))
+        for (const item of this.marketCollections.values()) merged.set(item.id, { ...merged.get(item.id), ...item })
+        return [...merged.values()].filter(item => item.visible !== false).sort((a, b) => (a.order ?? 30) - (b.order ?? 30))
+      }
       get restartNeeded() { return this.extraRestartSources.size > 0 || this.hostRestartNeeded || [...this.applicationOutcomes.values()].some(result => result.application === 'restart-required') }
       get reloadNeeded() { return [...this.applicationOutcomes.values()].some(result => result.application === 'reload-required') }
       pendingApplications(application) {
@@ -2799,9 +2808,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       useHostLocale(service)
       const { state, catalog, categories: marketCategories = [], ready, pending, installing, catalogLoaded, catalogError, catalogRefreshing, checkingUpdates, native, togglingPlugin, removingPlugin, removedWorkbenchIds = [] } = useWorkbench(service)
       const workbenchEnabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
-      const [tab, setTab] = React.useState('market')
+      const [requestedTab, setTab] = React.useState(null)
       const marketCollections = service.getMarketCollections()
-      const collectionIds = ['market', 'favorites', 'mine', ...marketCollections.map(collection => collection.id)]
+      const marketTabs = service.getMarketTabs()
+      const collectionIds = marketTabs.map(collection => collection.id)
+      const tab = requestedTab === 'submit' || collectionIds.includes(requestedTab) ? requestedTab : collectionIds[0] || 'market'
       const [search, setSearch] = React.useState('')
       const [category, setCategory] = React.useState('all')
       const [sortBy, setSortBy] = React.useState('stars')
@@ -2889,10 +2900,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h(Notice, { service, showCatalogStatus: true }),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': tr('工作台集合') },
-            h(Button, { id: 'dsh-workbench-market-tab', role: 'tab', tabIndex: tab === 'market' ? 0 : -1, 'aria-selected': tab === 'market', 'aria-controls': 'dsh-workbench-market-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('market') }, tr('市场')),
-            h(Button, { id: 'dsh-workbench-favorites-tab', role: 'tab', tabIndex: tab === 'favorites' ? 0 : -1, 'aria-selected': tab === 'favorites', 'aria-controls': 'dsh-workbench-favorites-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('favorites') }, `${tr('我的收藏')} (${favorites.length})`),
-            h(Button, { id: 'dsh-workbench-mine-tab', role: 'tab', tabIndex: tab === 'mine' ? 0 : -1, 'aria-selected': tab === 'mine', 'aria-controls': 'dsh-workbench-mine-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('mine') }, `${tr('已安装')} (${installedEntries.length})`),
-            ...marketCollections.map(collection => h(Button, { key: collection.id, id: `dsh-workbench-${collection.id}-tab`, role: 'tab', tabIndex: tab === collection.id ? 0 : -1, 'aria-selected': tab === collection.id, 'aria-controls': `dsh-workbench-${collection.id}-panel`, onKeyDown: navigateCollections, onClick: () => selectCollection(collection.id) }, collection.label)))),
+            ...marketTabs.map(collection => h(Button, { key: collection.id, id: `dsh-workbench-${collection.id}-tab`, role: 'tab', tabIndex: tab === collection.id ? 0 : -1, 'aria-selected': tab === collection.id, 'aria-controls': `dsh-workbench-${collection.id}-panel`, onKeyDown: navigateCollections, onClick: () => selectCollection(collection.id) }, collection.label || (collection.id === 'market' ? tr('市场') : collection.id === 'favorites' ? `${tr('我的收藏')} (${favorites.length})` : `${tr('已安装')} (${installedEntries.length})`))))),
           h('div', { className: 'dshWbBrowseTools' },
             h('span', { className: 'dshWbRefreshHint' }, h(Button, { className: 'dshWbBtn dshWbRefresh', 'aria-describedby': 'dsh-workbench-refresh-tooltip', 'aria-label': checkingUpdates ? tr('正在检查更新') : tab === 'mine' ? tr('检查更新') : tr('刷新目录'), 'aria-busy': catalogRefreshing || checkingUpdates, disabled: catalogRefreshing || checkingUpdates, onClick: () => service.run(tab === 'mine' ? service.checkUpdates() : service.refreshCatalog()) }, h(MarketIcon, { name: 'refresh', size: 17 })), h('span', { id: 'dsh-workbench-refresh-tooltip', className: 'dshWbControlTooltip', role: 'tooltip' }, checkingUpdates ? tr('正在检查更新') : tab === 'mine' ? tr('检查更新') : tr('刷新目录'))),
             h('label', { className: 'dshWbSort' }, h('select', { 'aria-label': tr('按分类筛选'), value: category, onChange: (event) => { setCategory(event.target.value); setVisibleCount(PAGE_SIZE) } }, categories.map((value) => h('option', { key: value.id, value: value.id }, value.id === 'all' ? tr('全部类型') : value.name)))),
@@ -2933,7 +2941,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
               h(SubmissionStatus, { service }))),
           h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, tr('PR 是 GitHub 上的提交审核请求。提交后可在上方粘贴链接查看进度，以 GitHub 上的状态为准，本机不保存提交状态。审核通过、PR 合并并且市场目录更新后，工作台才会上架。')),
           copyStatus && h(Toast, { key: copyStatus.id, text: copyStatus.text, tone: copyStatus.tone, holdMs: 2000, onDone: () => setCopyStatus((current) => current?.id === copyStatus.id ? null : current) })),
-        tab !== 'submit' && marketCollections.some(collection => collection.id === tab)
+        tab !== 'submit' && marketCollections.some(collection => collection.id === tab && typeof collection.render === 'function')
           ? h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 }, marketCollections.find(collection => collection.id === tab).render({ service }))
           : tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, displayedEntries.map((entry) => {
