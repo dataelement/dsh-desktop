@@ -80,6 +80,14 @@ it('places PPT, Word and Excel as direct siblings in the shared spacing containe
   const buttons = [...cluster.querySelectorAll('button')]
   expect(buttons.map(button => button.textContent)).toEqual(['PPT', 'Word', 'Excel'])
   expect(buttons.every(button => button.parentElement === cluster)).toBe(true)
+  for (const button of buttons) {
+    const style = getComputedStyle(button)
+    expect(style.height).toBe('28px')
+    expect(style.borderTopWidth).toBe('0px')
+    expect(style.borderRadius).toBe('8px')
+    expect(style.padding).toBe('0px 8px')
+    if (button.getAttribute('aria-pressed') !== 'true') expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  }
 })
 
 it('replaces Excel with PPT once the Host confirms the new mode', async () => {
