@@ -39,7 +39,7 @@ public static class DshConsoleList {
     uint count);
 }
 "@
-  $ids = New-Object 'uint[]' 64
+  $ids = [uint32[]]::new(64)
   $count = [DshConsoleList]::GetConsoleProcessList($ids, [uint32]64)
   if ($count -eq 0) {
     $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
@@ -47,7 +47,7 @@ public static class DshConsoleList {
     exit 2
   }
   if ($count -gt 64) {
-    $ids = New-Object 'uint[]' $count
+    $ids = [uint32[]]::new([int]$count)
     $count = [DshConsoleList]::GetConsoleProcessList($ids, [uint32]$count)
   }
   $lines = for ($index = 0; $index -lt $count; $index++) { $ids[$index] }
