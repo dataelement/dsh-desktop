@@ -54,7 +54,6 @@ describe('DSH Desktop client slot occupants', () => {
       props: { ...props, children }
     })
     const BrandWordmark = vi.fn()
-    const FishLogo = vi.fn()
     const plugin = definition!.factory((id) => {
       if (id === 'react') {
         return {
@@ -64,7 +63,7 @@ describe('DSH Desktop client slot occupants', () => {
         }
       }
       if (id === '@deepseek-ai/dsh-client-ui-primitives') {
-        return { BrandWordmark, FishLogo }
+        return { BrandWordmark }
       }
       throw new Error(`Unexpected client dependency: ${id}`)
     })
@@ -125,17 +124,24 @@ describe('DSH Desktop client slot occupants', () => {
     const sidebarMark = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.mark'
     )!.component({ size: 24 }) as { type: unknown; props: Record<string, unknown> }
-    expect(sidebarMark.type).toBe('svg')
-    expect(sidebarMark.props.height).toBe(17)
-    const [markPath] = sidebarMark.props.children as Array<{ type: unknown; props: Record<string, unknown> }>
+    const renderMark = sidebarMark.type as (props: Record<string, unknown>) => { type: unknown; props: Record<string, unknown> }
+    const sidebarSvg = renderMark(sidebarMark.props)
+    expect(sidebarSvg.type).toBe('svg')
+    expect(sidebarSvg.props.height).toBe(17)
+    const [markPath] = sidebarSvg.props.children as Array<{ type: unknown; props: Record<string, unknown> }>
     if (!markPath) throw new Error('Expected the sidebar brand SVG path')
     expect(markPath.type).toBe('path')
     expect(markPath.props.fill).toBe('currentColor')
 
     const heroMark = registrations.find(
       ({ config }) => config.name === 'conversation.hero.brand.mark'
-    )!.component({ size: 48 }) as { type: unknown; props: Record<string, unknown> }
-    expect(heroMark.type).toBe(FishLogo)
-    expect(heroMark.props.size).toBe(48)
+    )!.component({ size: 34, className: 'hero-mark' }) as { type: unknown; props: Record<string, unknown> }
+    expect(heroMark.type).toBe(sidebarMark.type)
+    for (const size of [24, 34, 48]) {
+      const heroSvg = renderMark({ ...heroMark.props, size })
+      expect(heroSvg.type).toBe('svg')
+      expect(heroSvg.props).toMatchObject({ width: size, height: size, className: 'hero-mark', viewBox: sidebarSvg.props.viewBox })
+      expect(heroSvg.props.children).toEqual(sidebarSvg.props.children)
+    }
   })
 })
