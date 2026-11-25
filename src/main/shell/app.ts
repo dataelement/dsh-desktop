@@ -1130,7 +1130,9 @@ async function main(): Promise<void> {
   })
   let mobileWindow: BrowserWindow | undefined
   const mobileBridge = safeMode ? undefined : new LanMobileBridge({
-    product: readDesktopProductMobileExtension(),
+    // Constructed before startDesktopProduct. Resolve the extension when the
+    // bridge starts, after the product runtime exists.
+    product: () => readDesktopProductMobileExtension(),
     harnessUrl: () => loopbackHarnessOrigin(hostUrl()),
     harnessCookie: () => hostSessionCookie(hostCookie()),
     locale: () => legacyLocale(menuLocale),
