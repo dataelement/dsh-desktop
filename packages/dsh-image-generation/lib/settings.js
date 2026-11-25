@@ -9,7 +9,8 @@ function described(state, writable) {
     revision: state.revision, provider: state.provider, writable, catalogs: MODEL_CATALOG,
     profiles: Object.fromEntries(Object.entries(DEFAULTS).map(([provider, defaults]) => {
       const stored = state.profiles[provider]
-      return [provider, { ...defaults, ...(stored ? profile(provider, stored) : {}), configured: Boolean(stored?.key), validation: stored?.validation ?? null }]
+      const spec = stored ? profile(provider, stored) : defaults
+      return [provider, { ...spec, configured: Boolean(stored?.key), validation: stored?.model === spec.model ? stored.validation ?? null : null }]
     })),
   }
 }

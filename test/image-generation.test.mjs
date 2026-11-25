@@ -5,6 +5,7 @@ import path from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import * as nativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
@@ -36,7 +37,7 @@ async function temp() { const p = await realpath(await mkdtemp(path.join(tmpdir(
 async function server() {
   const calls = []
   const png = await sharp({ create: { width: 32, height: 24, channels: 4, background: '#11223380' } }).png().toBuffer()
-  let status = 200; let malformed = false; let delay = 0; let redirect
+  let status = 200; let malformed = false; let delay = 0; let redirect; let modelId = DEFAULTS.openai.model
   const http = createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk
     calls.push({ url: req.url, method: req.method, auth: req.headers.authorization, body: body && JSON.parse(body) })
@@ -44,6 +45,17 @@ async function server() {
     if (delay) await new Promise(resolve => setTimeout(resolve, delay))
     const probe = status === 200 && !malformed && req.url.endsWith('/images/generations') && body && !Object.hasOwn(JSON.parse(body), 'prompt')
     const input = body && JSON.parse(body)
+    if (status === 200 && input?.prompt && ['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'].includes(input.model)) {
+      const supported = new Set(['model', 'prompt', 'size', 'n', 'quality', 'output_format'])
+      const invalid = Object.keys(input).some(key => !supported.has(key))
+        || input.n !== 1 || input.quality !== 'auto' || input.output_format !== 'png'
+        || !['1024x1024', '1536x1024', '1024x1536'].includes(input.size)
+      if (invalid) {
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { code: 'invalid_image_parameters' } }))
+        return
+      }
+    }
     // Provider-documented canvas ranges, independent of the production catalog.
     // Treat an opaque endpoint as 5.0 Pro too: its ID conveys no capabilities.
     const canvas = {
@@ -68,11 +80,11 @@ async function server() {
     res.writeHead(probe ? 400 : status, { 'content-type': 'application/json' })
     res.end(JSON.stringify(probe ? { error: { code: 'MissingParameter', message: 'The request is missing a required parameter: prompt.' } } : status !== 200 ? { error: { message: 'secret-echo-key' } } : malformed ? {} : req.url.endsWith('/images/generations')
       ? { data: [{ b64_json: png.toString('base64') }] }
-      : req.url.endsWith('/models') ? { data: [{ id: 'gpt-image-2.5-flare' }, { id: DEFAULTS.openai.model }, { id: 'gpt-image-2.5-flare' }, { id: 'gpt-5' }, { id: 'dall-e-3' }, { id: 'gpt-image-1', shutdown_date: '2020-01-01' }] } : { id: DEFAULTS.openai.model }))
+      : req.url.endsWith('/models') ? { data: [{ id: 'gpt-image-2.5-flare' }, { id: DEFAULTS.openai.model }, { id: 'gpt-image-2.6-flare' }, { id: 'gpt-image-2.5-flare' }, { id: 'gpt-5' }, { id: 'dall-e-3' }, { id: 'gpt-image-1' }, { id: 'gpt-image-1.5' }, { id: 'gpt-image-1-mini' }, { id: 'gpt-image-2', shutdown_date: '2020-01-01' }] } : { id: modelId }))
   })
   await new Promise((resolve, reject) => { http.once('error', reject); http.listen(0, '127.0.0.1', resolve) })
   cleanups.push(() => { http.closeAllConnections(); return new Promise(resolve => http.close(resolve)) })
-  return { calls, png, baseUrl: `http://127.0.0.1:${http.address().port}/v1`, setStatus: value => { status = value }, malformed: () => { malformed = true }, delay: value => { delay = value }, redirect: value => { redirect = value } }
+  return { calls, png, baseUrl: `http://127.0.0.1:${http.address().port}/v1`, setStatus: value => { status = value }, modelId: value => { modelId = value }, malformed: () => { malformed = true }, delay: value => { delay = value }, redirect: value => { redirect = value } }
 }
 async function fixture() {
   const home = await temp(); const workspace = await temp()
@@ -96,6 +108,74 @@ describe('image settings save and provider requests', () => {
     expect(body).toMatchObject({ model: 'gpt-image-2.6-sunburst', size: '1024x1024', quality: 'auto', output_format: 'png' })
     expect(body).not.toHaveProperty('response_format')
     expect(MODEL_CATALOG.openai.models).toContain('gpt-image-2.6-flare')
+  })
+  it.each(['gpt-image-1.5', 'gpt-image-1.5-2025-12-16'])('upgrades saved public OpenAI %s profiles without rewriting credentials', async model => {
+    const f = await fixture()
+    const record = { kind: 'grant', payload: { revision: 7, provider: 'openai', profiles: {
+      openai: { baseUrl: 'https://api.openai.com/v1/images/generations/', model, key: 'test-image-key', validation: 'model' },
+    } } }
+    await f.services.credentials.modifyRecord(credentialKey('dsh-image-generation', 'configuration'), () => record)
+    const original = await readFile(path.join(f.home, '.credentials.yaml'), 'utf8')
+    vi.spyOn(f.services.credentials, 'describeRecord').mockResolvedValue({ writable: false })
+    const modify = vi.spyOn(f.services.credentials, 'modifyRecord')
+    const result = await f.settings.describe()
+    expect(result).toMatchObject({ revision: 7, writable: false, profiles: {
+      openai: { baseUrl: DEFAULTS.openai.baseUrl, model: 'gpt-image-2.6-sunburst', configured: true, validation: null },
+    } })
+    expect(await f.settings.active()).toEqual({ provider: 'openai', ...DEFAULTS.openai, key: 'test-image-key' })
+    expect(await f.settings.isConfigured()).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('test-image-key')
+    expect(await readFile(path.join(f.home, '.credentials.yaml'), 'utf8')).toBe(original)
+    expect(modify).not.toHaveBeenCalled()
+  })
+  it('revalidates and persists the migrated model using the saved key, retaining the old record on failure', async () => {
+    const f = await fixture(); const s = await server()
+    const legacy = { baseUrl: DEFAULTS.openai.baseUrl, model: 'gpt-image-1.5', key: 'test-image-key', validation: 'model' }
+    await f.services.credentials.modifyRecord(credentialKey('dsh-image-generation', 'configuration'), () => ({
+      kind: 'grant', payload: { revision: 7, provider: 'openai', profiles: { openai: legacy } },
+    }))
+    const original = await readFile(path.join(f.home, '.credentials.yaml'), 'utf8')
+    const originalFetch = globalThis.fetch
+    vi.spyOn(globalThis, 'fetch').mockImplementation((url, options) => {
+      expect(String(url)).toBe('https://api.openai.com/v1/models/gpt-image-2.6-sunburst')
+      return originalFetch(String(url).replace(DEFAULTS.openai.baseUrl, s.baseUrl), options)
+    })
+    const input = { provider: 'openai', baseUrl: legacy.baseUrl, model: legacy.model, apiKey: '', revision: 7 }
+    s.setStatus(401)
+    await expect(f.settings.save(input)).rejects.toMatchObject({ code: 'AUTH' })
+    expect(await readFile(path.join(f.home, '.credentials.yaml'), 'utf8')).toBe(original)
+    s.setStatus(200)
+    expect(await f.settings.save(input)).toMatchObject({ revision: 8, profiles: {
+      openai: { model: 'gpt-image-2.6-sunburst', validation: 'model', configured: true },
+    } })
+    expect(s.calls).toHaveLength(2)
+    expect(s.calls.every(call => call.auth === 'Bearer test-image-key')).toBe(true)
+    const stored = await f.services.credentials.readRecord(credentialKey('dsh-image-generation', 'configuration'))
+    expect(stored.payload.profiles.openai).toEqual({ ...DEFAULTS.openai, key: legacy.key, validation: 'model' })
+  })
+  it.each(['https://gateway.example/v1', 'https://api.openai.com/proxy/v1'])('preserves explicitly configured gateway models at %s', async baseUrl => {
+    const f = await fixture()
+    vi.spyOn(f.services.credentials, 'readRecord').mockResolvedValue({ kind: 'grant', payload: {
+      revision: 1, provider: 'openai', profiles: { openai: { baseUrl, model: 'gpt-image-1.5', key: 'test-image-key', validation: 'model' } },
+    } })
+    expect((await f.settings.describe()).profiles.openai).toMatchObject({ baseUrl, model: 'gpt-image-1.5', validation: 'model' })
+    expect(await f.settings.active()).toMatchObject({ baseUrl, model: 'gpt-image-1.5', key: 'test-image-key' })
+  })
+  it.each(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'])('validates and generates every supported aspect ratio with %s', async model => {
+    const f = await fixture(); const s = await server(); s.modelId(model)
+    const saved = await f.settings.save({ ...saveInput('openai', s.baseUrl), model })
+    expect(saved.profiles.openai).toMatchObject({ model, validation: 'model', configured: true })
+    const { provider, key, ...spec } = await f.settings.active()
+    for (const aspect_ratio of ['1:1', '16:9', '9:16', '4:3', '3:4']) {
+      expect(await generate(provider, spec, key, { prompt: 'A flower', aspect_ratio })).toEqual(s.png)
+    }
+    expect(s.calls).toHaveLength(6)
+    expect(s.calls[0]).toMatchObject({ method: 'GET', url: `/v1/models/${model}` })
+    expect(s.calls.slice(1).map(call => call.body.size)).toEqual(['1024x1024', '1536x1024', '1024x1536', '1536x1024', '1024x1536'])
+    for (const call of s.calls.slice(1)) {
+      expect(call).toMatchObject({ method: 'POST', url: '/v1/images/generations', auth: 'Bearer test-image-key', body: { model, n: 1, quality: 'auto', output_format: 'png' } })
+      expect(call.body).not.toHaveProperty('response_format')
+    }
   })
   it.each(['openai', 'bytedance'])('saves %s with exactly one non-generating request and redacts credentials', async provider => {
     const f = await fixture(); const s = await server()
@@ -213,7 +293,7 @@ describe('image settings save and provider requests', () => {
     const f = await fixture(); const s = await server()
     const before = await f.settings.describe()
     const result = await f.settings.models(saveInput('openai', s.baseUrl))
-    expect(result).toEqual({ source: 'provider', canFetch: true, models: [DEFAULTS.openai.model, 'gpt-image-2.5-flare'] })
+    expect(result).toEqual({ source: 'provider', canFetch: true, models: [DEFAULTS.openai.model, 'gpt-image-2.6-flare', 'gpt-image-2.5-flare'] })
     expect(s.calls).toHaveLength(1); expect(s.calls[0]).toMatchObject({ method: 'GET', url: '/v1/models' })
     expect(await f.settings.describe()).toEqual(before)
     expect(JSON.stringify(result)).not.toContain('test-image-key')

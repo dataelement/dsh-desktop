@@ -27,6 +27,8 @@ API 地址同时接受基础地址和控制台提供的完整 `/images/generatio
 | 字节 / 火山方舟 | `doubao-seedream-4-5-251128` | `https://ark.cn-beijing.volces.com/api/v3` |
 | OpenAI | `gpt-image-2.6-sunburst` | `https://api.openai.com/v1` |
 
+OpenAI 将于 2026-12-01 停用 `gpt-image-1.5`（含 `gpt-image-1.5-2025-12-16`）。使用官方 `https://api.openai.com/v1` 地址的旧配置在读取和生图时自动改用 `gpt-image-2.6-sunburst`，保留原 Key；读取不会改写凭据记录。旧模型的校验状态清空，重新保存后校验并持久化新模型。自定义网关的地址和模型 ID 保持原值，需按网关提供方的迁移说明更新。预设和模型发现不再推荐 1.x 模型；已保存的其他模型仍保留，可手动选择 `gpt-image-2.6-flare` 等替代型号。停用日期及替代型号见 [OpenAI 官方公告](https://developers.openai.com/api/docs/deprecations)。
+
 保存自动发起一次非生图校验请求，界面显示校验中、保存成功或具体错误。失败保留输入及之前的有效配置。Key 更换后立即生效；两个服务商分别保存配置和 Key。更换 API 地址的域名时需要重新填写 Key。
 
 - OpenAI：`GET /models/{model}`，检查凭据和模型元数据访问。Key 需要允许读取该模型信息。

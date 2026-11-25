@@ -92,7 +92,7 @@ try {
   assert.equal((await api('models', { revision: state.revision }, { Origin: 'https://evil.example' })).status, 403)
   const models = await api('models', { revision: state.revision, provider: 'openai', baseUrl: mockBase, model: DEFAULTS.openai.model, apiKey: '' })
   assert.equal(models.status, 200)
-  assert.deepEqual((await models.json()).models, ['gpt-image-2.5-flare', DEFAULTS.openai.model])
+  assert.deepEqual((await models.json()).models, [DEFAULTS.openai.model, 'gpt-image-2.5-flare'])
   assert.equal(calls.length, 4)
   assert.deepEqual(await (await api('settings')).json(), state)
   const page = await (await fetch(base, { headers: { Cookie: cookie } })).text()
