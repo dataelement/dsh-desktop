@@ -478,7 +478,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 | 手机桥与隧道 | 产品层，读取壳层的 Host 地址和认证 | `src/main/mobile/` |
 | Office / PPT | 先按官方 Host 的 Office 组合移植，缺的 PPT 能力由产品层补 | 现有 Office 运行时，阶段 3 逐项对照 |
 | 侧边栏浏览器、快捷键、文件拖放、登录 shell 环境 | 壳层（按官方移植） | `sidebar-browser.ts`、`windows-menu.ts` 等，逐项删除 |
-| Windows PowerShell profile 环境、子进程隐藏 | PowerShell profile 捕获不移植。官方 Job 只隐藏直接子进程；Host 挂一个隐藏控制台，Job runner 继承它，避免 Codex 这类孙子进程再开窗口 | `build/windows-hide-console-import.mjs`，以及 `dsh-subprocess-local` 里 runner 的 `windowsHide` 补丁。PowerShell 捕获仍不移植 |
+| Windows PowerShell profile 环境、子进程隐藏 | PowerShell profile 捕获不移植。官方 Job 只隐藏直接子进程；Host 新建一个隐藏控制台。Job runner 和同一 Electron 可执行文件的目标层由补丁标记后优先挂到父进程的控制台，父进程控制台可见或不可用时回退为新建并隐藏，避免 Codex 这类孙子进程再开窗口。市场安装和插件命令仍各自新建 | `build/windows-hide-console-import.mjs`，以及 `dsh-subprocess-local` 里 runner 的 `windowsHide` 和 `--import` 补丁。PowerShell 捕获仍不移植 |
 | 工作台、网页版导入、企业入口 | 产品层 | 对应模块原样迁移 |
 | 欢迎窗口、账号登录、`dsh` 命令注册、产品分析 | 不移植。欢迎、账号和命令文件在基线 `skipped`；产品分析是已发布包，不接入 | 阶段 0 已决定 |
 | 强制更新、Nightly、飞书测试鉴权 | 不移植，登记在基线的 `skipped` 里 | 无 |
@@ -562,7 +562,7 @@ Electron userData/                       正式版 dsh-desktop，开发版 dsh-d
 - 投影只替换自己写下的 generation 链接。pnpm 的真实目录遇到投影会得到 `EDSH_REAL_PLUGIN_DIRECTORY`，不会被换成链接。投影写进 manifest 的 generation 版本和 override，仍由旧壳的 pnpm runner 在安装前临时拿掉。新壳还没有插件安装，所以这条没有在新壳里重做。
 - Safe Mode：`DSH_DESKTOP_SAFE_MODE=1` 时准备 `profiles/desktop-safe-mode`，只含 `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`，不跑投影。临时目录启动后没有 `profiles/node_modules`。`mountRootInclude` 补丁仍被旧壳和 `test/safe-mode-host-resolved.test.ts` 使用，这次不删。
 - macOS：新壳继续用 `ELECTRON_RUN_AS_NODE`。旧壳的 UtilityProcess 把第三方工具的隐私权限请求从主应用拆开。这次没有做 TCC 实测，所以不把新壳改成 UtilityProcess。
-- Windows 的 PowerShell profile 捕获不移植。官方 Job 的 `SW_HIDE` 只覆盖直接子进程；无控制台进程再派生的控制台程序（Codex 的 `codex.exe`）会新开可见窗口。Host 在 Windows 上用 `--import` 加载 `windows-hide-console-import.mjs`，挂一个隐藏控制台；Job runner 在 `DSH_DESKTOP_HIDDEN_CONSOLE=1` 时继承它，不再使用 `CREATE_NO_WINDOW`。登录 shell 已接到新壳：macOS 和 Linux 在第一次启动 Host 前读取一次，Windows 使用继承的注册表环境。Windows 没验。
+- Windows 的 PowerShell profile 捕获不移植。官方 Job 的 `SW_HIDE` 只覆盖直接子进程；无控制台进程再派生的控制台程序（Codex 的 `codex.exe`）会新开可见窗口。Host 在 Windows 上用 `--import` 加载 `windows-hide-console-import.mjs`，新建一个隐藏控制台。Job runner 在 `DSH_DESKTOP_HIDDEN_CONSOLE=1` 时把同一引导参数转给 runner 和同一 Electron 可执行文件的目标层，并带上 `attach=parent`，让这两层挂到父进程的控制台，不再使用 `CREATE_NO_WINDOW`；父进程控制台可见或不可用时回退为新建并隐藏。市场安装和插件命令仍各自新建。登录 shell 已接到新壳：macOS 和 Linux 在第一次启动 Host 前读取一次，Windows 使用继承的注册表环境。Windows 没验。
 - 旧的 Host 启动入口已经删除。正式 Host 是 `src/host/index.ts`，打包后是 `out/main/host.js`。
 
 2026-11-06 用新壳 Host 在临时目录里跑了五种解析。安装包里的 `@deepseek-ai/dsh-client-modules` 进入了启动注入。放在 `profiles/node_modules` 的市场插件，以及指向目录外的符号链接，都加载了自己的 `sample-ordinary`。缺少 `@deepseek-ai/missing-host-peer` 和缺少 `sample-ordinary-missing` 都留下 `ERR_MODULE_NOT_FOUND`，并带上插件名；Profile 里根本没有的插件只报自己的包名。普通 profile 没有走出旧壳的 `host fallback from`。Safe Mode 不创建 `profiles/node_modules` 仍由 `test/host/run-profile.test.ts` 覆盖。Windows junction 没跑。

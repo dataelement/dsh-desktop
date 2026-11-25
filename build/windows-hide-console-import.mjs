@@ -13,44 +13,66 @@ export const HIDDEN_CONSOLE_ENV = 'DSH_DESKTOP_HIDDEN_CONSOLE'
 /** SW_HIDE: hide the window and activate another one. */
 const SW_HIDE = 0
 
+/** ATTACH_PARENT_PROCESS: DWORD -1, passed through the uint32 binding as 0xFFFFFFFF. */
+const ATTACH_PARENT_PROCESS = 0xFFFFFFFF
+
 /**
- * Attach a hidden console to this console-less process.
+ * True when this module was loaded with `?attach=parent`.
+ * Job hops set that query; every other entry allocates its own console.
+ * @param {string} [importUrl]
+ * @returns {boolean}
+ */
+export function attachParentRequested(importUrl = import.meta.url) {
+  try {
+    return new URL(importUrl).searchParams.get('attach') === 'parent'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Give this console-less process a console that children can inherit.
  *
- * A GUI Electron process has no console. Windows then allocates a visible one
- * for any console-subsystem descendant that is not created with
- * CREATE_NO_WINDOW — Codex's `codex.exe`, spawned by `bin/codex.js` without
- * `windowsHide`, is that descendant. AllocConsole plus SW_HIDE gives the
- * process a console children can inherit. Failure must not block Host startup.
+ * Without `attachParent`, allocate a new console and hide it. Host, market
+ * install, and plugin commands spawned by the GUI main process use this path,
+ * so they never attach to a user's terminal.
+ *
+ * With `attachParent`, join the parent console when it has no visible window.
+ * A visible parent, or a failed attach, falls back to allocating a hidden
+ * console. Failure must not block startup.
+ *
+ * `koffi.errno()` is the C runtime errno, not Win32 GetLastError, and a later
+ * koffi call can overwrite the thread error. Diagnostics name the failure
+ * class instead of reporting an error code.
  *
  * @param {{
  *   load?: (library: string) => { func: Function },
  *   env?: NodeJS.ProcessEnv,
  *   platform?: NodeJS.Platform,
- *   resourcesPath?: string
+ *   resourcesPath?: string,
+ *   attachParent?: boolean
  * }} [options]
- * @returns {boolean} true when a console was attached and hidden.
+ * @returns {boolean} true when a console is attached.
  */
 export function attachHiddenConsole(options = {}) {
   const platform = options.platform ?? process.platform
   if (platform !== 'win32') return false
   const env = options.env ?? process.env
+  const attachParent = options.attachParent === true
   try {
     const loadLibrary = options.load ?? resolveKoffiLoad(options.resourcesPath ?? process.resourcesPath)
     const kernel32 = loadLibrary('kernel32.dll')
     const user32 = loadLibrary('user32.dll')
-    const allocConsole = kernel32.func('AllocConsole', 'bool', [])
-    const getConsoleWindow = kernel32.func('GetConsoleWindow', 'void *', [])
-    const showWindow = user32.func('ShowWindow', 'bool', ['void *', 'int'])
-    if (!allocConsole()) {
-      process.stderr.write(
-        '[windows-hide-console] hidden console was not created (AllocConsole returned false); child consoles may remain visible\n'
-      )
-      return false
+    if (attachParent) {
+      const parent = adoptParentConsole(kernel32, user32)
+      if (parent === 'kept') {
+        env[HIDDEN_CONSOLE_ENV] = '1'
+        return true
+      }
+      // Still attached to a visible console: AllocConsole would fail and hide the cause.
+      if (parent === 'stuck') return false
     }
-    const window = getConsoleWindow()
-    if (window) showWindow(window, SW_HIDE)
-    env[HIDDEN_CONSOLE_ENV] = '1'
-    return true
+    return allocateHiddenConsole(kernel32, user32, env)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     process.stderr.write(
@@ -58,6 +80,62 @@ export function attachHiddenConsole(options = {}) {
     )
     return false
   }
+}
+
+/**
+ * @param {{ func: Function }} kernel32
+ * @param {{ func: Function }} user32
+ * @returns {'kept' | 'none' | 'stuck'} `kept` when the parent console is used,
+ *   `none` when no console is attached, `stuck` when a visible one could not be released.
+ */
+function adoptParentConsole(kernel32, user32) {
+  const attachConsole = kernel32.func('AttachConsole', 'bool', ['uint32'])
+  const getConsoleWindow = kernel32.func('GetConsoleWindow', 'void *', [])
+  const isWindowVisible = user32.func('IsWindowVisible', 'bool', ['void *'])
+  const freeConsole = kernel32.func('FreeConsole', 'bool', [])
+  if (!attachConsole(ATTACH_PARENT_PROCESS)) {
+    process.stderr.write(
+      '[windows-hide-console] parent console was not attached; allocating a new hidden console\n'
+    )
+    return 'none'
+  }
+  const window = getConsoleWindow()
+  // NULL is a console created with CREATE_NO_WINDOW: there is no window to show.
+  if (!window) return 'kept'
+  if (!isWindowVisible(window)) return 'kept'
+  // Do not hide a console the user can see, such as their own terminal.
+  if (!freeConsole()) {
+    process.stderr.write(
+      '[windows-hide-console] parent console is visible and could not be released; child consoles may remain visible\n'
+    )
+    return 'stuck'
+  }
+  process.stderr.write(
+    '[windows-hide-console] parent console is visible; allocating a new hidden console\n'
+  )
+  return 'none'
+}
+
+/**
+ * @param {{ func: Function }} kernel32
+ * @param {{ func: Function }} user32
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {boolean}
+ */
+function allocateHiddenConsole(kernel32, user32, env) {
+  const allocConsole = kernel32.func('AllocConsole', 'bool', [])
+  const getConsoleWindow = kernel32.func('GetConsoleWindow', 'void *', [])
+  const showWindow = user32.func('ShowWindow', 'bool', ['void *', 'int'])
+  if (!allocConsole()) {
+    process.stderr.write(
+      '[windows-hide-console] hidden console was not created (AllocConsole returned false); child consoles may remain visible\n'
+    )
+    return false
+  }
+  const window = getConsoleWindow()
+  if (window) showWindow(window, SW_HIDE)
+  env[HIDDEN_CONSOLE_ENV] = '1'
+  return true
 }
 
 /**
@@ -104,6 +182,6 @@ function loadedAsConsoleBootstrap() {
   return false
 }
 
-// `--import` evaluates this file before the Host entry. Unit tests import the
+// `--import` evaluates this file before the entry. Unit tests import the
 // function directly and must not attach a console to the test process.
-if (loadedAsConsoleBootstrap()) attachHiddenConsole()
+if (loadedAsConsoleBootstrap()) attachHiddenConsole({ attachParent: attachParentRequested() })

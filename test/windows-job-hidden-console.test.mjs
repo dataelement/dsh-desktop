@@ -34,10 +34,11 @@ describe('Windows subprocess console inheritance', () => {
     vi.restoreAllMocks()
   })
 
-  it('preloads the hidden console on both Electron hops without modifying target arguments', () => {
+  it('marks forwarded console imports so both Electron hops attach to the parent console', () => {
     process.env[marker] = '1'
     vi.spyOn(process, 'versions', 'get').mockReturnValue({ ...process.versions, electron: '44.7.0' })
-    const preload = 'file:///C:/Desktop/build/windows-hide-console-import.mjs'
+    const preload = 'file:///C:/Program%20Files/DSH/%E4%B8%AD%E6%96%87/windows-hide-console-import.mjs'
+    const marked = `${preload}?attach=parent`
     vi.spyOn(process, 'execArgv', 'get').mockReturnValue(['--import', preload])
     let args
     const spec = { ...jobSpec(), argv: [process.execPath, 'codex.js', 'app-server'] }
@@ -48,8 +49,26 @@ describe('Windows subprocess console inheritance', () => {
         return fakeProcess()
       }
     })
-    expect(args).toEqual(['--import', preload, 'runner.js', '--', process.execPath, '--import', preload, 'codex.js', 'app-server'])
+    expect(args).toEqual(['--import', marked, 'runner.js', '--', process.execPath, '--import', marked, 'codex.js', 'app-server'])
     expect(spec.argv).toEqual([process.execPath, 'codex.js', 'app-server'])
+  })
+
+  it('marks an --import= preload once and forwards a non-URL specifier unchanged', () => {
+    process.env[marker] = '1'
+    vi.spyOn(process, 'versions', 'get').mockReturnValue({ ...process.versions, electron: '44.7.0' })
+    const marked = 'file:///C:/Desktop/build/windows-hide-console-import.mjs?attach=parent'
+    const plain = 'C:\\not a url\\windows-hide-console-import.mjs'
+    vi.spyOn(process, 'execArgv', 'get').mockReturnValue([`--import=${marked}`, `--import=${plain}`])
+    let args
+    launchWindowsJob({ ...jobSpec(), argv: [process.execPath, 'codex.js'] }, {}, {
+      runnerInvocation: [process.execPath, 'runner.js'],
+      spawn(_command, actualArgs) {
+        args = actualArgs
+        return fakeProcess()
+      }
+    })
+    expect(args.slice(0, 2)).toEqual([`--import=${marked}`, `--import=${plain}`])
+    expect(args.slice(4)).toEqual([process.execPath, `--import=${marked}`, `--import=${plain}`, 'codex.js'])
   })
 
   it('inherits the Host console for the Job runner when the marker is set', () => {
