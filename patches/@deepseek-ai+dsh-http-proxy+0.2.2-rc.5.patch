@@ -1,0 +1,38 @@
+diff --git a/node_modules/@deepseek-ai/dsh-http-proxy/lib/index.js b/node_modules/@deepseek-ai/dsh-http-proxy/lib/index.js
+--- a/node_modules/@deepseek-ai/dsh-http-proxy/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-http-proxy/lib/index.js
+@@ -538,7 +538,33 @@
+ async function installProxyFromEnvironment(env, report, options = {}) {
+ 	const { policy, diagnostics } = resolveProxyPolicy(env);
+ 	for (const diagnostic of diagnostics) report(diagnostic.message);
+-	return await installGlobalProxy(policy, options);
++	// Node/Electron's embedded fetch may use Undici 7, while this dispatcher uses 8.
++	// Install the matching fetch family before plugins capture these globals.
++	// Keep unrelated WebSocket/EventSource implementations untouched.
++	const undici = await import("undici");
++	const names = ["fetch", "Headers", "Request", "Response", "FormData"];
++	const previous = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
++	const restoreFetch = () => {
++		for (const name of names) {
++			if (globalThis[name] !== undici[name]) continue;
++			const descriptor = previous.get(name);
++			if (descriptor) Object.defineProperty(globalThis, name, descriptor);
++			else delete globalThis[name];
++		}
++	};
++	try {
++		for (const name of names) globalThis[name] = undici[name];
++		const disposeProxy = await installGlobalProxy(policy, options);
++		let disposed = false;
++		return async () => {
++			if (disposed) return;
++			disposed = true;
++			try { await disposeProxy(); } finally { restoreFetch(); }
++		};
++	} catch (error) {
++		restoreFetch();
++		throw error;
++	}
+ }
+ /**
+ * Build a dispatcher for callers that need their own transport choices without replacing the

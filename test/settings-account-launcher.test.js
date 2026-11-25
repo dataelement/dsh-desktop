@@ -18,6 +18,7 @@ describe('Desktop account UI composition', () => {
         .toBe('@deepseek-ai/dsh-client-ui-settings-account')
       const entries = composeEntries([web, desktop])
       expect(entries.find((entry) => entry.id === 'ui-settings-account')?.disabled).toBe(true)
+      expect(entries.find((entry) => entry.id === 'ui-account-notifications')?.disabled).toBe(true)
       for (const name of ['@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-settings-models']) {
         expect(entries.filter((entry) => entry.name === name && !entry.disabled)).toHaveLength(1)
       }
@@ -33,6 +34,7 @@ describe('Desktop account UI composition', () => {
       const shell = loadOverlayPatches('test', patch)
       const entries = composeEntries([base, web, shell])
       expect(entries.find((entry) => entry.id === 'ui-settings-account')?.disabled).toBe(true)
+      expect(entries.find((entry) => entry.id === 'ui-account-notifications')?.disabled).toBe(true)
       expect(entries.find((entry) => entry.id === 'deepseek-account')?.config).toMatchObject({ desktopPlatform: null })
       expect(entries.find((entry) => entry.id === 'desktop-product-telemetry')?.disabled).toBe(true)
       expect(entries.find((entry) => entry.id === 'product-analytics')?.disabled).toBe(true)
@@ -58,6 +60,7 @@ describe('Desktop account UI composition', () => {
       })
       const safePatch = await writeDesktopProductPatch(home, 'safe')
       const safeEntries = composeEntries([base, web, loadOverlayPatches('test', safePatch)])
+      expect(safeEntries.find((entry) => entry.id === 'ui-account-notifications')?.disabled).toBe(true)
       expect(safeEntries.find((entry) => entry.id === 'dsh-desktop-workbenches')).toBeUndefined()
       expect(safeEntries.find((entry) => entry.id === 'dsh-desktop-market-installer')).toBeUndefined()
       expect(safeEntries.find((entry) => entry.id === 'dsh-desktop-office')).toBeUndefined()
@@ -66,7 +69,7 @@ describe('Desktop account UI composition', () => {
         expect(entries.filter((entry) => entry.name === name && !entry.disabled)).toHaveLength(1)
       }
       for (const mode of ['desktop', 'safe']) {
-        const windowsDev = await writeDesktopProductPatch(home, mode, { skipBlockingHmr: true })
+      const windowsDev = await writeDesktopProductPatch(home, mode, undefined, { skipBlockingHmr: true })
         const windowsEntries = composeEntries([base, loadOverlayPatches('test', windowsDev)])
         expect(windowsEntries.find((entry) => entry.id === 'hmr')?.disabled).toBe(true)
       }

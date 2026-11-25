@@ -21,6 +21,8 @@ export interface BaselineError {
 export interface UpstreamDiff {
   changes: Array<{ path: string, files: string[] }>
   unregistered: string[]
+  changedUnregistered: string[]
+  missingSkipped: string[]
 }
 
 export function parseBaseline(value: unknown): UpstreamBaseline

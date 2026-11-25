@@ -1,14 +1,18 @@
 window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
   const React = require('react'), h = React.createElement
+  const { CreateButton, CardActions, ManagementDialog } = require('dsh-desktop-client-ui').TemplateLibraryControls
   const NS = 'desktop-office', EVENT = 'dsh-office-mode-change', staged = '@staged'
   const zh = { templates: '选择案例', preview: '查看案例', use: '做同款', close: '关闭预览', previous: '上一页', next: '下一页',
     select: '选用案例', loading: '正在加载…', retry: '重新加载', remove: '取消选择案例', selected: '已选案例',
     page: '第 {page} 页，共 {total} 页', spread: '第 {start}–{end} 页，共 {total} 页', pageNumber: '第 {page} 页', previousSpread: '上一组', nextSpread: '下一组', expired: '案例已更新，请重新选择',
-    empty: '暂无案例' }
+    empty: '暂无案例', upload: '新建自定义模板', edit: '编辑模板', delete: '删除', closeManagement: '关闭', editTitle: '编辑自定义模板', deleteTitle: '删除模板', deleteHint: '删除模板后，已生成的文件继续保留。', confirmDelete: '确认删除', cancel: '取消', name: '模板名称', description: '模板描述', descriptionPlaceholder: '描述模板的风格或适用场景（选填）', update: '保存修改', processing: '处理中…', uploadHint: '支持 DOCX / XLSX，最大 16 MiB', uploading: '正在导入并生成预览…', archive: '移出模板库', personal: '我的模板', uploadError: '请选择不超过 16 MiB 的对应格式文件', cancelImport: '取消导入', importCancelled: '已取消导入' }
   const en = { templates: 'Choose an example', preview: 'Preview example', use: 'Use this example', close: 'Close preview', previous: 'Previous page', next: 'Next page',
     select: 'Select example', loading: 'Loading…', retry: 'Retry', remove: 'Remove example', selected: 'Selected example',
     page: 'Page {page} of {total}', spread: 'Pages {start}–{end} of {total}', pageNumber: 'Page {page}', previousSpread: 'Previous spread', nextSpread: 'Next spread', expired: 'This example was updated. Choose it again.',
-    empty: 'No examples available' }
+    empty: 'No examples available', upload: 'Create custom template', edit: 'Edit template', delete: 'Delete', closeManagement: 'Close', editTitle: 'Edit custom template', deleteTitle: 'Delete template', deleteHint: 'Generated files are preserved when you delete a template.', confirmDelete: 'Confirm delete', cancel: 'Cancel', name: 'Template name', description: 'Description', descriptionPlaceholder: 'Briefly describe this template', update: 'Save changes', processing: 'Processing…', uploadHint: 'DOCX / XLSX, up to 16 MiB', uploading: 'Importing and preparing preview…', archive: 'Remove from library', personal: 'My template', uploadError: 'Choose a matching file of at most 16 MiB', cancelImport: 'Cancel import', importCancelled: 'Import cancelled' }
+  Object.assign(zh, { externalData: '该模板包含外部数据链接，暂不支持导入。请改用无外部数据链接的 DOCX / XLSX 文件。', invalidTemplate: '无法读取该模板，请检查文件是否完整、未加密且不含宏或嵌入对象。', renderFailed: '模板预览生成失败，请重新选择文件或重试。', importTimeout: '模板处理超时，请重试或选择较小的文件。' })
+  Object.assign(en, { externalData: 'This template contains external data links. Choose a DOCX / XLSX without external data links.', invalidTemplate: 'Cannot read this template. Check that it is intact, unencrypted, and contains no macros or embedded objects.', renderFailed: 'Could not prepare the template preview. Choose another file or retry.', importTimeout: 'Template processing timed out. Retry or choose a smaller file.' })
+  const errorText = (message, t) => t(({ OFFICE_TEMPLATE_EXTERNAL_DATA: 'externalData', OFFICE_TEMPLATE_INVALID: 'invalidTemplate', OFFICE_TEMPLATE_RENDER_FAILED: 'renderFailed', OFFICE_TEMPLATE_TIMEOUT: 'importTimeout' })[message] ?? message)
   const empty = Object.freeze({ templates: [], mode: null, selectedTemplateId: null, loaded: false, loading: false, busy: false, error: '' })
   const keyOf = id => id || staged
   const announce = (sessionId, mode) => window.dispatchEvent(new CustomEvent(EVENT, { detail: { sessionId, mode, origin: 'office' } }))
@@ -20,7 +24,7 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
     update(id, change) { const key = keyOf(id); this.states.set(key, { ...this.snapshot(id), ...change }); for (const listener of this.listeners.get(key) ?? []) listener() }
     bump(id) { const key = keyOf(id), value = (this.revisions.get(key) ?? 0) + 1; this.revisions.set(key, value); return value }
     async call(id, endpoint, payload = {}, signal) {
-      const timeout = AbortSignal.timeout(10_000)
+      const timeout = AbortSignal.timeout(endpoint === 'import' ? 150_000 : 10_000)
       const combined = signal ? AbortSignal.any([timeout, signal]) : timeout
       const result = await this.connection.rpc.call('/api', 'office-templates', { endpoint, ...(id ? { sessionId: id } : {}), ...payload }, combined)
       combined.throwIfAborted()
@@ -63,6 +67,23 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
         this.update(id, { ...state, loaded: true, busy: false, error: '' }); announce(id, state.mode); return true
       } catch (error) { if (this.revisions.get(key) === revision) this.update(id, { busy: false, error: error.message }); return false }
     }
+    async libraryChange(id, endpoint, payload) {
+      if (this.libraryRequest || this.snapshot(id).busy || this.snapshot(id).loading) return
+      const controller = new AbortController()
+      this.libraryRequest = controller
+      this.update(id, { busy: true, importing: endpoint === 'import', error: '' })
+      try {
+        const result = await this.call(id, endpoint, payload, controller.signal)
+        for (const key of this.states.keys()) {
+          const selected = this.snapshot(key).selectedTemplateId
+          this.update(key, { templates: result.templates, ...(selected ? { selectionExpired: !result.templates.some(item => item.id === selected) } : {}) })
+        }
+        return true
+      } catch (error) { if (!controller.signal.aborted) this.update(id, { error: error.message }); return false }
+      finally {
+        if (this.libraryRequest === controller) { this.libraryRequest = null; this.update(id, { busy: false, importing: false }) }
+      }
+    }
     syncPpt(detail) {
       if (detail.origin !== 'ppt') return
       const id = detail.sessionId
@@ -70,8 +91,8 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
       this.bump(id); this.update(id, { mode: null, selectedTemplateId: null, engaged: false, busy: false, loading: false, error: '' })
       void this.load(id, true)
     }
-    reset() { for (const request of this.requests.values()) request.abort(); this.requests.clear(); for (const key of this.states.keys()) { this.bump(key); this.update(key, { loaded: false, loading: false, busy: false }); void this.load(key === staged ? undefined : key, true) } }
-    dispose() { for (const request of this.requests.values()) request.abort(); this.requests.clear(); this.listeners.clear() }
+    reset() { this.libraryRequest?.abort(); this.libraryRequest = null; for (const request of this.requests.values()) request.abort(); this.requests.clear(); for (const key of this.states.keys()) { this.bump(key); this.update(key, { loaded: false, loading: false, busy: false }); void this.load(key === staged ? undefined : key, true) } }
+    dispose() { this.libraryRequest?.abort(); this.libraryRequest = null; for (const request of this.requests.values()) request.abort(); this.requests.clear(); this.listeners.clear() }
   }
   function useOffice(store, sessionId) {
     const state = React.useSyncExternalStore(listener => store.subscribe(sessionId, listener), () => store.snapshot(sessionId), () => store.snapshot(sessionId))
@@ -89,12 +110,13 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
       h('img', { src: item.thumbnail, style: sheetStyle, alt: '', loading: 'lazy', draggable: false }))
   }
 
-  function TemplateCard({ item, selected, busy, t, choose, preview }) {
-    return h('article', { className: 'dso-card', 'data-office-template': item.id, 'data-selected': selected },
+  function TemplateCard({ item, selected, busy, t, choose, preview, manage }) {
+    return h('article', { className: 'dso-card', 'data-template-card': '', 'data-office-template': item.id, 'data-selected': selected },
       h('button', { type: 'button', className: 'dso-card-select', disabled: busy, 'aria-pressed': selected,
         'aria-label': `${t('select')} ${titleOf(item, t)}`, onClick: () => choose(item) },
         h('span', { className: 'dso-cover', 'data-mode': item.mode }, h(Thumbnail, { item })),
         h('span', { className: 'dso-card-name' }, titleOf(item, t))),
+      item.origin === 'personal' ? h(CardActions, { busy, editLabel: `${t('edit')} ${titleOf(item, t)}`, deleteLabel: `${t('delete')} ${titleOf(item, t)}`, onEdit: () => manage(item, false), onDelete: () => manage(item, true) }) : null,
       h('button', { type: 'button', className: 'dso-card-preview', disabled: busy, 'aria-label': `${t('preview')} ${titleOf(item, t)}`, onClick: () => preview(item) },
         h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true },
           h('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z' }), h('circle', { cx: 12, cy: 12, r: 3 }))))
@@ -156,7 +178,7 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
     const availableWidth = Math.max(0, bounds.width - 32), availableHeight = Math.max(0, bounds.height - 60)
     const paperHeight = spread ? Math.max(0, Math.min(availableHeight, Math.max(0, availableWidth - 16) / spreadRatio)) : 0
     const caption = page => [item.sheets?.find(sheet => sheet.pages.includes(page))?.name, t('pageNumber').replace('{page}', page)].filter(Boolean).join(' · ')
-    return h('dialog', { ref: dialog, className: 'dso-modal', 'data-spread': spread, tabIndex: -1, 'aria-modal': true, 'aria-label': titleOf(item, t), onCancel: event => { event.preventDefault(); if (!busy) close() },
+    return h('dialog', { ref: dialog, className: 'dso-modal', 'data-spread': spread, 'data-window-drag-exclude': true, tabIndex: -1, 'aria-modal': true, 'aria-label': titleOf(item, t), onCancel: event => { event.preventDefault(); if (!busy) close() },
       onClick: event => {
         if (event.target !== dialog.current || busy) return
         const rect = dialog.current.getBoundingClientRect()
@@ -191,23 +213,39 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
     return h(React.Fragment, null, ['word', 'excel'].map(mode => h('button', { key: mode, type: 'button', className: 'dso-mode-action', 'data-office-mode': mode,
       'aria-pressed': state.mode === mode, 'aria-expanded': state.mode === mode, disabled: state.loading || state.busy, onClick: () => store.mutate(sessionId, 'mode', { mode: state.mode === mode ? null : mode }) }, h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('path', { d: mode === 'word' ? 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h6' : 'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM3 9h18M3 15h18M9 3v18M15 3v18' })), mode === 'word' ? 'Word' : 'Excel')),
-      state.error ? h('span', { role: 'alert' }, state.error, h('button', { type: 'button', onClick: () => store.load(sessionId, true) }, t('retry'))) : null)
+      state.error && !state.mode ? h('span', { role: 'alert' }, errorText(state.error, t), h('button', { type: 'button', onClick: () => store.load(sessionId, true) }, t('retry'))) : null)
   }
   function Dock({ store, sessionId, session, t }) {
-    const state = useOffice(store, sessionId), [opened, setOpened] = React.useState(null)
-    const root = React.useRef(), panel = React.useRef(), visible = !!state.mode && (session == null || session.blank === true)
+    const state = useOffice(store, sessionId), [opened, setOpened] = React.useState(null), [management, setManagement] = React.useState(null), [name, setName] = React.useState(''), [description, setDescription] = React.useState('')
+    const root = React.useRef(), panel = React.useRef(), input = React.useRef(), visible = !!state.mode && (session == null || session.blank === true)
     useDockGeometry(root, panel, visible)
-    React.useEffect(() => setOpened(null), [sessionId, state.mode])
+    React.useEffect(() => { setOpened(null); setManagement(null) }, [sessionId, state.mode])
     React.useEffect(() => { if (opened && state.templates.find(item => item.id === opened.id)?.revision !== opened.revision) setOpened(null) }, [state.templates, opened])
     if (!visible) return null
     const items = state.templates.filter(item => item.mode === state.mode)
+    const manage = (item, deleting) => { store.update(sessionId, { error: '' }); setName(item.title); setDescription(item.description ?? ''); setManagement({ item, deleting }) }
+    const saveManagement = async endpoint => {
+      if (await store.libraryChange(sessionId, endpoint, { templateId: management.item.id, revision: management.item.revision, ...(endpoint === 'update' ? { name, description } : {}) })) setManagement(null)
+    }
     return h('div', { ref: root, className: 'dso-dock-root' }, h('section', { ref: panel, className: 'dso-dock', 'data-office-dock': state.mode, 'aria-label': t('templates') },
       h('div', { className: 'dso-viewport', 'data-native-wheel-owner': '' },
-      state.error ? h('div', { role: 'alert' }, state.error, h('button', { type: 'button', onClick: () => store.load(sessionId, true) }, t('retry'))) : null,
+        h('input', { ref: input, type: 'file', hidden: true, accept: state.mode === 'word' ? '.docx' : '.xlsx', 'aria-label': t('upload'), onChange: async event => {
+          const file = event.target.files?.[0], mode = state.mode
+          event.target.value = ''
+          if (!file) return
+          if (!file.size || file.size > 16 * 1024 * 1024 || !file.name.toLowerCase().endsWith(mode === 'word' ? '.docx' : '.xlsx')) { store.update(sessionId, { error: t('uploadError') }); return }
+          try {
+            const data = await new Promise((accept, reject) => { const reader = new FileReader(); reader.onload = () => accept(reader.result.split(',')[1]); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file) })
+            await store.libraryChange(sessionId, 'import', { mode, fileName: file.name, data })
+          } catch (error) { store.update(sessionId, { error: error.message }) }
+        } }),
+      state.importing ? h('div', { className: 'dso-import-status', role: 'status', 'aria-live': 'polite' }, t('uploading'), h('button', { type: 'button', onClick: () => { store.libraryRequest?.abort(); store.update(sessionId, { error: t('importCancelled') }) } }, t('cancelImport'))) : null,
+      state.error && !management ? h('div', { role: 'alert' }, errorText(state.error, t), h('button', { type: 'button', onClick: () => store.load(sessionId, true) }, t('retry'))) : null,
       state.selectionExpired ? h('p', { role: 'status' }, t('expired')) : null,
       state.loading ? h('p', { role: 'status' }, t('loading')) : !items.length ? h('p', { role: 'status' }, t('empty')) : null,
-      h('div', { className: 'dso-grid' }, items.map(item => h(TemplateCard, { key: item.id, item, t, selected: state.selectedTemplateId === item.id,
-        busy: state.busy || state.loading, preview: setOpened, choose: item => store.mutate(sessionId, 'select', { templateId: item.id, revision: item.revision }) })))),
+      h('div', { className: 'dso-grid' }, h(CreateButton, { label: t('upload'), hint: t('uploadHint'), disabled: state.busy || state.loading, onClick: () => input.current?.click() }), items.map(item => h(TemplateCard, { key: item.id, item, t, selected: state.selectedTemplateId === item.id,
+        busy: state.busy || state.loading, preview: setOpened, manage, choose: item => store.mutate(sessionId, 'select', { templateId: item.id, revision: item.revision }) })))),
+      management ? h(ManagementDialog, { deleting: management.deleting, name, description, onNameChange: setName, onDescriptionChange: setDescription, onSave: () => saveManagement('update'), onDelete: () => saveManagement('archive'), onRequestDelete: () => setManagement(value => ({ ...value, deleting: true, returnToEdit: true })), onCancelDelete: () => { setManagement(value => value.returnToEdit ? { ...value, deleting: false, returnToEdit: false } : null); store.update(sessionId, { error: '' }) }, onClose: () => { if (!state.busy) { setManagement(null); store.update(sessionId, { error: '' }) } }, busy: state.busy, error: errorText(state.error, t), t: key => t(key === 'close' ? 'closeManagement' : key) }) : null,
       opened ? h(Preview, { key: `${sessionId}:${opened.id}`, item: opened, store, sessionId, t, close: () => setOpened(null), busy: state.busy, actionError: state.error,
         choose: item => store.mutate(sessionId, 'select', { templateId: item.id, revision: item.revision }) }) : null))
   }
@@ -237,9 +275,9 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
   const css = `
 .dso-opening-row{display:flex;align-items:center;gap:6px;min-width:0}.dso-opening-row:not(:first-child){margin-top:8px;padding-top:8px;border-top:.5px solid var(--dsw-alias-border-l2)}.dso-opening-file{flex:none;color:var(--dsw-alias-state-business-primary)}.dso-opening-row[data-mode=excel] .dso-opening-file{color:var(--dsw-alias-state-success-primary)}.dso-opening-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:transparent;padding:0;color:var(--dsw-alias-state-business-primary);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer}.dso-opening-title:hover{text-decoration:underline}.dso-opening-title:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
 .dso-preview-actions{display:flex;gap:12px;align-items:center}
-.dso-mode-action{display:inline-flex;align-items:center;gap:6px;line-height:16px;font:inherit;font-size:12px;border-radius:999px;padding:7px 13px;background:transparent;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);color:var(--dsw-alias-label-secondary);cursor:pointer}.dso-mode-action[aria-pressed=true]{color:var(--dsw-alias-label-primary-foreground)!important;border-color:var(--dsw-alias-label-primary);background:var(--dsw-alias-label-primary)!important}
+.dso-mode-action{box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:28px;font:inherit;font-size:13px;font-weight:500;line-height:20px;border-radius:8px;padding:0 8px;background:transparent;border:0;color:var(--dsw-alias-label-primary);cursor:pointer}.dso-mode-action:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.dso-mode-action[aria-pressed=true]{color:var(--dsw-alias-label-primary-foreground)!important;border-color:var(--dsw-alias-label-primary);background:var(--dsw-alias-label-primary)!important}
 .dso-dock-root{box-sizing:border-box;position:relative;width:100%;height:0;padding:0 var(--dsh-composer-side-clearance);overflow:visible}.dso-dock{box-sizing:border-box;position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:2;display:flex;flex-direction:column;width:var(--dso-dock-width,var(--dsh-composer-card-max-width,100%));max-width:calc(100vw - 32px);height:var(--dso-dock-height,calc(100dvh - 178px));margin-top:8px;color:var(--dsw-alias-label-primary);font-size:12px}.dso-viewport{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:4px 4px 12px;scrollbar-width:none}.dso-viewport::-webkit-scrollbar{display:none}.dso-sheets{display:flex;align-items:center;flex:none;overflow:auto;gap:4px;scrollbar-width:none}.dso-sheets::-webkit-scrollbar{display:none}.dso-sheets button{font:inherit;font-size:11px;line-height:16px;border:0;border-radius:999px;padding:5px 10px;flex:none;color:var(--dsw-alias-label-caption);background:transparent;cursor:pointer}.dso-sheets button:hover{color:var(--dsw-alias-label-primary)}.dso-sheets button[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dso-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 14px}.dso-card{min-width:0;position:relative}.dso-card-select{font:inherit;display:flex;flex-direction:column;width:100%;padding:0;min-width:0;border:0;text-align:center;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}.dso-card-select:disabled{cursor:default;opacity:.65}.dso-cover{box-sizing:border-box;display:block;position:relative;width:100%;aspect-ratio:16/9;border:2px solid transparent;border-radius:9px;overflow:hidden;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 5%,var(--dsw-alias-bg-layer-1))}.dso-cover[data-mode=excel]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 6%,var(--dsw-alias-bg-layer-1))}.dso-thumbnail{display:block;width:100%;border-radius:8px;overflow:hidden}.dso-thumbnail img{display:block;width:100%;height:auto}.dso-cover>.dso-thumbnail{position:absolute;left:13%;top:14%;width:74%;box-shadow:0 2px 10px color-mix(in srgb,var(--dsw-alias-label-primary) 15%,transparent);transform-origin:center top;transition:transform 180ms cubic-bezier(.23,1,.32,1)}.dso-cover[data-mode=excel]>.dso-thumbnail{left:8%;width:84%;height:100%}.dso-card[data-selected=true] .dso-cover{border-color:var(--dsw-alias-state-business-primary)}.dso-card-name{display:block;box-sizing:border-box;width:100%;padding-top:5px;text-align:center;font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dso-card[data-selected=true] .dso-card-name{color:var(--dsw-alias-label-primary)}.dso-card-preview{position:absolute;left:10px;top:10px;z-index:1;display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:7px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);cursor:pointer;opacity:0;transition:opacity 120ms ease}.dso-card:hover .dso-card-preview,.dso-card:focus-within .dso-card-preview{opacity:1}.dso-card-preview:disabled{cursor:default}.dso-card-select:active:not(:focus-visible) .dso-thumbnail{transform:scale(.98)}
+.dso-import-status{display:flex;align-items:center;gap:12px;padding:8px 0}.dso-import-status button{font:inherit;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;padding:5px 9px;cursor:pointer}.dso-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 14px}.dso-card{min-width:0;position:relative}.dso-card-select{font:inherit;display:flex;flex-direction:column;width:100%;padding:0;min-width:0;border:0;text-align:center;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}.dso-card-select:disabled{cursor:default;opacity:.65}.dso-cover{box-sizing:border-box;display:block;position:relative;width:100%;aspect-ratio:16/9;border:2px solid transparent;border-radius:9px;overflow:hidden;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 5%,var(--dsw-alias-bg-layer-1))}.dso-cover[data-mode=excel]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 6%,var(--dsw-alias-bg-layer-1))}.dso-thumbnail{display:block;width:100%;border-radius:8px;overflow:hidden}.dso-thumbnail img{display:block;width:100%;height:auto}.dso-cover>.dso-thumbnail{position:absolute;left:13%;top:14%;width:74%;box-shadow:0 2px 10px color-mix(in srgb,var(--dsw-alias-label-primary) 15%,transparent);transform-origin:center top;transition:transform 180ms cubic-bezier(.23,1,.32,1)}.dso-cover[data-mode=excel]>.dso-thumbnail{left:8%;width:84%;height:100%}.dso-card[data-selected=true] .dso-cover{border-color:var(--dsw-alias-state-business-primary)}.dso-card-name{display:block;box-sizing:border-box;width:100%;padding-top:5px;text-align:center;font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dso-card[data-selected=true] .dso-card-name{color:var(--dsw-alias-label-primary)}.dso-card-preview{position:absolute;left:10px;top:10px;z-index:1;display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:7px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);cursor:pointer;opacity:0;transition:opacity 120ms ease}.dso-card:hover .dso-card-preview,.dso-card:focus-within .dso-card-preview{opacity:1}.dso-card-preview:disabled{cursor:default}.dso-card-select:active:not(:focus-visible) .dso-thumbnail{transform:scale(.98)}
 @media(hover:hover) and (pointer:fine){.dso-card:has(.dso-card-select:enabled):hover .dso-thumbnail{transform:translateY(-3px) scale(1.045)}}@media(hover:none){.dso-card-preview{opacity:1}}@media(prefers-reduced-motion:reduce){.dso-cover>.dso-thumbnail,.dso-card-preview{transition:none}.dso-card:has(.dso-card-select:enabled):hover .dso-thumbnail,.dso-card-select:active:not(:focus-visible) .dso-thumbnail{transform:none}}
 /* Match the detailed viewer in PPT PR 675; Office keeps its native page navigation. */
 .dso-modal{box-sizing:border-box;width:min(1280px,calc(100vw - 32px));height:min(900px,calc(100dvh - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);margin:auto;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:16px;padding:20px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit}
@@ -271,6 +309,8 @@ window.__ModuleLoader__.load({ id: 'dsh-desktop-office', factory: require => {
 .dso-selected{display:flex;align-items:flex-start}.dso-selected button{cursor:pointer}.dso-selected-frame{position:relative;display:block;flex:none;width:clamp(76px,10vw,92px);aspect-ratio:16/9;transform:rotate(-3deg);transform-origin:center}.dso-selected-preview{font:inherit;display:block;box-sizing:border-box;width:100%;height:100%;padding:0;border:2px solid var(--dsw-alias-state-business-primary);border-radius:9px;overflow:hidden;background:var(--dsw-alias-bg-base);box-shadow:0 4px 14px color-mix(in srgb,var(--dsw-alias-label-primary) 18%,transparent)}.dso-selected .dso-thumbnail{width:100%;height:100%;border-radius:0}.dso-selected .dso-thumbnail img{height:100%;object-fit:cover;object-position:top}.dso-selected-remove{position:absolute;top:-8px;right:-8px;z-index:2;display:grid;place-items:center;width:20px;height:20px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:50%;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);font:500 15px/1 ui-sans-serif,system-ui,sans-serif;opacity:0;pointer-events:none;transform:rotate(3deg);transition:opacity 120ms ease}.dso-selected-frame:hover .dso-selected-remove,.dso-selected-frame:focus-within .dso-selected-remove{opacity:1;pointer-events:auto}.dso-selected-remove:disabled{cursor:default}.dso-selected .dso-selected-preview:focus-visible{outline-offset:2px}@media(hover:none){.dso-selected-remove{opacity:1;pointer-events:auto}}@media(prefers-reduced-motion:reduce){.dso-selected-frame{transform:none}.dso-selected-remove{transform:none;transition:none}}.dso-mode-action:focus-visible,.dso-card-select:focus-visible,.dso-card-preview:focus-visible,.dso-modal button:focus-visible,.dso-selected button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:3px}@media(max-width:540px){.dso-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dso-modal{padding:10px}.dso-modal footer{gap:12px}.dso-pagination{gap:8px}}`
   function apply(ctx) {
     const store = new OfficeStore(ctx.get('connection'))
+    // Share the same session state and guarded mutations with product extensions.
+    ctx.provide?.('desktopOffice', store)
     ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'Office dictionaries')
     ctx.effect(() => { if (document.querySelector('style[data-plugin-css="desktop-office/styles"]')) return; const tag = document.createElement('style'); tag.dataset.plugin = NS; tag.dataset.pluginCss = 'desktop-office/styles'; tag.textContent = css; document.head.append(tag); return () => tag.remove() }, 'Office styles')
     ctx.effect(() => { const listener = event => store.syncPpt(event.detail ?? {}); window.addEventListener(EVENT, listener); return () => { window.removeEventListener(EVENT, listener); store.dispose() } }, 'Office mode synchronization')

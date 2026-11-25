@@ -22,3 +22,14 @@ it.each([false, true])('restores sidebar vibrancy after hiding or minimizing (da
   expect(window.setVibrancy).toHaveBeenLastCalledWith('sidebar')
   expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
 })
+
+it('reuses the last palette when a later hide omits it', () => {
+  let visible = true
+  const window = { isDestroyed: () => false, isMinimized: () => false, isVisible: () => visible,
+    setVibrancy: vi.fn(), setBackgroundColor: vi.fn() }
+  applyMacosWindowBackdrop(window, true)
+  visible = false
+  applyMacosWindowBackdrop(window)
+  expect(window.setVibrancy).toHaveBeenLastCalledWith(null)
+  expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#1b1b1c')
+})

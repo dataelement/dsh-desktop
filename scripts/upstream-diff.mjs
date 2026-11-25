@@ -26,14 +26,24 @@ for (const change of report.changes) {
   for (const file of change.files) console.log(`  ${file}`)
 }
 
-if (report.unregistered.length === 0) {
-  console.log('没有未登记的新文件')
-  process.exit(0)
+let failed = false
+if (report.changedUnregistered.length > 0) {
+  failed = true
+  console.error('已修改但未登记的文件')
+  for (const file of report.changedUnregistered) console.error(`  ${file}`)
 }
-
-console.error('未登记的新文件')
-for (const file of report.unregistered) console.error(`  ${file}`)
-process.exit(1)
+if (report.missingSkipped.length > 0) {
+  failed = true
+  console.error('skipped 在目标提交中不存在')
+  for (const file of report.missingSkipped) console.error(`  ${file}`)
+}
+if (report.unregistered.length === 0) console.log('没有未登记的新文件')
+else {
+  failed = true
+  console.error('未登记的新文件')
+  for (const file of report.unregistered) console.error(`  ${file}`)
+}
+process.exit(failed ? 1 : 0)
 
 function parseArgs(argv) {
   const result = {}

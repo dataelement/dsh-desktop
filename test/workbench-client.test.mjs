@@ -280,6 +280,100 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
+  it('composes source tabs with one replacement favorites tab and restores defaults on disposal', async () => {
+    const { service } = await fixture()
+    const render = vi.fn(() => 'Combined favorites')
+    const disposeA = service.registerMarketCollection({ id: 'source-a', label: 'Source A', order: -20, render: () => null })
+    const disposeB = service.registerMarketCollection({ id: 'source-b', label: 'Source B', order: -10, render: () => null })
+    expect(() => service.registerMarketCollection({ id: 'favorites', label: 'Favorites', render })).toThrow('reserved')
+    const disposeFavorites = service.registerMarketCollection({ id: 'favorites', replace: true, label: 'Combined favorites', render })
+    expect(service.getMarketTabs().map(item => item.id)).toEqual(['source-a', 'source-b', 'market', 'favorites', 'mine'])
+    const ui = interactiveMarket(service, 'favorites')
+    const tree = ui.render()
+    expect(ui.find(tree, node => node.props?.role === 'tab')).toHaveLength(5)
+    expect(render).toHaveBeenCalledWith({ service, renderDefault: expect.any(Function), search: '' })
+    disposeFavorites(); disposeA(); disposeB()
+    expect(service.getMarketTabs().map(item => item.id)).toEqual(['market', 'favorites', 'mine'])
+    expect(service.getMarketTabs().find(item => item.id === 'favorites').render).toBeUndefined()
+  })
+
+  it('composes default cards inside a custom collection and explicitly controls host filters', async () => {
+    const { service } = await fixture()
+    const ui = interactiveMarket(service, 'mine')
+    const before = ui.render()
+    const cards = ui.find(before, node => node.props?.className === 'dshWbCard').length
+    const dispose = service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: false,
+      render: ({ renderDefault }) => React.createElement(React.Fragment, null, renderDefault(), React.createElement('aside', { id: 'product-entries' }, 'Product entries')) })
+    const composed = ui.render()
+    expect(ui.find(composed, node => node.props?.id === 'product-entries')).toHaveLength(1)
+    expect(ui.find(composed, node => node.props?.className === 'dshWbCard')).toHaveLength(cards)
+    expect(ui.find(composed, node => node.props?.className === 'dshWbBrowseTools')).toHaveLength(0)
+    expect(ui.find(composed, node => node.props?.className === 'dshWbSearch')).toHaveLength(0)
+    dispose()
+    expect(ui.find(ui.render(), node => node.props?.className === 'dshWbBrowseTools')).toHaveLength(1)
+    expect(() => service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: 'hidden' })).toThrow('controls')
+  })
+
+  it('ignores retained search on collections without controls and restores it on return', async () => {
+    const { service } = await fixture(boundState())
+    const ui = interactiveMarket(service, 'mine')
+    const cards = tree => ui.find(tree, node => node.props?.className === 'dshWbCard').length
+    const baseline = cards(ui.render())
+    expect(baseline).toBeGreaterThan(0)
+    ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-market-tab')[0].props.onClick()
+    ui.find(ui.render(), node => node.props?.type === 'search')[0].props.onChange({ target: { value: 'no-such-workbench' } })
+    const dispose = service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: false,
+      render: ({ renderDefault }) => renderDefault() })
+    ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-mine-tab')[0].props.onClick()
+    expect(cards(ui.render())).toBe(baseline)
+    expect(ui.find(ui.render(), node => node.props?.type === 'search')).toHaveLength(0)
+    ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-market-tab')[0].props.onClick()
+    expect(ui.find(ui.render(), node => node.props?.type === 'search')[0].props.value).toBe('no-such-workbench')
+    expect(cards(ui.render())).toBe(0)
+    dispose()
+  })
+
+  it('ignores retained category when controls are hidden and restores it on disposal', async () => {
+    const { service } = await fixture(boundState())
+    const ui = interactiveMarket(service, 'mine')
+    const cards = tree => ui.find(tree, node => node.props?.className === 'dshWbCard').length
+    const baseline = cards(ui.render())
+    expect(baseline).toBeGreaterThan(0)
+    ui.find(ui.render(), node => node.props?.['aria-label'] === '按分类筛选')[0].props.onChange({ target: { value: 'unavailable-category' } })
+    expect(cards(ui.render())).toBe(0)
+    const dispose = service.registerMarketCollection({ id: 'mine', label: 'Installed', replace: true, controls: false,
+      render: ({ renderDefault }) => renderDefault() })
+    expect(cards(ui.render())).toBe(baseline)
+    dispose()
+    expect(cards(ui.render())).toBe(0)
+    expect(ui.find(ui.render(), node => node.props?.['aria-label'] === '按分类筛选')[0].props.value).toBe('unavailable-category')
+  })
+
+  it('uses visible tab order for selection and falls back when the selected collection disappears', async () => {
+    const { service } = await fixture()
+    const disposeSource = service.registerMarketCollection({ id: 'source', label: 'Source', order: -10, render: () => null })
+    const restoreMarket = service.registerMarketCollection({ id: 'market', replace: true, label: 'Market', visible: false })
+    const ui = interactiveMarket(service, null)
+    let tabs = ui.find(ui.render(), node => node.props?.role === 'tab')
+    expect(tabs.map(item => item.props.id)).toEqual(['dsh-workbench-source-tab', 'dsh-workbench-favorites-tab', 'dsh-workbench-mine-tab'])
+    expect(tabs[0].props['aria-selected']).toBe(true)
+    disposeSource()
+    tabs = ui.find(ui.render(), node => node.props?.role === 'tab')
+    expect(tabs[0].props['aria-selected']).toBe(true)
+    expect(tabs[0].props.id).toBe('dsh-workbench-favorites-tab')
+    restoreMarket()
+    expect(service.getMarketTabs()).toHaveLength(3)
+  })
+
+  it('supports product-owned Market collection tabs with lifecycle cleanup', async () => {
+    const { service } = await fixture()
+    const render = vi.fn()
+    const dispose = service.registerMarketCollection({ id: 'enterprise', label: '企业工作台', order: 10, render })
+    expect(service.getMarketCollections()).toEqual([expect.objectContaining({ id: 'enterprise', label: '企业工作台' })])
+    dispose()
+    expect(service.getMarketCollections()).toEqual([])
+  })
+
   it('declares the native plugin manager injection and keeps the market available when access fails', async () => {
     expect(clientInject).toContain('remote.pluginManager')
     const { service, ctx } = await fixture()
@@ -1069,7 +1163,7 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain("id: 'dsh-workbench-submit-panel'")
     expect(source).toContain('制作我的工作台')
     expect(source).toContain('dshWbCreate')
-    expect(source).toContain("'aria-selected': tab === 'favorites'")
+    expect(source).toContain("'aria-selected': tab === collection.id")
     expect(source).toContain('我的收藏')
     expect(source).toContain('已安装')
     expect(source).toContain("createText('title')")
@@ -3121,7 +3215,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(1)
   })
 
-  it('migrates an old-only installed ID to its unique live market provider and preserves owned data', async () => {
+  it('does not infer an unauthorized repository migration from a shared package name', async () => {
     const initial = { ...emptyState(), added: ['o/old'], pinned: ['o/old'], favorites: ['o/old'], active: 'o/old',
       notes: { 'o/old': 'Keep notes' }, sessionBindings: { old: 'o/old' }, recentSessions: { 'o/old': 'old' } }
     const { service, ctx, saved } = await fixture(initial)
@@ -3132,13 +3226,15 @@ describe('workbench market screenshot and metadata display', () => {
     service.register({ title: 'Helper', repository: 'https://github.com/o/new' }, () => null)
     await service.queue
 
-    expect(saved().state).toMatchObject({ added: ['o/new'], pinned: ['o/new'], favorites: ['o/new'], active: 'o/new',
-      notes: { 'o/new': 'Keep notes' }, sessionBindings: { old: 'o/new' }, recentSessions: { 'o/new': 'old' } })
+    expect(saved().state).toEqual(initial)
+    service.migrateLegacyWorkbenchIds()
+    await service.queue
+    expect(saved().state).toEqual(initial)
     expect(service.knownProviders['o/old'].sourcePackage).toBe('helper')
     const ui = interactiveMarket(service, 'mine')
-    expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(0)
+    expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/old')).toHaveLength(1)
     expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/new')).toHaveLength(1)
-    await expect(service.open('o/new')).resolves.toBeUndefined()
+    await expect(service.open('o/new')).rejects.toThrow() // No automatic add or ownership transfer.
   })
 
   it('defaults market cards to descending stars and offers downloads, update time and name sorting', async () => {
@@ -4277,8 +4373,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(source).toContain("event.key === 'ArrowLeft'")
     expect(source).toContain("event.key === 'Home'")
     expect(source).toContain("event.key === 'End'")
-    expect(source).toContain("tabIndex: tab === 'favorites' ? 0 : -1")
-    expect(source).toContain("tabIndex: tab === 'mine' ? 0 : -1")
+    expect(source).toContain("tabIndex: tab === collection.id ? 0 : -1")
     expect(source).not.toContain("tabIndex: tab === 'local' ? 0 : -1")
     expect(source).not.toContain("'来源未知'")
   })
@@ -4657,4 +4752,46 @@ describe('repository-free local registration', () => {
     }
     service.dispose()
   })
+})
+
+it('keeps opt-in collection search in the host header and forwards changes across collection tabs', async () => {
+  const { service } = await fixture()
+  const first = vi.fn(() => null), second = vi.fn(() => null)
+  const dispose = service.registerMarketCollection({ id: 'custom-one', label: 'One', controls: false, search: true, render: first })
+  service.registerMarketCollection({ id: 'custom-two', label: 'Two', controls: false, search: true, render: second })
+  expect(service.collectionSearch).toBe(true)
+  const ui = interactiveMarket(service, 'custom-one')
+  const find = predicate => ui.find(ui.render(), predicate)[0]
+  const input = find(node => node.type === 'input' && node.props.type === 'search')
+  expect(input).toBeDefined()
+  input.props.onChange({ target: { value: 'sample' } })
+  ui.render()
+  expect(first).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'sample' }))
+  find(node => node.props?.id === 'dsh-workbench-custom-two-tab').props.onClick()
+  ui.render()
+  expect(second).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'sample' }))
+  expect(ui.find(ui.render(), node => node.props?.className === 'dshWbBrowseTools')).toHaveLength(0)
+  dispose()
+  expect(() => service.registerMarketCollection({ id: 'invalid', label: 'Invalid', search: 'yes', render: first })).toThrow('search must be a boolean')
+  service.dispose()
+})
+
+it('renders product collection labels with unfiltered native counts and restores the built-in label', async () => {
+  const { service } = await fixture(boundState())
+  const ui = interactiveMarket(service, 'mine')
+  const renderLabel = vi.fn(({ count }) => `Combined (${count + 2})`)
+  const dispose = service.registerMarketCollection({ id: 'mine', replace: true, label: 'Installed', renderLabel })
+  const before = ui.render()
+  expect(service.collectionLabels).toBe(true)
+  const count = renderLabel.mock.calls.at(-1)[0].count
+  expect(count).toBeGreaterThan(0)
+  const tab = ui.find(before, node => node.props?.id === 'dsh-workbench-mine-tab')[0]
+  expect(tab.props.children).toContain(`Combined (${count + 2})`)
+  const search = ui.find(before, node => node.type === 'input' && node.props.type === 'search')[0]
+  search.props.onChange({ target: { value: 'no match' } })
+  ui.render()
+  expect(renderLabel.mock.calls.at(-1)[0]).toMatchObject({ count })
+  dispose()
+  expect(service.getMarketTabs().find(item => item.id === 'mine').renderLabel).toBeUndefined()
+  expect(() => service.registerMarketCollection({ id: 'bad-label', label: 'Bad', render: () => null, renderLabel: 'text' })).toThrow('renderLabel')
 })

@@ -60,7 +60,7 @@ describe('DSH PPT built-in plugin', () => {
   })
 
   it('ships Harness 0.2.2-compatible peer ranges in both generated packages', async () => {
-    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-alpha.2 || ^0.2.2-rc.1'
+    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-alpha.2 || ^0.2.2-rc.1 || ^0.2.2-rc.4'
     const core = JSON.parse((await artifact('core')).get('package/package.json')!.toString('utf8'))
     const adapter = JSON.parse((await artifact('adapter')).get('package/package.json')!.toString('utf8'))
     expect(core.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4 || ^4.0.6-alpha.1 || ^4.1.0')
@@ -180,7 +180,9 @@ describe('DSH PPT built-in plugin', () => {
       }
       const client = entries.get('package/lib/client.js')!.toString()
       expect(client).not.toContain('data:image/jpeg;base64,')
-      expect(Buffer.byteLength(client)).toBeLessThan(120_000)
+      // The shared picker state API adds about 2 KB; keep the bundle bounded
+      // while the separate assertions below prohibit embedded preview bytes.
+      expect(Buffer.byteLength(client)).toBeLessThan(123_000)
       const urls = [...client.matchAll(/\/dsh-ppt\/previews\/([a-f0-9]{64})\.jpg/gu)]
       expect(urls).toHaveLength(192)
       for (const url of urls) expect(allowed.has(url[1]!)).toBe(true)

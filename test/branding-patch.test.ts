@@ -12,10 +12,11 @@ describe('DSH Desktop sidebar branding', () => {
       'utf8'
     )
 
-    expect(client).toContain('document.documentElement.dataset.platform === "darwin"')
-    expect(client).toContain('document.documentElement.hasAttribute("data-windows-titlebar")')
-    expect(client).toContain('const collapsedWidth = drawer || darwin || windowsTitlebar ? 0 : 56')
-    expect(client).toContain('sidebar === 0 ? collapsedWidth')
+    // rc.4 ships this layout client minified; the platform checks are unchanged.
+    expect(client).toContain('document.documentElement.dataset.platform===`darwin`')
+    expect(client).toContain('document.documentElement.hasAttribute(`data-windows-titlebar`)')
+    expect(client).toContain('const collapsedWidth=drawer||darwin||windowsTitlebar?0:56')
+    expect(client).toContain('sidebar===0?collapsedWidth')
   })
 
   it('installs the source logo into the Harness static frontend', async () => {

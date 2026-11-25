@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import {
   HARNESS_APP_URL,
@@ -205,5 +206,91 @@ describe('harness restart navigation', () => {
     expect(recovered).toBe(false)
     expect(sessions.resumeUrl(second.id)).toBe('dsh-app://app/second?y=2')
     expect(sessions.isCurrent(second.id)).toBe(true)
+  })
+})
+
+describe('harness restart prepareStart', () => {
+  it('runs prepareStart after the stop settles and before start', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop') },
+      prepareStart: async () => { calls.push('prepareStart') },
+      start: async () => { calls.push('start') }
+    }))
+    expect(calls).toEqual(['stop', 'prepareStart', 'start'])
+  })
+
+  it('does not run prepareStart when the stop fails', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop'); throw new Error('stop failed') },
+      prepareStart: async () => { calls.push('prepareStart') },
+      start: async () => { calls.push('start') },
+      reportStopFailure: async () => { calls.push('report') }
+    }))
+    expect(calls).toEqual(['stop', 'report'])
+  })
+
+  it('continues into start when prepareStart fails', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    const reported: unknown[] = []
+    const ok = await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop') },
+      prepareStart: async () => { calls.push('prepareStart'); throw new Error('projection failed') },
+      reportPrepareStartFailure: error => { calls.push('report'); reported.push(error) },
+      start: async () => { calls.push('start') },
+      resume: async () => { calls.push('resume'); return true }
+    }))
+    expect(ok).toBe(true)
+    expect(calls).toEqual(['stop', 'prepareStart', 'report', 'start', 'resume'])
+    expect(reported[0]).toMatchObject({ message: 'projection failed' })
+  })
+
+  it('does not start when the restart is abandoned during prepareStart', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    let quitting = false
+    const ok = await runHarnessRestart(steps(sessions, session.id, {
+      cancelled: () => quitting,
+      stop: async () => { calls.push('stop') },
+      prepareStart: async () => { calls.push('prepareStart'); quitting = true },
+      start: async () => { calls.push('start') }
+    }))
+    expect(ok).toBe(false)
+    expect(calls).toEqual(['stop', 'prepareStart'])
+    expect(sessions.isCurrent(session.id)).toBe(false)
+  })
+
+  it('works without prepareStart', async () => {
+    const sessions = new HarnessRestartSessions()
+    const session = sessions.begin('dsh-app://app/')!
+    const calls: string[] = []
+    const ok = await runHarnessRestart(steps(sessions, session.id, {
+      stop: async () => { calls.push('stop') },
+      start: async () => { calls.push('start') },
+      resume: async () => true
+    }))
+    expect(ok).toBe(true)
+    expect(calls).toEqual(['stop', 'start'])
+  })
+
+  it('writes restart projection notes to the harness log and skips safe mode', async () => {
+    const source = await readFile(new URL('../../src/main/shell/app.ts', import.meta.url), 'utf8')
+    const start = source.indexOf('function harnessRestartSteps')
+    const end = source.indexOf('async function showHarnessRestartWaiting')
+    const stepsSource = source.slice(start, end)
+    expect(stepsSource).toContain('prepareStart:')
+    expect(stepsSource).toContain('if (safeMode) return Promise.resolve()')
+    expect(stepsSource).toContain("prepareGenerationsForLaunch(dshHome, line => {")
+    expect(stepsSource).toContain('harnessLog.note(line)')
+    expect(stepsSource).toContain('reportPrepareStartFailure:')
+    expect(stepsSource).toContain('harness restart continued after projection failure')
   })
 })

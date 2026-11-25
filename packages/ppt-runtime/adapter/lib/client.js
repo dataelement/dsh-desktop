@@ -31,15 +31,14 @@ window.__ModuleLoader__.load({
 			tag.dataset.plugin = "dsh-ppt-composer";
 			tag.dataset.pluginCss = tagId;
 			tag.textContent = css + `
-button[data-desktop-ppt]{color:var(--dsw-alias-label-primary);transition:background-color .18s ease,color .18s ease,transform .18s ease}
+button[data-desktop-ppt]{box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border:0;border-radius:8px;background:transparent;font:inherit;font-size:13px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);transition:background-color .18s ease,color .18s ease,transform .18s ease}
+button[data-desktop-ppt]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 button[data-desktop-ppt] .desktop-ppt-icon{width:18px;height:18px;flex:none;transition:transform .18s ease}
-button[data-desktop-ppt][data-selected=true],
-._8JRpoa_heroModeCluster button[data-desktop-ppt][data-selected=true]:not(:disabled){background:#262626!important;color:#fafafa!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dsw-alias-label-primary) 30%,#262626)}
+button[data-desktop-ppt][data-selected=true]{background:var(--dsw-alias-label-primary)!important;color:var(--dsw-alias-label-primary-foreground)!important}
 button[data-desktop-ppt][data-selected=true] .desktop-ppt-icon{transform:translateY(-.5px)}
 button[data-desktop-ppt]:active:not(:disabled){transform:translateY(1px)}
-._8JRpoa_heroModeCluster button[data-desktop-ppt]:active:not(:disabled){transform:translateY(1px)}
 button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-primary)!important;outline-offset:2px}
-@media(prefers-reduced-motion:reduce){button[data-desktop-ppt],._8JRpoa_heroModeCluster button[data-desktop-ppt],button[data-desktop-ppt] .desktop-ppt-icon{transition:none}}
+@media(prefers-reduced-motion:reduce){button[data-desktop-ppt],button[data-desktop-ppt] .desktop-ppt-icon{transition:none}}
 `;
 			document.head.appendChild(tag);
 		}
@@ -740,6 +739,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("dialog", {
 				ref: dialogRef,
 				className: "dsh-ppt-opening-dialog",
+				"data-window-drag-exclude": true,
 				"aria-modal": true,
 				"aria-labelledby": "dsh-ppt-opening-title",
 				onCancel: (event) => {
@@ -1329,6 +1329,41 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), "dsh-ppt: dictionaries");
 			const connection = ctx.get("connection");
 			const mode = new OfficePptHeroStore();
+            // Product extensions use this same store, so the picker and RPC state
+            // cannot diverge after an external mode/template selection.
+            let alive = true;
+            ctx.effect(() => () => { alive = false; }, 'PPT presentation controls');
+            ctx.provide?.('desktopPresentation', {
+                snapshot: sessionId => mode.snapshot(sessionId),
+                subscribe: (sessionId, listener) => mode.subscribe(sessionId, listener),
+                async change(sessionId, selection, signal) {
+                    if (!alive || typeof sessionId !== 'string' || !sessionId) throw new Error('An active presentation session is required.');
+                    if (!selection || !['ppt', null].includes(selection.mode) || (selection.templateId !== undefined && typeof selection.templateId !== 'string')) throw new Error('Invalid presentation selection.');
+                    if (selection.clearTemplate !== undefined && typeof selection.clearTemplate !== 'boolean') throw new Error('Invalid presentation selection.');
+                    signal?.throwIfAborted();
+                    mode.bump(sessionId);
+                    const revision = mode.revision(sessionId);
+                    const client = createOfficePptClient(connection.rpc, sessionId);
+                    mode.setLoading(sessionId, true);
+                    try {
+                        if (selection.clearTemplate) await client.call('template/deselect', {}, signal);
+                        signal?.throwIfAborted();
+                        if (!alive || mode.revision(sessionId) !== revision) return false;
+                        await client.call(selection.templateId ? 'template/select' : 'presentation/mode', selection.templateId ? { mode: selection.mode, templateId: selection.templateId } : { mode: selection.mode }, signal);
+                        signal?.throwIfAborted();
+                        const state = await client.call('state', {}, signal);
+                        signal?.throwIfAborted();
+                        if (!alive || mode.revision(sessionId) !== revision) return false;
+                        mode.update(sessionId, current => ({ ...current, activeMode: selection.mode }));
+                        mode.setTemplateState(sessionId, state);
+                        announcePptMode(sessionId);
+                        return true;
+                    } catch (error) {
+                        if (alive && mode.revision(sessionId) === revision) { mode.setLoading(sessionId, false); mode.setError(sessionId, error instanceof Error ? error.message : String(error)); }
+                        throw error;
+                    }
+                }
+            });
             ctx.effect(() => {
                 const listener = event => {
                     const detail = event.detail;

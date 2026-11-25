@@ -66,7 +66,8 @@ export function createDocxWorkflow(ctx, library, modes, resources) {
     if (typeof path !== 'string' || !path.trim() || path.length > 1024) throw new Error('Use a bounded Word workspace path')
     const policy = await workspacePolicy(ctx, exec, command !== 'validate')
     const source = await library.asset(item.id, item.sampleFile)
-    const profile = item.files['generation.json'] ? JSON.parse((await library.asset(item.id, 'generation.json')).toString('utf8')) : null
+    const profile = item.files['generation.json'] ? JSON.parse((await library.asset(item.id, 'generation.json')).toString('utf8'))
+      : item.origin === 'personal' ? { immutablePackage: true } : null
     worker ??= await readFile(fileURLToPath(new URL('./docx-layout.py', import.meta.url)), 'utf8')
     const plan = await ctx.sandbox.confine(docxWorkerArgv(python), policy)
     const env = docxWorkerEnvironment(process, worker)

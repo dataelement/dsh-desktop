@@ -23,6 +23,8 @@ import yaml from "js-yaml";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { convertPptxToPptd, yamlText, record } from "./pptx-converter.js";
+export { installWebModePolicy } from './web-mode-policy.js';
+export { createOfficePptxScopePolicyController, registerOfficePptxScopePolicy } from './office-pptx-scope-policy.js';
 //#region lib/types/dsh-ppt-skill.js
 /** First-party DSH PPT workflow Skill bundled with the local PPTD route. */
 const PROVIDER = "dsh-ppt-bundled";

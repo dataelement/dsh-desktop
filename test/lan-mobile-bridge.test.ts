@@ -53,6 +53,23 @@ afterEach(async () => {
 })
 
 describe('LAN mobile bridge address policy', () => {
+  it('keeps failed listens retryable and starts after the port is released', async () => {
+    const occupied = createServer()
+    servers.push(occupied)
+    await new Promise<void>(resolve => occupied.listen(0, '0.0.0.0', resolve))
+    const port = (occupied.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({ harnessUrl: () => undefined, port })
+    bridges.push(bridge)
+
+    await expect(bridge.start()).rejects.toMatchObject({ code: 'EADDRINUSE' })
+    expect(bridge.createDesktopUrl()).toBeUndefined()
+    await expect(bridge.start()).rejects.toMatchObject({ code: 'EADDRINUSE' })
+    await new Promise<void>(resolve => occupied.close(() => resolve()))
+
+    expect((await bridge.start()).port).toBe(port)
+    expect(bridge.createDesktopUrl()).toBeDefined()
+  })
+
   it('allows loopback and RFC1918 addresses', () => {
     expect(isPrivateAddress('127.0.0.1')).toBe(true)
     expect(isPrivateAddress('10.1.2.3')).toBe(true)
