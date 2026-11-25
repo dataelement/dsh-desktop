@@ -1,7 +1,5 @@
 export const HIDDEN_CONSOLE_ENV: 'DSH_DESKTOP_HIDDEN_CONSOLE'
 
-export function attachParentRequested(importUrl?: string): boolean
-
 export function attachHiddenConsole(options?: {
   load?: (library: string) => {
     func: (
@@ -13,5 +11,4 @@ export function attachHiddenConsole(options?: {
   env?: NodeJS.ProcessEnv
   platform?: NodeJS.Platform
   resourcesPath?: string
-  attachParent?: boolean
 }): boolean

@@ -1,41 +1,23 @@
 diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
-index 6f5dfcc..f393b8c 100644
+index 6f5dfcc..5f993db 100644
 --- a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
-@@ -766,6 +766,18 @@ var WindowsJobOwner = class {
- 		} catch {}
- 	}
- };
-+function consoleImportForChild(specifier) {
-+	try {
-+		const url = new URL(specifier);
-+		// A Windows path can parse as a URL with a drive-letter scheme. Only file
-+		// URLs produced by the desktop bootstrap are rewritten.
-+		if (url.protocol !== "file:") return specifier;
-+		url.searchParams.set("attach", "parent");
-+		return url.href;
-+	} catch {
-+		return specifier;
-+	}
-+}
- /**
- * Launch one target through a runner that uniquely owns its Job handle.
- * @param spec - ordinary target request.
-@@ -776,16 +788,35 @@ var WindowsJobOwner = class {
+@@ -776,16 +776,36 @@ var WindowsJobOwner = class {
  function launchWindowsJob(spec, targetEnv, internals = {}) {
  	const invocation = internals.runnerInvocation ?? spawnRunnerInvocation();
  	const [command, ...prefix] = invocation;
-+	// Electron GUI children do not inherit the parent's console, even without
-+	// CREATE_NO_WINDOW. Forward Desktop's trusted preload so each hop attaches
-+	// the parent console instead of allocating a new one. Keep it in argv:
-+	// subprocess environment scrubbing must remain intact.
++	// Electron GUI children do not inherit the parent's console. Forward
++	// Desktop's trusted preload unchanged so each hop allocates its own hidden
++	// console. AttachConsole is not inherited by a console-subsystem grandchild
++	// such as Codex's codex.exe. Keep the preload in argv: subprocess
++	// environment scrubbing must remain intact.
 +	const consoleImports = [];
 +	if (process.versions.electron && process.env.DSH_DESKTOP_HIDDEN_CONSOLE === "1") {
 +		for (let index = 0; index < process.execArgv.length; index += 1) {
 +			const arg = process.execArgv[index];
 +			const next = process.execArgv[index + 1];
-+			if (arg === "--import" && typeof next === "string" && next.includes("windows-hide-console-import")) consoleImports.push(arg, consoleImportForChild(next));
-+			else if (arg?.startsWith("--import=") && arg.includes("windows-hide-console-import")) consoleImports.push(`--import=${consoleImportForChild(arg.slice("--import=".length))}`);
++			if (arg === "--import" && typeof next === "string" && next.includes("windows-hide-console-import")) consoleImports.push(arg, next);
++			else if (arg?.startsWith("--import=") && arg.includes("windows-hide-console-import")) consoleImports.push(arg);
 +		}
 +	}
 +	const targetArgv = spec.argv[0] === process.execPath ? [spec.argv[0], ...consoleImports, ...spec.argv.slice(1)] : spec.argv;
@@ -92,53 +74,28 @@ index e3a47ee..dc1155e 100644
    const direct = directChildResult(child)
    const pid = child.pid
 diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts b/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
-index 34bfff7..b93b84a 100644
+index 34bfff7..b992eb2 100644
 --- a/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
 +++ b/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
-@@ -126,6 +126,25 @@ class WindowsJobOwner implements BoundProcessOwner {
-   }
- }
- 
-+/**
-+ * Child Electron hops do not inherit a console. Mark a file-URL preload so
-+ * those hops attach to this process's console instead of allocating one.
-+ * Setting the query is idempotent when a hop forwards the same import again.
-+ * Anything that is not a file URL is forwarded unchanged so launch still works.
-+ */
-+function consoleImportForChild(specifier: string): string {
-+  try {
-+    const url = new URL(specifier)
-+    // A Windows path can parse as a URL with a drive-letter scheme. Only file
-+    // URLs produced by the desktop bootstrap are rewritten.
-+    if (url.protocol !== 'file:') return specifier
-+    url.searchParams.set('attach', 'parent')
-+    return url.href
-+  } catch {
-+    return specifier
-+  }
-+}
-+
- /**
-  * Launch one target through a runner that uniquely owns its Job handle.
-  * @param spec - ordinary target request.
-@@ -140,16 +159,41 @@ export function launchWindowsJob(
+@@ -140,16 +140,42 @@ export function launchWindowsJob(
  ): ManagedProcessLaunch {
    const invocation = internals.runnerInvocation ?? spawnRunnerInvocation()
    const [command, ...prefix] = invocation
 +
-+  // Electron GUI children do not inherit the parent's console, even without
-+  // CREATE_NO_WINDOW. Forward Desktop's trusted preload so each hop attaches
-+  // the parent console instead of allocating a new one. Keep it in argv:
-+  // subprocess environment scrubbing must remain intact.
++  // Electron GUI children do not inherit the parent's console. Forward
++  // Desktop's trusted preload unchanged so each hop allocates its own hidden
++  // console. AttachConsole is not inherited by a console-subsystem grandchild
++  // such as Codex's codex.exe. Keep the preload in argv: subprocess
++  // environment scrubbing must remain intact.
 +  const consoleImports: string[] = []
 +  if (process.versions.electron && process.env.DSH_DESKTOP_HIDDEN_CONSOLE === '1') {
 +    for (let index = 0; index < process.execArgv.length; index += 1) {
 +      const arg = process.execArgv[index]
 +      const next = process.execArgv[index + 1]
 +      if (arg === '--import' && typeof next === 'string' && next.includes('windows-hide-console-import')) {
-+        consoleImports.push(arg, consoleImportForChild(next))
++        consoleImports.push(arg, next)
 +      } else if (arg?.startsWith('--import=') && arg.includes('windows-hide-console-import')) {
-+        consoleImports.push(`--import=${consoleImportForChild(arg.slice('--import='.length))}`)
++        consoleImports.push(arg)
 +      }
 +    }
 +  }

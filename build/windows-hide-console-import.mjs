@@ -13,33 +13,24 @@ export const HIDDEN_CONSOLE_ENV = 'DSH_DESKTOP_HIDDEN_CONSOLE'
 /** SW_HIDE: hide the window and activate another one. */
 const SW_HIDE = 0
 
-/** ATTACH_PARENT_PROCESS: DWORD -1, passed through the uint32 binding as 0xFFFFFFFF. */
-const ATTACH_PARENT_PROCESS = 0xFFFFFFFF
-
-/**
- * True when this module was loaded with `?attach=parent`.
- * Job hops set that query; every other entry allocates its own console.
- * @param {string} [importUrl]
- * @returns {boolean}
- */
-export function attachParentRequested(importUrl = import.meta.url) {
-  try {
-    return new URL(importUrl).searchParams.get('attach') === 'parent'
-  } catch {
-    return false
-  }
-}
+/** Win32 standard-handle ids. AllocConsole replaces these with console handles. */
+const STD_INPUT_HANDLE = 0xFFFFFFF6
+const STD_OUTPUT_HANDLE = 0xFFFFFFF5
+const STD_ERROR_HANDLE = 0xFFFFFFF4
+const STD_HANDLES = [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
 
 /**
  * Give this console-less process a console that children can inherit.
  *
- * Without `attachParent`, allocate a new console and hide it. Host, market
- * install, and plugin commands spawned by the GUI main process use this path,
- * so they never attach to a user's terminal.
+ * `AllocConsole` is the call Windows documents as inherited by a child.
+ * `AttachConsole` attaches this process only: a console-subsystem grandchild
+ * such as `codex.exe` still opens its own visible console. Every entry,
+ * including Job hops, therefore allocates a console and hides it. That also
+ * keeps Host, market install, and plugin commands off the user's terminal.
  *
- * With `attachParent`, join the parent console when it has no visible window.
- * A visible parent, or a failed attach, falls back to allocating a hidden
- * console. Failure must not block startup.
+ * AllocConsole points the standard handles at the new console. The pipes the
+ * parent already installed are captured first and put back, so command output
+ * still flows through the Job. Failure must not block startup.
  *
  * `koffi.errno()` is the C runtime errno, not Win32 GetLastError, and a later
  * koffi call can overwrite the thread error. Diagnostics name the failure
@@ -49,8 +40,7 @@ export function attachParentRequested(importUrl = import.meta.url) {
  *   load?: (library: string) => { func: Function },
  *   env?: NodeJS.ProcessEnv,
  *   platform?: NodeJS.Platform,
- *   resourcesPath?: string,
- *   attachParent?: boolean
+ *   resourcesPath?: string
  * }} [options]
  * @returns {boolean} true when a console is attached.
  */
@@ -58,20 +48,10 @@ export function attachHiddenConsole(options = {}) {
   const platform = options.platform ?? process.platform
   if (platform !== 'win32') return false
   const env = options.env ?? process.env
-  const attachParent = options.attachParent === true
   try {
     const loadLibrary = options.load ?? resolveKoffiLoad(options.resourcesPath ?? process.resourcesPath)
     const kernel32 = loadLibrary('kernel32.dll')
     const user32 = loadLibrary('user32.dll')
-    if (attachParent) {
-      const parent = adoptParentConsole(kernel32, user32)
-      if (parent === 'kept') {
-        env[HIDDEN_CONSOLE_ENV] = '1'
-        return true
-      }
-      // Still attached to a visible console: AllocConsole would fail and hide the cause.
-      if (parent === 'stuck') return false
-    }
     return allocateHiddenConsole(kernel32, user32, env)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -84,36 +64,22 @@ export function attachHiddenConsole(options = {}) {
 
 /**
  * @param {{ func: Function }} kernel32
- * @param {{ func: Function }} user32
- * @returns {'kept' | 'none' | 'stuck'} `kept` when the parent console is used,
- *   `none` when no console is attached, `stuck` when a visible one could not be released.
+ * @returns {unknown[]}
  */
-function adoptParentConsole(kernel32, user32) {
-  const attachConsole = kernel32.func('AttachConsole', 'bool', ['uint32'])
-  const getConsoleWindow = kernel32.func('GetConsoleWindow', 'void *', [])
-  const isWindowVisible = user32.func('IsWindowVisible', 'bool', ['void *'])
-  const freeConsole = kernel32.func('FreeConsole', 'bool', [])
-  if (!attachConsole(ATTACH_PARENT_PROCESS)) {
-    process.stderr.write(
-      '[windows-hide-console] parent console was not attached; allocating a new hidden console\n'
-    )
-    return 'none'
+function captureStdHandles(kernel32) {
+  const getStdHandle = kernel32.func('GetStdHandle', 'void *', ['uint32'])
+  return STD_HANDLES.map(handle => getStdHandle(handle))
+}
+
+/**
+ * @param {{ func: Function }} kernel32
+ * @param {unknown[]} handles
+ */
+function restoreStdHandles(kernel32, handles) {
+  const setStdHandle = kernel32.func('SetStdHandle', 'bool', ['uint32', 'void *'])
+  for (let index = 0; index < STD_HANDLES.length; index += 1) {
+    setStdHandle(STD_HANDLES[index], handles[index])
   }
-  const window = getConsoleWindow()
-  // NULL is a console created with CREATE_NO_WINDOW: there is no window to show.
-  if (!window) return 'kept'
-  if (!isWindowVisible(window)) return 'kept'
-  // Do not hide a console the user can see, such as their own terminal.
-  if (!freeConsole()) {
-    process.stderr.write(
-      '[windows-hide-console] parent console is visible and could not be released; child consoles may remain visible\n'
-    )
-    return 'stuck'
-  }
-  process.stderr.write(
-    '[windows-hide-console] parent console is visible; allocating a new hidden console\n'
-  )
-  return 'none'
 }
 
 /**
@@ -123,19 +89,24 @@ function adoptParentConsole(kernel32, user32) {
  * @returns {boolean}
  */
 function allocateHiddenConsole(kernel32, user32, env) {
-  const allocConsole = kernel32.func('AllocConsole', 'bool', [])
-  const getConsoleWindow = kernel32.func('GetConsoleWindow', 'void *', [])
-  const showWindow = user32.func('ShowWindow', 'bool', ['void *', 'int'])
-  if (!allocConsole()) {
-    process.stderr.write(
-      '[windows-hide-console] hidden console was not created (AllocConsole returned false); child consoles may remain visible\n'
-    )
-    return false
+  const previousHandles = captureStdHandles(kernel32)
+  try {
+    const allocConsole = kernel32.func('AllocConsole', 'bool', [])
+    const getConsoleWindow = kernel32.func('GetConsoleWindow', 'void *', [])
+    const showWindow = user32.func('ShowWindow', 'bool', ['void *', 'int'])
+    if (!allocConsole()) {
+      process.stderr.write(
+        '[windows-hide-console] hidden console was not created (AllocConsole returned false); child consoles may remain visible\n'
+      )
+      return false
+    }
+    const window = getConsoleWindow()
+    if (window) showWindow(window, SW_HIDE)
+    env[HIDDEN_CONSOLE_ENV] = '1'
+    return true
+  } finally {
+    restoreStdHandles(kernel32, previousHandles)
   }
-  const window = getConsoleWindow()
-  if (window) showWindow(window, SW_HIDE)
-  env[HIDDEN_CONSOLE_ENV] = '1'
-  return true
 }
 
 /**
@@ -184,4 +155,4 @@ function loadedAsConsoleBootstrap() {
 
 // `--import` evaluates this file before the entry. Unit tests import the
 // function directly and must not attach a console to the test process.
-if (loadedAsConsoleBootstrap()) attachHiddenConsole({ attachParent: attachParentRequested() })
+if (loadedAsConsoleBootstrap()) attachHiddenConsole()
