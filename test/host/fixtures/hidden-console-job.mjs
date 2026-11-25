@@ -21,8 +21,9 @@ function consoleProcessIds() {
 }
 
 // powershell.exe is a console-subsystem process, like codex.exe. Electron is not:
-// launching it here would not inherit the console. windowsHide stays false so
-// Node does not pass CREATE_NO_WINDOW and the child keeps this console.
+// launching it here would not inherit the console. The parent must AllocConsole;
+// AttachConsole does not pass that console on, and this child would open its own.
+// windowsHide stays false so Node does not pass CREATE_NO_WINDOW.
 // The pid list is written to a file: a redirected PowerShell pipe is UTF-16,
 // and a uint[] P/Invoke without [Out] returns 0 without failing the process.
 const grandchildProbe = `
@@ -89,6 +90,7 @@ if (process.argv[2] === 'target') {
     attached: window !== null,
     visible: window !== null && visible(window),
     outerPid: Number(process.argv[3]),
+    targetPid: process.pid,
     consolePids: consoleProcessIds(),
     grandchildPids,
     grandchildCode: grandchild.code,
@@ -97,7 +99,7 @@ if (process.argv[2] === 'target') {
   }))
 } else {
   // Select the real Job path without booting a complete Harness Profile.
-  // No attach=parent on this process: it allocates, the same way Host does.
+  // This process allocates, the same way Host does. The target hop does too.
   const runtime = {
     selectContainmentMode: () => 'windows-job', internals: {},
     live: new Set(), controlChannels: new Set(), reportSpillFailure: console.error
