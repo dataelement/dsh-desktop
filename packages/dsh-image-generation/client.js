@@ -66,7 +66,7 @@ window.__ModuleLoader__.load({
     `
     const emptyDrafts = {
       bytedance: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedream-4-5-251128', configured: false, validation: null, apiKey: '' },
-      openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-1.5', configured: false, validation: null, apiKey: '' },
+      openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-2.6-sunburst', configured: false, validation: null, apiKey: '' },
     }
     const emptyCatalogs = {
       openai: { source: 'builtin', canFetch: true, models: [emptyDrafts.openai.model] },

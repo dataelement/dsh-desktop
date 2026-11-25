@@ -1,11 +1,11 @@
 export const DEFAULTS = Object.freeze({
   bytedance: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedream-4-5-251128' },
-  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-1.5' },
+  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-2.6-sunburst' },
 })
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 // Models documented by Images API; text, legacy DALL-E and unknown adapters
 // remain outside this tool's parameter contract.
-const OPENAI_IMAGES = new Set(['gpt-image-2.5-sunburst', 'gpt-image-2.5-sunburst-2026-09-08', 'gpt-image-2.5-flare', 'gpt-image-2.5-flare-2026-09-08', 'gpt-image-2', 'gpt-image-2-2026-04-21', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'])
+const OPENAI_IMAGES = new Set(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-sunburst-2026-09-08', 'gpt-image-2.5-flare', 'gpt-image-2.5-flare-2026-09-08', 'gpt-image-2', 'gpt-image-2-2026-04-21'])
 export const MODEL_CATALOG = Object.freeze({
   openai: { source: 'builtin', canFetch: true, models: [...OPENAI_IMAGES] },
   // Ark image model list, checked 2026-09-10:
@@ -42,7 +42,12 @@ export function profile(provider, input = {}) {
   // Provider consoles present the full REST endpoint; store one canonical base
   // for validation, model discovery and generation so the suffix appears once.
   url.pathname = url.pathname.replace(/\/images\/generations\/?$/, '')
-  return { baseUrl: url.href.replace(/\/+$/, ''), model }
+  const baseUrl = url.href.replace(/\/+$/, '')
+  // OpenAI retires the former default on 2026-12-01. Gateways own their model
+  // aliases, so only migrate profiles targeting the public OpenAI endpoint.
+  const migrated = provider === 'openai' && baseUrl === DEFAULTS.openai.baseUrl
+    && ['gpt-image-1.5', 'gpt-image-1.5-2025-12-16'].includes(model)
+  return { baseUrl, model: migrated ? DEFAULTS.openai.model : model }
 }
 
 // Bound the stream before parsing; a Content-Length header alone is insufficient.
