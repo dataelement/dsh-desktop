@@ -14,7 +14,7 @@ it.skipIf(process.platform !== 'win32')('hides the target console through real E
   const report = JSON.parse(stdout.trim())
   expect(report.attached).toBe(true)
   expect(report.visible).toBe(false)
-  expect(report.grandchildCode, report.grandchildStderr).toBe(0)
+  expect(report.grandchildCode, `${report.grandchildStderr}\n${report.grandchildOutput ?? ''}`).toBe(0)
   // Same console as the outer process, which allocated it. A new console would
   // not list that pid. This stays true when the console has no window.
   expect(report.consolePids).toContain(report.outerPid)
