@@ -70,7 +70,7 @@ describe('Windows subprocess console inheritance', () => {
     expect(args.slice(4)).toEqual([process.execPath, `--import=${fileImport}`, `--import=${plain}`, 'codex.js'])
   })
 
-  it('inherits the Host console for the Job runner when the marker is set', () => {
+  it('keeps windowsHide true for the Job runner', () => {
     process.env[marker] = '1'
     let options
     launchWindowsJob(jobSpec(), {}, {
@@ -80,7 +80,7 @@ describe('Windows subprocess console inheritance', () => {
         return fakeProcess()
       }
     })
-    expect(options.windowsHide).toBe(false)
+    expect(options.windowsHide).toBe(true)
 
     delete process.env[marker]
     launchWindowsJob(jobSpec(), {}, {
@@ -93,7 +93,7 @@ describe('Windows subprocess console inheritance', () => {
     expect(options.windowsHide).toBe(true)
   })
 
-  it('inherits the Host console on the Windows fallback spawn when the marker is set', () => {
+  it('keeps windowsHide true on the Windows fallback spawn', () => {
     process.env[marker] = '1'
     let options
     spawnSubprocess(jobSpec(), {
@@ -103,7 +103,7 @@ describe('Windows subprocess console inheritance', () => {
         return fakeProcess()
       }
     })
-    expect(options.windowsHide).toBe(false)
+    expect(options.windowsHide).toBe(true)
 
     delete process.env[marker]
     spawnSubprocess(jobSpec(), {

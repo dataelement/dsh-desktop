@@ -1,26 +1,24 @@
 diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
-index 6f5dfcc..5f993db 100644
+index 6f5dfcc..4e7b219 100644
 --- a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
-@@ -776,16 +776,36 @@ var WindowsJobOwner = class {
+@@ -776,13 +776,27 @@ var WindowsJobOwner = class {
  function launchWindowsJob(spec, targetEnv, internals = {}) {
  	const invocation = internals.runnerInvocation ?? spawnRunnerInvocation();
  	const [command, ...prefix] = invocation;
-+	// Electron GUI children do not inherit the parent's console. Forward
-+	// Desktop's trusted preload unchanged so each hop allocates its own hidden
-+	// console. AttachConsole is not inherited by a console-subsystem grandchild
-+	// such as Codex's codex.exe. Keep the preload in argv: subprocess
-+	// environment scrubbing must remain intact.
++
++	// Electron GUI children need their own hidden console; they do not inherit it.
 +	const consoleImports = [];
 +	if (process.versions.electron && process.env.DSH_DESKTOP_HIDDEN_CONSOLE === "1") {
 +		for (let index = 0; index < process.execArgv.length; index += 1) {
 +			const arg = process.execArgv[index];
 +			const next = process.execArgv[index + 1];
-+			if (arg === "--import" && typeof next === "string" && next.includes("windows-hide-console-import")) consoleImports.push(arg, next);
++			if (arg === "--import" && next?.includes("windows-hide-console-import")) consoleImports.push(arg, next);
 +			else if (arg?.startsWith("--import=") && arg.includes("windows-hide-console-import")) consoleImports.push(arg);
 +		}
 +	}
 +	const targetArgv = spec.argv[0] === process.execPath ? [spec.argv[0], ...consoleImports, ...spec.argv.slice(1)] : spec.argv;
++
  	const ignoredStdinFd = spec.stdio.stdin === "ignore" ? openSync(devNull, "r") : void 0;
  	let child;
  	try {
@@ -32,71 +30,26 @@ index 6f5dfcc..5f993db 100644
 +			...targetArgv
  		], {
  			cwd: process.cwd(),
--			windowsHide: true,
-+			// Desktop's Host attaches one hidden console and sets this marker. CREATE_NO_WINDOW
-+			// would discard it, so a console grandchild such as Codex's codex.exe allocates a
-+			// visible console. Inherit when the marker is present; otherwise keep the old flag.
-+			// Remove this once upstream gives Job targets a console-inheritance strategy.
-+			windowsHide: process.env.DSH_DESKTOP_HIDDEN_CONSOLE !== "1",
- 			env: runnerEnvironment(WINDOWS_RUNNER_SELECTION, invocation),
- 			stdio: runnerStdio(spec, true, ignoredStdinFd ?? "pipe")
- 		});
-diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-CKTiL8M8.js b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-CKTiL8M8.js
-index 1367dc4..542528c 100644
---- a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-CKTiL8M8.js
-+++ b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner-launch-CKTiL8M8.js
-@@ -1050,7 +1050,10 @@ function spawnSubprocess(spec, internals = {}) {
- 		env: controlEnvironment(childEnv(spec.env), spec.stdio.control),
- 		stdio,
- 		detached: platform !== "win32",
--		windowsHide: platform === "win32"
-+		// Same hidden-console inheritance as launchWindowsJob. The marker is read on the
-+		// Host; it is not forwarded to the target. Drop this when the Job path no longer
-+		// needs the Desktop marker.
-+		windowsHide: platform === "win32" && process.env.DSH_DESKTOP_HIDDEN_CONSOLE !== "1"
- 	});
- 	const direct = directChildResult(child);
- 	const pid = child.pid;
-diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/src/spawn.ts b/node_modules/@deepseek-ai/dsh-subprocess-local/src/spawn.ts
-index e3a47ee..dc1155e 100644
---- a/node_modules/@deepseek-ai/dsh-subprocess-local/src/spawn.ts
-+++ b/node_modules/@deepseek-ai/dsh-subprocess-local/src/spawn.ts
-@@ -477,7 +477,10 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
-     env: controlEnvironment(childEnv(spec.env), spec.stdio.control),
-     stdio,
-     detached: platform !== 'win32',
--    windowsHide: platform === 'win32',
-+    // Same hidden-console inheritance as launchWindowsJob. The marker is read on the
-+    // Host; it is not forwarded to the target. Drop this when the Job path no longer
-+    // needs the Desktop marker.
-+    windowsHide: platform === 'win32' && process.env.DSH_DESKTOP_HIDDEN_CONSOLE !== '1',
-   })
-   const direct = directChildResult(child)
-   const pid = child.pid
+ 			windowsHide: true,
 diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts b/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
-index 34bfff7..b992eb2 100644
+index 34bfff7..ee3132e 100644
 --- a/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
 +++ b/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
-@@ -140,16 +140,42 @@ export function launchWindowsJob(
+@@ -140,13 +140,30 @@ export function launchWindowsJob(
  ): ManagedProcessLaunch {
    const invocation = internals.runnerInvocation ?? spawnRunnerInvocation()
    const [command, ...prefix] = invocation
 +
-+  // Electron GUI children do not inherit the parent's console. Forward
-+  // Desktop's trusted preload unchanged so each hop allocates its own hidden
-+  // console. AttachConsole is not inherited by a console-subsystem grandchild
-+  // such as Codex's codex.exe. Keep the preload in argv: subprocess
-+  // environment scrubbing must remain intact.
++  // Electron GUI children do not inherit the parent's console, even without
++  // CREATE_NO_WINDOW. Reapply Desktop's trusted preload to each Electron hop.
++  // Keep it in argv: subprocess environment scrubbing must remain intact.
 +  const consoleImports: string[] = []
 +  if (process.versions.electron && process.env.DSH_DESKTOP_HIDDEN_CONSOLE === '1') {
 +    for (let index = 0; index < process.execArgv.length; index += 1) {
 +      const arg = process.execArgv[index]
 +      const next = process.execArgv[index + 1]
-+      if (arg === '--import' && typeof next === 'string' && next.includes('windows-hide-console-import')) {
-+        consoleImports.push(arg, next)
-+      } else if (arg?.startsWith('--import=') && arg.includes('windows-hide-console-import')) {
-+        consoleImports.push(arg)
-+      }
++      if (arg === '--import' && next?.includes('windows-hide-console-import')) consoleImports.push(arg, next)
++      else if (arg?.startsWith('--import=') && arg.includes('windows-hide-console-import')) consoleImports.push(arg)
 +    }
 +  }
 +  const targetArgv = spec.argv[0] === process.execPath
@@ -113,12 +66,4 @@ index 34bfff7..b992eb2 100644
 +      ...targetArgv,
      ], {
        cwd: process.cwd(),
--      windowsHide: true,
-+      // Desktop's Host attaches one hidden console and sets this marker. CREATE_NO_WINDOW
-+      // would discard it, so a console grandchild such as Codex's codex.exe allocates a
-+      // visible console. Inherit when the marker is present; otherwise keep the old flag.
-+      // Remove this once upstream gives Job targets a console-inheritance strategy.
-+      windowsHide: process.env.DSH_DESKTOP_HIDDEN_CONSOLE !== '1',
-       env: runnerEnvironment(WINDOWS_RUNNER_SELECTION, invocation),
-       stdio: runnerStdio(spec, true, ignoredStdinFd ?? 'pipe'),
-     }) as RunnerProcess
+       windowsHide: true,

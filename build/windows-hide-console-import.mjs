@@ -1,5 +1,6 @@
+import childProcess from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -9,6 +10,95 @@ import { fileURLToPath } from 'node:url'
  * Codex do not inherit the marker.
  */
 export const HIDDEN_CONSOLE_ENV = 'DSH_DESKTOP_HIDDEN_CONSOLE'
+
+/**
+ * Add the Windows no-console flag (CREATE_NO_WINDOW) without overriding an explicit choice.
+ * @template T
+ * @param {T} options
+ * @returns {T}
+ */
+export function applyWindowsHide(options) {
+  if (options && typeof options === 'object' && options.windowsHide !== undefined) {
+    return options
+  }
+  if (options && typeof options === 'object') {
+    return { ...options, windowsHide: true }
+  }
+  return /** @type {T} */ ({ windowsHide: true })
+}
+
+/**
+ * Intercept child_process methods so that console-subsystem binaries
+ * (such as Codex's codex.exe, powershell.exe, or cmd.exe) spawned without explicit
+ * windowsHide default to CREATE_NO_WINDOW on Windows, preventing console window flashing.
+ *
+ * @param {typeof childProcess} [cp]
+ * @param {typeof syncBuiltinESMExports} [sync]
+ */
+export function enforceWindowsChildProcessHide(cp = childProcess, sync = syncBuiltinESMExports) {
+  if (process.platform !== 'win32') return
+
+  const originalSpawn = cp.spawn
+  const originalSpawnSync = cp.spawnSync
+  const originalExec = cp.exec
+  const originalExecSync = cp.execSync
+  const originalExecFile = cp.execFile
+  const originalExecFileSync = cp.execFileSync
+  const originalFork = cp.fork
+
+  cp.spawn = function patchedSpawn(command, args, options) {
+    if (Array.isArray(args)) {
+      return originalSpawn.call(this, command, args, applyWindowsHide(options))
+    }
+    return originalSpawn.call(this, command, applyWindowsHide(args))
+  }
+
+  cp.spawnSync = function patchedSpawnSync(command, args, options) {
+    if (Array.isArray(args)) {
+      return originalSpawnSync.call(this, command, args, applyWindowsHide(options))
+    }
+    return originalSpawnSync.call(this, command, applyWindowsHide(args))
+  }
+
+  cp.exec = function patchedExec(command, options, callback) {
+    if (typeof options === 'function') {
+      return originalExec.call(this, command, applyWindowsHide(undefined), options)
+    }
+    return originalExec.call(this, command, applyWindowsHide(options), callback)
+  }
+
+  cp.execSync = function patchedExecSync(command, options) {
+    return originalExecSync.call(this, command, applyWindowsHide(options))
+  }
+
+  cp.execFile = function patchedExecFile(file, args, options, callback) {
+    if (typeof args === 'function') {
+      return originalExecFile.call(this, file, applyWindowsHide(undefined), undefined, args)
+    }
+    if (typeof options === 'function') {
+      return originalExecFile.call(this, file, args, applyWindowsHide(undefined), options)
+    }
+    return originalExecFile.call(this, file, args, applyWindowsHide(options), callback)
+  }
+
+  cp.execFileSync = function patchedExecFileSync(file, args, options) {
+    if (args && !Array.isArray(args)) {
+      return originalExecFileSync.call(this, file, applyWindowsHide(args))
+    }
+    return originalExecFileSync.call(this, file, args, applyWindowsHide(options))
+  }
+
+  cp.fork = function patchedFork(modulePath, args, options) {
+    if (Array.isArray(args)) {
+      return originalFork.call(this, modulePath, args, applyWindowsHide(options))
+    }
+    return originalFork.call(this, modulePath, applyWindowsHide(args))
+  }
+
+  if (typeof sync === 'function') {
+    sync()
+  }
+}
 
 /** SW_HIDE: hide the window and activate another one. */
 const SW_HIDE = 0
@@ -20,21 +110,8 @@ const STD_ERROR_HANDLE = 0xFFFFFFF4
 const STD_HANDLES = [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
 
 /**
- * Give this console-less process a console that children can inherit.
- *
- * `AllocConsole` is the call Windows documents as inherited by a child.
- * `AttachConsole` attaches this process only: a console-subsystem grandchild
- * such as `codex.exe` still opens its own visible console. Every entry,
- * including Job hops, therefore allocates a console and hides it. That also
- * keeps Host, market install, and plugin commands off the user's terminal.
- *
- * AllocConsole points the standard handles at the new console. The pipes the
- * parent already installed are captured first and put back, so command output
- * still flows through the Job. Failure must not block startup.
- *
- * `koffi.errno()` is the C runtime errno, not Win32 GetLastError, and a later
- * koffi call can overwrite the thread error. Diagnostics name the failure
- * class instead of reporting an error code.
+ * Attach a hidden console to this console-less process and enforce CREATE_NO_WINDOW
+ * on child process spawns.
  *
  * @param {{
  *   load?: (library: string) => { func: Function },
@@ -48,6 +125,9 @@ export function attachHiddenConsole(options = {}) {
   const platform = options.platform ?? process.platform
   if (platform !== 'win32') return false
   const env = options.env ?? process.env
+
+  enforceWindowsChildProcessHide()
+
   try {
     const loadLibrary = options.load ?? resolveKoffiLoad(options.resourcesPath ?? process.resourcesPath)
     const kernel32 = loadLibrary('kernel32.dll')
@@ -151,6 +231,10 @@ function loadedAsConsoleBootstrap() {
     if (arg.startsWith('--import=') && arg.includes('windows-hide-console-import')) return true
   }
   return false
+}
+
+if (process.platform === 'win32') {
+  enforceWindowsChildProcessHide()
 }
 
 // `--import` evaluates this file before the entry. Unit tests import the

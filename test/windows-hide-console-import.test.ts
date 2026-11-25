@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { attachHiddenConsole, HIDDEN_CONSOLE_ENV } from '../build/windows-hide-console-import.mjs'
+import {
+  applyWindowsHide,
+  attachHiddenConsole,
+  enforceWindowsChildProcessHide,
+  HIDDEN_CONSOLE_ENV
+} from '../build/windows-hide-console-import.mjs'
 
 interface NativeCall {
   library: string
@@ -124,5 +129,46 @@ describe('windows hidden console bootstrap', () => {
       platform: 'darwin'
     })).toBe(false)
     expect(env[HIDDEN_CONSOLE_ENV]).toBeUndefined()
+  })
+})
+
+describe('applyWindowsHide', () => {
+  it('adds windowsHide true when undefined', () => {
+    expect(applyWindowsHide(undefined)).toEqual({ windowsHide: true })
+    expect(applyWindowsHide({})).toEqual({ windowsHide: true })
+    expect(applyWindowsHide({ cwd: 'dir' })).toEqual({ cwd: 'dir', windowsHide: true })
+  })
+
+  it('preserves explicit windowsHide value', () => {
+    expect(applyWindowsHide({ windowsHide: false })).toEqual({ windowsHide: false })
+    expect(applyWindowsHide({ windowsHide: true })).toEqual({ windowsHide: true })
+  })
+})
+
+describe('enforceWindowsChildProcessHide', () => {
+  it('patches childProcess methods to inject windowsHide on Windows', () => {
+    let capturedOptions: unknown
+    const fakeCp = {
+      spawn: vi.fn((_cmd, _args, opts) => { capturedOptions = opts; return {} }),
+      spawnSync: vi.fn(),
+      exec: vi.fn(),
+      execSync: vi.fn(),
+      execFile: vi.fn(),
+      execFileSync: vi.fn(),
+      fork: vi.fn()
+    } as any
+
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      enforceWindowsChildProcessHide(fakeCp, () => {})
+      fakeCp.spawn('codex.exe', ['--version'])
+      expect(capturedOptions).toEqual({ windowsHide: true })
+
+      fakeCp.spawn('codex.exe', ['--version'], { windowsHide: false })
+      expect(capturedOptions).toEqual({ windowsHide: false })
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
+    }
   })
 })
