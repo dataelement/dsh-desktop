@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it, vi } from 'vitest'
-import { verifyMacOSMicrophonePermissions } from '../scripts/verify-macos-permissions.mjs'
+import { verifyMacOSMicrophonePermissions } from '../scripts/verify/verify-macos-permissions.mjs'
 
 const exec = promisify(execFile)
 const root = path.resolve(import.meta.dirname, '..')

@@ -1,3 +1,5 @@
+import { desktopLocale } from '../shared/desktop-locale'
+import { updateText } from '../shared/desktop-update-messages'
 import type { IpcRenderer } from 'electron'
 
 type MenuName = 'application' | 'edit'
@@ -118,11 +120,11 @@ export function mountWindowsMenuBar(options: MenuBarOptions): { dispose(): void 
 
   const relabel = (): void => {
     const lang = document.documentElement.lang || navigator.language
-    const zh = lang.toLowerCase().startsWith('zh')
-    bar.setAttribute('aria-label', zh ? '应用菜单' : 'Application menu')
+    const locale = desktopLocale(lang) ?? 'en'
+    bar.setAttribute('aria-label', updateText(locale, 'applicationMenu'))
     const [application, edit] = buttons
-    if (application) application.textContent = zh ? '应用' : 'Application'
-    if (edit) edit.textContent = zh ? '编辑' : 'Edit'
+    if (application) application.textContent = updateText(locale, 'application')
+    if (edit) edit.textContent = updateText(locale, 'edit')
   }
   relabel()
   const languageObserver = new MutationObserver(relabel)

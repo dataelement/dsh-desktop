@@ -10,8 +10,8 @@ import {
   migrateProfileToGenerations,
   recoverInterruptedMigration,
   rollBackMigration
-} from '../src/main/state/generation-migration'
-import { runProfileStartupMaintenance } from '../src/main/state/profile-startup-maintenance'
+} from '../src/main/profile/generation-migration'
+import { runProfileStartupMaintenance } from '../src/main/profile/profile-startup-maintenance'
 import {
   readDesired,
   registryLayout,

@@ -1,59 +1,27 @@
 import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/state/profile-store'
+import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/profile/profile-store'
 import { readDesired } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
 import {
-  INSTALL_PATH,
-  MARKET_PACKAGE,
-  RECOMMENDED_MARKET_VERSION,
-  STATUS_PATH,
-  UNINSTALL_PATH,
   buildPnpmEnvironment,
-  buildInstallArguments,
-  buildUninstallArguments,
+  marketProfile,
+  pluginCliEntry,
+  resolveDshEntry,
   cleanStaleTemporaryDirectories,
   createDesktopPnpmService,
   createDesktopProfilesService,
   ensurePnpmShim,
   pluginCommandArguments,
-  isTrustedRequest,
-  readMarketInstallation,
   resolvePnpmEntry,
   stagePnpmRunner,
   updateProfileNpmrc
 } from '../packages/dsh-desktop-market-installer/index.js'
 
 describe('desktop plugin market installer', () => {
-  it('pins the only install target accepted by the host', () => {
-    expect(buildInstallArguments('/app/dsh/bin.js')).toEqual([
-      '/app/dsh/bin.js',
-      'plugin',
-      '--profile',
-      'web',
-      'add',
-      '--workspace-root',
-      'dshmarket@^1.66.47'
-    ])
-    expect(MARKET_PACKAGE).toBe('dshmarket')
-    expect(RECOMMENDED_MARKET_VERSION).toBe('^1.66.47')
-    expect(STATUS_PATH).toBe('/dsh-desktop/market-installer/status')
-    expect(INSTALL_PATH).toBe('/dsh-desktop/market-installer/install')
-    expect(UNINSTALL_PATH).toBe('/dsh-desktop/market-installer/uninstall')
-    expect(buildUninstallArguments('/app/dsh/bin.js')).toEqual([
-      '/app/dsh/bin.js',
-      'plugin',
-      '--profile',
-      'web',
-      'remove',
-      '--workspace-root',
-      'dshmarket'
-    ])
-  })
-
   it('ships a resolvable pnpm binary instead of relying on the user PATH', () => {
     expect(resolvePnpmEntry()).toMatch(/node_modules[/\\]pnpm[/\\]bin[/\\]pnpm\.(c|m)js$/u)
   })
@@ -255,6 +223,22 @@ describe('desktop plugin market installer', () => {
     expect(profiles.list()).toEqual([profiles.current])
     await expect(profiles.select('web')).resolves.toBeUndefined()
     await expect(profiles.select('other')).rejects.toThrow('only exposes the web profile')
+    await expect(profiles.select('desktop')).rejects.toThrow('only exposes the web profile')
+
+    const desktop = createDesktopProfilesService(home, { DSH_DESKTOP_PROFILE: 'desktop' })
+    expect(desktop.current).toEqual({
+      name: 'desktop',
+      dir: join(home, 'profiles', 'desktop')
+    })
+    await expect(desktop.select('desktop')).resolves.toBeUndefined()
+    await expect(desktop.select('web')).rejects.toThrow('only exposes the desktop profile')
+    expect(marketProfile({})).toBe('web')
+    expect(marketProfile({ DSH_DESKTOP_PROFILE: '../web' })).toBe('web')
+    expect(resolveDshEntry(['node', '/app/dsh/bin.js'])).toBe(resolve('/app/dsh/bin.js'))
+    expect(resolveDshEntry(['node', '/tmp/host.js'])).toMatch(/[/\\]@deepseek-ai[/\\]dsh[/\\]lib[/\\]bin\.js$/u)
+    expect(pluginCliEntry('/app/dsh/bin.js', {})).toBe('/app/dsh/bin.js')
+    expect(pluginCommandArguments('/app/dsh/bin.js', ['add', 'demo'], { DSH_DESKTOP_PROFILE: 'desktop' }, 'darwin')[0])
+      .toMatch(/desktop-plugin-cli\.mjs$/u)
   })
 
   it('runs plugin mutations through one packaged pnpm operation boundary', async () => {
@@ -414,49 +398,4 @@ describe('desktop plugin market installer', () => {
     await service.dispose()
   })
 
-  it('reports both the requested dependency and installed package version', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'dsh-market-status-'))
-    const profile = join(home, 'profiles', 'web')
-    await mkdir(join(profile, 'node_modules', 'dshmarket'), { recursive: true })
-    await writeFile(
-      join(profile, 'package.json'),
-      JSON.stringify({ dependencies: { dshmarket: '1.9.0' } }),
-      'utf8'
-    )
-    await writeFile(
-      join(profile, 'node_modules', 'dshmarket', 'package.json'),
-      JSON.stringify({ name: 'dshmarket', version: '1.9.0' }),
-      'utf8'
-    )
-
-    await expect(readMarketInstallation(home)).resolves.toEqual({
-      dependency: '1.9.0',
-      installedVersion: '1.9.0'
-    })
-  })
-
-  it('allows loopback status reads but requires same-origin mutation requests', () => {
-    const request = (headers = {}, remoteAddress = '127.0.0.1') => ({
-      headers,
-      socket: { remoteAddress }
-    })
-
-    expect(isTrustedRequest(request())).toBe(true)
-    expect(
-      isTrustedRequest(
-        request({ origin: 'http://127.0.0.1:51923', host: '127.0.0.1:51923' }),
-        true
-      )
-    ).toBe(true)
-    expect(
-      isTrustedRequest(
-        request({ origin: 'https://attacker.example', host: '127.0.0.1:51923' }),
-        true
-      )
-    ).toBe(false)
-    expect(
-      isTrustedRequest(request({ forwarded: 'for=127.0.0.1' }), false)
-    ).toBe(false)
-    expect(isTrustedRequest(request({}, '192.168.1.5'))).toBe(false)
-  })
 })

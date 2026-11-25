@@ -8,7 +8,7 @@ import {
   evaluatePluginMarketCompatibility,
   clearManifestCache,
   type NpmPackageManifest
-} from '../src/main/state/plugin-market-check'
+} from '../src/main/recovery/plugin-market-check'
 
 describe('plugin-market-check', () => {
   beforeEach(() => clearManifestCache())

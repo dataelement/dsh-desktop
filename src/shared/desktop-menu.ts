@@ -1,7 +1,14 @@
+import { desktopPlatformAdapter } from './desktop-platform'
+
 // Matches the 40 DIP caption row of the upstream Desktop (apps/desktop
 // windows-layout.ts). Harness 0.1.7 sizes its layout, sidebar toggle and
 // right panels from this value through --dsh-windows-titlebar-height.
 export const WINDOWS_TITLEBAR_HEIGHT = 40
+
+/** Linux reuses Harness's Windows-named caption seam, without changing its platform identity. */
+export function usesDesktopCaption(platform: string): boolean {
+  return desktopPlatformAdapter(platform)?.caption === 'overlay'
+}
 
 export const desktopMenuCommands = [
   'connect-phone',
@@ -22,6 +29,7 @@ export const desktopMenuCommands = [
   'zoom-out',
   'toggle-fullscreen',
   'about',
+  'explore-enterprise',
   'quit'
 ] as const
 

@@ -2,7 +2,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ensureLaunchRoot, launchRootPath } from '../src/main/state/launch-root'
+import { ensureLaunchRoot, launchRootPath } from '../src/main/profile/launch-root'
 
 const temporaryRoots: string[] = []
 

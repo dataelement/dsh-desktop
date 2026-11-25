@@ -12,12 +12,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
             scope: 'session';
             owner: StandardInputZone;
         };
-        /** Product mode controls beside the blank-session agent preset. */
-        'conversation.hero.modeActions': {
-            kind: 'list';
-            scope: 'session-maybe';
-            owner: StandardInputZone;
-        };
     }
 }
 /** Browser services required by the standard Composer adapter. */

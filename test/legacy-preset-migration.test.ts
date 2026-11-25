@@ -1,17 +1,14 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import jsYaml from 'js-yaml'
 import { applyEntryPatches, entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import {
   disableMigratedLegacyPreset,
   migrateLegacyAgentPresets
-} from '../src/main/state/legacy-preset-migration'
-import { extractDuplicateAgentPresetId } from '../src/main/runtime/harness-runtime'
-import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
-import { resolveTestNodeExecutable } from './node-executable'
+} from '../src/main/profile/legacy-preset-migration'
+import { extractDuplicateAgentPresetId } from '../src/main/recovery/harness-log'
 
 const homes: string[] = []
 afterEach(async () => {
@@ -100,58 +97,6 @@ it('appends a legacy preset to a fresh Profile patch with comments and an empty 
   await migrateLegacyAgentPresets(home, () => {})
   expect(await readFile(patchPath, 'utf8')).toBe(patch)
 })
-
-it('publishes a migrated custom preset through the real Harness web registry', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-runtime-'))
-  homes.push(home)
-  const source = join(home, '.agent-presets', 'custom')
-  await mkdir(source, { recursive: true })
-  await writeFile(join(source, 'agent.cordis.yml'), '- id: persona\n  name: "@deepseek-ai/dsh-persona"\n  config:\n    prefix: Migrated runtime mode\n')
-  await writeFile(join(source, 'preset.yml'), 'name: Migrated runtime mode\n')
-  await migrateLegacyAgentPresets(home, () => {})
-  const overlay = join(home, 'desktop.patch.yml')
-  await writeFile(overlay, '[]\n')
-  const root = resolve(import.meta.dirname, '..')
-  const runtime = new HarnessRuntime({
-    dshEntryPath: join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
-    nodeEntryPath: join(root, 'build/harness-node-entry.mjs'),
-    nodeExecutablePath: resolveTestNodeExecutable(),
-    dshPatchPath: overlay,
-    dshSafePatchPath: overlay,
-    dshHome: home,
-    logPath: join(home, 'runtime.log'),
-    preferredPort: 0,
-    startupTimeoutMs: 30_000,
-    launchProcess: (executable, args, options) => spawn(executable, args, options),
-    onChanged() {}
-  })
-  try {
-    await runtime.start(home, 'web')
-    expect(runtime.snapshot().phase, runtime.snapshot().logs.join('\n')).toBe('ready')
-    const { url, authToken } = runtime.snapshot()
-    if (!url || !authToken) throw new Error('Harness did not announce its endpoint')
-    const login = await fetch(`${url}/?token=${encodeURIComponent(authToken)}`, { redirect: 'manual' })
-    const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ')
-    const roster = await fetch(new URL('/api/agentPresets/list', url), {
-      method: 'POST',
-      headers: { Cookie: cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'client-request', rpcId: 'migrated-presets', method: 'agentPresets/list', payload: { args: {} } })
-    })
-    expect(roster.status).toBe(200)
-    expect(await roster.text()).toContain('"id":"custom"')
-    const html = await (await fetch(url, { headers: { Cookie: cookie } })).text()
-    expect(html).toContain('@deepseek-ai/dsh-client-ui-agent-preset')
-    const preload = [...html.matchAll(/<link[^>]+>/gu)].map((match) => match[0]).find((tag) => tag.includes('@deepseek-ai/dsh-client-ui-agent-preset/client.js'))
-    expect(preload).toBeDefined()
-    const href = preload?.match(/href="([^"]+)"/u)?.[1]
-    if (!href) throw new Error(`Preset preload URL missing: ${preload}`)
-    const response = await fetch(new URL(href.replaceAll('&amp;', '&'), url), { headers: { Cookie: cookie } })
-    expect(response.status).toBe(200)
-    expect(await response.text()).toContain('const previewImport = async (file) =>')
-  } finally {
-    await runtime.stop()
-  }
-}, 45_000)
 
 describe('disableMigratedLegacyPreset', () => {
   const homes: string[] = []

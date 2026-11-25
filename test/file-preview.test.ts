@@ -31,7 +31,8 @@ describe('uploaded file preview', () => {
     const helpersStart = source.indexOf('const FILE_ADDRESS_PREFIX =')
     const helpersEnd = source.indexOf('\n\t\t//#endregion', helpersStart)
     const callbackStart = source.indexOf('openFile: async (path, options) => {') + 'openFile: '.length
-    const callbackEnd = source.indexOf(',\n\t\t\t\t\t\t\topenExternalLink:', callbackStart)
+    // rc.1 inserts resolveFilePath between openFile and openExternalLink.
+    const callbackEnd = source.lastIndexOf(',', source.indexOf('resolveFilePath:', callbackStart))
     expect(callbackEnd).toBeGreaterThan(callbackStart)
     let workingDirectory = '/workspace/nested'
     let attached = false
@@ -49,10 +50,13 @@ describe('uploaded file preview', () => {
     }
     const open = new Function('ctx', 'session', 'sessionId', `${source.slice(helpersStart, helpersEnd)}; return (${source.slice(callbackStart, callbackEnd)});`)(ctx, session, 'session') as (path: string, options?: { line?: number; revealInFileManager?: boolean }) => Promise<void>
     await open('./report.txt', { line: 7 })
-    expect(opened.pop()).toEqual(['dsh-resource://file/session/session/nested/report.txt', { params: { line: 7 } }])
+    // Preserve the Host path when renderer session.cwd still names the old root.
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session//workspace/nested/report.txt', { params: { line: 7 } }])
     workingDirectory = '/workspace/changed'
     await open('report.txt')
-    expect(opened.pop()).toEqual(['dsh-resource://file/session/session/changed/report.txt'])
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session//workspace/changed/report.txt'])
+    await open('/workspace/nested/report.txt')
+    expect(opened.pop()).toEqual(['dsh-resource://file/session/session//workspace/nested/report.txt'])
     attached = true
     await open('report.txt', { line: 7 })
     expect(opened.pop()).toEqual(['dsh-resource://file/session/session//uploads/report.txt'])
@@ -209,18 +213,20 @@ describe('uploaded file preview', () => {
     expect(deliverablesPatch).toContain('@[^\\\\/@\\s]+\\/[^\\\\/@\\s]+(?:@[^\\\\/\\s]+)?')
   })
 
-  it('offers a local-open action when sidebar preview cannot render the file', async () => {
+  it('uses the upstream open-in-app contribution for unpreviewable files', async () => {
     const preview = await packageClient('dsh-client-ui-sidebar-documentpreview')
+    const openInApp = await packageClient('dsh-client-ui-open-in-app')
     const desktop = await readFile(
       path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'),
       'utf8'
     )
 
-    expect(preview).toContain('renderSlot("sidebar.right.tab.document.unpreviewable", fileOwner)')
-    expect(desktop).toContain("ctx.slots.inject('sidebar.right.tab.document.unpreviewable'")
-    expect(desktop).toContain("'data-textpreview-open-local': true")
-    expect(desktop).toContain("ctx.remote.session.openWorkspacePath({ path })")
-    expect(desktop).toContain('Open with local app')
-    expect(desktop).toContain('用本地应用打开')
+    expect(preview).toContain('renderSlot(`sidebar.right.tab.document.unpreviewable`,fileOwner)')
+    expect(openInApp).toContain('sidebar.right.tab.document.unpreviewable')
+    expect(openInApp).toContain('OpenPathEmptyAction')
+    expect(openInApp).toContain('open-in-app.toast')
+    expect(desktop).not.toContain("ctx.slots.inject('sidebar.right.tab.document.unpreviewable'")
+    expect(desktop).not.toContain('desktop-open-local')
+    expect(desktop).not.toContain('OpenUnpreviewableFile')
   })
 })

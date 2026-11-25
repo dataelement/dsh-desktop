@@ -1,4 +1,6 @@
 export declare const DEFAULT_NPM_REGISTRY: string
+export declare const OFFICIAL_NPM_REGISTRY: string
+export declare const NPMMIRROR_REGISTRY: string
 
 export declare function registryFromArguments(args?: readonly string[]): string | null
 

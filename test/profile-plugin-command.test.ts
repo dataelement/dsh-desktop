@@ -9,8 +9,8 @@ import {
   diagnosticLine,
   ensureProfilePnpmShim,
   removeProfilePluginWithDsh
-} from '../src/main/runtime/profile-plugin-command'
-import { electronNodeExecutable } from '../src/main/runtime/electron-node-executable'
+} from '../src/main/profile/profile-plugin-command'
+import { electronNodeExecutable } from '../src/main/shell/backend/electron-node-executable'
 import { resolveTestNodeExecutable } from './node-executable'
 const TEST_NODE_EXECUTABLE = resolveTestNodeExecutable()
 

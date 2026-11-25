@@ -26,6 +26,13 @@ async function fixture() {
 }
 
 describe('local workbench restart detection', () => {
+  it('passes external installation diagnostics through without requesting restart', async () => {
+    const installationDrift = [{ name: 'fixture-plugin', code: 'external-modification', path: '/temporary/plugin', expectedPath: '/temporary/generation/plugin', recovery: 'Back up and reinstall.' }]
+    const status = createRestartStatus(async () => ({}), { minimumInterval: 0,
+      readPendingGenerations: async () => ({ restartRequired: false, packages: [], installationDrift }) })
+    expect(await status.read()).toEqual({ restartRequired: false, packages: [], installationDrift })
+  })
+
   it('ignores existing installed packages and detects a new local install without an Agent API', async () => {
     const { home, install } = await fixture()
     const directory = await install('my-workbench')
@@ -99,6 +106,14 @@ describe('local workbench restart detection', () => {
     expect(await readLocalWorkbenchSnapshot(home, receipts)).toEqual({})
     await writeFile(join(directory, 'client.js'), 'developer replaced the installed archive')
     expect(Object.keys(await readLocalWorkbenchSnapshot(home, receipts))).toEqual(['archive-workbench'])
+  })
+
+  it('merges live generation pending state without latching it into the local baseline', async () => {
+    let generations = { restartRequired: true, packages: ['ordinary-npm-plugin'] }
+    const status = createRestartStatus(async () => ({}), { minimumInterval: 0, readPendingGenerations: async () => generations })
+    expect(await status.read()).toEqual(generations)
+    generations = { restartRequired: false, packages: [] }
+    expect(await status.read()).toEqual(generations)
   })
 
   it('throttles scans across clients while retaining the host status', async () => {

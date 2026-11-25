@@ -28,6 +28,7 @@ interface GuestLease {
   attached: boolean
   ready: boolean
   guest?: WebContents
+  releaseInput?: () => void
 }
 
 const CLOSE_DEADLINE_MS = 1000
@@ -62,8 +63,11 @@ export class SidebarBrowserGuests {
     const lease = this.leases.get(id)
     if (lease === undefined) return
     if (lease.owner !== owner) throw new Error('sidebar browser: guest belongs to another window')
+    const releaseInput = lease.releaseInput
+    lease.releaseInput = undefined
     // Revoke authority synchronously, including while close is awaiting Electron.
     this.leases.delete(id)
+    releaseInput?.()
     const guest = lease.guest
     if (guest === undefined || guest.isDestroyed()) return
     await new Promise<void>((resolve, reject) => {
@@ -81,7 +85,7 @@ export class SidebarBrowserGuests {
     })
   }
 
-  bind(window: BrowserWindow): void {
+  bind(window: BrowserWindow, attachInput?: (guest: WebContents, name: string) => () => void): void {
     const owner = window.webContents
     if (this.owners.has(owner)) return
     this.owners.add(owner)
@@ -135,6 +139,7 @@ export class SidebarBrowserGuests {
           return
         }
         lease.ready = true
+        if (attachInput !== undefined && lease.releaseInput === undefined) lease.releaseInput = attachInput(guest, id)
       })
       guest.once('destroyed', () => { if (this.leases.get(id) === lease) this.leases.delete(id) })
       guest.once('render-process-gone', release)

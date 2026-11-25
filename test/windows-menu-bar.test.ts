@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mountWindowsMenuBar } from '../src/preload/windows-menu-bar'
 
@@ -11,6 +13,12 @@ const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
 const host = (): HTMLElement | null => document.querySelector('[data-dsh-windows-menu]')
 const button = (name: string): HTMLButtonElement | null =>
   host()?.shadowRoot?.querySelector<HTMLButtonElement>(`button[data-menu="${name}"]`) ?? null
+
+it('marks the Windows caption from the shell preload before the page paints', async () => {
+  const preload = await readFile(resolve(import.meta.dirname, '../src/preload/app.ts'), 'utf8')
+  expect(preload).toContain('markWindowsTitlebar(document)')
+  expect(preload).toContain('mountWindowsTitlebarLayout(')
+})
 
 it('waits for the Harness shell overlay before taking the caption seat', async () => {
   const invoke = vi.fn(async () => undefined)
@@ -50,6 +58,22 @@ it('opens the native popup under the pressed button and labels it in the page la
   document.documentElement.lang = 'en'
   await flush()
   expect(button('application')?.textContent).toBe('Application')
+  menu.dispose()
+})
+
+it('updates Windows caption labels across all eight UI languages', async () => {
+  document.body.innerHTML = '<div data-shell-overlay></div>'
+  const menu = mountWindowsMenuBar({ document, ipcRenderer: { invoke: vi.fn(async () => undefined) } })
+  for (const [locale, application, edit] of [
+    ['en', 'Application', 'Edit'], ['zh', '应用', '编辑'], ['ja', 'アプリケーション', '編集'],
+    ['es', 'Aplicación', 'Editar'], ['fr', 'Application', 'Édition'], ['de', 'Anwendung', 'Bearbeiten'],
+    ['ru', 'Приложение', 'Правка'], ['pt', 'Aplicativo', 'Editar']
+  ]) {
+    document.documentElement.lang = locale ?? ''
+    await flush()
+    expect(button('application')?.textContent).toBe(application)
+    expect(button('edit')?.textContent).toBe(edit)
+  }
   menu.dispose()
 })
 

@@ -11,7 +11,8 @@ import { workspacePolicy, templateTool } from '../packages/dsh-desktop-office/li
 import { registerOfficeContext, registerOfficeRoutes } from '../packages/dsh-desktop-office/lib/modes.js'
 import { registerBusinessSkills } from '../packages/dsh-desktop-office/lib/business-skills.js'
 import { apply as applyPpt } from 'dsh-ppt'
-import { electronExecutable } from '../scripts/electron-node-loader.mjs'
+import { electronExecutable } from '../scripts/verify/electron-node-loader.mjs'
+import { officeCliCommand, runOfficeCli } from '../scripts/office-runtime/prepare-templates.mjs'
 
 const scratch = []
 afterEach(async () => { for (const directory of scratch.splice(0)) await rm(directory, { recursive: true, force: true }) })
@@ -22,12 +23,19 @@ const library = await createTemplateLibrary(resources)
 it('produces the same workbook semantics across repeated official Kit recalculations', async () => {
   const directory = await temporary()
   const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
+  const input = join(resources, 'annual-business/example.xlsx')
   const outputs = []
   for (const filename of ['first.xlsx', 'second.xlsx']) {
     const output = join(directory, filename)
     outputs.push(output)
-    await promisify(execFile)(electronExecutable(resolve('.')), [resolve('build/office-cli.mjs'), 'recalculate', '--input', join(resources, 'annual-business/example.xlsx'), '--output', output], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 30_000
+    // Electron starts before the Kit timer. macOS CI sometimes blocks inside LibreOffice;
+    // packaging retries that hang in a fresh process instead of failing the workbook.
+    await runOfficeCli('recalculate', async () => {
+      await rm(output, { force: true })
+      const command = officeCliCommand(electronExecutable(resolve('.')), resolve('build/office-cli.mjs'), ['recalculate', '--input', input, '--output', output])
+      await promisify(execFile)(command.file, command.args, {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: command.timeout, maxBuffer: 4 * 1024 * 1024, windowsHide: true
+      })
     })
     await promisify(execFile)(python, ['-I', '-B', resolve('scripts/office-runtime/normalize-package.py'), output])
   }
@@ -51,7 +59,7 @@ for path in sys.argv[1:]:
 assert snapshot(sys.argv[1], False) == snapshot(sys.argv[2], False)
 assert snapshot(sys.argv[1], True) == snapshot(sys.argv[2], True)
 `, ...outputs])
-}, 60_000)
+}, 300_000)
 
 it('normalizes platform-specific chart-axis ID serialization', async () => {
   const directory = await temporary()

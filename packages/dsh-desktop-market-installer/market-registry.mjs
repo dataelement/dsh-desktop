@@ -24,10 +24,12 @@ import { join } from 'node:path'
  * Keep in step with dshmarket's `src/regions.ts`.
  */
 export const DEFAULT_NPM_REGISTRY = 'https://registry.npmjs.org'
+export const OFFICIAL_NPM_REGISTRY = 'https://registry.npmjs.org/'
+export const NPMMIRROR_REGISTRY = 'https://registry.npmmirror.com/'
 
 const REGION_REGISTRY = {
   global: DEFAULT_NPM_REGISTRY,
-  china: 'https://mirrors.cloud.tencent.com/npm'
+  china: 'https://registry.npmmirror.com'
 }
 
 /** A usable registry URL, without its trailing slash, or null when blank. */

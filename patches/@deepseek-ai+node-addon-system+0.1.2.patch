@@ -1,0 +1,17 @@
+diff --git a/node_modules/@deepseek-ai/node-addon-system/lib/index.js b/node_modules/@deepseek-ai/node-addon-system/lib/index.js
+--- a/node_modules/@deepseek-ai/node-addon-system/lib/index.js
++++ b/node_modules/@deepseek-ai/node-addon-system/lib/index.js
+@@ -45,7 +45,12 @@
+ export function launcherPath(resolvePackageJson = createRequire(import.meta.url).resolve) {
+     const platformPackage = `@deepseek-ai/node-addon-system-${process.platform}-${process.arch}`;
+     try {
+-        return join(dirname(resolvePackageJson(`${platformPackage}/package.json`)), 'bin', LAUNCHER_BIN);
++        const launcher = join(dirname(resolvePackageJson(`${platformPackage}/package.json`)), 'bin', LAUNCHER_BIN);
++        // Electron resolves manifests through ASAR, but spawnSync needs a physical
++        // Linux launcher. Missing unpacked payloads still fail closed in probe().
++        return process.platform === 'linux'
++            ? launcher.replace(/(^|\/)app\.asar(?=\/)/u, '$1app.asar.unpacked')
++            : launcher;
+     }
+     catch {
+         // Unresolvable platform package: no such package exists for this host, or

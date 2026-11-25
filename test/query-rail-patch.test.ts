@@ -27,7 +27,7 @@ describe('conversation Query navigation rail', () => {
     )
 
     expect(chat).toContain('turnNavigationItems')
-    expect(chat).toContain('activeTurn: scroll.activeTurn')
+    expect(chat).toContain('activeTurn:scroll.activeTurn')
   })
 
   it('leaves the file-access confirmation to Harness as well', async () => {

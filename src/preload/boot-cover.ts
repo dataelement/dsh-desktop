@@ -1,3 +1,5 @@
+import { desktopLocale, type DesktopLocale } from '../shared/desktop-locale'
+import { updateText } from '../shared/desktop-update-messages'
 import { isHarnessBootPage } from '../shared/harness-boot'
 
 export const BOOT_COVER_ID = 'dsh-desktop-boot-cover'
@@ -14,7 +16,7 @@ const MARK_ASPECT_RATIO = '480 / 276'
 
 export interface BootCoverOptions {
   document: Document
-  locale: 'en' | 'zh'
+  locale: DesktopLocale
   stallMs?: number
   schedule?: (callback: () => void, delayMs: number) => number
   cancel?: (timer: number) => void
@@ -153,20 +155,13 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
   copy.className = 'startupCopy'
   const title = doc.createElement('h1')
   const status = doc.createElement('p')
-  const starting = locale === 'zh'
-    ? { title: '正在启动 DSH Desktop', status: '首次启动可能需要一点时间。' }
-    : { title: 'Starting DSH Desktop', status: 'First launch may take a moment.' }
-  const stalled = locale === 'zh'
-    ? {
-      title: '启动时间较长',
-      status: '仍在加载，可以继续等待；准备就绪后会自动进入。'
-    }
-    : {
-      title: 'Startup is taking longer than usual',
-      status: 'Still loading. You can keep waiting; the app continues on its own once ready.'
-    }
-  title.textContent = starting.title
-  status.textContent = starting.status
+  const relabel = (): void => {
+    const active = desktopLocale(doc.documentElement?.lang) ?? locale
+    const stalled = cover.hasAttribute('data-stalled')
+    title.textContent = updateText(active, stalled ? 'stalled' : 'starting')
+    status.textContent = updateText(active, stalled ? 'stillLoading' : 'firstLaunch')
+  }
+  relabel()
   copy.append(title, status)
   panel.append(markFrame, copy)
   shadow.append(style, panel)
@@ -190,8 +185,8 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     if (!root) return
     if (observedRoot !== root) {
       rootObserver?.disconnect()
-      rootObserver = new MutationObserver(() => attach())
-      rootObserver.observe(root, { childList: true })
+      rootObserver = new MutationObserver(() => { relabel(); attach() })
+      rootObserver.observe(root, { childList: true, attributes: true, attributeFilter: ['lang'] })
       observedRoot = root
     }
     if (cover.isConnected && pageStyle.isConnected) return
@@ -217,8 +212,7 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
     stallTimer = undefined
     if (disposed) return
     cover.setAttribute('data-stalled', '')
-    title.textContent = stalled.title
-    status.textContent = stalled.status
+    relabel()
   }
 
   const stopStallTimer = (): void => {

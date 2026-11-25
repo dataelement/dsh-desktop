@@ -6,8 +6,8 @@ import {
   auditLaunchAgents,
   quarantineAppBundleLaunchAgents,
   type LaunchAgentRecord
-} from '../src/main/state/launch-agent-audit'
-import { readComponentLedger, REPAIR_ESCALATION_THRESHOLD } from '../src/main/state/component-ledger'
+} from '../src/main/desktop-service/launch-agent-audit'
+import { readComponentLedger, REPAIR_ESCALATION_THRESHOLD } from '../src/main/profile/component-ledger'
 
 describe('launch agent audit', () => {
   const testRoot = join(__dirname, '.temp-launch-agent-audit')

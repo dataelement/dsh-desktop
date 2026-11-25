@@ -19,10 +19,10 @@ describe('provider error classification patches', () => {
       deepseekPatch.lastIndexOf('status === 401')
     )
     expect(piAiPatch).toContain(
-      '+\tif (/\\b401\\b/.test(message)) return "AUTH";'
+      '+\tif (/\\b401\\b/.test(statusSource)) return "AUTH";'
     )
     expect(piAiPatch).toContain(
-      '+\tif (/\\b403\\b/.test(message)) return "FORBIDDEN";'
+      '+\tif (/\\b403\\b/.test(statusSource)) return "FORBIDDEN";'
     )
     expect(piAiPatch.indexOf('isQuotaExceededError(message)')).toBeLessThan(
       piAiPatch.lastIndexOf('\\b401\\b')
@@ -54,14 +54,13 @@ describe('provider error classification patches', () => {
   })
 
   it('recovers a provider terminal message that omits its content array', async () => {
-    const patch = await readPatch('@deepseek-ai/dsh-llm-pi-ai')
-    const additions = patch
-      .split('\n')
-      .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-      .map((line) => line.slice(1))
-      .join('\n')
-    const helper = additions.match(
-      /function completeTerminalMessage\(message, completed\) \{[\s\S]*?^\}/m
+    // rc.4 ships the recovery in the package. The desktop patch only splits 401 and 403.
+    const source = await readFile(
+      'node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js',
+      'utf8'
+    )
+    const helper = source.match(
+      /function completeTerminalMessage\(message, completed\) \{[\s\S]*?\n\}/
     )?.[0]
 
     expect(helper).toBeDefined()
@@ -86,11 +85,7 @@ describe('provider error classification patches', () => {
     })
     const valid = { ...malformed, content: [] }
     expect(completeTerminalMessage(valid, completed)).toBe(valid)
-    expect(patch).toContain(
-      '+\t\t\tconst message = completeTerminalMessage(event.message, completed);'
-    )
-    expect(patch).toContain(
-      '+\t\t\t\treplayState: toPiReplayState(message, requestedModel)'
-    )
+    expect(source).toContain('const message = completeTerminalMessage(event.message, completed);')
+    expect(source).toContain('replayState: toPiReplayState(message, requestedModel, prefixDigest)')
   })
 })

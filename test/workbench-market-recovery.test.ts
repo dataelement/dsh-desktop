@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMarketInstallStore } from '../packages/dsh-desktop-workbenches/market-install.mjs'
-import { forgetRemovedWorkbenchMarketInstall } from '../src/main/state/workbench-market-recovery'
+import { forgetRemovedWorkbenchMarketInstall } from '../src/main/recovery/workbench-market-recovery'
 
 const roots: string[] = []
 afterEach(async () => {

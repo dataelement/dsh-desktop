@@ -1,10 +1,18 @@
 /** Run on the packaged Electron runtime, resolving every service from app.asar. */
 const { createRequire } = require('node:module')
-const { join, resolve } = require('node:path')
+const { dirname, join, resolve } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const assert = require('node:assert/strict')
 
-async function probe(appRoot, resources) {
+// bwrap gives workspace-write a private /tmp. A test resources symlink under
+// host /tmp is therefore invisible to the child; use the existing physical
+// runtime, without adding mounts or write grants. Real runtimes under /tmp
+// remain subject to that isolation (realpath does not bypass it).
+async function confinedRuntime(resources) {
+  return require('node:fs/promises').realpath(join(resources, 'office-runtime'))
+}
+
+async function probe(appRoot, resources, fixtures) {
   const host = createRequire(join(appRoot, 'package.json'))
   const load = name => import(pathToFileURL(host.resolve(name)).href)
   const { Context } = await load('@deepseek-ai/cordis')
@@ -15,8 +23,11 @@ async function probe(appRoot, resources) {
       fibers.push(await ctx.plugin((await load(name)).default))
     }
     fibers.push(await ctx.plugin(await load('dsh-desktop-office'), {
-      resources: join(resources, 'office-runtime'),
-      cli: join(resources, 'office-cli.mjs')
+      resources: join(resources, 'office-runtime')
+    }))
+    fibers.push(await ctx.plugin(await load('@deepseek-ai/dsh-skill-office'), {}))
+    fibers.push(await ctx.plugin(await load('@deepseek-ai/dsh-tool-workspace-dependencies'), {
+      source: join(resources, 'office-runtime', 'primary-runtime')
     }))
     const skills = await ctx.skills.list()
     for (const name of ['gov-doc-writing', 'meeting-recap', 'work-report-writer', 'research-writer', 'saas-metrics-coach', 'dataset-health-audit', 'data-viz-gen']) {
@@ -35,20 +46,31 @@ async function probe(appRoot, resources) {
     for (const template of templates) {
       for (const file of Object.keys(library.entry(template.id).files)) await library.asset(template.id, file)
     }
+    const { createPersonalOfficeLibrary, personalOfficeRenderer } = await import(new URL('./lib/personal-templates.js', entry).href)
+    const personal = await createPersonalOfficeLibrary(
+      join(fixtures, 'personal-templates'), library,
+      personalOfficeRenderer(join(resources, 'office-runtime'), join(resources, 'office-cli.mjs'))
+    )
+    for (const [mode, fileName] of [['word', 'sample.docx'], ['excel', 'sample.xlsx']]) {
+      const original = await require('node:fs/promises').readFile(join(fixtures, fileName))
+      const item = await personal.import({ mode, fileName, data: original.toString('base64') })
+      assert.equal(item.mode, mode)
+      const preview = await personal.preview(item.id, 1)
+      assert(preview.image.startsWith('data:image/webp;base64,'))
+      const prepared = await personal.prepare(item.id, item)
+      const workingCopy = prepared.files.find(file => file.path === personal.entry(item.id).sampleFile)
+      assert(workingCopy)
+      assert.deepEqual(Buffer.from(workingCopy.data, 'base64'), original)
+    }
+    console.log('Packaged personal DOCX and XLSX import, preview and native working copy passed')
     const client = await require('node:fs/promises').readFile(host.resolve('dsh-desktop-office/client'), 'utf8')
     assert(client.includes('window.__ModuleLoader__.load'))
-    assert(client.includes('conversation.hero.modeActions'))
-    for (const name of ['office', 'office-docx', 'office-pptx', 'office-xlsx', 'office-render', 'office-recalculate', 'office-export-pdf']) {
+    assert(client.includes('conversation.hero.options'))
+    const officialSkillRoot = dirname(host.resolve('@deepseek-ai/dsh-skill-office/package.json'))
+    for (const name of ['office', 'office-docx', 'office-pptx', 'office-xlsx']) {
       assert(skills.some(skill => skill.name === name), `Missing packaged Office skill ${name}`)
       const skill = await ctx.skills.get(name)
-      // Upstream normalizes resource paths to forward slashes, including on Windows.
-      assert.equal(resolve(skill.resourceBase.path), join(resources, 'office-runtime', 'office-skills', name), `Unexpected resources for ${name}`)
-    }
-    for (const name of ['office-render', 'office-recalculate', 'office-export-pdf']) {
-      const skill = await ctx.skills.get(name)
-      // Upstream supplies command paths as JSON, escaping Windows separators.
-      assert(skill.content.includes(JSON.stringify(process.execPath)), 'Office CLI must use the current Electron runtime')
-      assert(skill.content.includes(JSON.stringify(join(resources, 'office-cli.mjs'))), 'Office CLI must resolve from the current installation')
+      assert.equal(resolve(skill.resourceBase.path), join(officialSkillRoot, 'assets', name), `Unexpected resources for ${name}`)
     }
     const tool = ctx.tools.get('load_workspace_dependencies')
     assert(tool, 'Missing packaged dependency tool')
@@ -65,7 +87,7 @@ async function probe(appRoot, resources) {
       const { createDocxWorkflow } = await import(new URL('./lib/docx-workflow.js', entry).href)
       const item = library.entry('government-notice')
       const modes = { state: async () => ({ documentMode: 'word', selectedDocumentTemplate: { id: item.id, revision: item.revision, mode: 'word' } }), record: async () => true }
-      const workflow = createDocxWorkflow({ sandbox: ctx.sandbox, subprocess: ctx.subprocess, workingDirectory: { ensure: async () => scratch }, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: scratch }) } }, library, modes, join(resources, 'office-runtime'))
+      const workflow = createDocxWorkflow({ sandbox: ctx.sandbox, subprocess: ctx.subprocess, workingDirectory: { ensure: async () => scratch }, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: scratch }) } }, library, modes, await confinedRuntime(resources))
       const exec = { agent: { id: 'packaged-notice', session: { header: { cwd: scratch } } }, signal: new AbortController().signal }
       await writeFile(join(scratch, 'source.docx'), await library.asset(item.id, item.sampleFile))
       const prepared = await workflow.run('prepare', { path: 'source.docx' }, exec)
@@ -83,7 +105,11 @@ async function probe(appRoot, resources) {
     for (const fiber of fibers.reverse()) await fiber.dispose()
   }
 }
-probe(process.argv[2], process.argv[3]).catch(error => {
-  console.error(error)
-  process.exitCode = 1
-})
+module.exports = { confinedRuntime }
+
+if (require.main === module) {
+  probe(process.argv[2], process.argv[3], process.argv[4]).catch(error => {
+    console.error(error)
+    process.exitCode = 1
+  })
+}

@@ -9,7 +9,7 @@ import {
   pinStoreDir,
   recordedStoreDir,
   storeDirSetting
-} from '../src/main/state/profile-store'
+} from '../src/main/profile/profile-store'
 
 const NPMRC = 'package-import-method=clone-or-copy\nchild-concurrency=1\n'
 

@@ -7,7 +7,7 @@ import { recoverStartupConfiguration } from '../src/main/startup-config-recovery
 import {
   importStartupConfig, inspectConfigText, inspectStartupConfiguration, repairStartupConfig,
   replaceRecoveryFile, validModelEndpoint
-} from '../src/main/state/startup-config-recovery'
+} from '../src/main/recovery/startup-config-recovery'
 
 let home: string
 beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'dsh-config-recovery-')) })

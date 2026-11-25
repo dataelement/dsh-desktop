@@ -50,9 +50,31 @@ export const CLOUDFLARED_ASSETS: Record<string, CloudflareAssetSpec> = {
   }
 }
 
+const CLOUDFLARE_TUNNEL_REGISTERED = /registered tunnel connection|connection registered/i
+
 export function extractTryCloudflareUrl(text: string): string | null {
-  const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/i)
-  return match && match[0].toLowerCase() !== 'https://api.trycloudflare.com' ? match[0] : null
+  const matches = text.matchAll(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/gi)
+  for (const match of matches) {
+    if (match[0].toLowerCase() !== 'https://api.trycloudflare.com') return match[0]
+  }
+  return null
+}
+
+/**
+ * A trycloudflare hostname is printed before the edge accepts traffic.
+ * Until cloudflared logs that a connection registered, that hostname
+ * answers with Cloudflare error 1033 and is not a usable pairing link.
+ */
+export function cloudflareQuickTunnelReady(text: string): string | null {
+  const url = extractTryCloudflareUrl(text)
+  return url && CLOUDFLARE_TUNNEL_REGISTERED.test(text) ? url : null
+}
+
+export class CloudflareTunnelUnregisteredError extends Error {
+  constructor() {
+    super('Cloudflare Quick Tunnel printed a URL before the edge connection registered')
+    this.name = 'CloudflareTunnelUnregisteredError'
+  }
 }
 
 export async function findCloudflaredOnPath(): Promise<string | null> {
@@ -205,16 +227,39 @@ export function downloadFileWithRedirects(
       return rejectPromise(new Error('Too many redirects while downloading cloudflared'))
     }
 
-    const request = httpsGet(url, (res) => {
+    let settled = false
+    // Socket idle timeout resets on every chunk. A trickle from a blocked
+    // release host would otherwise leave the pairing window at 99% forever.
+    const deadlineMs = timeoutMs * 3
+    let request: ReturnType<typeof httpsGet> | undefined
+    const finish = (error?: unknown) => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      if (error) rejectPromise(error)
+      else resolvePromise()
+    }
+    const deadline = setTimeout(() => {
+      request?.destroy(
+        Object.assign(new Error(`cloudflared download exceeded ${deadlineMs / 1000}s`), {
+          code: 'ETIMEDOUT'
+        })
+      )
+    }, deadlineMs)
+
+    request = httpsGet(url, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume()
+        if (settled) return
+        settled = true
+        clearTimeout(deadline)
         return resolvePromise(
           downloadFileWithRedirects(res.headers.location, destination, maxRedirects - 1, timeoutMs)
         )
       }
       if (res.statusCode !== 200) {
         res.resume()
-        return rejectPromise(new Error(`Download failed with status ${res.statusCode}`))
+        return finish(new Error(`Download failed with status ${res.statusCode}`))
       }
 
       const fileStream = createWriteStream(destination)
@@ -226,16 +271,19 @@ export function downloadFileWithRedirects(
           Object.assign(new Error('cloudflared download response was aborted'), { code: 'ECONNRESET' })
         )
       })
-      void pipeline(res, fileStream).then(() => resolvePromise(), rejectPromise)
+      void pipeline(res, fileStream).then(
+        () => finish(),
+        (error) => finish(error)
+      )
     })
     request.setTimeout(timeoutMs, () => {
-      request.destroy(
+      request?.destroy(
         Object.assign(new Error(`cloudflared download timed out after ${timeoutMs / 1000}s`), {
           code: 'ETIMEDOUT'
         })
       )
     })
-    request.once('error', rejectPromise)
+    request.once('error', (error) => finish(error))
   })
 }
 
@@ -266,70 +314,126 @@ export function terminateChildProcess(
   }, graceMs).unref?.()
 }
 
+interface CloudflareTunnelProcess {
+  stdout: { on(event: 'data', listener: (chunk: Buffer | string) => void): void } | null
+  stderr: { on(event: 'data', listener: (chunk: Buffer | string) => void): void } | null
+  exitCode: number | null
+  signalCode: NodeJS.Signals | null
+  kill(signal: NodeJS.Signals): boolean
+  once(event: 'error', listener: (error: Error) => void): void
+  once(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): void
+}
+
 export async function startCloudflareQuickTunnel(options: {
   port: number
   binaryPath: string
   timeoutMs?: number
+  protocol?: 'http2'
   log?: (message: string) => void
+  spawnProcess?: (
+    command: string,
+    args: readonly string[],
+    options: { stdio: ['ignore', 'pipe', 'pipe']; windowsHide: boolean }
+  ) => CloudflareTunnelProcess
 }): Promise<CloudflareTunnelInstance> {
-  const { port, binaryPath, timeoutMs = 30_000, log } = options
+  try {
+    return await openCloudflareQuickTunnel(options)
+  } catch (error) {
+    // QUIC can print a hostname and then never register. Retry once over
+    // HTTP/2 before giving up on Cloudflare; a second miss falls through.
+    if (options.protocol === 'http2' || !(error instanceof CloudflareTunnelUnregisteredError)) throw error
+    options.log?.('[cloudflared] edge connection did not register over QUIC, retrying over HTTP/2')
+    return openCloudflareQuickTunnel({ ...options, protocol: 'http2' })
+  }
+}
+
+function openCloudflareQuickTunnel(options: {
+  port: number
+  binaryPath: string
+  timeoutMs?: number
+  protocol?: 'http2'
+  log?: (message: string) => void
+  spawnProcess?: (
+    command: string,
+    args: readonly string[],
+    options: { stdio: ['ignore', 'pipe', 'pipe']; windowsHide: boolean }
+  ) => CloudflareTunnelProcess
+}): Promise<CloudflareTunnelInstance> {
+  const { port, binaryPath, timeoutMs = 30_000, protocol, log } = options
+  const spawnProcess = options.spawnProcess ?? spawn
+  const args = ['tunnel', '--url', `http://127.0.0.1:${port}`]
+  if (protocol === 'http2') args.push('--protocol', 'http2')
 
   return new Promise((resolvePromise, rejectPromise) => {
     let resolved = false
-    const child = spawn(binaryPath, ['tunnel', '--url', `http://127.0.0.1:${port}`], {
+    let pending = ''
+    let capturedUrl: string | null = null
+    let registered = false
+    const child = spawnProcess(binaryPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     })
 
-    const timeoutTimer = setTimeout(() => {
-      if (!resolved) {
-        cleanup()
-        rejectPromise(new Error(`Cloudflare Quick Tunnel timed out after ${timeoutMs / 1000}s`))
+    const cleanup = () => {
+      try {
+        terminateChildProcess(child)
+      } catch {
+        // The process may already be gone. Stopping the tunnel still has to settle.
       }
+    }
+
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+    const fail = (error: Error) => {
+      if (resolved) return
+      resolved = true
+      clearTimeout(timeoutTimer)
+      cleanup()
+      rejectPromise(error)
+    }
+
+    timeoutTimer = setTimeout(() => {
+      fail(
+        capturedUrl && !registered
+          ? new CloudflareTunnelUnregisteredError()
+          : new Error(`Cloudflare Quick Tunnel timed out after ${timeoutMs / 1000}s`)
+      )
     }, timeoutMs)
 
-    let capturedUrl: string | null = null
-
     const handleOutput = (chunk: Buffer | string) => {
-      const text = chunk.toString()
+      const text = `${pending}${chunk.toString()}`
+      pending = text.slice(-200)
       const extracted = extractTryCloudflareUrl(text)
-      if (extracted && !capturedUrl) {
-        capturedUrl = extracted
-        log?.(`[cloudflared] Tunnel online: ${capturedUrl}`)
-        resolved = true
-        clearTimeout(timeoutTimer)
-        resolvePromise({
-          provider: 'cloudflare',
-          url: capturedUrl,
-          process: child,
-          stop: async () => {
-            cleanup()
-          }
-        })
-      }
+      if (extracted) capturedUrl = extracted
+      if (CLOUDFLARE_TUNNEL_REGISTERED.test(text)) registered = true
+      if (!capturedUrl || !registered || resolved) return
+      resolved = true
+      clearTimeout(timeoutTimer)
+      log?.(`[cloudflared] Tunnel online: ${capturedUrl}`)
+      resolvePromise({
+        provider: 'cloudflare',
+        url: capturedUrl,
+        // The production spawn is a ChildProcess. Tests supply the same
+        // stop/once surface without the rest of the Node process object.
+        process: child as InternetTunnelInstance['process'],
+        stop: async () => {
+          cleanup()
+        }
+      })
     }
 
     child.stdout?.on('data', handleOutput)
     child.stderr?.on('data', handleOutput)
 
     child.once('error', (err) => {
-      if (!resolved) {
-        clearTimeout(timeoutTimer)
-        rejectPromise(err)
-      }
+      fail(err)
     })
 
     child.once('close', (code, signal) => {
-      if (!resolved) {
-        clearTimeout(timeoutTimer)
-        rejectPromise(new Error(`cloudflared exited unexpectedly with code ${code}, signal ${signal}`))
-      }
+      fail(
+        capturedUrl && !registered
+          ? new CloudflareTunnelUnregisteredError()
+          : new Error(`cloudflared exited unexpectedly with code ${code}, signal ${signal}`)
+      )
     })
-
-    const cleanup = () => {
-      try {
-        terminateChildProcess(child)
-      } catch {}
-    }
   })
 }

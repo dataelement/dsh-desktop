@@ -1,14 +1,19 @@
+// @vitest-environment jsdom
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
+import { resolve } from 'node:path'
+
 import { describe, expect, it, vi } from 'vitest'
 
 async function load(bridge: unknown) {
   const registrations = new Map<string, (props: unknown) => unknown>()
   const effects: Array<() => unknown> = []
+  document.head.replaceChildren()
+  const dom = { window }
   let definition: { factory: (require: (name: string) => unknown) => { apply: (ctx: unknown) => void } } | undefined
-  vm.runInNewContext(await readFile(new URL('../packages/dsh-desktop-client-ui/client.js', import.meta.url), 'utf8'), {
+  vm.runInNewContext(await readFile(resolve('packages/dsh-desktop-client-ui/client.js'), 'utf8'), {
     window: { dshDesktop: bridge, __ModuleLoader__: { load: (value: typeof definition) => { definition = value } } },
-    document: { getElementById: () => true }, console
+    document: dom.window.document, console
   })
   const plugin = definition!.factory(name => name === 'react' ? {
     createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({ type, props, children }),
@@ -25,10 +30,45 @@ async function load(bridge: unknown) {
     },
     locale: { register: () => undefined, bind: () => (key: string) => key }, effect: (callback: () => unknown) => callback()
   })
-  return { registrations, effects }
+  return { registrations, effects, dom }
 }
 
 describe('repair draft admission', () => {
+  it('styles desktop utility buttons without changing other settings contributions', async () => {
+    const { dom } = await load({ openRepairAgent: vi.fn(), openMobilePairing: vi.fn() })
+    try {
+      const { document } = dom.window
+      document.body.innerHTML = '<div data-dsh-sidebar-settings-actions><button id="other">Long plugin action</button><div data-dsh-desktop-utilities data-wide="false"><button id="repair">Repair</button></div></div>'
+      const button = document.querySelector('#repair')!
+      const group = document.querySelector('[data-dsh-desktop-utilities]')!
+      const style = dom.window.getComputedStyle(button)
+      expect(style.display).toBe('inline-flex')
+      expect(style.width).toBe('32px')
+      expect(style.height).toBe('32px')
+      expect(style.borderTopWidth).toBe('0px')
+      expect(style.borderRadius).toBe('8px')
+      expect(dom.window.getComputedStyle(group).gap).toBe('4px')
+      expect(dom.window.getComputedStyle(group).justifyContent).toBe('center')
+      expect(dom.window.getComputedStyle(document.querySelector('#other')!).width).not.toBe('32px')
+    } finally {
+      dom.window.document.body.replaceChildren()
+    }
+  })
+  it('places Desktop actions next to Settings and stacks them only when collapsed', async () => {
+    const { dom } = await load({ openRepairAgent: vi.fn(), openMobilePairing: vi.fn() })
+    document.body.innerHTML = '<div data-dsh-sidebar-settings><div data-dsh-sidebar-settings-content>Settings</div><div data-dsh-sidebar-settings-actions><div data-dsh-desktop-utilities data-wide="true"></div></div></div>'
+    try {
+      const row = document.querySelector('[data-dsh-sidebar-settings]')!
+      expect(dom.window.getComputedStyle(row).display).toBe('flex')
+      expect(dom.window.getComputedStyle(row).flexDirection).toBe('row')
+      expect(dom.window.getComputedStyle(row).alignItems).toBe('center')
+      document.querySelector('[data-dsh-desktop-utilities]')!.setAttribute('data-wide', 'false')
+      expect(dom.window.getComputedStyle(row).flexDirection).toBe('column')
+    } finally {
+      document.body.replaceChildren()
+    }
+  })
+
   it.each([['empty', '', [], true], ['existing text', 'my question', [], false], ['attachment', '', ['file'], false]] as const)(
     'prefills only an untouched empty composer (%s)', async (_name, text, attachments, shouldInsert) => {
       const bridge = { getRepairDraft: vi.fn(async () => ({ text: 'Please diagnose this issue.', token: 't' })), acknowledgeRepairDraft: vi.fn(async () => ({ ok: true })) }

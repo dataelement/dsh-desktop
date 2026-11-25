@@ -593,8 +593,14 @@ describe('agent preset package transfer', () => {
       patchPath('@deepseek-ai/dsh-client-ui-agent-preset'),
       'utf8'
     )
-    expect(patch).not.toContain('AgentPresetSection_module_css_default =')
-    expect(patch).not.toContain('const css$')
+    // rc.4 puts the CSS modules on the line before AgentPresetSection, so an
+    // unchanged context line still contains `const css$`. Only added or
+    // removed lines would mean the stylesheet itself was rewritten.
+    const changed = patch.split('\n').filter(line =>
+      (line.startsWith('+') || line.startsWith('-')) && !line.startsWith('+++') && !line.startsWith('---')
+    )
+    expect(changed.some(line => line.includes('AgentPresetSection_module_css_default ='))).toBe(false)
+    expect(changed.some(line => line.includes('const css$'))).toBe(false)
   })
 
   it('keeps a large mode roster searchable, grouped, compact, and connected to Awesome Presets', async () => {

@@ -30,7 +30,7 @@ def append_version_index(api, repo_id: str, token: str, version: str) -> None:
         previous_file.write_text(json.dumps(previous), encoding="utf-8")
         names_file.write_text(json.dumps([version]), encoding="utf-8")
         subprocess.run(
-            ["node", "scripts/build-version-index.mjs", str(names_file), str(index_file), str(previous_file)],
+            ["node", "scripts/release/build-version-index.mjs", str(names_file), str(index_file), str(previous_file)],
             check=True,
         )
         api.upload_file(

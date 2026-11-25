@@ -1,7 +1,9 @@
 node_modules/
 out/
+out-shell/
 dist/
 dist-dev/
+dist-shell/
 .DS_Store
 *.log
 coverage/
@@ -28,6 +30,7 @@ __pycache__/
 docs/plugin-management.zh.md
 docs/default-capabilities.zh.md
 docs/mobile-connection-latency.zh.md
+docs/history/harness-0.2.2-rc.4-rc.5-test-cases.md
 
 # Local pnpm content store
 /.pnpm-store/
@@ -40,3 +43,6 @@ docs/mobile-connection-latency.zh.md
 
 # Local design iterations; production artwork lives in build/dmg/.
 /docs/dmg-install-preview/
+
+# Snapshots fetched by scripts/upstream-diff.mjs. Not source.
+/.upstream-cache/

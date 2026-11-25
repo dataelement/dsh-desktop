@@ -1,4 +1,4 @@
-import type { WebHomePreview } from './state/web-home-import'
+import type { WebHomePreview } from './profile/web-home-import'
 
 export type WebImportLocale = 'en' | 'zh'
 

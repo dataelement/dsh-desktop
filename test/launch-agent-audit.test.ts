@@ -5,7 +5,7 @@ import {
   repairedLaunchAgent,
   appBundlePathFromExecutable,
   type LaunchAgentRecord
-} from '../src/main/state/launch-agent-audit'
+} from '../src/main/desktop-service/launch-agent-audit'
 
 const appBundle = '/Applications/DSH Desktop.app'
 const helper = `${appBundle}/Contents/Frameworks/DSH Desktop Helper.app/Contents/MacOS/DSH Desktop Helper`

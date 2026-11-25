@@ -2,6 +2,9 @@ import { readFile, lstat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 
+export const MAX_PERSONAL_OFFICE_BYTES = 16 * 1024 * 1024
+export const MAX_OFFICE_REQUEST_BYTES = 24 * 1024 * 1024
+
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const safe = value => typeof value === 'string' && /^[a-zA-Z0-9._/-]+$/.test(value)
   && value.split('/').every(part => part && part !== '.' && part !== '..')

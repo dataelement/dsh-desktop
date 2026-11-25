@@ -1,5 +1,5 @@
-import type { PluginHealthReport, PluginUpgradeCandidate } from './state/plugin-market-check'
-import type { ProfileCompatibilityIssue } from './state/profile-compatibility'
+import type { PluginHealthReport, PluginUpgradeCandidate } from './recovery/plugin-market-check'
+import type { ProfileCompatibilityIssue } from './profile/profile-compatibility'
 
 /** Successful installs invalidate the old failure evidence for that plugin.
  * A fresh launch or a current blocking inspection can establish a new failure.

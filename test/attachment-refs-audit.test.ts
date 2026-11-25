@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { auditAttachmentReferences, formatAttachmentGaps } from '../src/main/state/attachment-refs'
+import { auditAttachmentReferences, formatAttachmentGaps } from '../src/main/profile/attachment-refs'
 
 const HEX_A = `ab${'0'.repeat(62)}`
 const HEX_B = `cd${'1'.repeat(62)}`

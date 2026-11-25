@@ -41,7 +41,7 @@ with patch.object(update_popup_notes, 'collect_release_evidence', return_value=S
     // Exercise the actual publishing script under Node (JS scripts are outside tsc's scope).
     const result = execFileSync('node', ['--input-type=module', '-e', `
 import assert from 'node:assert/strict'
-import { injectPopupNotes } from './scripts/inject-popup-notes.mjs'
+import { injectPopupNotes } from './scripts/release/inject-popup-notes.mjs'
 import { createRequire } from 'node:module'
 import { stringify } from 'yaml'
 const require = createRequire(import.meta.url)

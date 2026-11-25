@@ -9,7 +9,7 @@ import {
   readPluginOwnedComponentBackups,
   restorePluginOwnedComponents,
   type LaunchAgentDescription
-} from '../src/main/state/plugin-component-cleanup'
+} from '../src/main/profile/plugin-component-cleanup'
 
 describe('plugin component cleanup', () => {
   const testRoot = join(__dirname, '.temp-plugin-component-cleanup')

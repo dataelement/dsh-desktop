@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { stringify } from 'yaml'
 import { describe, expect, it } from 'vitest'
-import { verifyReleaseAssets } from '../scripts/verify-release-assets.mjs'
+import { verifyReleaseAssets } from '../scripts/verify/verify-release-assets.mjs'
 
 const minimumBytes = { dmg: 1, zip: 1, exe: 1, blockmap: 1, yml: 1 }
 

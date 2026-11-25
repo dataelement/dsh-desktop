@@ -2,12 +2,12 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { disableProfilePlugin } from '../src/main/state/plugin-disable'
+import { disableProfilePlugin } from '../src/main/profile/plugin-disable'
 import {
   inspectProfileCompatibility,
   quarantineProfileCorePackages,
   quarantineProfileWorkspaces
-} from '../src/main/state/profile-compatibility'
+} from '../src/main/profile/profile-compatibility'
 
 describe('profile compatibility recovery', () => {
   const root = join(__dirname, '.temp-profile-compatibility')

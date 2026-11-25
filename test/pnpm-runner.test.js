@@ -79,6 +79,17 @@ function fakePnpm(runs) {
 }
 
 describe('packaged pnpm runner', () => {
+  it.each(['view', 'info', 'show', 'v'])('does not suspend generation projections for read-only %s queries', async command => {
+    const { spawnProcess, calls } = fakePnpm([{ code: 0, output: '' }])
+    const isolateProjection = vi.fn(() => { throw new Error('A metadata query must not rewrite the Profile') })
+    const result = await runWithLockRecovery('/node', ['/pnpm.cjs', command, 'plugin', '--json'], {
+      spawnProcess, isolateProjection, watchActivity: () => undefined
+    })
+    expect(result.code).toBe(0)
+    expect(isolateProjection).not.toHaveBeenCalled()
+    expect(calls[0].options.env.DSH_DESKTOP_REGISTRY_VIEW).toMatch(/registry-view\.mjs$/u)
+  })
+
   it('extracts only a safe exact key from pnpm git prepare failures', () => {
     expect(gitPrepareApprovalKey(GIT_PREPARE_FAILURE)).toBe(GIT_EXACT_KEY)
     expect(gitPrepareApprovalKey(GIT_PREPARE_FAILURE.replace('github.com/', 'evil.example/')))

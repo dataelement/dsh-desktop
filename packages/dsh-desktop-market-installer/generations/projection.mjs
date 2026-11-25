@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path'
 import { resolveEnabledGenerations } from './registry.mjs'
+import { readDisabledPlugins } from '../plugin-state.mjs'
 
 /**
  * Make the enabled generations visible to Harness without teaching Harness
@@ -101,7 +102,10 @@ async function validateEnabledGenerationTarget(pluginName, generation) {
   if (!isInsideDirectory(canonicalTarget, canonicalManifest)) {
     throw new Error(`Enabled generation package manifest resolves outside its package: ${pluginName}`)
   }
-  return target
+  // AppData may be redirected by an MSIX host. A junction containing the
+  // virtual path can be readable via readlink while file opens through it
+  // fail with ENOENT. Store the physical target, which every consumer can open.
+  return canonicalTarget
 }
 
 /** Whether an installed package declares its own `dsh.bundle` patch layer. */
@@ -208,7 +212,10 @@ async function ensureDirLink(linkPath, target) {
     const stat = await lstat(linkPath)
     if (stat.isSymbolicLink()) {
       const resolved = await readlink(linkPath).catch(() => '')
-      if (resolved === target) return
+      const matches = process.platform === 'win32'
+        ? windowsJunctionTargets(linkPath, resolved, target)
+        : (resolved === target || (await realpath(linkPath).catch(() => '')) === (await realpath(target).catch(() => '')))
+      if (matches) return
     }
     await rm(linkPath, { recursive: true, force: true })
   } catch {
@@ -219,9 +226,9 @@ async function ensureDirLink(linkPath, target) {
 }
 
 /**
- * Point `profiles/<profile>/node_modules/<plugin>` at each enabled generation
- * and drop links for plugins no longer enabled. Real pnpm-managed entries and
- * in-box bundles are left untouched.
+ * Point `profiles/<profile>/node_modules/<plugin>` at each installed generation
+ * and drop links for packages no longer desired. Desired packages replace old
+ * pnpm-managed copies transactionally; unrelated entries stay untouched.
  */
 export async function projectGenerations(dshHome, profile = 'web') {
   const { dir, manifestState, enabled, targets, linkSpecs } =
@@ -230,19 +237,164 @@ export async function projectGenerations(dshHome, profile = 'web') {
   await mkdir(modulesDir, { recursive: true })
 
   const linked = []
-  const projected = new Map()
-  for (const [pluginName, generation] of enabled) {
-    const target = targets.get(pluginName)
-    if (target === undefined) throw new Error(`Enabled generation target was not prevalidated: ${pluginName}`)
-    await ensureDirLink(join(modulesDir, pluginName), target)
-    linked.push(pluginName)
-    projected.set(pluginName, generation)
+  const switches = []
+  let bundles
+  try {
+    for (const [pluginName] of enabled) {
+      const target = targets.get(pluginName)
+      if (target === undefined && manifestState.disabledPlugins.has(pluginName)) continue
+      if (target === undefined) throw new Error(`Enabled generation target was not prevalidated: ${pluginName}`)
+      const link = join(modulesDir, pluginName)
+      linked.push(pluginName)
+      let previousIsDirectory = false
+      try {
+        const info = await lstat(link)
+        if (await profileLinkMatches(link, target)) continue
+        previousIsDirectory = !info.isSymbolicLink()
+        if (previousIsDirectory && !info.isDirectory()) {
+          throw new Error(`Cannot project over a non-directory package: ${link}`)
+        }
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+      }
+      const suffix = randomUUID()
+      const change = {
+        link, target, previousIsDirectory,
+        nextLink: `${link}.dsh-next-${suffix}`,
+        oldLink: `${link}.dsh-previous-${suffix}`,
+        state: { previousTarget: undefined, movedOld: false, installedNew: false }
+      }
+      // Record before placement so even a partially failed switch is undone.
+      switches.push(change)
+      await mkdir(dirname(link), { recursive: true })
+      await placeProfilePackageLink({ symlink, rename, unlink, readlink }, {
+        platform: process.platform, ...change
+      }, change.state)
+      if (!(await profileLinkMatches(link, target))) {
+        throw new Error(`Plugin link switch did not select ${pluginName}`)
+      }
+    }
+    // All package entries commit together with the manifest. Retain old real
+    // directories and links until its atomic publication has succeeded.
+    bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState)
+  } catch (error) {
+    const failures = [error]
+    for (const change of [...switches].reverse()) {
+      try {
+        if (change.state.installedNew) await rm(change.link, { force: true })
+        if (change.state.movedOld) {
+          if (change.state.previousTarget !== undefined) {
+            await symlink(change.state.previousTarget, change.link, 'junction')
+          } else {
+            await rename(change.oldLink, change.link)
+          }
+        }
+      } catch (restoreError) {
+        failures.push(new Error(`Previous package retained at ${change.oldLink}`, { cause: restoreError }))
+      }
+    }
+    if (failures.length > 1) throw new AggregateError(failures, 'Generation projection rollback failed')
+    throw error
+  } finally {
+    for (const change of switches) {
+      // A failed temporary-link cleanup must not obscure a switch/rollback error.
+      await rm(change.nextLink, { force: true }).catch(() => {})
+    }
   }
-
-  const unlinked = await pruneStaleGenerationLinks(modulesDir, projected)
-  const bundles = await syncProfileManifest(dir, projected, linkSpecs, manifestState)
-
+  for (const change of switches) {
+    // Publication is committed. A locked backup may remain for later cleanup;
+    // its bytes are no longer the active Profile package.
+    await rm(change.oldLink, { force: true, recursive: change.previousIsDirectory }).catch(() => {})
+  }
+  // Pruning before commit would lose disabled links if manifest publication fails.
+  const unlinked = await pruneStaleGenerationLinks(modulesDir, enabled)
   return { linked, unlinked, bundles }
+}
+
+/**
+ * Compare junction target spellings, including Windows device prefixes.
+ * This is only an identity check; publication must also open the manifest
+ * through the link, because a redirected target can name inaccessible bytes.
+ */
+export function windowsJunctionTargets(linkPath, readLinkResult, expectedPath) {
+  const linked = win32.resolve(win32.dirname(linkPath), stripWin32DevicePrefix(readLinkResult))
+  return normalizeWindowsPath(linked) === normalizeWindowsPath(expectedPath)
+}
+
+function stripWin32DevicePrefix(value) {
+  const text = value.replaceAll('/', '\\')
+  if (text.startsWith('\\\\?\\UNC\\') || text.startsWith('\\??\\UNC\\')) return `\\\\${text.slice(8)}`
+  if (text.startsWith('\\\\?\\') || text.startsWith('\\??\\')) return text.slice(4)
+  return text
+}
+
+function normalizeWindowsPath(value) {
+  const normalized = win32.normalize(stripWin32DevicePrefix(value))
+  const root = win32.parse(normalized).root
+  const trimmed = normalized.length > root.length && normalized.endsWith('\\')
+    ? normalized.slice(0, -1)
+    : normalized
+  return trimmed.toLowerCase()
+}
+
+async function profileLinkMatches(link, target) {
+  const canonicalTarget = await realpath(target)
+  if (process.platform !== 'win32') return (await realpath(link)) === canonicalTarget
+  const info = await lstat(link)
+  if (!info.isSymbolicLink()) return (await realpath(link)) === canonicalTarget
+  const linked = await readlink(link)
+  if (!windowsJunctionTargets(link, linked, canonicalTarget)) return false
+  return await readFile(join(link, 'package.json'), 'utf8') ===
+    await readFile(join(canonicalTarget, 'package.json'), 'utf8')
+}
+
+/**
+ * Point `link` at `target`, recording each step `state` must undo.
+ *
+ * Other platforms stage a symlink and rename it into place. Windows creates
+ * the junction at the final path, targeting the prevalidated physical path.
+ * Publication also checks that the manifest is readable through that link.
+ *
+ * @param {{ symlink: Function, rename: Function, unlink: Function, readlink: Function }} fs
+ * @param {{ platform: NodeJS.Platform, link: string, target: string, previousIsDirectory: boolean, nextLink: string, oldLink: string }} options
+ * @param {{ previousTarget?: string, movedOld: boolean, installedNew: boolean }} state
+ */
+export async function placeProfilePackageLink(fs, options, state) {
+  const { platform, link, target, previousIsDirectory, nextLink, oldLink } = options
+  if (platform === 'win32') {
+    try {
+      if (!previousIsDirectory) {
+        try {
+          state.previousTarget = await fs.readlink(link)
+        } catch (error) {
+          if (error?.code !== 'ENOENT') throw error
+        }
+        try {
+          await fs.unlink(link)
+        } catch (error) {
+          if (error?.code !== 'ENOENT') throw error
+        }
+        if (state.previousTarget !== undefined) state.movedOld = true
+      } else {
+        await fs.rename(link, oldLink)
+        state.movedOld = true
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    await fs.symlink(target, link, 'junction')
+    state.installedNew = true
+    return
+  }
+  await fs.symlink(target, nextLink, 'dir')
+  try {
+    await fs.rename(link, oldLink)
+    state.movedOld = true
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  await fs.rename(nextLink, link)
+  state.installedNew = true
 }
 
 /**
@@ -260,10 +412,8 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
   const suffix = randomUUID()
   const nextLink = `${link}.dsh-next-${suffix}`
   const oldLink = `${link}.dsh-previous-${suffix}`
-  let previousTarget
   let previousIsDirectory = false
-  let movedOld = false
-  let installedNew = false
+  const placed = { previousTarget: undefined, movedOld: false, installedNew: false }
   await mkdir(dirname(link), { recursive: true })
   try {
     try {
@@ -274,40 +424,29 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
           code: REAL_DIRECTORY_IN_PLACE
         })
       }
-      if (await realpath(link) === await realpath(target)) {
+      if (await profileLinkMatches(link, target)) {
         const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })
         return { plugins: [pluginName], bundles }
       }
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
     }
-    await symlink(target, nextLink, process.platform === 'win32' ? 'junction' : 'dir')
-    try {
-      if (process.platform === 'win32' && !previousIsDirectory) {
-        // Remove only the junction, never rename a loaded directory or touch
-        // its target. Keep its target to recreate the pointer on failure.
-        previousTarget = await readlink(link)
-        await unlink(link)
-      } else {
-        await rename(link, oldLink)
-      }
-      movedOld = true
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-    }
-    await rename(nextLink, link)
-    installedNew = true
+    await placeProfilePackageLink(
+      { symlink, rename, unlink, readlink },
+      { platform: process.platform, link, target, previousIsDirectory, nextLink, oldLink },
+      placed
+    )
     // Validate through the public profile path, exactly where the market reads.
-    if (await realpath(link) !== await realpath(target)) throw new Error(`Plugin link switch did not select ${pluginName}`)
+    if (!(await profileLinkMatches(link, target))) throw new Error(`Plugin link switch did not select ${pluginName}`)
     const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })
     // Old plugin bytes remain in their generation for already-loaded modules.
     await rm(oldLink, { force: true, recursive: previousIsDirectory }).catch(() => {})
     return { plugins: [pluginName], bundles }
   } catch (error) {
     try {
-      if (installedNew) await rm(link, { force: true })
-      if (movedOld) {
-        if (previousTarget !== undefined) await symlink(previousTarget, link, 'junction')
+      if (placed.installedNew) await rm(link, { force: true })
+      if (placed.movedOld) {
+        if (placed.previousTarget !== undefined) await symlink(placed.previousTarget, link, 'junction')
         else await rename(oldLink, link)
       }
     } catch (restoreError) {
@@ -345,6 +484,7 @@ export async function exposeMissingGenerationLinks(dshHome, profile = 'web') {
   for (const [pluginName] of enabled) {
     const linkPath = join(modulesDir, pluginName)
     const target = targets.get(pluginName)
+    if (target === undefined && manifestState.disabledPlugins.has(pluginName)) continue
     if (target === undefined) throw new Error(`Enabled generation target was not prevalidated: ${pluginName}`)
     try {
       const info = await lstat(linkPath)
@@ -374,15 +514,23 @@ async function prepareGenerationProjection(dshHome, profile) {
   // malformed or temporarily unreadable existing file must never be mistaken
   // for an empty Profile and overwritten with a reduced generated manifest.
   const manifestState = await readProfileManifest(dir)
+  // Desired packages remain installed even when their activation switch is off.
   const enabled = await resolveEnabledGenerations(dshHome)
+  const disabled = new Set(await readDisabledPlugins(dir).catch(() => []))
+  manifestState.disabledPlugins = disabled
   const targets = new Map()
   for (const [pluginName, generation] of enabled) {
-    targets.set(pluginName, await validateEnabledGenerationTarget(pluginName, generation))
+    try {
+      targets.set(pluginName, await validateEnabledGenerationTarget(pluginName, generation))
+    } catch (error) {
+      if (!disabled.has(pluginName)) throw error
+      // Keep the installed inventory/previous link for a disabled broken package,
+      // so Plugin Manager can diagnose or remove it without blocking startup.
+    }
   }
   const linkSpecs = new Map()
   for (const [pluginName, generation] of enabled) {
-    const target = targets.get(pluginName)
-    if (target === undefined) throw new Error(`Enabled generation target was not prevalidated: ${pluginName}`)
+    const target = targets.get(pluginName) ?? resolve(generation.directory, 'node_modules', pluginName)
     // This path belongs only to pnpm's root override. The market reads the
     // ordinary dependency version written below and never sees it.
     linkSpecs.set(pluginName, `link:${relative(dir, target).split('\\').join('/')}`)
@@ -391,7 +539,7 @@ async function prepareGenerationProjection(dshHome, profile) {
 }
 
 /**
- * Remove links this projector wrote for plugins that are no longer enabled. A
+ * Remove links this projector wrote for plugins that are no longer installed. A
  * link is ours if it is a symlink whose target sits under the generations
  * tree; a real directory or a pnpm link elsewhere is never touched.
  */
@@ -440,7 +588,7 @@ async function syncProfileManifest(
   { syncBundles = true } = {}
 ) {
   const manifestPath = join(dir, 'package.json')
-  const { current, manifest } = manifestState
+  const { current, manifest, disabledPlugins = new Set() } = manifestState
 
   const previousProjection = manifest.dsh?.desktop?.generationProjection
   const previousPlugins = previousProjection?.version === PROJECTION_VERSION &&
@@ -514,12 +662,14 @@ async function syncProfileManifest(
       IN_BOX_BUNDLES.has(name) || (!managedBundles.has(name) && !enabled.has(name))
     ))]
     for (const name of Object.keys(dependencies)) {
-      if (declaredBundles.includes(name) || enabled.has(name)) continue
+      if (declaredBundles.includes(name) || enabled.has(name) || disabledPlugins.has(name)) continue
       if (await declaresBundle(join(dir, 'node_modules', name))) declaredBundles.push(name)
     }
     const pluginNames = [...enabled.keys()].sort()
     bundles = [...declaredBundles, ...pluginNames]
   }
+
+  bundles = bundles.filter(name => !disabledPlugins.has(name))
 
   const desktop = {
     ...(manifest.dsh?.desktop ?? {})

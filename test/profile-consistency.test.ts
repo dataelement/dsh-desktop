@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-import { healProfileBundles, HOST_COMPOSED_BUNDLES, inspectProfileConsistency } from '../src/main/state/profile-consistency'
+import { healProfileBundles, HOST_COMPOSED_BUNDLES, inspectProfileConsistency } from '../src/main/profile/profile-consistency'
 import { projectRoot } from './patch-path'
 
 vi.mock('node:fs/promises', async (importOriginal) => {

@@ -6,6 +6,7 @@ import * as ReactDOM from 'react-dom'
 import * as jsx from 'react/jsx-runtime'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it } from 'vitest'
+import { desktopUi } from './helpers/template-library-controls.mjs'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const workbenchSource = await readFile(resolve('packages/dsh-desktop-workbenches/client.js'), 'utf8')
@@ -41,6 +42,7 @@ it.each([
     window.__ModuleLoader__ = { load({ factory }) { plugin = factory(name => {
       if (name === 'react') return React
       if (name === 'react-dom') return ReactDOM
+      if (name === 'dsh-desktop-client-ui') return desktopUi
       if (name === 'react/jsx-runtime') return jsx
       if (name === '@deepseek-ai/cordis') return { Service: { tracker: Symbol('tracker') } }
       return {}
@@ -49,6 +51,10 @@ it.each([
     return plugin
   }
   for (const source of [officeSource, pptSource]) load(source).apply(ctx)
+  const options = seats.filter(({ meta }) => meta.name === 'conversation.hero.options')
+  expect(options).toHaveLength(2)
+  expect(new Set(options.map(({ meta }) => meta.id)).size).toBe(2)
+  expect(seats.some(({ meta }) => meta.name === 'conversation.hero.modeActions')).toBe(false)
   Object.defineProperty(window, 'localStorage', { configurable: true, value: { getItem: key => key === 'dsh-workbench-enabled' ? String(enabled) : null } })
   const { Frame } = load(workbenchSource)
   const listeners = new Set()
@@ -66,7 +72,7 @@ it.each([
   function Conversation() {
     React.useEffect(() => { mounts++ }, [])
     return React.createElement('div', { 'data-test-conversation': '' },
-      ...seats.filter(({ meta }) => meta.name === 'conversation.hero.modeActions').map(({ meta, component, props }) => React.createElement(component, {
+      ...seats.filter(({ meta }) => meta.name === 'conversation.hero.options').map(({ meta, component, props }) => React.createElement(component, {
         ...props, key: meta.id, sessionId: 'session-a', session: { blank: true }, t: key => dictionaries.get(meta.locale)?.zh[key] ?? key
       })),
       React.createElement('button', { 'data-test-other-action': '' }, 'Other mode action with long text'),

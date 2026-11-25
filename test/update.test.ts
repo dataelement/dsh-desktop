@@ -56,7 +56,7 @@ describe('macOS update metadata', () => {
       writeFile(x64Path, stringify(metadata('x64', '2026-08-14T02:00:00.000Z')), 'utf8')
     ])
     await execFile(process.execPath, [
-      path.join(projectRoot, 'scripts', 'merge-mac-update-metadata.mjs'),
+      path.join(projectRoot, 'scripts', 'release', 'merge-mac-update-metadata.mjs'),
       armPath,
       x64Path,
       outputPath

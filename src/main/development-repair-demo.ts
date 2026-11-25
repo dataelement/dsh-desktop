@@ -2,10 +2,10 @@ import { lstat, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/pro
 import { join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { MenuItemConstructorOptions } from 'electron'
-import { disableProfilePlugin, enableProfilePlugin } from './state/plugin-disable'
-import { readRepairJournal } from './state/repair-job'
+import { disableProfilePlugin, enableProfilePlugin } from './profile/plugin-disable'
+import { readRepairJournal } from './recovery/repair-job'
 import type { PluginRecoveryCheck } from './plugin-recovery-market'
-import type { PluginUpgradeCandidate } from './state/plugin-market-check'
+import type { PluginUpgradeCandidate } from './recovery/plugin-market-check'
 
 export const DEMO_PLUGIN = 'dsh-demo-startup-failure'
 const OWNER = 'dsh-desktop-development-repair-demo-v1'

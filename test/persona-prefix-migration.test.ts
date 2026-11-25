@@ -8,7 +8,7 @@ import { migratePersonaPrefix as migratePersonaPrefixJs } from '../packages/dsh-
 import {
   migrateUserPresetPersonaPrefixes,
   writeTextAtomically
-} from '../src/main/state/persona-prefix-migration'
+} from '../src/main/profile/persona-prefix-migration'
 import { migratePersonaPrefix } from '../src/shared/persona-prefix'
 
 const legacy = `# keep this header
@@ -433,17 +433,5 @@ describe('startup persona prefix migration', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
-  })
-})
-
-describe('persona prefix migration runs before harness start', () => {
-  it('rewrites user presets after profile maintenance is allowed and before runtime.start', async () => {
-    const source = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8')
-    const launch = source.slice(source.indexOf('function launchHarness'), source.indexOf('function launchSafeHarness'))
-    const safe = source.slice(source.indexOf('function launchSafeHarness'), source.indexOf('function startRepairAgentPrompt'))
-    expect(launch.indexOf('runProfileStartupMaintenance')).toBeGreaterThan(-1)
-    expect(launch.indexOf('migratePersonaPrefixesBeforeStart')).toBeGreaterThan(launch.indexOf('runProfileStartupMaintenance'))
-    expect(launch.indexOf('migratePersonaPrefixesBeforeStart')).toBeLessThan(launch.indexOf('await runtime.start'))
-    expect(safe.indexOf('migratePersonaPrefixesBeforeStart')).toBeLessThan(safe.indexOf('await runtime.start'))
   })
 })

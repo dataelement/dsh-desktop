@@ -93,9 +93,19 @@ export function parseVersionIndex(raw: unknown): AvailableRelease[] {
   return versions.filter(isRelease)
 }
 
+/** The fields the index reader uses. Node fetch and the desktop session fetch both satisfy it. */
+export type VersionIndexRequest = (
+  url: string,
+  init?: { signal?: AbortSignal }
+) => Promise<{
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+}>
+
 export async function fetchAvailableReleases(
   currentVersion: string,
-  fetchImpl: typeof fetch = globalThis.fetch
+  fetchImpl: VersionIndexRequest = globalThis.fetch
 ): Promise<AvailableRelease[]> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), INDEX_TIMEOUT_MS)

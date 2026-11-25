@@ -58,7 +58,7 @@ describe('the registry a generation install fetches from', () => {
   it('pins a mirror region to the same registry the market reads', async () => {
     const profileDir = await profileWithRegion('china')
     expect(await resolveMarketRegistry({ profileDir, environment: {} }))
-      .toBe('https://mirrors.cloud.tencent.com/npm')
+      .toBe('https://registry.npmmirror.com')
   })
 
   it('leaves the default registry unpinned so a private registry keeps working', async () => {
@@ -76,7 +76,7 @@ describe('the registry a generation install fetches from', () => {
     expect(await resolveMarketRegistry({
       profileDir,
       environment: { npm_config_registry: '  ' }
-    })).toBe('https://mirrors.cloud.tencent.com/npm')
+    })).toBe('https://registry.npmmirror.com')
   })
 
   it('follows the market\'s own mirror override', async () => {

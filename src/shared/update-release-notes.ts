@@ -1,5 +1,6 @@
+import type { DesktopLocale } from './desktop-locale'
 /** Select the approved popup translation without interpreting remote text as HTML. */
-export function popupReleaseNotes(value: string | undefined, locale: 'zh' | 'en'): string | undefined {
+export function popupReleaseNotes(value: string | undefined, locale: DesktopLocale): string | undefined {
   if (!value) return undefined
   try {
     const parsed: unknown = JSON.parse(value)

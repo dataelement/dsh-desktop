@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
@@ -7,7 +7,7 @@ import {
   isProjectedGenerationPlugin,
   prepareGenerationsForLaunch,
   uninstallGenerationPlugin
-} from '../src/main/state/generation-launch'
+} from '../src/main/profile/generation-launch'
 import {
   ensureRegistryDirectories,
   readDesired,
@@ -69,6 +69,33 @@ describe('the launch-process half of the generation model', () => {
     )
   })
 
+  it('initializes a missing desktop profile without creating the web profile or the shared modules directory', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-genlaunch-desktop-'))
+    homes.push(home)
+    await prepareGenerationsForLaunch(home, silent, 'desktop')
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'desktop', 'package.json'), 'utf8'))
+    expect(manifest.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    await expect(lstat(join(home, 'profiles', 'web'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(lstat(join(home, 'profiles', 'node_modules'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('keeps an existing desktop manifest when projecting', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-genlaunch-desktop-'))
+    homes.push(home)
+    const manifestPath = join(home, 'profiles', 'desktop', 'package.json')
+    await mkdir(join(home, 'profiles', 'desktop'), { recursive: true })
+    const manifest = JSON.stringify({
+      name: 'dsh-profile-desktop',
+      private: true,
+      dependencies: { 'demo-plugin': '1.0.0' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'demo-plugin'] } }
+    })
+    await writeFile(manifestPath, manifest)
+    await prepareGenerationsForLaunch(home, silent, 'desktop')
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).dependencies).toEqual({ 'demo-plugin': '1.0.0' })
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).dsh.profile.bundles).toContain('demo-plugin')
+  })
+
   it('is a no-op on a profile that has never used a generation', async () => {
     const home = await freshHome()
     await expect(prepareGenerationsForLaunch(home, silent)).resolves.toBeUndefined()
@@ -92,6 +119,36 @@ describe('the launch-process half of the generation model', () => {
     expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'keeper'))).toBe(true)
     const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
     expect(manifest.dsh.profile.bundles).toContain('keeper')
+  })
+
+  it('keeps the previous generation readable when a deferred launch cannot project its replacement', async () => {
+    const home = await freshHome()
+    const oldId = 'widget+1.0.0+old'
+    const nextId = 'widget+2.0.0+next'
+    await fakeGeneration(home, oldId, 'widget')
+    await writeDesired(home, [oldId])
+    await prepareGenerationsForLaunch(home, silent)
+    const profile = join(home, 'profiles', 'web')
+    const manifestPath = join(profile, 'package.json')
+    const before = await readFile(manifestPath, 'utf8')
+    const oldPackage = join(registryLayout(home).generations, oldId, 'node_modules', 'widget', 'package.json')
+    const oldBytes = await readFile(oldPackage, 'utf8')
+    await fakeGeneration(home, nextId, 'widget')
+    await writeDesired(home, [nextId])
+    const nextPackage = join(registryLayout(home).generations, nextId, 'node_modules', 'widget')
+    await rm(nextPackage, { recursive: true })
+
+    await expect(prepareGenerationsForLaunch(home, silent)).rejects.toThrow('generation projection failed')
+    expect(await readFile(oldPackage, 'utf8')).toBe(oldBytes)
+    expect(await readFile(join(profile, 'node_modules', 'widget', 'package.json'), 'utf8')).toBe(oldBytes)
+    expect(await readFile(manifestPath, 'utf8')).toBe(before)
+    expect(await readDesired(home)).toEqual([nextId])
+
+    // A later successful projection can finally retire the old generation.
+    await fakeGeneration(home, nextId, 'widget')
+    await prepareGenerationsForLaunch(home, silent)
+    await expect(lstat(join(registryLayout(home).generations, oldId))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).dsh.desktop.generationProjection.plugins.widget.generationId).toBe(nextId)
   })
 
   it('knows a generation install from a plain manifest one', async () => {
@@ -127,7 +184,7 @@ describe('the launch-process half of the generation model', () => {
     expect(existsSync(join(profile, 'node_modules', 'widget'))).toBe(false)
   })
 
-  it('never projects dshmarket, whatever desired.json says', async () => {
+  it('projects dshmarket as an ordinary desired generation', async () => {
     const home = await freshHome()
     await ensureRegistryDirectories(home)
     await fakeGeneration(home, 'dshmarket+1.44.0+af88ab682bc0', 'dshmarket')
@@ -135,13 +192,13 @@ describe('the launch-process half of the generation model', () => {
 
     await prepareGenerationsForLaunch(home, silent)
 
-    // dshmarket is a core bundle pinned to the shared tree: a stray pointer
-    // stays inert instead of becoming a link startup then has to undo.
+    // The market keeps the same generation ownership as other optional plugins.
     const profile = join(home, 'profiles', 'web')
     const { existsSync } = await import('node:fs')
-    expect(existsSync(join(profile, 'node_modules', 'dshmarket'))).toBe(false)
+    expect(existsSync(join(profile, 'node_modules', 'dshmarket'))).toBe(true)
     const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
-    expect(manifest.pnpm?.overrides ?? {}).not.toHaveProperty('dshmarket')
+    expect(manifest.pnpm?.overrides?.dshmarket).toMatch(/^link:/u)
+    expect(manifest.dsh.profile.bundles).toContain('dshmarket')
   })
 
   it('reprojects a generation that only a pnpm-level removal touched (#330)', async () => {

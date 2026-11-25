@@ -44,7 +44,7 @@ const patchedPackages = [
   {
     name: 'dsh-client-ui-workspace',
     file: 'lib/client.js',
-    markers: ['async deleteSession(sessionId)', 'this.clearMain()', 'const retention = this.sessions.retainInfo(sessionId)', 'timer = setTimeout(finish, 250)', 'await this.sessions.delete(sessionId)']
+    markers: ['async deleteSession(sessionId)', 'this.clearMain()', 'const retention=this.sessions.retainInfo(sessionId)', 'timer=setTimeout(finish,250)', 'await this.sessions.delete(sessionId)']
   }
 ] as const
 
@@ -78,7 +78,7 @@ describe('permanent session deletion dependency patches', () => {
       path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-workspace', 'lib', 'client.js'),
       'utf8'
     )
-    expect(ui).toContain('renderSlot("sidebar.workspaces.session.menu.item", {')
+    expect(ui).toContain('renderSlot("sidebar.workspaces.session.menu.item", target.value, { hookContext })')
     expect(ui).toContain('groupBy === "flat"')
   })
 

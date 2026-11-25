@@ -78,7 +78,7 @@ it('does not discard a saved repair conversation when the cold roster cannot be 
 })
 
 it('can retry reading session state after a failed write is repaired', async () => {
-  const { RepairSessionStore } = await import('../src/main/state/repair-agent-sessions')
+  const { RepairSessionStore } = await import('../src/main/recovery/repair-agent-sessions')
   const home = await mkdtemp(join(tmpdir(), 'repair-store-retry-'))
   directories.push(home)
   const directory = join(home, 'state')

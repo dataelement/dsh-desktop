@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { bundleEntryIds, prunePatchLayer } from '../src/main/state/patch-layer'
-import { patchLayerInsertedPackages } from '../src/main/state/profile-consistency'
+import { bundleEntryIds, prunePatchLayer } from '../src/main/profile/patch-layer'
+import { patchLayerInsertedPackages } from '../src/main/profile/profile-consistency'
 
 const LAYER = `# Your patch layer for this dsh profile, applied after every bundle layer.
 - id: storage

@@ -179,7 +179,8 @@ window.__ModuleLoader__.load({
         try {
           const result = await globalThis.dshDesktop.setBuiltInImageGenerationEnabled(enabled)
           if (!result.ok) throw new Error(result.reason)
-          setHostEnabled(enabled); setHostPending(true)
+          setHostEnabled(enabled); setHostPending(result.restartRequired === true)
+          if (result.restartRequired === true) window.dispatchEvent(new CustomEvent('dsh-desktop-restart-required', { detail: { source: 'image', restartRequired: true } }))
         } catch { setHostError(true) }
         finally { setHostBusy(false) }
       }

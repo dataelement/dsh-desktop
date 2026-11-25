@@ -21,6 +21,7 @@ function fixture(headers: Record<string, string> = {}) {
       provider: 'opencode-go', displayName: 'OpenCode Go', headers,
       piProvider: opencodeGoProvider(), streamIdleTimeoutMs: 5000,
       configuredMaxTokens: new Map(), maxRequestImageBytes: 1024,
+      maxRequestImages: 50, imageOffloadCountQuantum: 10,
       requestImagePixelBudget: 1024, requestImageMaxBytes: 1024,
       retryPolicy: resolveRetryPolicy({ mode: 'normal', maxRetries: 0 }, 'test'),
       modelErrors: new Map()

@@ -31,7 +31,7 @@ DSH Desktop 的主要工程问题来自 Electron 特权边界、Harness 子进�
 
 依据当前 worktree（起点 `f7aebb5`）静态检查，以下是本次快照，不是永久基线：
 
-- `src/main/index.ts` 2,931 行、`src/preload/index.ts` 1,186 行、market installer `client.js` 717 行。首要维护性问题是职责集中，单纯格式化不能解决。
+- 正式主进程是 `src/main/shell/app.ts`，正式 preload 是 `src/preload/app.ts`。职责仍然按生命周期拆，不靠把入口再堆回一个文件。market installer `client.js` 仍是集中的插件界面，单纯格式化不能解决。
 - 根 `tsconfig.json` 已启用 strict 和 `noUncheckedIndexedAccess`。`tsconfig.node.json` 未包含插件 JS、脚本及 HTML 内嵌代码。
 - `package.json` 有 test/typecheck/build，无 lint/format 检查脚本。当前 release workflow 有原生平台测试、类型检查和打包流程；没有独立的 lint 门禁。
 - 桌面 UI 同时存在 Harness loader 插件、preload DOM 注入和独立 HTML。不能用一套 SPA 检查配置假设所有文件拥有相同 globals、模块格式和主题环境。

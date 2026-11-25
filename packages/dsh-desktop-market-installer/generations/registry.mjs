@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, open, readFile, readdir, readlink, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /**
  * The registry is the single source of truth for which plugin generations
@@ -45,17 +45,6 @@ export function registryLayout(dshHome) {
 const SAFE_PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/iu
 const SAFE_VERSION_PATTERN = /^[0-9a-z][0-9a-z._+-]*$/iu
 
-/**
- * Packages the profile always keeps as real directories in its shared tree:
- * pnpm-managed, and never resolved from a generation however one got into
- * `desired`.
- *
- * The app-side `KEEP_IN_SHARED_TREE` (generation-migration.ts) lists the same
- * intent for the migration, plus the two in-box bundles that never reach this
- * registry at all. Nothing keeps the two in sync — only dshmarket is ever
- * installable from the market, so only dshmarket needs guarding here.
- */
-export const SHARED_TREE_ONLY = new Set(['dshmarket'])
 const LOCK_OWNER_PATTERN = /^([1-9]\d*)\s+[^\r\n]+(?:\s+[^\r\n]+)?\r?\n?$/u
 
 function assertSafePackageName(pluginName, context = 'Generation plugin name') {
@@ -403,11 +392,6 @@ export async function resolveEnabledGenerations(dshHome) {
   const enabled = new Map()
   for (const id of desired) {
     const generation = byId.get(id)
-    // A core bundle is never resolved from a generation, whatever `desired`
-    // says. Projection would otherwise re-link it on every launch, which no
-    // later repair can outrun. Left in place rather than thrown on: the
-    // pointer is inert, and startup demotes it back to the shared tree.
-    if (generation !== undefined && SHARED_TREE_ONLY.has(generation.pluginName)) continue
     if (generation === undefined || !existsSync(generation.directory)) {
       throw new Error(`Desired generation is missing or unreadable: ${id}`)
     }
@@ -416,7 +400,92 @@ export async function resolveEnabledGenerations(dshHome) {
   return enabled
 }
 
-/** The generation ids not referenced by the authoritative desired pointer. */
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function readProfileLinkReferences(profile, generationRoots, referenced) {
+  const modules = join(profile, 'node_modules')
+  const scan = async (directory, scope = false) => {
+    let entries
+    try {
+      entries = await readdir(directory, { withFileTypes: true })
+    } catch (error) {
+      if (error?.code === 'ENOENT' && !scope) return
+      throw error
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name)
+      if (entry.isSymbolicLink()) {
+        let target = await readlink(path)
+        // Junctions may use Windows device-prefixed absolute target spellings.
+        if (target.startsWith('\\\\?\\UNC\\') || target.startsWith('\\??\\UNC\\')) target = '\\\\' + target.slice(8)
+        else if (target.startsWith('\\\\?\\') || target.startsWith('\\??\\')) target = target.slice(4)
+        const absoluteTarget = resolve(dirname(path), target)
+        for (const root of generationRoots) {
+          const nested = relative(root, absoluteTarget)
+          if (nested && !isAbsolute(nested) && nested !== '..' && !nested.startsWith('..' + sep)) {
+            referenced.add(nested.split(sep)[0])
+          }
+        }
+      }
+      if (!scope && entry.name.startsWith('@') && (entry.isDirectory() || entry.isSymbolicLink())) {
+        await scan(path, true)
+      }
+      // Ordinary package directories are deliberately not traversed.
+    }
+  }
+  await scan(modules)
+}
+
+/** Null means a Profile's references could not be established safely. */
+async function readProjectedGenerationReferences(dshHome) {
+  const profiles = join(dshHome, 'profiles')
+  let entries
+  try {
+    entries = await readdir(profiles, { withFileTypes: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return new Set()
+    return null
+  }
+  const referenced = new Set()
+  const generationRoot = registryLayout(dshHome).generations
+  let canonicalRoot
+  try {
+    canonicalRoot = await realpath(generationRoot)
+  } catch {
+    // Physical junction targets cannot be classified safely without this anchor.
+    return null
+  }
+  const generationRoots = [resolve(generationRoot), canonicalRoot]
+  for (const entry of entries) {
+    // These are registry/installation storage, not Harness Profile manifests.
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+    try {
+      const manifest = JSON.parse(await readFile(join(profiles, entry.name, 'package.json'), 'utf8'))
+      if (!isRecord(manifest)) return null
+      if (manifest.dsh !== undefined && !isRecord(manifest.dsh)) return null
+      if (manifest.dsh?.desktop !== undefined && !isRecord(manifest.dsh.desktop)) return null
+      const projection = manifest.dsh?.desktop?.generationProjection
+      if (projection !== undefined) {
+        if (!isRecord(projection) || projection.version !== 1 || !isRecord(projection.plugins)) return null
+        for (const plugin of Object.values(projection.plugins)) {
+          if (!isRecord(plugin) || typeof plugin.generationId !== 'string' || !plugin.generationId) return null
+          referenced.add(plugin.generationId)
+        }
+      }
+      await readProfileLinkReferences(join(profiles, entry.name), generationRoots, referenced)
+    } catch {
+      // A copied or temporarily unreadable Profile may still point at old bytes.
+      // Retain every live generation rather than guessing which ones it uses.
+      return null
+    }
+  }
+  return referenced
+}
+
+/** Generations referenced by neither desired, committed Profile markers nor actual links. */
 export async function collectUnreferencedGenerations(dshHome) {
   const layout = registryLayout(dshHome)
   const [desired, directoryIds] = await Promise.all([
@@ -433,7 +502,9 @@ export async function collectUnreferencedGenerations(dshHome) {
       throw new Error(`Desired generation is missing or unreadable: ${id}`, { cause: error })
     }
   }
-  const referenced = new Set(desired)
+  const projected = await readProjectedGenerationReferences(dshHome)
+  if (projected === null) return []
+  const referenced = new Set([...desired, ...projected])
   return directoryIds.filter((id) => !referenced.has(id))
 }
 

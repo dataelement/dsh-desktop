@@ -1,9 +1,9 @@
 import { writeFileSync } from 'node:fs'
-import { access, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   collectUnreferencedGenerations,
@@ -21,12 +21,24 @@ import {
   writeGenerationMeta
 } from '../packages/dsh-desktop-market-installer/generations/registry'
 
-const removalFault = vi.hoisted(() => ({ trashPrefix: '' }))
+const removalFault = vi.hoisted(() => ({ trashPrefix: '', readPath: '', readdirPath: '' }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      if (removalFault.readdirPath && String(args[0]) === removalFault.readdirPath) {
+        throw Object.assign(new Error('EPERM: simulated locked node_modules'), { code: 'EPERM' })
+      }
+      return actual.readdir(...args)
+    },
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      if (removalFault.readPath && String(args[0]) === removalFault.readPath) {
+        throw Object.assign(new Error('EPERM: simulated locked Profile manifest'), { code: 'EPERM' })
+      }
+      return actual.readFile(...args)
+    },
     rm: async (...args: Parameters<typeof actual.rm>) => {
       const normalized = String(args[0]).replaceAll('\\', '/')
       if (removalFault.trashPrefix && normalized.includes(removalFault.trashPrefix)) {
@@ -60,6 +72,8 @@ describe('the plugin generation registry', () => {
 
   afterEach(async () => {
     removalFault.trashPrefix = ''
+    removalFault.readPath = ''
+    removalFault.readdirPath = ''
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
   })
@@ -119,7 +133,7 @@ describe('the plugin generation registry', () => {
     expect(() => generationId('safe-plugin', '..', 'lock')).toThrow(/safe for a generation id/u)
   })
 
-  it('treats desired as the sole authority for generation retention', async () => {
+  it('ignores retired last-known-good pointers when collecting generations', async () => {
     const home = await freshHome()
     await ensureRegistryDirectories(home)
     await fakeGeneration(home, 'a+1+x', 'a', '1')
@@ -135,6 +149,122 @@ describe('the plugin generation registry', () => {
 
     expect((await collectUnreferencedGenerations(home)).sort()).toEqual(['a+1+x', 'c+3+z'])
   })
+
+  it('retains generations projected by another Profile until every Profile switches', async () => {
+    const home = await freshHome()
+    const layout = await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'market+1+x', 'dshmarket', '1.0.0')
+    await fakeGeneration(home, 'market+2+y', 'dshmarket', '2.0.0')
+    await fakeGeneration(home, 'orphan+1+z', 'orphan', '1.0.0')
+    const oldPackage = join(layout.generations, 'market+1+x', 'node_modules', 'dshmarket')
+    await mkdir(oldPackage, { recursive: true })
+    await writeFile(join(oldPackage, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.0.0' }))
+    const manifest = (id: string) => JSON.stringify({
+      dsh: { desktop: { generationProjection: { version: 1, plugins: { dshmarket: { generationId: id } } } } }
+    })
+    for (const [profile, id] of [['web', 'market+1+x'], ['desktop', 'market+2+y']] as const) {
+      const directory = join(home, 'profiles', profile)
+      await mkdir(directory, { recursive: true })
+      await writeFile(join(directory, 'package.json'), manifest(id))
+    }
+    await writeDesired(home, ['market+2+y'])
+    expect(await collectUnreferencedGenerations(home)).toEqual(['orphan+1+z'])
+    expect((await sweepRegistry(home)).removed).toEqual(['orphan+1+z'])
+    expect(JSON.parse(await readFile(join(oldPackage, 'package.json'), 'utf8')).version).toBe('1.0.0')
+
+    await writeFile(join(home, 'profiles', 'web', 'package.json'), manifest('market+2+y'))
+    expect(await collectUnreferencedGenerations(home)).toEqual(['market+1+x'])
+    expect((await sweepRegistry(home)).removed).toEqual(['market+1+x'])
+    await expect(access(oldPackage)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['demo', true], ['@scope/demo', true], ['demo', false], ['@scope/demo', false]
+  ] as const)('retains the actual %s generation link when projection markers are present=%s', async (name, withMarker) => {
+    const home = await freshHome()
+    const layout = await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'old+1+x', name, '1.0.0')
+    await fakeGeneration(home, 'new+2+y', name, '2.0.0')
+    await fakeGeneration(home, 'orphan+1+z', 'orphan', '1.0.0')
+    const oldPackage = join(layout.generations, 'old+1+x', 'node_modules', name)
+    await mkdir(oldPackage, { recursive: true })
+    await writeFile(join(oldPackage, 'package.json'), JSON.stringify({ name, version: '1.0.0' }))
+    const profile = join(home, 'profiles', 'web')
+    const modules = join(profile, 'node_modules')
+    const link = join(modules, name)
+    await mkdir(dirname(link), { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dependencies: { [name]: '2.0.0' },
+      ...(withMarker ? { dsh: { desktop: { generationProjection: {
+        version: 1, plugins: { [name]: { generationId: 'new+2+y' } }
+      } } } } : {})
+    }))
+    const state = join(profile, '.dsh-market')
+    await mkdir(state)
+    await writeFile(join(state, 'state.json'), JSON.stringify({ disabled: [name] }))
+    await writeDesired(home, ['new+2+y'])
+    // B has no package root: disabled projection must retain the usable A link.
+    await symlink(process.platform === 'win32' ? oldPackage : relative(dirname(link), oldPackage), link,
+      process.platform === 'win32' ? 'junction' : 'dir')
+    const nested = join(modules, 'ordinary-package', 'node_modules')
+    await mkdir(nested, { recursive: true })
+    await symlink(join(layout.generations, 'orphan+1+z'), join(nested, 'nested-generation'),
+      process.platform === 'win32' ? 'junction' : 'dir')
+    await symlink(join(layout.generations + '-outside', 'orphan+1+z'), join(modules, 'external'),
+      process.platform === 'win32' ? 'junction' : 'dir')
+    expect(await collectUnreferencedGenerations(home)).toEqual(['orphan+1+z'])
+    await sweepRegistry(home)
+    expect(JSON.parse(await readFile(join(link, 'package.json'), 'utf8')).version).toBe('1.0.0')
+
+    await rm(link, { force: true })
+    const newPackage = join(layout.generations, 'new+2+y', 'node_modules', name)
+    await symlink(process.platform === 'win32' ? newPackage : relative(dirname(link), newPackage), link,
+      process.platform === 'win32' ? 'junction' : 'dir')
+    expect(await collectUnreferencedGenerations(home)).toEqual(['old+1+x'])
+    expect((await sweepRegistry(home)).removed).toEqual(['old+1+x'])
+  })
+
+  it.each(['node_modules', 'node_modules/@scope'])('retains all generations when Profile %s cannot be scanned', async directory => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'old+1+x', 'demo', '1.0.0')
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(join(profile, 'node_modules', '@scope'), { recursive: true })
+    await writeFile(join(profile, 'package.json'), '{}')
+    removalFault.readdirPath = join(profile, directory)
+    expect(await collectUnreferencedGenerations(home)).toEqual([])
+    expect((await sweepRegistry(home)).removed).toEqual([])
+    removalFault.readdirPath = ''
+    expect(await collectUnreferencedGenerations(home)).toEqual(['old+1+x'])
+  })
+
+  it.each(['missing', 'invalid-json', 'invalid-root', 'invalid-projection', 'unknown-version', 'unreadable'])(
+    'retains all live generations when a Profile manifest is %s', async fault => {
+      const home = await freshHome()
+      const layout = await ensureRegistryDirectories(home)
+      await fakeGeneration(home, 'old+1+x', 'demo', '1.0.0')
+      await fakeGeneration(home, 'new+2+y', 'demo', '2.0.0')
+      await writeDesired(home, ['new+2+y'])
+      const profile = join(home, 'profiles', 'web')
+      await mkdir(profile, { recursive: true })
+      const path = join(profile, 'package.json')
+      const malformed: Record<string, string> = {
+        'invalid-json': '{broken',
+        'invalid-root': 'null',
+        'invalid-projection': JSON.stringify({ dsh: { desktop: { generationProjection: { version: 1, plugins: { demo: {} } } } } }),
+        'unknown-version': JSON.stringify({ dsh: { desktop: { generationProjection: { version: 2, plugins: {} } } } })
+      }
+      if (fault !== 'missing') await writeFile(path, malformed[fault] ?? '{}')
+      if (fault === 'unreadable') removalFault.readPath = path
+      expect(await collectUnreferencedGenerations(home)).toEqual([])
+      expect((await sweepRegistry(home)).removed).toEqual([])
+      await expect(access(join(layout.generations, 'old+1+x'))).resolves.toBeUndefined()
+      await expect(access(join(layout.generations, 'new+2+y'))).resolves.toBeUndefined()
+      removalFault.readPath = ''
+      await writeFile(path, '{}')
+      expect(await collectUnreferencedGenerations(home)).toEqual(['old+1+x'])
+    }
+  )
 
   it('sweeps unreferenced generations and staging leftovers, keeps referenced ones', async () => {
     const home = await freshHome()

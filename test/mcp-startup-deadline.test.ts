@@ -117,7 +117,7 @@ async function runProfile({ mode = 'hang', strict = false, startupTimeoutMs = 40
       console.log('PROFILE_DISPOSED:' + live.size);
     `)
     const started = Date.now()
-    const result = spawnSync(process.execPath, [resolve('build/harness-node-entry.mjs'), entry], {
+    const result = spawnSync(process.execPath, [entry], {
       encoding: 'utf8', timeout: 12_000,
       env: { ...process.env, DSH_HOME: home }
     })

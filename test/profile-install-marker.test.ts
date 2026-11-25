@@ -7,7 +7,7 @@ import {
   isProfileInstallComplete,
   markProfileInstallComplete,
   profileInstallMarkerPath
-} from '../src/main/state/profile-install-marker'
+} from '../src/main/profile/profile-install-marker'
 
 describe('profile install marker', () => {
   const homes: string[] = []

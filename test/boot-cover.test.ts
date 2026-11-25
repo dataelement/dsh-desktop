@@ -75,6 +75,19 @@ describe('boot cover target', () => {
 })
 
 describe('boot cover lifecycle', () => {
+  it('relabels startup and stalled text from the current Harness document language', async () => {
+    const { doc, timers, cover } = mountHarnessCover()
+    doc.documentElement.lang = 'ja'
+    await Promise.resolve()
+    const root = doc.getElementById(BOOT_COVER_ID)?.shadowRoot
+    expect(root?.querySelector('h1')?.textContent).toBe('DSH Desktop を起動中')
+    timers.fire()
+    expect(root?.querySelector('h1')?.textContent).toBe('起動に通常より時間がかかっています')
+    doc.documentElement.lang = 'de'
+    await Promise.resolve()
+    expect(root?.querySelector('h1')?.textContent).toBe('Der Start dauert länger als gewöhnlich')
+    cover?.dispose()
+  })
   afterEach(() => {
     document.getElementById(BOOT_COVER_ID)?.remove()
     document.getElementById(BOOT_COVER_STYLE_ID)?.remove()

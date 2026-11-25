@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import { electronNodeExecutable } from '../src/main/runtime/electron-node-executable'
+import { electronNodeExecutable } from '../src/main/shell/backend/electron-node-executable'
 
 describe('electronNodeExecutable', () => {
   it('uses the app Helper on macOS', () => {
