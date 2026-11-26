@@ -2,5 +2,5 @@ export function shouldKeepRunningInBackground(
   platform: NodeJS.Platform,
   quitting: boolean
 ): boolean {
-  return platform === 'win32' && !quitting
+  return (platform === 'darwin' || platform === 'win32') && !quitting
 }
