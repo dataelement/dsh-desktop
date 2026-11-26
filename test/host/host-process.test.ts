@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { electronNodeExecutable } from '../../src/main/shell/backend/electron-node-executable'
 import { DesktopHostFatalError, DesktopHostProcess, hostLaunchArguments, redactHostOutput } from '../../src/main/shell/backend/host-process'
+import { packageManagerEnvironment } from '../../src/host/index'
+import { HIDE_CONSOLE_BOOTSTRAP_ENV } from 'dsh-desktop-market-installer/windows-hide-console'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron') as string
@@ -182,6 +184,21 @@ describe('host launch arguments', () => {
       hideConsoleBootstrapPath: undefined,
       inspectPort: undefined
     }, {}, 'win32')[1]).toBe(entry)
+  })
+})
+
+describe('package manager environment', () => {
+  it('carries the Windows console bootstrap into the packaged pnpm runner', () => {
+    const environment = packageManagerEnvironment({
+      PATH: 'system-bin',
+      [HIDE_CONSOLE_BOOTSTRAP_ENV]: 'C:\\DSH\\windows-hide-console-import.mjs'
+    }, 'electron.exe', 'desktop-bin')
+    expect(environment).toEqual({
+      ELECTRON_RUN_AS_NODE: '1',
+      DSH_DESKTOP_NODE_EXECUTABLE: 'electron.exe',
+      PATH: `desktop-bin${process.platform === 'win32' ? ';' : ':'}system-bin`,
+      [HIDE_CONSOLE_BOOTSTRAP_ENV]: 'C:\\DSH\\windows-hide-console-import.mjs'
+    })
   })
 })
 
