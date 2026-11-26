@@ -26,7 +26,8 @@ describe('macOS microphone packaging', () => {
   it('configures the usage description and main/helper entitlements without broadening device access', async () => {
     const { mac, options } = await signingOptions()
     expect(mac.hardenedRuntime).toBe(true)
-    expect(mac.extendInfo.NSMicrophoneUsageDescription).toMatch(/microphone.*transcribe/i)
+    expect(mac.extendInfo.NSMicrophoneUsageDescription).toMatch(/^This app uses your microphone to transcribe speech into message drafts.$/)
+    expect(mac.extendInfo.NSScreenCaptureUsageDescription).toMatch(/^This app uses screen recording only while Computer Use is turned on, so it can show and act on the window you choose.$/)
     for (const target of ['/fixture/DSH Desktop.app', '/fixture/DSH Desktop.app/Contents/Frameworks/DSH Desktop Helper.app']) {
       const selected = options(target)
       expect(selected.hardenedRuntime).toBe(true)

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 
 const sourceRoot = join(import.meta.dirname, '..')
@@ -26,5 +27,12 @@ describe('main window title', () => {
     const splash = await readFile(join(sourceRoot, 'build/splash.html'), 'utf8')
 
     expect(splash).toContain('<title>DSH Desktop</title>')
+    const script = splash.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+    expect(script).toBeDefined()
+    const main = { label: '', setAttribute(_name: string, value: string) { this.label = value } }
+    const document = { title: '', querySelector: () => main }
+    runInNewContext(script ?? '', { URLSearchParams, location: { search: '?productName=BISHENG%20%3CDev%3E' }, document })
+    expect(document.title).toBe('BISHENG <Dev>')
+    expect(main.label).toBe('BISHENG <Dev>')
   })
 })

@@ -19,6 +19,7 @@ import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-title
 import { mountSafeModeFrame } from './safe-mode-frame'
 import { isSafeModeRenderer } from '../main/shell/mobile-pairing'
 import { installScrollDragRegionRefresh } from './scroll-drag-region-refresh'
+import { preloadProductName } from './product-name'
 
 const appDocument = location.protocol === `${SCHEME}:` && location.hostname === 'app'
 const webImportDocument = location.protocol === 'file:' && location.pathname.endsWith('/web-import.html')
@@ -42,6 +43,7 @@ if (webImportDocument) {
 }
 
 if (appDocument) {
+  contextBridge.exposeInMainWorld('__DSH_PRODUCT_NAME__', preloadProductName(process.argv))
   markDesktopPlatform(document, process.platform)
   if (process.platform === 'darwin') {
     mountMacosPreviewChrome(document, () => webFrame.getZoomFactor(), listener => {

@@ -104,7 +104,7 @@ function createPrimitiveStub() {
   } as const
 }
 
-function loadPlugin(fetchImpl?: typeof fetch, showNotice = false) {
+function loadPlugin(fetchImpl?: typeof fetch, showNotice = false, productName?: string) {
   const source = readFileSync(
     path.join(projectRoot, 'packages', 'dsh-desktop-onboarding', 'client.js'),
     'utf8'
@@ -128,6 +128,7 @@ function loadPlugin(fetchImpl?: typeof fetch, showNotice = false) {
     fetch: fetchImpl,
     navigator: { language: 'en-US' },
     window: {
+      __DSH_PRODUCT_NAME__: productName,
       __ModuleLoader__: {
         load: (value: typeof definition) => {
           definition = value
@@ -301,6 +302,20 @@ describe('DSH Desktop onboarding wizard', () => {
     expect(zh.configureModel).toBe('去配置模型')
     expect(en.configureModel).toBeTruthy()
     expect(en.later).toBeTruthy()
+  })
+
+  it('uses the desktop product name in both languages', () => {
+    const register = vi.fn()
+    const { plugin } = loadPlugin(undefined, false, 'Example 桌面')
+    const { ctx } = createCtx({ locale: { register, bind: () => key => key } })
+    plugin.apply(ctx)
+    const dictionaries = register.mock.calls[0]![1] as Record<string, Record<string, string>>
+    for (const language of ['en', 'zh']) {
+      expect(dictionaries[language]?.brandName).toBe('Example 桌面')
+      expect(dictionaries[language]?.desktopIntroTitle).toContain('Example 桌面')
+      expect(dictionaries[language]?.desktopIntroBody).toContain('Example 桌面')
+      expect(dictionaries[language]?.declarationBody).toContain('DeepSeek Harness')
+    }
   })
 
   it('shows only an eligible install with no acknowledgement', () => {

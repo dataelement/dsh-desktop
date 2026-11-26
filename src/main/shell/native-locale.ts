@@ -60,12 +60,13 @@ export function shouldCalibrateNativeLocale(options: {
 
 export async function confirmNativeLocaleRestart(options: {
   locale: DesktopLocale
+  appName: string
   confirm: (prompt: ReturnType<typeof nativeLocaleRestartPrompt>) => Promise<boolean>
   savedLocale: () => Promise<DesktopLocale | undefined>
   notSaved: () => Promise<void>
   restart: () => void
 }): Promise<'deferred' | 'restarting' | 'not-saved'> {
-  if (!await options.confirm(nativeLocaleRestartPrompt(options.locale))) return 'deferred'
+  if (!await options.confirm(nativeLocaleRestartPrompt(options.locale, options.appName))) return 'deferred'
   if (await options.savedLocale() !== options.locale) {
     await options.notSaved()
     return 'not-saved'
@@ -74,13 +75,13 @@ export async function confirmNativeLocaleRestart(options: {
   return 'restarting'
 }
 
-export function nativeLocaleRestartPrompt(locale: DesktopLocale): {
+export function nativeLocaleRestartPrompt(locale: DesktopLocale, appName: string): {
   message: string
   detail: string
   buttons: string[]
 } {
   const text = nativeLocaleMessages[locale]
-  return { message: text.restartHeading, detail: text.restartDetail, buttons: [text.later, text.restart] }
+  return { message: text.restartHeading, detail: text.restartDetail.replace('{app}', () => appName), buttons: [text.later, text.restart] }
 }
 
 /** Owns one window's chooser; duplicate requests cannot enqueue dialogs or relaunches. */

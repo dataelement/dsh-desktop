@@ -205,7 +205,7 @@
       if (navigator.platform.toLowerCase().startsWith('win')) {
         document.documentElement.dataset.platform = 'windows'
       }
-      document.title = model.heading || 'DSH Desktop'
+      document.title = model.brand || 'DSH Desktop'
       const setText = (id, value) => {
         const node = document.getElementById(id)
         if (node) node.textContent = value || ''

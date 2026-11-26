@@ -366,6 +366,7 @@ describe('web home import', () => {
   it('builds bilingual preview copy for the import page', () => {
     const model = buildWebImportViewModel({
       locale: 'zh',
+      productName: 'BISHENG Dev',
       preview: {
         sessionCount: 2,
         workspaceCount: 1,
@@ -374,6 +375,7 @@ describe('web home import', () => {
         hasCredentials: true
       }
     })
+    expect(model.brand).toBe('BISHENG Dev')
     expect(model.heading).toBe('发现网页版数据')
     expect(model.stats).toContain('2 个会话')
     expect(model.primaryLabel).toBe('导入并继续')

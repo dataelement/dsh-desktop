@@ -11,11 +11,13 @@ window.__ModuleLoader__.load({
     const RECOMMENDED_MARKET_VERSION = '^1.66.47'
     const MARKET_REPOSITORY = 'https://github.com/dsh-market/dsh-market'
 
+    const productName = typeof window.__DSH_PRODUCT_NAME__ === 'string' && window.__DSH_PRODUCT_NAME__.trim()
+      ? window.__DSH_PRODUCT_NAME__ : 'DSH Desktop'
     const en = {
       nav: 'Plugin market',
       title: 'Plugin market',
-      intro: 'Install dsh-market to browse, search, install, and manage community plugins inside DSH Desktop.',
-      community: 'dsh-market is maintained by its community; installing and using community plugins requires network access, those plugins are not reviewed by DSH Desktop, and after installation dsh-market will notify you when its own updates are available.',
+      intro: `Install dsh-market to browse, search, install, and manage community plugins inside ${productName}.`,
+      community: `dsh-market is maintained by its community; installing and using community plugins requires network access, those plugins are not reviewed by ${productName}, and after installation dsh-market will notify you when its own updates are available.`,
       version: 'Recommended version',
       install: 'Install plugin market',
       enable: 'Enable plugin market',
@@ -27,7 +29,7 @@ window.__ModuleLoader__.load({
       appliedHint: 'Plugin market is enabled.',
       removedAppliedHint: 'dsh-market has been removed.',
       installing: 'Installing plugin market…',
-      installingHint: 'This can take a few minutes. Keep DSH Desktop open while pnpm downloads and configures the plugin.',
+      installingHint: `This can take a few minutes. Keep ${productName} open while pnpm downloads and configures the plugin.`,
       installed: 'Plugin market installed',
       installedHint: 'Restart Harness once to load the complete market interface.',
       restart: 'Restart Harness',
@@ -40,7 +42,7 @@ window.__ModuleLoader__.load({
       repositoryButton: 'View on GitHub',
       futureUpdates: 'After installation, dsh-market will notify you when its own updates are available.',
       managementTab: 'Plugin market',
-      managementIntro: 'Manage the optional dsh-market integration installed by DSH Desktop.',
+      managementIntro: `Manage the optional dsh-market integration installed by ${productName}.`,
       installedVersion: 'Installed version',
       uninstall: 'Uninstall plugin market',
       uninstalling: 'Uninstalling plugin market…',
@@ -58,8 +60,8 @@ window.__ModuleLoader__.load({
     const zh = {
       nav: '插件市场',
       title: '插件市场',
-      intro: '安装 dsh-market，在 DSH Desktop 内浏览、搜索、安装并管理社区插件。',
-      community: 'dsh-market 由社区维护，安装和使用社区插件需要联网且不由 DSH Desktop 审核，安装后有新版本时会提示并提供升级。',
+      intro: `安装 dsh-market，在 ${productName} 内浏览、搜索、安装并管理社区插件。`,
+      community: `dsh-market 由社区维护，安装和使用社区插件需要联网且不由 ${productName} 审核，安装后有新版本时会提示并提供升级。`,
       version: '推荐版本',
       install: '安装插件市场',
       enable: '启用插件市场',
@@ -71,7 +73,7 @@ window.__ModuleLoader__.load({
       appliedHint: '插件市场已启用。',
       removedAppliedHint: 'dsh-market 已移除。',
       installing: '正在安装插件市场…',
-      installingHint: '下载和配置可能需要几分钟，请保持 DSH Desktop 处于打开状态。',
+      installingHint: `下载和配置可能需要几分钟，请保持 ${productName} 处于打开状态。`,
       installed: '插件市场已安装',
       installedHint: '重启一次 Harness，即可加载完整的插件市场界面。',
       restart: '重启 Harness',
@@ -84,7 +86,7 @@ window.__ModuleLoader__.load({
       repositoryButton: '在 GitHub 查看',
       futureUpdates: '安装后，dsh-market 会在有新版本时提示并提供升级。',
       managementTab: '插件市场',
-      managementIntro: '管理由 DSH Desktop 安装的可选 dsh-market 集成。',
+      managementIntro: `管理由 ${productName} 安装的可选 dsh-market 集成。`,
       installedVersion: '当前版本',
       uninstall: '卸载插件市场',
       uninstalling: '正在卸载插件市场…',

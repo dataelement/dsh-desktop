@@ -232,6 +232,8 @@ describe('desktop plugin market installer', () => {
     })
     await expect(desktop.select('desktop')).resolves.toBeUndefined()
     await expect(desktop.select('web')).rejects.toThrow('only exposes the desktop profile')
+    const branded = createDesktopProfilesService(home, { DSH_DESKTOP_PRODUCT_NAME: 'Example 桌面' })
+    await expect(branded.select('other')).rejects.toThrow('Example 桌面 only exposes the web profile')
     expect(marketProfile({})).toBe('web')
     expect(marketProfile({ DSH_DESKTOP_PROFILE: '../web' })).toBe('web')
     expect(resolveDshEntry(['node', '/app/dsh/bin.js'])).toBe(resolve('/app/dsh/bin.js'))

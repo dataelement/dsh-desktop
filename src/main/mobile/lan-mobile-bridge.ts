@@ -94,6 +94,7 @@ export interface LanMobileBridgeOptions {
   // A function is resolved once per start, before the bridge listens.
   // That instance serves the run until stop.
   product?: MobileProductExtension | (() => MobileProductExtension | undefined)
+  productName?: string
   harnessUrl(): string | undefined
   /**
    * Session cookie the shell already traded for the launch token.
@@ -787,6 +788,7 @@ export class LanMobileBridge {
         response,
         renderDesktopPairingPage({
           qrSvg,
+          productName: this.options.productName,
           pairingUrl: snapshot.pairingUrl ?? '',
           expiresAt: snapshot.expiresAt ?? this.now(),
           locale: this.locale(),
@@ -987,7 +989,7 @@ export class LanMobileBridge {
     if (request.method === 'GET' && url.pathname === '/disconnected') {
       const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
       if (migrationUrl) return this.redirect(response, migrationUrl)
-      return this.html(response, renderMobileReconnectPage(this.locale(), connectionMode))
+      return this.html(response, renderMobileReconnectPage(this.locale(), connectionMode, { productName: this.options.productName }))
     }
 
     if (request.method === 'GET' && url.pathname === '/reconnect') {
@@ -995,9 +997,9 @@ export class LanMobileBridge {
       if (migrationUrl) return this.redirect(response, migrationUrl)
       if (connectionMode === 'tunnel') {
         if (this.tunnelPinAcceptsReconnect()) {
-          return this.html(response, renderPairingPinPage(this.locale()))
+          return this.html(response, renderPairingPinPage(this.locale(), this.options.productName))
         }
-        return this.html(response, renderMobileReconnectPage(this.locale(), 'tunnel', { expired: true }))
+        return this.html(response, renderMobileReconnectPage(this.locale(), 'tunnel', { expired: true, productName: this.options.productName }))
       }
       // The phone that was just disconnected still holds its cookie. Restoring
       // that one session does not admit a neighbor who only knows the port.
@@ -1005,7 +1007,7 @@ export class LanMobileBridge {
         return this.redirect(response, '/')
       }
       this.options.onReconnectRequested?.()
-      return this.html(response, renderMobileReconnectPage(this.locale(), 'lan', { resumeUnavailable: true }))
+      return this.html(response, renderMobileReconnectPage(this.locale(), 'lan', { resumeUnavailable: true, productName: this.options.productName }))
     }
 
     if (request.method === 'POST' && url.pathname === '/pair/retry') {
@@ -1047,7 +1049,7 @@ export class LanMobileBridge {
         return
       }
       if (this.tunnelActive) this.pairingPinRevealed = true
-      return this.html(response, renderPairingPinPage(this.locale()))
+      return this.html(response, renderPairingPinPage(this.locale(), this.options.productName))
     }
 
     if (request.method === 'POST' && url.pathname === '/pair/verify') {
@@ -1091,7 +1093,7 @@ export class LanMobileBridge {
         if (request.method === 'GET' && url.pathname === '/') {
           const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
           if (migrationUrl) return this.redirect(response, migrationUrl)
-          return this.html(response, renderMobileReconnectPage(this.locale(), connectionMode))
+          return this.html(response, renderMobileReconnectPage(this.locale(), connectionMode, { productName: this.options.productName }))
         }
         return this.text(response, 401, 'Pair your phone again.')
       }
@@ -1104,7 +1106,7 @@ export class LanMobileBridge {
       })
     }
     if (request.method === 'GET' && url.pathname === '/') {
-      return this.html(response, this.activeProduct?.renderPage?.(this.locale()) ?? renderMobilePage({ locale: this.locale() }))
+      return this.html(response, this.activeProduct?.renderPage?.(this.locale()) ?? renderMobilePage({ locale: this.locale(), productName: this.options.productName }))
     }
     if (request.method === 'GET' && url.pathname === '/api/session/stream') {
       this.verifyTrustedOrigin(request)

@@ -502,8 +502,8 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "DSH Desktop uses your microphone to transcribe speech into message drafts.",
-        "NSScreenCaptureUsageDescription": "DSH Desktop uses screen recording only while Computer Use is turned on, so it can show and act on the window you choose."
+        "NSMicrophoneUsageDescription": "This app uses your microphone to transcribe speech into message drafts.",
+        "NSScreenCaptureUsageDescription": "This app uses screen recording only while Computer Use is turned on, so it can show and act on the window you choose."
       },
       "gatekeeperAssess": false,
       "signIgnore": [

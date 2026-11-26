@@ -9,8 +9,8 @@ describe('enterprise entry', () => {
     expect(enterpriseMenuLabel('en-US')).toBe('Explore Enterprise')
     expect(updateMenuLabel('zh-CN')).toBe('检查更新…')
     expect(updateMenuLabel('en-US')).toBe('Check for Updates…')
-    expect(aboutMenuLabel('zh-CN')).toBe('关于 DSH Desktop')
-    expect(aboutMenuLabel('en-US')).toBe('About DSH Desktop')
+    expect(aboutMenuLabel('zh-CN', 'DSH Desktop')).toBe('关于 DSH Desktop')
+    expect(aboutMenuLabel('en-US', 'DSH Desktop')).toBe('About DSH Desktop')
     expect(safeModeMenuLabel('zh-CN')).toBe('以安全模式重启…')
     expect(safeModeMenuLabel('en-US')).toBe('Restart as Safe Mode…')
     expect(aboutUsesPage('dsh-app://app/', 'dsh-app')).toBe(true)
@@ -47,7 +47,7 @@ describe('enterprise entry', () => {
       quit
     })
     const submenu = menu[0]?.submenu ?? []
-    expect(submenu[0]?.label).toBe(locale.startsWith('zh') ? '关于 DSH Desktop' : 'About DSH Desktop')
+    expect(submenu[0]?.label).toBe(locale.startsWith('zh') ? '关于 DSH Desktop Shell' : 'About DSH Desktop Shell')
     expect(submenu[1]?.label).toBe(locale.startsWith('zh') ? '检查更新…' : 'Check for Updates…')
     expect(submenu[1]?.accelerator).toBe('CmdOrCtrl+U')
     expect(submenu[2]?.label).toBe(locale.startsWith('zh') ? '了解企业版' : 'Explore Enterprise')

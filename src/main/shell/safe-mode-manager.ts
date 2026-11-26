@@ -13,6 +13,7 @@ export interface SafeModeManagerOptions {
   dshHome: string
   profile: string
   locale: SafeModeLocale
+  productName?: string
   theme: string
   show: (url: string) => void
   nextAction: () => Promise<{ action: unknown; selection: unknown }>
@@ -49,6 +50,7 @@ export async function runSafeModeManager(options: SafeModeManagerOptions): Promi
     const healthReports = await options.loadHealthReports?.().catch(() => []) ?? []
     const model = buildSafeModeViewModel({
       locale: options.locale,
+      productName: options.productName,
       plugins,
       disabledPlugins: disabled,
       backups,

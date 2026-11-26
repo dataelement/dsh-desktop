@@ -53,6 +53,19 @@ afterEach(async () => {
 })
 
 describe('LAN mobile bridge address policy', () => {
+  it('propagates the configured product name to served pages', async () => {
+    const bridge = new LanMobileBridge({ harnessUrl: () => 'http://127.0.0.1:9999', productName: 'Acme Desktop' })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const home = await fetch(`http://127.0.0.1:${port}/`, { headers: { cookie } })
+    expect(await home.text()).toContain('<title>Acme Desktop</title>')
+    const reconnect = await fetch(`http://127.0.0.1:${port}/disconnected`)
+    expect(await reconnect.text()).toContain('<title>Reconnect Acme Desktop</title>')
+    const desktop = await fetch(`http://127.0.0.1:${port}/desktop`, { headers: { cookie: desktopCookie } })
+    expect(await desktop.text()).toContain('<span>Acme Desktop</span>')
+  })
+
   it('keeps failed listens retryable and starts after the port is released', async () => {
     const occupied = createServer()
     servers.push(occupied)

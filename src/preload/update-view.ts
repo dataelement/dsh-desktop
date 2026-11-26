@@ -59,7 +59,7 @@ export function updateHeadline(status: UpdateStatus, locale: UpdateLocale): Upda
   }
 }
 
-export function updateMessage(status: UpdateStatus, locale: UpdateLocale): string {
+export function updateMessage(status: UpdateStatus, locale: UpdateLocale, productName = 'DSH Desktop'): string {
   const version = status.availableVersion ? ` ${status.availableVersion}` : ''
   const percent = Math.round(status.percent ?? 0)
   if (status.downgrade && status.availableVersion) {
@@ -68,10 +68,10 @@ export function updateMessage(status: UpdateStatus, locale: UpdateLocale): strin
   }
   switch (status.phase) {
     case 'checking': return updateText(locale, 'checking') + '…'
-    case 'available': return updateText(locale, 'askUpdate', { version })
+    case 'available': return updateText(locale, 'askUpdate', { version, app: productName })
     case 'downloading': return updateText(locale, 'downloading') + ` ${percent}%`
-    case 'downloaded': return updateText(locale, 'downloaded', { version })
-    case 'up-to-date': return updateText(locale, 'appLatest')
+    case 'downloaded': return updateText(locale, 'downloaded', { version, app: productName })
+    case 'up-to-date': return updateText(locale, 'appLatest', { app: productName })
     case 'unsupported': return updateText(locale, 'buildUnsupported')
     case 'error': return updateText(locale, 'unable').replace(/[。.]$/, '')
     case 'idle': return ''

@@ -15,6 +15,19 @@ describe('native language lifecycle', () => {
     expect(nativeLocaleRelaunchArguments(['app', '-AppleLanguages', '--safe-mode'], 'zh')).toContain('--safe-mode')
   })
 
+  it('includes the product identity in each localized restart prompt', async () => {
+    for (const locale of DESKTOP_LOCALES) {
+      const confirm = vi.fn(async (prompt: { detail: string }) => {
+        expect(prompt.detail).toContain('Product $&')
+        expect(prompt.detail).not.toContain('{app}')
+        expect(prompt.detail).not.toContain('DSH Desktop')
+        return false
+      })
+      await confirmNativeLocaleRestart({ locale, appName: 'Product $&', confirm, savedLocale: async () => locale, notSaved: async () => {}, restart: () => {} })
+      expect(confirm).toHaveBeenCalledOnce()
+    }
+  })
+
   it('does not restart a matching native language or force unknown preferences', () => {
     for (const locale of DESKTOP_LOCALES) {
       expect(shouldCalibrateNativeLocale({ platform: 'darwin', preference: locale, actual: nativeLanguage(locale), argv: ['app'] })).toBe(false)
@@ -65,7 +78,7 @@ describe('native language lifecycle', () => {
         const restart = vi.fn()
         const notSaved = vi.fn(async () => {})
         const savedLocale = vi.fn(async () => saved)
-        const outcome = await confirmNativeLocaleRestart({ locale: 'ja', confirm: async () => confirmed, savedLocale, notSaved, restart })
+        const outcome = await confirmNativeLocaleRestart({ locale: 'ja', appName: 'DSH Desktop', confirm: async () => confirmed, savedLocale, notSaved, restart })
         expect(outcome).toBe(!confirmed ? 'deferred' : saved === 'ja' ? 'restarting' : 'not-saved')
         expect(restart).toHaveBeenCalledTimes(confirmed && saved === 'ja' ? 1 : 0)
         expect(notSaved).toHaveBeenCalledTimes(confirmed && saved !== 'ja' ? 1 : 0)
@@ -81,13 +94,13 @@ describe('native language lifecycle', () => {
         const restart = vi.fn()
         const notSaved = vi.fn(async () => {})
         expect(await confirmNativeLocaleRestart({
-          locale, confirm: async () => true,
+          locale, appName: 'DSH Desktop', confirm: async () => true,
           savedLocale: async () => effectiveNativeLocale(preference, languages), notSaved, restart
         })).toBe('restarting')
         expect(restart).toHaveBeenCalledOnce()
         expect(notSaved).not.toHaveBeenCalled()
         expect(await confirmNativeLocaleRestart({
-          locale, confirm: async () => true,
+          locale, appName: 'DSH Desktop', confirm: async () => true,
           savedLocale: async () => effectiveNativeLocale('fr', languages), notSaved, restart
         })).toBe('not-saved')
       }
@@ -97,7 +110,7 @@ describe('native language lifecycle', () => {
   it('does not restart when reading the effective saved target fails', async () => {
     const restart = vi.fn()
     await expect(confirmNativeLocaleRestart({
-      locale: 'ja', confirm: async () => true,
+      locale: 'ja', appName: 'DSH Desktop', confirm: async () => true,
       savedLocale: async () => { throw new Error('read failed') },
       notSaved: async () => {}, restart
     })).rejects.toThrow('read failed')

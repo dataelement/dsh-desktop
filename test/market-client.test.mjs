@@ -9,7 +9,7 @@ const changed = (extra = {}) => ok({ changed: true, application: 'restart-requir
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve() }
 
-function setup({ bundles = [], composed = false, language = 'en', desktop = {} } = {}) {
+function setup({ bundles = [], composed = false, language = 'en', desktop = {}, productName } = {}) {
   let inventory = bundles
   let exported
   let dictionaries
@@ -48,7 +48,7 @@ function setup({ bundles = [], composed = false, language = 'en', desktop = {} }
   const sandbox = { document, fetch, setTimeout, dshDesktop: desktop,
     __DSH_BOOT__: { entries: composed ? [{ id: 'dshmarket' }] : [] },
     CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail } },
-    window: { dispatchEvent: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), __ModuleLoader__: { load({ factory }) { exported = factory(() => React) } } }
+    window: { __DSH_PRODUCT_NAME__: productName, dispatchEvent: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), __ModuleLoader__: { load({ factory }) { exported = factory(() => React) } } }
   }
   vm.runInNewContext(code, sandbox)
   const ctx = {
@@ -86,6 +86,15 @@ const text = node => typeof node === 'string' ? node : Array.isArray(node) ? nod
 const button = (tree, label) => find(tree, node => node.type === 'button' && text(node) === label)[0]
 
 describe('recommended market ordinary PluginManager client', () => {
+  it.each(['en', 'zh'])('renders the product name while retaining the market identity (%s)', language => {
+    const app = setup({ language, productName: 'Example 桌面' })
+    const page = text(app.mount('market').render())
+    expect(page).toContain('Example 桌面')
+    expect(page).toContain('dsh-market')
+    expect(page).not.toContain('DSH Desktop')
+    app.dispose()
+  })
+
   it('installs through the remote contract with no HTTP calls (including no-Origin calls) or polling', async () => {
     const app = setup()
     await flush()

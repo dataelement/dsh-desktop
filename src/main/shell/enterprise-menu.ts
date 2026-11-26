@@ -23,8 +23,8 @@ export function updateMenuLabel(locale: string): string {
   return desktopMenuMessages(locale).update
 }
 
-export function aboutMenuLabel(locale: string): string {
-  return desktopMenuMessages(locale).about
+export function aboutMenuLabel(locale: string, appName: string): string {
+  return desktopMenuMessages(locale).about.replace('{app}', () => appName)
 }
 
 export function safeModeMenuLabel(locale: string): string {
@@ -105,7 +105,7 @@ export function buildDarwinDesktopMenu(options: {
     {
       label: options.appName,
       submenu: [
-        { label: aboutMenuLabel(options.locale), click: options.showAbout },
+        { label: aboutMenuLabel(options.locale, options.appName), click: options.showAbout },
         { label: updateMenuLabel(options.locale), accelerator: 'CmdOrCtrl+U', click: options.checkForUpdates },
         { label: enterpriseMenuLabel(options.locale), click: options.openEnterprise },
         ...(options.restart === undefined

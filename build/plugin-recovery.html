@@ -573,7 +573,7 @@
       const model = JSON.parse(params.get('state') || '{}')
       document.documentElement.lang = model.locale === 'zh' ? 'zh-CN' : 'en'
       document.documentElement.dataset.theme = params.get('theme') || 'system'
-      document.title = model.badge || 'DSH Desktop'
+      document.title = model.brand || 'DSH Desktop'
 
       const setText = (id, value) => {
         const node = document.getElementById(id)
@@ -592,7 +592,7 @@
       setText('technical', model.rawError)
       setText('show-log', model.logLabel)
       setText('quit', model.quitLabel)
-      setText('community-label', model.locale === 'zh' ? '遇到问题？来社区交流' : 'Need help? Join our community')
+      setText('community-label', model.locale === 'zh' ? '遇到问题？前往 DSH 社区交流' : 'Need help? Visit the DSH community')
       setText('community-wechat-label', model.locale === 'zh' ? '微信群' : 'WeChat')
       setText('wechat-caption', model.locale === 'zh' ? '扫码加入 DSH 用户群' : 'Scan to join the DSH community')
       const wechat = document.getElementById('community-wechat')
@@ -635,7 +635,7 @@
       document.addEventListener('scroll', closeWechat, true)
       document.getElementById('community-discord').title = model.locale === 'zh'
         ? '在浏览器中打开 Discord 社区'
-        : 'Open our Discord community in your browser'
+        : 'Open the DSH Discord community in your browser'
       // No plugin to repair: the primary action itself enters Safe Mode, so the
       // row collapses to that button and its note, centered together.
       const safeModeOnly = model.safeModeOnly ?? (!model.canUninstall && !model.upgradeCandidate && !model.marketPrimary)

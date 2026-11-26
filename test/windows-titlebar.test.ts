@@ -42,14 +42,14 @@ describe('Windows caption menus', () => {
 
   it('keeps every Desktop command in the application menu, including the View group', () => {
     const { run, actions } = record()
-    clickAll(windowsMenuTemplate('application', 'zh', 1, actions))
+    clickAll(windowsMenuTemplate('application', 'zh', 1, actions, 'DSH Desktop'))
     const editing = new Set<DesktopMenuCommand>(['undo', 'redo', 'cut', 'copy', 'paste', 'select-all'])
     expect(new Set(run)).toEqual(new Set(desktopMenuCommands.filter((command) => !editing.has(command))))
   })
 
   it('sends editing shortcuts as key events so editor-owned history receives them', () => {
     const { run, keys, actions } = record()
-    clickAll(windowsMenuTemplate('edit', 'en', 1, actions))
+    clickAll(windowsMenuTemplate('edit', 'en', 1, actions, 'DSH Desktop'))
     expect(run).toEqual([])
     expect(keys).toEqual([
       { keyCode: 'Z', modifiers: ['control'] },
@@ -64,15 +64,17 @@ describe('Windows caption menus', () => {
 
   it('labels the menus in the app language and shows the current zoom', () => {
     const { actions } = record()
-    expect(labels(windowsMenuTemplate('application', 'zh', 1.25, actions))).toContain('实际大小（当前 125%）')
-    expect(labels(windowsMenuTemplate('application', 'en', 0.9, actions))).toContain('Actual Size (now 90%)')
-    const chinese = labels(windowsMenuTemplate('application', 'zh', 1, actions))
-    const english = labels(windowsMenuTemplate('application', 'en', 1, actions))
+    expect(labels(windowsMenuTemplate('application', 'zh', 1.25, actions, 'DSH Desktop'))).toContain('实际大小（当前 125%）')
+    expect(labels(windowsMenuTemplate('application', 'en', 0.9, actions, 'DSH Desktop'))).toContain('Actual Size (now 90%)')
+    const chinese = labels(windowsMenuTemplate('application', 'zh', 1, actions, 'DSH Desktop'))
+    const english = labels(windowsMenuTemplate('application', 'en', 1, actions, 'DSH Desktop'))
+    expect(labels(windowsMenuTemplate('application', 'zh', 1, actions, 'Product $&'))).toContain('关于 Product $&')
+    expect(labels(windowsMenuTemplate('application', 'en', 1, actions, 'Product $&'))).toContain('About Product $&')
     expect(chinese.indexOf('了解企业版')).toBe(chinese.indexOf('关于 DSH Desktop') + 1)
     expect(english.indexOf('Explore Enterprise')).toBe(english.indexOf('About DSH Desktop') + 1)
     expect(chinese).not.toContain('导出 Session 日志…')
-    expect(labels(windowsMenuTemplate('application', 'en', 1, actions))).not.toContain('Export Session Log…')
-    expect(labels(windowsMenuTemplate('edit', 'zh', 1, actions))).toEqual(
+    expect(labels(windowsMenuTemplate('application', 'en', 1, actions, 'DSH Desktop'))).not.toContain('Export Session Log…')
+    expect(labels(windowsMenuTemplate('edit', 'zh', 1, actions, 'DSH Desktop'))).toEqual(
       ['撤销', '重做', '剪切', '复制', '粘贴', '删除', '全选']
     )
   })
@@ -82,7 +84,7 @@ describe('Windows caption menus', () => {
     const flatten = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
       items.flatMap((item) => (Array.isArray(item.submenu) ? flatten(item.submenu) : [item]))
     for (const name of ['application', 'edit'] as const) {
-      for (const item of flatten(windowsMenuTemplate(name, 'en', 1, actions))) {
+      for (const item of flatten(windowsMenuTemplate(name, 'en', 1, actions, 'DSH Desktop'))) {
         if (item.accelerator !== undefined) expect(item.registerAccelerator).toBe(false)
       }
     }

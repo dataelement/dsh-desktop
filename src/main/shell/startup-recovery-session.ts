@@ -15,6 +15,7 @@ export interface StartupRecoverySessionOptions {
   plugins: readonly string[]
   launchDirectory: string
   locale: PluginRecoveryLocale
+  productName?: string
   /** Host failure lines already collected. The page classifies these; it does not invent a plan from them. */
   logs?: readonly string[]
   /** Reads the market and the repair journal. Defaults to disabling the named plugins. */
@@ -60,6 +61,7 @@ export async function runStartupRecovery(options: StartupRecoverySessionOptions)
       plugins,
       launchDirectory: options.launchDirectory,
       locale: options.locale,
+      productName: options.productName,
       plan,
       ...(options.logs === undefined ? {} : { logs: options.logs }),
       ...(notice === undefined ? {} : { notice })

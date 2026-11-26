@@ -9,6 +9,27 @@ import {
 } from '../src/main/mobile/lan-mobile-pages'
 
 describe('LAN mobile page', () => {
+  it('renders product identity safely across all mobile surfaces', () => {
+    const productName = `Acme & <img src=x onerror='bad'>`
+    const escaped = 'Acme &amp; &lt;img src=x onerror=&#39;bad&#39;&gt;'
+    const home = renderMobilePage({ locale: 'en', productName })
+    const reconnect = renderMobileReconnectPage('zh', 'lan', { productName })
+    const pin = renderPairingPinPage('en', productName)
+    const desktop = renderDesktopPairingPage({ locale: 'en', productName, qrSvg: '', pairingUrl: '', expiresAt: 0, connected: false })
+    for (const page of [home, reconnect, pin, desktop]) {
+      expect(page).toContain(escaped)
+      expect(page).not.toContain(productName)
+      for (const match of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+        expect(() => new Function(match[1] ?? '')).not.toThrow()
+      }
+    }
+    const pinData = /const T=(.*?);\s*async function submitPin/s.exec(pin)?.[1]
+    expect(JSON.parse(pinData ?? '{}').unavailable).toContain(productName)
+    expect(renderMobilePage({ locale: 'en' })).toContain('<title>DSH Mobile</title>')
+    expect(renderPairingPinPage('en')).toContain('<title>Pairing DSH</title>')
+    expect(renderMobileReconnectPage('en')).toContain('<title>Reconnect DSH</title>')
+  })
+
   it('emits parseable browser JavaScript', () => {
     const html = renderMobilePage({ locale: 'zh' })
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]!)

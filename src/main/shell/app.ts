@@ -3,7 +3,7 @@ import { attachDesktopProductWindow, readDesktopProductMobileExtension, disposeD
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { DesktopStorageManager } from '../profile/desktop-storage'
 import { prepareGenerationsForLaunch } from '../profile/generation-launch'
@@ -340,7 +340,7 @@ function createWindow(
       webSecurity: true,
       devTools: true,
       webviewTag: true,
-      additionalArguments: [...extraArguments]
+      additionalArguments: [...extraArguments, `--dsh-product-name=${encodeURIComponent(app.getName())}`]
     }
   })
   if (process.platform === 'darwin') {
@@ -416,8 +416,8 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
   const result = await dialog.showMessageBox(window, {
     type: 'info',
     title: app.name,
-    message: updateText(locale, 'about').replace('DSH Desktop', app.name),
-    detail: aboutDetail(desktopVersion, harnessVersion, locale),
+    message: updateText(locale, 'about', { app: app.getName() }),
+    detail: aboutDetail(desktopVersion, harnessVersion, locale, app.getName()),
     buttons: [updateText(locale, 'checkForUpdates'), updateText(locale, 'close')],
     defaultId: 1,
     cancelId: 1,
@@ -428,7 +428,7 @@ async function presentAbout(window: BrowserWindow, locale: HarnessLocale): Promi
 
 async function showSplash(window: BrowserWindow, pagePath: string): Promise<void> {
   if (window.isDestroyed()) return
-  if (!isSplashPageUrl(window.webContents.getURL(), pagePath) && !await loadDesktopPage(window, pathToFileURL(pagePath).href)) return
+  if (!isSplashPageUrl(window.webContents.getURL(), pagePath) && !await loadDesktopPage(window, desktopFileUrl(pagePath, { productName: app.getName() }))) return
   if (window.isDestroyed()) return
   windowState?.restoreMaximized(window)
   window.show()
@@ -456,6 +456,7 @@ function askWebImport(
 ): Promise<WebImportChoice | undefined> {
   const state = buildWebImportViewModel({
     locale: app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+    productName: app.getName(),
     preview,
     notice
   })
@@ -821,6 +822,7 @@ async function main(): Promise<void> {
       dshHome,
       profile: DESKTOP_PROFILE,
       message: shownMessage,
+      productName: app.getName(),
       plugins,
       launchDirectory: projectDir,
       locale,
@@ -966,6 +968,7 @@ async function main(): Promise<void> {
       environment: {
         ...hostEnvironment,
         ...(safeMode ? {} : readDesktopProductEnvironment()),
+        DSH_DESKTOP_PRODUCT_NAME: app.getName(),
         DSH_CLIENT_VERSION: app.getVersion(),
         DSH_DESKTOP_PATCH_FILE: productPatch,
         ...(safeMode ? {} : officeEnvironment(primaryRuntime))
@@ -1093,7 +1096,7 @@ async function main(): Promise<void> {
       locale, target: target ?? active,
       nativeLocale, native: process.platform === 'darwin',
       confirmRestart: () => confirmNativeLocaleRestart({
-        locale,
+        locale, appName: app.name,
         confirm: async prompt => {
           const choice = await dialog.showMessageBox(window, {
             type: 'info', ...prompt, defaultId: 0, cancelId: 0, noLink: true
@@ -1133,6 +1136,7 @@ async function main(): Promise<void> {
     // Constructed before startDesktopProduct. Resolve the extension when the
     // bridge starts, after the product runtime exists.
     product: () => readDesktopProductMobileExtension(),
+    productName: app.getName(),
     harnessUrl: () => loopbackHarnessOrigin(hostUrl()),
     harnessCookie: () => hostSessionCookie(hostCookie()),
     locale: () => legacyLocale(menuLocale),
@@ -1325,7 +1329,7 @@ async function main(): Promise<void> {
       window.show()
       return true
     }
-    const loaded = await loadDesktopPage(window, pathToFileURL(splashPage).href)
+    const loaded = await loadDesktopPage(window, desktopFileUrl(splashPage, { productName: app.getName() }))
     if (!window.isDestroyed()) window.show()
     return loaded
   }
@@ -1355,7 +1359,7 @@ async function main(): Promise<void> {
     const template = windowsMenuTemplate(request.name, menuLocale, zoomFactor, {
       run: command => { void runWindowsCaptionCommand(owner, command).catch((error: unknown) => { console.error(error) }) },
       sendEditingKey: key => { shortcuts?.sendEditingKey(key.keyCode, key.modifiers) }
-    })
+    }, app.name)
     return new Promise<void>(resolve => {
       Menu.buildFromTemplate(template).popup({
         window: owner,
@@ -1677,6 +1681,7 @@ async function main(): Promise<void> {
       dshHome,
       profile: DESKTOP_PROFILE,
       locale: app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en',
+      productName: app.getName(),
       theme: nativeTheme.themeSource,
       show: url => {
         if (window.isDestroyed()) return

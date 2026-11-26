@@ -75,6 +75,11 @@ describe('boot cover target', () => {
 })
 
 describe('boot cover lifecycle', () => {
+  it('renders the supplied product name as text during startup', () => {
+    const { doc, cover } = mountHarnessCover({ productName: 'Product <Dev>' })
+    expect(doc.getElementById(BOOT_COVER_ID)?.shadowRoot?.querySelector('h1')?.textContent).toBe('Starting Product <Dev>')
+    cover?.dispose()
+  })
   it('relabels startup and stalled text from the current Harness document language', async () => {
     const { doc, timers, cover } = mountHarnessCover()
     doc.documentElement.lang = 'ja'

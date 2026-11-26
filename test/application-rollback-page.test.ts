@@ -6,7 +6,7 @@ const html = readFileSync(new URL('../build/application-rollback.html', import.m
 const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 if (!script) throw new Error('Rollback page script missing')
 const scriptText = script
-function render(stage: string, action = vi.fn().mockResolvedValue({ ok: true }), locale = 'zh', theme = 'system') {
+function render(stage: string, action = vi.fn().mockResolvedValue({ ok: true }), locale = 'zh', theme = 'system', productName?: string) {
   const elements = new Map<string, { hidden: boolean; disabled: boolean; textContent: string; listeners: Map<string, () => Promise<void>>; addEventListener: (name: string, fn: () => Promise<void>) => void }>()
   function element(id: string) {
     if (!elements.has(id)) {
@@ -19,12 +19,16 @@ function render(stage: string, action = vi.fn().mockResolvedValue({ ok: true }),
   }
   const root = { lang: '', dataset: { theme: '' } }
   runInNewContext(scriptText, {
-    location: { search: '?state=' + encodeURIComponent(JSON.stringify({ stage, locale, simulation: true, currentVersion: '0.13.0', targetVersion: '<0.12.1>' })) + '&theme=' + encodeURIComponent(theme) },
+    location: { search: '?state=' + encodeURIComponent(JSON.stringify({ stage, locale, productName, simulation: true, currentVersion: '0.13.0', targetVersion: '<0.12.1>' })) + '&theme=' + encodeURIComponent(theme) },
     URLSearchParams, document: { documentElement: root, getElementById: element }, window: { dshRollback: { action } }
   })
   return { root, element, action, click: (id: string) => element(id).listeners.get('click')?.() }
 }
 describe('application rollback standalone page', () => {
+  it('renders the configured name as text', () => {
+    expect(render('confirm', undefined, 'en', 'system', 'BISHENG <Dev>').element('brand').textContent).toBe('BISHENG <Dev>')
+    expect(render('confirm').element('brand').textContent).toBe('DSH Desktop')
+  })
   it('honors explicit light and dark themes and falls back to system', () => {
     for (const theme of ['light', 'dark', 'system']) expect(render('confirm', undefined, 'zh', theme).root.dataset.theme).toBe(theme)
     expect(render('confirm', undefined, 'zh', 'invalid').root.dataset.theme).toBe('system')

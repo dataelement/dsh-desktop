@@ -11,6 +11,7 @@ if (typeof report === 'string' && report.length > 0) {
     : {
       home: process.env.DSH_HOME ?? '',
       profile: process.env.DSH_DESKTOP_PROFILE ?? '',
+      productName: process.env.DSH_DESKTOP_PRODUCT_NAME ?? '',
       execPath: process.execPath
     }))
 }
