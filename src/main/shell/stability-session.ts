@@ -65,7 +65,7 @@ interface CloseTarget {
   hide(): void
 }
 
-/** Windows keeps the process alive when the user closes the window without quitting. */
+/** macOS and Windows keep the process alive when the user closes the window without quitting. */
 export function attachBackgroundClose(
   window: CloseTarget,
   options: { platform: NodeJS.Platform; quitting: () => boolean; onClose?: () => void; onHidden?: () => void }

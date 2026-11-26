@@ -60,14 +60,14 @@ describe('desktop stability session', () => {
     expect(disabled).toBe(true)
   })
 
-  it('hides a Windows window that is closed without quitting, and leaves a real quit alone', async () => {
+  it.each(['darwin', 'win32'] as const)('hides a %s window that is closed without quitting, and leaves a real quit alone', platform => {
     const events = new EventEmitter()
     let hidden = false
     let quitting = false
     attachBackgroundClose({
       on: (event, listener) => { events.on(event, listener) },
       hide: () => { hidden = true }
-    }, { platform: 'win32', quitting: () => quitting })
+    }, { platform, quitting: () => quitting })
     const close = { preventDefault: vi.fn() }
     events.emit('close', close)
     expect(close.preventDefault).toHaveBeenCalledOnce()

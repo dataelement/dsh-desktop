@@ -108,7 +108,7 @@ npm run package:mac:arm64
 | 功能 | 相对官方 | 使用路径 | 测试 |
 | --- | --- | --- | --- |
 | 启动配置恢复 | 官方没有这套原生对话框。纯判断在 `src/main/recovery/startup-config-recovery.ts`，对话框在 `src/main/startup-config-recovery.ts` | Host 进入错误后、插件恢复页或短对话框之前。能修复就备份并重新启动 Host；点「返回」才继续原来的失败处理。Safe Mode 没有插件恢复页，放弃修复后仍是短对话框 | `npm test -- test/startup-config-recovery.test.ts test/shell/stability-session.test.ts` |
-| 关闭后留在后台 | 不接官方托盘。只在 Windows 上、且用户不是在退出时，关闭窗口后继续运行。托盘可以显示窗口或退出 | Windows 上关掉窗口，进程仍在；从托盘退出则结束。再次打开应用会显示原来的窗口 | `npm test -- test/close-to-tray.test.ts test/shell/stability-session.test.ts` |
+| 关闭后留在后台 | 不接官方托盘。macOS 和 Windows 上，用户不是在退出时，关闭窗口后继续运行。Windows 托盘可以显示窗口或退出；macOS 再点 Dock 图标显示窗口 | macOS 或 Windows 上关掉窗口，进程仍在。Windows 从托盘退出则结束；macOS 从 Dock 右键退出或 Cmd+Q 结束。再次打开应用会显示原来的窗口 | `npm test -- test/close-to-tray.test.ts test/shell/stability-session.test.ts` |
 | 进程恢复与渲染重试 | 进程恢复管退出证据、GPU 探测和恢复提示；主窗口恢复管渲染导航丢失后的重试。上一份图形模式写在 `userData/gpu-fallback.json`，下次启动在 Chromium 起来之前生效 | 窗口进程异常、内存耗尽，或图形恢复用尽时出现重启或退出提示。页面加载失败或渲染进程退出时，同一地址最多重试 3 次 | `npm test -- test/stability-protection.test.ts test/main-window-recovery.test.ts test/shell/stability-session.test.ts` |
 
 ## 留到最后重写
