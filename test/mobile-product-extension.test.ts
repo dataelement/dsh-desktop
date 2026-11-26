@@ -2,7 +2,63 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect, it, vi } from 'vitest'
 import { LanMobileBridge } from '../src/main/mobile/lan-mobile-bridge'
-import type { MobileProductTransport } from '../src/main/mobile/product-extension'
+import type { MobileProductExtension, MobileProductTransport } from '../src/main/mobile/product-extension'
+
+it('resolves a product provider once per start and reuses that instance', async () => {
+  let reads = 0
+  let transport: MobileProductTransport | undefined
+  let extension: MobileProductExtension & { rpc: ReturnType<typeof vi.fn> } | undefined
+  const bridge = new LanMobileBridge({
+    harnessUrl: () => undefined,
+    product: () => {
+      reads += 1
+      const created = {
+        authorizeRemote: () => true,
+        attach: (value: MobileProductTransport) => { transport = value },
+        rpc: vi.fn(async () => ({ ok: true, value: 'same' }))
+      }
+      extension = created
+      return created
+    }
+  })
+  expect(reads).toBe(0)
+  try {
+    const snapshot = await bridge.start()
+    if (!transport || !extension) throw new Error('Product was not attached')
+    const response = await fetch(`http://127.0.0.1:${snapshot.port}/api/v1/rpc`, {
+      method: 'POST',
+      headers: {
+        'x-dsh-mobile-channel': 'remote',
+        'x-dsh-mobile-channel-token': transport.channelToken(),
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ method: 'product.read' })
+    })
+    expect(response.status).toBe(200)
+    expect(reads).toBe(1)
+    expect(extension.rpc).toHaveBeenCalledTimes(1)
+  } finally { await bridge.stop() }
+})
+
+it('reads the product provider again after the bridge restarts', async () => {
+  let reads = 0
+  const detached = vi.fn(async () => {})
+  const bridge = new LanMobileBridge({
+    harnessUrl: () => undefined,
+    product: () => {
+      reads += 1
+      return { authorizeRemote: () => false, attach: () => detached }
+    }
+  })
+  try {
+    await bridge.start()
+    expect(reads).toBe(1)
+    await bridge.stop()
+    expect(detached).toHaveBeenCalledTimes(1)
+    await bridge.start()
+    expect(reads).toBe(2)
+  } finally { await bridge.stop() }
+})
 
 it('requires both the private channel capability and current product authorization before dispatch', async () => {
   let transport: MobileProductTransport | undefined
