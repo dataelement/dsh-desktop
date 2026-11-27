@@ -18,7 +18,7 @@ const ipc = vi.hoisted(() => {
 vi.mock('electron', () => ({ ipcMain: { handle: ipc.handle, removeHandler: ipc.removeHandler } }))
 
 import { DESKTOP_IPC } from '../../src/main/shell/window/ipc'
-import { installDesktopShortcuts } from '../../src/main/shell/keyboard'
+import { installDesktopShortcuts, isHiddenMenuBarReload } from '../../src/main/shell/keyboard'
 import { applyDesktopPlatform } from '../../src/preload/desktop-platform'
 
 const temporary: string[] = []
@@ -36,6 +36,7 @@ describe('desktop shortcuts', () => {
       mainFrame: frame,
       focusedFrame: frame,
       isDestroyed: () => false,
+      reload: vi.fn(),
       setIgnoreMenuShortcuts: vi.fn(),
       send: vi.fn(),
       focus: vi.fn(),
@@ -92,6 +93,57 @@ describe('desktop shortcuts', () => {
     expect(stored).not.toContain('token')
     shortcuts.dispose()
     expect(ipc.handlers.has(DESKTOP_IPC.shortcutsGet)).toBe(false)
+  })
+
+  it('reloads on Ctrl+R when the Windows or Linux menu bar is hidden', async () => {
+    expect(isHiddenMenuBarReload('windows', {
+      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: false, meta: false
+    })).toBe(true)
+    expect(isHiddenMenuBarReload('linux', {
+      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: false, meta: false
+    })).toBe(true)
+    expect(isHiddenMenuBarReload('macos', {
+      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: false, meta: false
+    })).toBe(false)
+    expect(isHiddenMenuBarReload('windows', {
+      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: true, meta: false
+    })).toBe(false)
+
+    const userData = await mkdtemp(join(tmpdir(), 'dsh-shortcuts-'))
+    temporary.push(userData)
+    const frame = { url: 'dsh-app://app/', name: '', parent: null }
+    const contents = Object.assign(new EventEmitter(), {
+      mainFrame: frame,
+      focusedFrame: frame,
+      isDestroyed: () => false,
+      reload: vi.fn(),
+      setIgnoreMenuShortcuts: vi.fn(),
+      send: vi.fn(),
+      focus: vi.fn(),
+      sendInputEvent: vi.fn()
+    })
+    const window = Object.assign(new EventEmitter(), {
+      webContents: contents,
+      isDestroyed: () => false,
+      isFocused: () => true,
+      isEnabled: () => true,
+      close: vi.fn()
+    })
+    const shortcuts = installDesktopShortcuts(() => window, userData, 'windows', vi.fn())
+    shortcuts.attach(window)
+    const handler = ipc.handlers.get(DESKTOP_IPC.shortcutsGet)
+    if (handler === undefined) throw new Error('missing shortcuts handler')
+    await handler({ sender: contents, senderFrame: frame }, [])
+    contents.send.mockClear()
+    const prevented = vi.fn()
+    contents.emit('before-input-event', { preventDefault: prevented, defaultPrevented: false }, {
+      type: 'keyDown', code: 'KeyR', key: 'r', modifiers: [], control: true, alt: false, shift: false, meta: false,
+      isComposing: false, isAutoRepeat: false
+    })
+    expect(prevented).toHaveBeenCalledOnce()
+    expect(contents.reload).toHaveBeenCalledOnce()
+    expect(contents.send).not.toHaveBeenCalled()
+    shortcuts.dispose()
   })
 
   it('marks the new shell document for native shortcuts', () => {
