@@ -5,6 +5,8 @@ import { ApplicationRollback, type ApplicationRollbackStatus } from './applicati
 import { checkDesktopUpdate } from '../desktop-service'
 import { isPrereleaseVersion, isVersion } from '../desktop-service/service'
 import { app, BrowserWindow, ipcMain, net, powerMonitor } from 'electron'
+import { readPackageUpdateConfig } from './package-update-config'
+import { stableFeedUrl, type DesktopUpdateConfig } from './update-config'
 import electronUpdater from 'electron-updater'
 import type { AvailableRelease, UpdateStatus } from '../../shared/contracts'
 import {
@@ -31,7 +33,6 @@ import {
   archiveFeedUrl,
   compareVersions,
   fetchAvailableReleases,
-  STABLE_FEED_URL,
   type VersionIndexRequest
 } from './version-catalog'
 
@@ -41,7 +42,7 @@ const { autoUpdater } = electronUpdater
 const requestVersionIndex: VersionIndexRequest = (url, init) => net.fetch(url, init)
 
 function fetchDesktopReleases(): Promise<AvailableRelease[]> {
-  return fetchAvailableReleases(app.getVersion(), requestVersionIndex)
+  return fetchAvailableReleases(app.getVersion(), requestVersionIndex, readPackageUpdateConfig(app.getAppPath()))
 }
 
 let status = initialUpdateStatus(app.getVersion())
@@ -64,6 +65,7 @@ let manualCheckRequested = false
 let presentationId = 0
 let pendingDowngrade = false
 let selectedUpdateVersion: string | undefined
+let checkingFeed = false
 let rollbackLedger: ApplicationRollback | undefined
 let rollbackPromise: Promise<UpdateStatus> | undefined
 let rollbackTarget: string | undefined
@@ -242,10 +244,19 @@ export async function checkForUpdates(manual = false, source: UpdateStatus['sour
   selectedUpdateVersion = undefined
   checkPromise = (async () => {
     try {
+      const config = readPackageUpdateConfig(app.getAppPath())
+      if (config.strategy === 'feed') {
+        checkingFeed = true
+        autoUpdater.setFeedURL({ provider: 'generic', url: stableFeedUrl(config) })
+        autoUpdater.allowPrerelease = isPrereleaseVersion(app.getVersion())
+        autoUpdater.allowDowngrade = false
+        await autoUpdater.checkForUpdates()
+        return
+      }
       let requestManual = manual
       while (true) {
         manualCheck = requestManual
-        const policy = await checkDesktopUpdate(requestManual)
+        const policy = await checkDesktopUpdate(requestManual, config)
         // A manual request during the automatic policy check must get its own
         // decision; showing the automatic cohort miss would be misleading.
         if (!requestManual && manualCheckRequested) {
@@ -275,8 +286,11 @@ export async function checkForUpdates(manual = false, source: UpdateStatus['sour
         return
       }
     } catch (error) {
+      // A synchronous metadata failure must release the lock after its promise is assigned.
+      await Promise.resolve()
       transition({ type: 'error', message: errorMessage(error) })
     } finally {
+      checkingFeed = false
       checkPromise = undefined
     }
   })()
@@ -339,14 +353,16 @@ async function installSpecificVersionOwned(version: unknown, owner?: symbol): Pr
   transition({ type: 'check', manual: true })
   lastCheckedAt = Date.now()
   checkPromise = (async () => {
+    let config: Readonly<DesktopUpdateConfig> | undefined
     try {
+      config = readPackageUpdateConfig(app.getAppPath())
       const releases = await fetchDesktopReleases()
       if (!releases.some(release => release.version === version)) {
         throw new Error('Selected version is not in the release history')
       }
       selectedUpdateVersion = version
       pendingDowngrade = true
-      autoUpdater.setFeedURL({ provider: 'generic', url: archiveFeedUrl(version) })
+      autoUpdater.setFeedURL({ provider: 'generic', url: archiveFeedUrl(version, config) })
       autoUpdater.allowDowngrade = true
       autoUpdater.allowPrerelease = isPrereleaseVersion(version)
       const result = await autoUpdater.checkForUpdates()
@@ -357,10 +373,11 @@ async function installSpecificVersionOwned(version: unknown, owner?: symbol): Pr
         transition({ type: 'error', message: '在更新源未找到该版本' })
       }
     } catch (error) {
+      await Promise.resolve()
       transition({ type: 'error', message: errorMessage(error) })
     } finally {
       checkPromise = undefined
-      autoUpdater.setFeedURL({ provider: 'generic', url: STABLE_FEED_URL })
+      if (config) autoUpdater.setFeedURL({ provider: 'generic', url: stableFeedUrl(config) })
       autoUpdater.allowDowngrade = false
       pendingDowngrade = false
       autoUpdater.allowPrerelease = false
@@ -441,11 +458,13 @@ function configureUpdater(): void {
     transition({ type: 'check', manual: status.manual, source: status.source })
   )
   autoUpdater.on('update-available', (info) => {
+    // Feed metadata selects the version; archive/policy checks still require an exact match.
+    if (checkingFeed && !selectedUpdateVersion && isVersion(info.version)) selectedUpdateVersion = info.version
     if (info.version !== selectedUpdateVersion) {
       transition({ type: 'error', message: 'Update archive does not match the selected version' })
       return
     }
-    if (!shouldOfferUpdate(info.version, currentSkippedVersion(), manualCheck)) {
+    if (!shouldOfferUpdate(info.version, currentSkippedVersion(), manualCheck || manualCheckRequested)) {
       console.info('[updater] skipping', info.version, 'at the user’s request')
       transition({ type: 'reset' })
       return

@@ -3,10 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApplicationRollback } from '../src/main/update/application-rollback'
+import { DEFAULT_UPDATE_CONFIG } from '../src/main/update/update-config'
 
 const mocks = vi.hoisted(() => ({ root: '', catalog: vi.fn(), netFetch: vi.fn(), handlers: new Map<string, (info: { version: string }) => void>(),
   updater: { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), downloadUpdate: vi.fn(), quitAndInstall: vi.fn(), on: vi.fn() } }))
-vi.mock('electron', () => ({ app: { isPackaged: true, getVersion: () => '0.13.0', getPath: () => mocks.root, isReady: () => true },
+vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd(), isPackaged: true, getVersion: () => '0.13.0', getPath: () => mocks.root, isReady: () => true },
   BrowserWindow: { getAllWindows: () => [] }, powerMonitor: { on: vi.fn(), removeListener: vi.fn() }, ipcMain: { handle: vi.fn() },
   net: { fetch: mocks.netFetch } }))
 vi.mock('electron-updater', () => ({ default: { autoUpdater: mocks.updater } }))
@@ -76,7 +77,7 @@ it.each(['darwin', 'win32'] as const)('downloads only the actual pre-upgrade ver
   const requests = mocks.catalog.mock.calls.map(call => call[1])
   expect(requests.length).toBeGreaterThan(0)
   expect(new Set(requests).size).toBe(1)
-  expect(mocks.catalog).toHaveBeenCalledWith('0.13.0', requests[0])
+  expect(mocks.catalog).toHaveBeenCalledWith('0.13.0', requests[0], DEFAULT_UPDATE_CONFIG)
   await expectDesktopSessionRequest(requests[0])
   expect(mocks.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: 'https://dshdesktop.com/updates/archive/0.11.2/' })
   expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(false, true)

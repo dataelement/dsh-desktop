@@ -4,6 +4,7 @@ const harness = vi.hoisted(() => ({ constructed: 0 }))
 
 vi.mock('electron', () => ({
   app: {
+    getAppPath: () => process.cwd(),
     isPackaged: true,
     getVersion: () => '0.12.1',
     getPath: () => '/tmp/dsh-desktop-update-service',

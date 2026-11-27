@@ -5,6 +5,8 @@ import { resourceSnapshot, graphicsSnapshot } from '../resource-diagnostics'
 import { app, dialog, net } from 'electron'
 import { join } from 'node:path'
 import { DesktopService } from './service'
+import type { DesktopUpdateConfig } from '../update/update-config'
+import { readPackageUpdateConfig } from '../update/package-update-config'
 import { attachDiagnostics } from './diagnostics'
 
 let gpuInfo = 'not-yet-available'
@@ -137,6 +139,7 @@ function openDesktopService(): DesktopService {
 export function initializeDesktopUpdateService(): void {
   if (!app.isPackaged || !desktopPlatformAdapter(process.platform)?.officialUpdates || service || updateServiceFailure) return
   try {
+    if (readPackageUpdateConfig(app.getAppPath()).strategy === 'feed') return
     service = openDesktopService()
   } catch (error) {
     rememberUpdateServiceFailure(error)
@@ -165,10 +168,10 @@ export function initializeDesktopService(options: { getExitContext?: () => GpuEx
     rememberUpdateServiceFailure(error)
   }
 }
-export async function checkDesktopUpdate(manual = false) {
+export async function checkDesktopUpdate(manual = false, config?: Readonly<DesktopUpdateConfig>) {
   if (!desktopPlatformAdapter(process.platform)?.officialUpdates) {
     throw new Error('Desktop update service is unavailable')
   }
   if (!service) throw new Error(updateServiceFailure ?? 'Desktop update service is unavailable')
-  return service.checkUpdate(manual)
+  return service.checkUpdate(manual, config)
 }
