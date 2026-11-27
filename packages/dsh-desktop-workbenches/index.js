@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-desktop-workbenches'
-export const inject = ['connection']
+export const inject = ['connection', 'desktopProfiles']
 export const Config = Schema.object({ root: Schema.string().required() })
 
 export function catalogReadOptions(request) {
@@ -67,6 +67,7 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
+  const profileDirectory = ctx.desktopProfiles?.current.dir
   const readCatalog = createCatalogReader({
     fetch: selectMarketFetch(),
     cachePath: join(config.root, 'workbench-catalog-cache.json'),
@@ -80,7 +81,7 @@ export function apply(ctx, config) {
     generationBackend = backend
     scoped.effect(() => () => { if (generationBackend === backend) generationBackend = undefined })
   })
-  const restartStatus = createRestartStatus(async () => readLocalWorkbenchSnapshot(undefined, await marketInstalls.read()), {
+  const restartStatus = createRestartStatus(async () => readLocalWorkbenchSnapshot(undefined, await marketInstalls.read(), profileDirectory), {
     readPendingGenerations: () => generationBackend?.readRestartStatus?.() ?? Promise.resolve({ restartRequired: false, packages: [] })
   })
   ctx.connection.fetch.register({
@@ -262,7 +263,7 @@ export function apply(ctx, config) {
         const installs = await marketInstalls.read()
         const requested = new URL(request.url).searchParams.getAll('package').slice(0, 64)
         const listed = await readCatalog({ cachedOnly: true }).then(value => value.catalog?.workbenches.map(item => item.distribution?.name).filter(Boolean) || [], () => [])
-        return Response.json({ installs, packages: await readInstallEvidence(installs, undefined, [...requested, ...listed]), lifecycle: await lifecycleSnapshot() }, { headers: { 'cache-control': 'no-store' } })
+        return Response.json({ installs, packages: await readInstallEvidence(installs, undefined, [...requested, ...listed], profileDirectory), lifecycle: await lifecycleSnapshot() }, { headers: { 'cache-control': 'no-store' } })
       }
       catch (error) { return installFailure(error, 'Could not read workbench market installs.') }
     }
@@ -315,7 +316,7 @@ export function apply(ctx, config) {
           const installs = await marketInstalls.read()
           const requireReplacement = async (names) => {
             if (confirmedReplacement === true) return
-            const packages = await readInstallEvidence(installs, undefined, names)
+            const packages = await readInstallEvidence(installs, undefined, names, profileDirectory)
             const risk = names.map(name => packages[name]).find(item => item && (item.origin === 'local' || ['local', 'modified'].includes(item.updateRisk)))
             if (risk) {
               const updateRisk = risk.origin === 'local' || risk.updateRisk === 'local' ? 'local' : 'modified'
@@ -342,7 +343,7 @@ export function apply(ctx, config) {
           let install
           if (result?.bundle === target.expectedPluginName && result.stage === 'enable') {
             install = { catalogId: entry.id, pluginName: target.expectedPluginName, version: target.expectedVersion, source: entry.distribution.type, installedAt: new Date().toISOString() }
-            const evidence = (await readInstallEvidence({}, undefined, [install.pluginName]))[install.pluginName]
+            const evidence = (await readInstallEvidence({}, undefined, [install.pluginName], profileDirectory))[install.pluginName]
             if (evidence?.fingerprint) install.fingerprint = evidence.fingerprint
             await marketInstalls.record(id, install)
           }

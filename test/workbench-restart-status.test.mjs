@@ -1,15 +1,23 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createDesktopProfilesService } from '../packages/dsh-desktop-market-installer/index.js'
+import { apply } from '../packages/dsh-desktop-workbenches/index.js'
 import { createRestartStatus, readLocalWorkbenchSnapshot } from '../packages/dsh-desktop-workbenches/restart-status.mjs'
 
 const roots = []
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
-async function fixture() {
-  const home = await mkdtemp(join(tmpdir(), 'workbench-restart-'))
-  roots.push(home)
-  const profile = join(home, 'profiles', 'web')
+afterEach(async () => {
+  vi.useRealTimers()
+  vi.unstubAllEnvs()
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+})
+async function fixture(home, profileName = 'web') {
+  if (!home) {
+    home = await mkdtemp(join(tmpdir(), 'workbench-restart-'))
+    roots.push(home)
+  }
+  const profile = join(home, 'profiles', profileName)
   await mkdir(profile, { recursive: true })
   await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
   async function install(name, overrides = {}) {
@@ -26,6 +34,41 @@ async function fixture() {
 }
 
 describe('local workbench restart detection', () => {
+  it('reports changed workbenches only from the active desktop profile', async () => {
+    const { home, install: installWeb } = await fixture()
+    const { install: installDesktop } = await fixture(home, 'desktop')
+    const legacy = await installWeb('legacy-web-workbench')
+    const active = await installDesktop('active-desktop-workbench')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_DESKTOP_PROFILE', 'desktop')
+    vi.useFakeTimers({ toFake: ['Date'] })
+
+    const routes = new Map()
+    const desktopProfiles = createDesktopProfilesService(home)
+    apply({
+      connection: { fetch: { register: route => routes.set(route.path, route) } },
+      desktopProfiles,
+      effect: callback => callback(),
+      reflect: { provide() {} },
+      inject() {}
+    }, { root: join(home, 'desktop-workbenches') })
+    const route = routes.get('/api/desktop-workbenches/restart-status')
+    const read = async () => {
+      const response = await route.fetch()
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+
+    expect(await read()).toMatchObject({ restartRequired: false, packages: [] })
+    await writeFile(join(legacy, 'client.js'), 'changed legacy web workbench')
+    await writeFile(join(active, 'client.js'), 'changed active desktop workbench')
+    vi.setSystemTime(Date.now() + 1001)
+    expect(await read()).toMatchObject({
+      restartRequired: true,
+      packages: ['active-desktop-workbench']
+    })
+  })
+
   it('passes external installation diagnostics through without requesting restart', async () => {
     const installationDrift = [{ name: 'fixture-plugin', code: 'external-modification', path: '/temporary/plugin', expectedPath: '/temporary/generation/plugin', recovery: 'Back up and reinstall.' }]
     const status = createRestartStatus(async () => ({}), { minimumInterval: 0,

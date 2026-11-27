@@ -12,10 +12,10 @@ const json = async path => JSON.parse(await readFile(path, 'utf8'))
  * Read only installed workbench packages, never caller-provided paths.
  * @param {string} [home]
  * @param {Record<string, import('./market-install.mjs').MarketInstallRecord>} [installs]
+ * @param {string} [profile] Active profile directory.
  * @returns {Promise<Record<string, string>>}
  */
-export async function readLocalWorkbenchSnapshot(home = process.env.DSH_HOME || join(homedir(), '.dsh'), installs = {}) {
-  const profile = join(home, 'profiles', 'web')
+export async function readLocalWorkbenchSnapshot(home = process.env.DSH_HOME || join(homedir(), '.dsh'), installs = {}, profile = join(home, 'profiles', 'web')) {
   const dependencies = await json(join(profile, 'package.json')).then(value => value.dependencies || {}, error => {
     if (error.code === 'ENOENT') return {}
     throw error
@@ -53,7 +53,7 @@ export async function readLocalWorkbenchSnapshot(home = process.env.DSH_HOME || 
       && await existsInPackage(directory, manifest.exports?.['./client'])) names.push(name)
   }
   const receipts = Object.fromEntries(Object.entries(installs).filter(([, record]) => names.includes(record?.pluginName)))
-  const evidence = await readInstallEvidence(receipts, home, names)
+  const evidence = await readInstallEvidence(receipts, home, names, profile)
   return Object.fromEntries(names.filter(name => evidence[name]?.fingerprint && (evidence[name].origin === 'local' || evidence[name].updateRisk === 'modified'))
     .map(name => [name, evidence[name].fingerprint]))
 }
