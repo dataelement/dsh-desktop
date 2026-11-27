@@ -1,14 +1,16 @@
 import type { AvailableRelease } from '../../shared/contracts'
+import { DEFAULT_UPDATE_CONFIG, stableFeedUrl, versionIndexUrl, type DesktopUpdateConfig } from './update-config'
 
 export type { AvailableRelease }
 
-export const STABLE_FEED_URL = 'https://dshdesktop.com/updates/latest/'
-export const VERSION_INDEX_URL = 'https://dshdesktop.com/updates/versions.json'
+export const STABLE_FEED_URL = stableFeedUrl()
+export const VERSION_INDEX_URL = versionIndexUrl()
 
 const INDEX_TIMEOUT_MS = 8_000
 
-export function archiveFeedUrl(version: string): string {
-  return `https://dshdesktop.com/updates/archive/${version}/`
+export function archiveFeedUrl(version: string, config: Readonly<DesktopUpdateConfig> = DEFAULT_UPDATE_CONFIG): string {
+  if (!/^[0-9][a-zA-Z0-9.+-]*$/.test(version)) throw new Error('Invalid archive version')
+  return new URL(`archive/${version}/`, config.updatesBaseUrl).href
 }
 
 /** Split "1.2.3-rc.1" into ([1,2,3], "rc.1"). Non-numeric segments read as 0. */
@@ -86,11 +88,13 @@ function isRelease(value: unknown): value is AvailableRelease {
   )
 }
 
-export function parseVersionIndex(raw: unknown): AvailableRelease[] {
+export function parseVersionIndex(raw: unknown, config: Readonly<DesktopUpdateConfig> = DEFAULT_UPDATE_CONFIG): AvailableRelease[] {
   if (typeof raw !== 'object' || raw === null) return []
   const versions = (raw as { versions?: unknown }).versions
   if (!Array.isArray(versions)) return []
   return versions.filter(isRelease)
+    .filter(release => /^[0-9][a-zA-Z0-9.+-]*$/.test(release.version))
+    .map(release => ({ ...release, archiveUrl: archiveFeedUrl(release.version, config) }))
 }
 
 /** The fields the index reader uses. Node fetch and the desktop session fetch both satisfy it. */
@@ -105,16 +109,17 @@ export type VersionIndexRequest = (
 
 export async function fetchAvailableReleases(
   currentVersion: string,
-  fetchImpl: VersionIndexRequest = globalThis.fetch
+  fetchImpl: VersionIndexRequest = globalThis.fetch,
+  config: Readonly<DesktopUpdateConfig> = DEFAULT_UPDATE_CONFIG
 ): Promise<AvailableRelease[]> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), INDEX_TIMEOUT_MS)
   try {
-    const response = await fetchImpl(VERSION_INDEX_URL, { signal: controller.signal })
+    const response = await fetchImpl(versionIndexUrl(config), { signal: controller.signal })
     if (!response.ok) {
       throw new Error(`Version index request failed: ${response.status}`)
     }
-    const releases = parseVersionIndex(await response.json())
+    const releases = parseVersionIndex(await response.json(), config)
     return releases
       .filter((release) => compareVersions(release.version, currentVersion) < 0)
       .sort((a, b) => compareVersions(b.version, a.version))

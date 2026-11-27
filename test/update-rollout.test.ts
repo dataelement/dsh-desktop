@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { DEFAULT_UPDATE_CONFIG, parseDesktopUpdateConfig } from '../src/main/update/update-config'
 const mocks = vi.hoisted(() => ({
-  skipped: vi.fn(), catalog: vi.fn(), send: vi.fn(), policy: vi.fn(), netFetch: vi.fn(),
+  config: vi.fn(), skipped: vi.fn(), catalog: vi.fn(), send: vi.fn(), policy: vi.fn(), netFetch: vi.fn(),
   handlers: new Map<string, (...args: any[]) => void>(),
   ipcHandlers: new Map<string, () => Promise<unknown>>(),
   updater: { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), downloadUpdate: vi.fn(), quitAndInstall: vi.fn(), on: vi.fn(), autoDownload: false, allowDowngrade: false, allowPrerelease: false }
 }))
+vi.mock('../src/main/update/package-update-config', () => ({ readPackageUpdateConfig: mocks.config }))
 vi.mock('../src/main/update/version-catalog', async importOriginal => ({ ...await importOriginal<object>(), fetchAvailableReleases: mocks.catalog }))
 vi.mock('../src/main/update/skipped-version', async importOriginal => ({ ...await importOriginal<object>(), readSkippedVersion: mocks.skipped }))
 vi.mock('../src/main/desktop-service', () => ({ checkDesktopUpdate: mocks.policy }))
 vi.mock('electron-updater', () => ({ default: { autoUpdater: mocks.updater } }))
 vi.mock('electron', () => ({
-  app: { isPackaged: true, getVersion: () => '0.8.0', getPath: () => '/nonexistent-desktop-test', isReady: () => true },
+  app: { getAppPath: () => process.cwd(), isPackaged: true, getVersion: () => '0.8.0', getPath: () => '/nonexistent-desktop-test', isReady: () => true },
   BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: mocks.send } }] },
   powerMonitor: { on: vi.fn(), removeListener: vi.fn() },
   ipcMain: { handle: (channel: string, handler: () => Promise<unknown>) => { mocks.ipcHandlers.set(channel, handler) } },
@@ -21,6 +23,7 @@ let manager: typeof import('../src/main/update/update-manager')
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); mocks.handlers.clear(); mocks.ipcHandlers.clear()
   mocks.updater.on.mockImplementation((event, callback) => { mocks.handlers.set(event, callback) })
+  mocks.config.mockReturnValue(DEFAULT_UPDATE_CONFIG)
   mocks.skipped.mockReturnValue(undefined)
   mocks.catalog.mockResolvedValue([{ version: '0.7.0', tag: 'v0.7.0', archiveUrl: 'https://dshdesktop.com/updates/archive/0.7.0/' }])
   mocks.updater.downloadUpdate.mockResolvedValue([])
@@ -38,6 +41,40 @@ async function expectDesktopSessionRequest(request: unknown): Promise<void> {
   await expect(request('https://dshdesktop.com/updates/versions.json', { signal })).resolves.toBe(response)
   expect(mocks.netFetch).toHaveBeenCalledWith('https://dshdesktop.com/updates/versions.json', { signal })
 }
+it('uses feed metadata without policy and keeps a concurrent manual check under the same lock', async () => {
+  mocks.config.mockReturnValue(parseDesktopUpdateConfig({ updatesBaseUrl: 'https://updates.example/product/', strategy: 'feed' }))
+  mocks.skipped.mockReturnValue('0.9.0')
+  let finish: (() => void) | undefined
+  mocks.updater.checkForUpdates.mockImplementation(() => new Promise(resolve => {
+    finish = () => {
+      mocks.handlers.get('update-available')?.({ version: '0.9.0' })
+      resolve({ updateInfo: { version: '0.9.0' } })
+    }
+  }))
+  const automatic = manager.checkForUpdates()
+  const manual = manager.checkForUpdates(true)
+  await Promise.resolve()
+  expect(mocks.updater.checkForUpdates).toHaveBeenCalledTimes(1)
+  finish?.()
+  await Promise.all([automatic, manual])
+  expect(mocks.policy).not.toHaveBeenCalled()
+  expect(mocks.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: 'https://updates.example/product/latest/' })
+  expect(manager.getUpdateStatus()).toMatchObject({ phase: 'available', availableVersion: '0.9.0', manual: true })
+  expect(mocks.updater.downloadUpdate).not.toHaveBeenCalled()
+})
+
+it('fails closed before contacting any source for invalid package configuration', async () => {
+  mocks.config.mockImplementation(() => { throw new Error('Invalid dshDesktopUpdates.updatesBaseUrl') })
+  await manager.checkForUpdates(true)
+  expect(manager.getUpdateStatus().phase).toBe('error')
+  expect(mocks.policy).not.toHaveBeenCalled()
+  expect(mocks.updater.checkForUpdates).not.toHaveBeenCalled()
+  mocks.config.mockReturnValue(DEFAULT_UPDATE_CONFIG)
+  mocks.policy.mockResolvedValue({ updateAvailable: false })
+  await manager.checkForUpdates(true)
+  expect(mocks.policy).toHaveBeenCalledTimes(1)
+})
+
 it('does not contact latest or download when no rule is selected, even for a manual check', async () => {
   mocks.policy.mockResolvedValue({ updateAvailable: false })
   await manager.checkForUpdates(true)
@@ -84,7 +121,7 @@ it('preserves explicitly selected history installs and validates version input',
   expect(mocks.updater.downloadUpdate).toHaveBeenCalledTimes(1)
   expect(mocks.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: 'https://dshdesktop.com/updates/archive/0.7.0/' })
   expect(mocks.updater.allowDowngrade).toBe(false)
-  expect(mocks.catalog).toHaveBeenCalledWith('0.8.0', expect.any(Function))
+  expect(mocks.catalog).toHaveBeenCalledWith('0.8.0', expect.any(Function), DEFAULT_UPDATE_CONFIG)
   await expectDesktopSessionRequest(mocks.catalog.mock.calls.at(-1)?.[1])
 })
 
@@ -101,7 +138,7 @@ it('lists versions through the same default-session request as a history install
   await listVersions()
   const listed = mocks.catalog.mock.calls.at(-1)?.[1]
   expect(listed).toBe(installed)
-  expect(mocks.catalog).toHaveBeenCalledWith('0.8.0', listed)
+  expect(mocks.catalog).toHaveBeenCalledWith('0.8.0', listed, DEFAULT_UPDATE_CONFIG)
   await expectDesktopSessionRequest(listed)
 })
 
