@@ -49,6 +49,8 @@ export function standardMenuLabels(locale: string) {
 /**
  * View roles shared by the macOS menu bar and the hidden Windows menu.
  * Reload keeps Electron's default chord (Command+R / Ctrl+R).
+ * On Windows and Linux the menu bar stays hidden, so that role does not receive
+ * Ctrl+R; the shortcut controller reloads the page for that chord instead.
  * forceReload is omitted: Command+Shift+R / Ctrl+Shift+R already restarts the Host.
  */
 function viewMenu(text: {

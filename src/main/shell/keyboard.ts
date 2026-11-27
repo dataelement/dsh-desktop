@@ -26,6 +26,7 @@ interface ShortcutContents {
   mainFrame: ShortcutFrame
   focusedFrame: ShortcutFrame | null
   isDestroyed(): boolean
+  reload(): void
   setIgnoreMenuShortcuts(ignore: boolean): void
   send(channel: string, payload: unknown): void
   focus(): void
@@ -166,8 +167,19 @@ export function installDesktopShortcuts(
         contents.setIgnoreMenuShortcuts(true)
         return
       }
-      if (window !== getWindow() || !window.isFocused() || !window.isEnabled() || revision === undefined
+      if (window !== getWindow() || !window.isFocused() || !window.isEnabled()
         || (guestName !== undefined && contents.isFocused?.() !== true)) {
+        contents.setIgnoreMenuShortcuts(false)
+        held.clear()
+        consumed.clear()
+        return
+      }
+      if (revision === undefined) {
+        if (!recording && isHiddenMenuBarReload(platform, input)) {
+          event.preventDefault()
+          if (!contents.isDestroyed()) contents.reload()
+          return
+        }
         contents.setIgnoreMenuShortcuts(false)
         held.clear()
         consumed.clear()
@@ -182,7 +194,19 @@ export function installDesktopShortcuts(
       const frame = contents.focusedFrame
       const composing = input.isComposing || input.key === 'Dead' || deadKey || input.modifiers.includes('altgr')
       if (input.type === 'keyDown') deadKey = input.key === 'Dead'
-      if (recording || composing || frame === null) {
+      if (recording || composing) {
+        held.clear()
+        consumed.clear()
+        return
+      }
+      // The caption menu shows Ctrl+R but does not register it. The hidden menu's
+      // reload role also does not arrive while that menu bar stays hidden.
+      if (!match && isHiddenMenuBarReload(platform, input)) {
+        event.preventDefault()
+        if (!contents.isDestroyed()) contents.reload()
+        return
+      }
+      if (frame === null) {
         held.clear()
         consumed.clear()
         return
@@ -328,6 +352,31 @@ export function installDesktopShortcuts(
       ]) ipcMain.removeHandler(channel)
     }
   }
+}
+
+/**
+ * Ctrl+R on Windows and Linux. The visible caption item only labels this chord,
+ * and the hidden application menu does not deliver the reload role.
+ */
+export function isHiddenMenuBarReload(platform: ShortcutPlatform, input: {
+  type: string
+  code: string
+  control: boolean
+  alt: boolean
+  shift: boolean
+  meta: boolean
+  isAutoRepeat?: boolean
+  isComposing?: boolean
+}): boolean {
+  return (platform === 'windows' || platform === 'linux')
+    && input.type === 'keyDown'
+    && input.isAutoRepeat !== true
+    && input.isComposing !== true
+    && input.code === 'KeyR'
+    && input.control
+    && !input.alt
+    && !input.shift
+    && !input.meta
 }
 
 /** The protocol brands the accepted revision string. Callers already require a string. */
