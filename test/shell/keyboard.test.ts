@@ -18,7 +18,7 @@ const ipc = vi.hoisted(() => {
 vi.mock('electron', () => ({ ipcMain: { handle: ipc.handle, removeHandler: ipc.removeHandler } }))
 
 import { DESKTOP_IPC } from '../../src/main/shell/window/ipc'
-import { installDesktopShortcuts, isHiddenMenuBarReload } from '../../src/main/shell/keyboard'
+import { installDesktopShortcuts, isApplicationReloadChord } from '../../src/main/shell/keyboard'
 import { applyDesktopPlatform } from '../../src/preload/desktop-platform'
 
 const temporary: string[] = []
@@ -95,18 +95,19 @@ describe('desktop shortcuts', () => {
     expect(ipc.handlers.has(DESKTOP_IPC.shortcutsGet)).toBe(false)
   })
 
-  it('reloads on Ctrl+R when the Windows or Linux menu bar is hidden', async () => {
-    expect(isHiddenMenuBarReload('windows', {
-      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: false, meta: false
+  it.each([
+    ['macos', { control: false, meta: true }],
+    ['windows', { control: true, meta: false }],
+    ['linux', { control: true, meta: false }]
+  ] as const)('reloads the focused page for the view menu chord on %s', async (platform, modifiers) => {
+    expect(isApplicationReloadChord(platform, {
+      type: 'keyDown', code: 'KeyR', control: modifiers.control, alt: false, shift: false, meta: modifiers.meta
     })).toBe(true)
-    expect(isHiddenMenuBarReload('linux', {
-      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: false, meta: false
-    })).toBe(true)
-    expect(isHiddenMenuBarReload('macos', {
-      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: false, meta: false
+    expect(isApplicationReloadChord(platform, {
+      type: 'keyDown', code: 'KeyR', control: modifiers.control, alt: false, shift: true, meta: modifiers.meta
     })).toBe(false)
-    expect(isHiddenMenuBarReload('windows', {
-      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: true, meta: false
+    expect(isApplicationReloadChord('macos', {
+      type: 'keyDown', code: 'KeyR', control: true, alt: false, shift: false, meta: false
     })).toBe(false)
 
     const userData = await mkdtemp(join(tmpdir(), 'dsh-shortcuts-'))
@@ -129,15 +130,113 @@ describe('desktop shortcuts', () => {
       isEnabled: () => true,
       close: vi.fn()
     })
-    const shortcuts = installDesktopShortcuts(() => window, userData, 'windows', vi.fn())
+    const shortcuts = installDesktopShortcuts(() => window, userData, platform, vi.fn())
     shortcuts.attach(window)
     const handler = ipc.handlers.get(DESKTOP_IPC.shortcutsGet)
     if (handler === undefined) throw new Error('missing shortcuts handler')
+    const preventedBeforeLoad = vi.fn()
+    contents.emit('before-input-event', { preventDefault: preventedBeforeLoad, defaultPrevented: false }, {
+      type: 'keyDown', code: 'KeyR', key: 'r', modifiers: [], ...modifiers, alt: false, shift: false,
+      isComposing: false, isAutoRepeat: false
+    })
+    expect(preventedBeforeLoad).toHaveBeenCalledOnce()
+    expect(contents.reload).toHaveBeenCalledOnce()
     await handler({ sender: contents, senderFrame: frame }, [])
+    contents.send.mockClear()
+    contents.reload.mockClear()
+    const prevented = vi.fn()
+    contents.emit('before-input-event', { preventDefault: prevented, defaultPrevented: false }, {
+      type: 'keyDown', code: 'KeyR', key: 'r', modifiers: [], ...modifiers, alt: false, shift: false,
+      isComposing: false, isAutoRepeat: false
+    })
+    expect(prevented).toHaveBeenCalledOnce()
+    expect(contents.reload).toHaveBeenCalledOnce()
+    expect(contents.send).not.toHaveBeenCalled()
+    const restartPrevented = vi.fn()
+    contents.emit('before-input-event', { preventDefault: restartPrevented, defaultPrevented: false }, {
+      type: 'keyDown', code: 'KeyR', key: 'R', modifiers: [], ...modifiers, alt: false, shift: true,
+      isComposing: false, isAutoRepeat: false
+    })
+    expect(restartPrevented).not.toHaveBeenCalled()
+    expect(contents.reload).toHaveBeenCalledOnce()
+    shortcuts.dispose()
+  })
+
+  it('delivers a page binding on Command+R instead of reloading', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'dsh-shortcuts-'))
+    temporary.push(userData)
+    const frame = { url: 'dsh-app://app/', name: '', parent: null }
+    const contents = Object.assign(new EventEmitter(), {
+      mainFrame: frame,
+      focusedFrame: frame,
+      isDestroyed: () => false,
+      reload: vi.fn(),
+      setIgnoreMenuShortcuts: vi.fn(),
+      send: vi.fn(),
+      focus: vi.fn(),
+      sendInputEvent: vi.fn()
+    })
+    const window = Object.assign(new EventEmitter(), {
+      webContents: contents,
+      isDestroyed: () => false,
+      isFocused: () => true,
+      isEnabled: () => true,
+      close: vi.fn()
+    })
+    const shortcuts = installDesktopShortcuts(() => window, userData, 'macos', vi.fn())
+    shortcuts.attach(window)
+    const handler = ipc.handlers.get(DESKTOP_IPC.shortcutsGet)
+    if (handler === undefined) throw new Error('missing shortcuts handler')
+    await handler({ sender: contents, senderFrame: frame }, [{
+      id: 'page.retry',
+      defaults: { 'desktop:macos': { code: 'KeyR', modifiers: ['primary'] } }
+    }])
     contents.send.mockClear()
     const prevented = vi.fn()
     contents.emit('before-input-event', { preventDefault: prevented, defaultPrevented: false }, {
-      type: 'keyDown', code: 'KeyR', key: 'r', modifiers: [], control: true, alt: false, shift: false, meta: false,
+      type: 'keyDown', code: 'KeyR', key: 'r', modifiers: [], control: false, alt: false, shift: false, meta: true,
+      isComposing: false, isAutoRepeat: false
+    })
+    expect(contents.reload).not.toHaveBeenCalled()
+    expect(contents.send).toHaveBeenCalledWith(DESKTOP_IPC.shortcutsInput, expect.objectContaining({
+      kind: 'keyboard', code: 'KeyR', meta: true
+    }))
+    shortcuts.dispose()
+  })
+
+  it('reloads on Command+R when that chord belongs to page.refresh', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'dsh-shortcuts-'))
+    temporary.push(userData)
+    const frame = { url: 'dsh-app://app/', name: '', parent: null }
+    const contents = Object.assign(new EventEmitter(), {
+      mainFrame: frame,
+      focusedFrame: frame,
+      isDestroyed: () => false,
+      reload: vi.fn(),
+      setIgnoreMenuShortcuts: vi.fn(),
+      send: vi.fn(),
+      focus: vi.fn(),
+      sendInputEvent: vi.fn()
+    })
+    const window = Object.assign(new EventEmitter(), {
+      webContents: contents,
+      isDestroyed: () => false,
+      isFocused: () => true,
+      isEnabled: () => true,
+      close: vi.fn()
+    })
+    const shortcuts = installDesktopShortcuts(() => window, userData, 'macos', vi.fn())
+    shortcuts.attach(window)
+    const handler = ipc.handlers.get(DESKTOP_IPC.shortcutsGet)
+    if (handler === undefined) throw new Error('missing shortcuts handler')
+    await handler({ sender: contents, senderFrame: frame }, [{
+      id: 'page.refresh',
+      defaults: { 'desktop:macos': { code: 'KeyR', modifiers: ['primary'] } }
+    }])
+    contents.send.mockClear()
+    const prevented = vi.fn()
+    contents.emit('before-input-event', { preventDefault: prevented, defaultPrevented: false }, {
+      type: 'keyDown', code: 'KeyR', key: 'r', modifiers: [], control: false, alt: false, shift: false, meta: true,
       isComposing: false, isAutoRepeat: false
     })
     expect(prevented).toHaveBeenCalledOnce()
