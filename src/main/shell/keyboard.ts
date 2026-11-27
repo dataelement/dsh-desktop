@@ -86,6 +86,7 @@ export function installDesktopShortcuts(
     window.webContents.send(DESKTOP_IPC.shortcutsInput, { kind: 'menu', commandId: 'page.close', revision })
   }
   let keys = new Set<string>()
+  let pageRefreshKey: string | undefined
   const publish = (snapshot: ShortcutConfigSnapshot): void => {
     const wasEnabled = revision !== undefined
     const previousAccelerator = closeAccelerator()
@@ -93,6 +94,10 @@ export function installDesktopShortcuts(
     const rows = snapshot.status === 'loading' ? [] : effectiveShortcuts(definitions, snapshot.document, 'desktop', platform)
     keys = new Set(rows.flatMap(row => row.binding !== null && row.issue === null && row.conflicts.length === 0
       ? [bindingKey(row.binding)] : []))
+    const refresh = rows.find(row => row.id === 'page.refresh')
+    pageRefreshKey = refresh?.binding != null && refresh.issue === null && refresh.conflicts.length === 0
+      ? bindingKey(refresh.binding)
+      : undefined
     const close = rows.find(row => row.id === 'page.close')
     closeBinding = close?.issue === null && close.conflicts.length === 0 ? close.binding : null
     if (wasEnabled !== (revision !== undefined) || previousAccelerator !== closeAccelerator()) updateMenu()
@@ -175,7 +180,7 @@ export function installDesktopShortcuts(
         return
       }
       if (revision === undefined) {
-        if (!recording && isHiddenMenuBarReload(platform, input)) {
+        if (!recording && isApplicationReloadChord(platform, input)) {
           event.preventDefault()
           if (!contents.isDestroyed()) contents.reload()
           return
@@ -199,9 +204,11 @@ export function installDesktopShortcuts(
         consumed.clear()
         return
       }
-      // The caption menu shows Ctrl+R but does not register it. The hidden menu's
-      // reload role also does not arrive while that menu bar stays hidden.
-      if (!match && isHiddenMenuBarReload(platform, input)) {
+      // The View item shows this chord and reloads when clicked. Hidden menu bars
+      // never receive Ctrl+R, and on macOS the focused page takes Command+R before
+      // the menu accelerator runs. page.refresh is registered on the same chord and
+      // only refreshes a focused sidebar pane, so it would otherwise swallow the key.
+      if ((!match || key === pageRefreshKey) && isApplicationReloadChord(platform, input)) {
         event.preventDefault()
         if (!contents.isDestroyed()) contents.reload()
         return
@@ -355,10 +362,14 @@ export function installDesktopShortcuts(
 }
 
 /**
- * Ctrl+R on Windows and Linux. The visible caption item only labels this chord,
- * and the hidden application menu does not deliver the reload role.
+ * Command+R on macOS, Ctrl+R on Windows and Linux.
+ * The View menu shows the chord and reloads when that item is clicked.
+ * The key still has to be handled here. A hidden menu bar never receives
+ * Ctrl+R. On macOS the focused page takes Command+R before the reload
+ * accelerator runs, so the menu role's click does not fire from the key.
+ * Shift stays out: Command+Shift+R / Ctrl+Shift+R restarts the Host.
  */
-export function isHiddenMenuBarReload(platform: ShortcutPlatform, input: {
+export function isApplicationReloadChord(platform: ShortcutPlatform, input: {
   type: string
   code: string
   control: boolean
@@ -368,15 +379,11 @@ export function isHiddenMenuBarReload(platform: ShortcutPlatform, input: {
   isAutoRepeat?: boolean
   isComposing?: boolean
 }): boolean {
-  return (platform === 'windows' || platform === 'linux')
-    && input.type === 'keyDown'
-    && input.isAutoRepeat !== true
-    && input.isComposing !== true
-    && input.code === 'KeyR'
-    && input.control
-    && !input.alt
-    && !input.shift
-    && !input.meta
+  if (input.type !== 'keyDown' || input.isAutoRepeat === true || input.isComposing === true) return false
+  if (input.code !== 'KeyR' || input.alt || input.shift) return false
+  if (platform === 'macos') return input.meta && !input.control
+  if (platform === 'windows' || platform === 'linux') return input.control && !input.meta
+  return false
 }
 
 /** The protocol brands the accepted revision string. Callers already require a string. */
