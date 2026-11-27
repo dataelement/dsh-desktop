@@ -46,6 +46,35 @@ export function standardMenuLabels(locale: string) {
   return { edit, undo, redo, cut, copy, paste, pasteAndMatchStyle, selectAll, window, minimize, close }
 }
 
+/**
+ * View roles shared by the macOS menu bar and the hidden Windows menu.
+ * Reload keeps Electron's default chord (Command+R / Ctrl+R).
+ * forceReload is omitted: Command+Shift+R / Ctrl+Shift+R already restarts the Host.
+ */
+function viewMenu(text: {
+  view: string
+  reload: string
+  devtools: string
+  actualSize: string
+  zoomIn: string
+  zoomOut: string
+  fullscreen: string
+}): DesktopMenuItem {
+  return {
+    label: text.view,
+    submenu: [
+      { role: 'reload', label: text.reload },
+      { role: 'toggleDevTools', label: text.devtools },
+      { type: 'separator' },
+      { role: 'resetZoom', label: text.actualSize },
+      { role: 'zoomIn', label: text.zoomIn },
+      { role: 'zoomOut', label: text.zoomOut },
+      { type: 'separator' },
+      { role: 'togglefullscreen', label: text.fullscreen }
+    ]
+  }
+}
+
 /** Keep About first. The file menu follows the application menu when shortcuts are installed. */
 export function insertFileMenu(items: readonly DesktopMenuItem[], fileMenu: DesktopMenuItem | undefined): DesktopMenuItem[] {
   if (fileMenu === undefined) return [...items]
@@ -147,6 +176,7 @@ export function buildDarwinDesktopMenu(options: {
         { role: 'selectAll', label: standard.selectAll }
       ]
     },
+    viewMenu(text),
     {
       label: standard.window,
       submenu: [
@@ -212,19 +242,7 @@ export function buildWindowsApplicationMenu(options: {
         { role: 'selectAll', label: standard.selectAll }
       ]
     },
-    {
-      label: text.view,
-      submenu: [
-        { role: 'reload', label: text.reload },
-        { role: 'toggleDevTools', label: text.devtools },
-        { type: 'separator' },
-        { role: 'resetZoom', label: text.actualSize },
-        { role: 'zoomIn', label: text.zoomIn },
-        { role: 'zoomOut', label: text.zoomOut },
-        { type: 'separator' },
-        { role: 'togglefullscreen', label: text.fullscreen }
-      ]
-    },
+    viewMenu(text),
     {
       label: standard.window,
       submenu: [

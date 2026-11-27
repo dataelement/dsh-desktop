@@ -77,7 +77,12 @@ describe('enterprise entry', () => {
     expect(quit).toHaveBeenCalledOnce()
     const standard = standardMenuLabels(locale)
     expect(standard.pasteAndMatchStyle).toBe(locale.startsWith('zh') ? '粘贴并匹配样式' : 'Paste and Match Style')
-    expect(menu.map(item => item.label)).toEqual(['DSH Desktop Shell', standard.edit, standard.window])
+    expect(menu.map(item => item.label)).toEqual([
+      'DSH Desktop Shell',
+      standard.edit,
+      locale.startsWith('zh') ? '视图' : 'View',
+      standard.window
+    ])
     expect(menu[1]?.submenu?.[0]).toMatchObject({ role: 'undo', label: standard.undo })
     expect(menu[1]?.submenu?.[6]).toMatchObject({
       role: 'pasteAndMatchStyle',
@@ -92,8 +97,15 @@ describe('enterprise entry', () => {
       acceleratorWorksWhenHidden: true
     })
     expect(menu[1]?.submenu?.[8]).toMatchObject({ role: 'selectAll', label: standard.selectAll })
-    expect(menu[2]?.submenu?.[0]).toMatchObject({ role: 'minimize', label: standard.minimize })
-    expect(menu[2]?.submenu?.[1]).toMatchObject({ role: 'close', label: standard.close })
+    const viewRoles = (menu[2]?.submenu ?? []).map(item => item.role)
+    expect(viewRoles).toEqual(['reload', 'toggleDevTools', undefined, 'resetZoom', 'zoomIn', 'zoomOut', undefined, 'togglefullscreen'])
+    expect(menu[2]?.submenu?.[0]).toMatchObject({
+      role: 'reload',
+      label: locale.startsWith('zh') ? '重新加载' : 'Reload'
+    })
+    expect(menu[2]?.submenu?.[0]?.accelerator).toBeUndefined()
+    expect(menu[3]?.submenu?.[0]).toMatchObject({ role: 'minimize', label: standard.minimize })
+    expect(menu[3]?.submenu?.[1]).toMatchObject({ role: 'close', label: standard.close })
     const withoutSafeMode = buildDarwinDesktopMenu({
       locale,
       appName: 'DSH Desktop Shell',
@@ -143,6 +155,11 @@ describe('enterprise entry', () => {
     expect(accelerators).toEqual(expect.arrayContaining(['CmdOrCtrl+Shift+M', 'CmdOrCtrl+Shift+R', 'CmdOrCtrl+U']))
     const roles = menu.flatMap(item => (item.submenu ?? []).map(child => child.role))
     expect(roles).toEqual(expect.arrayContaining(['undo', 'copy', 'reload', 'zoomIn', 'togglefullscreen', 'quit']))
+    expect(roles).not.toContain('forceReload')
+    const windowsView = menu.find(item => item.label === '视图')
+    expect((windowsView?.submenu ?? []).map(item => item.role)).toEqual([
+      'reload', 'toggleDevTools', undefined, 'resetZoom', 'zoomIn', 'zoomOut', undefined, 'togglefullscreen'
+    ])
     menu[0]?.submenu?.[0]?.click?.()
     expect(calls).toEqual(['phone'])
     const withoutSafeMode = buildWindowsApplicationMenu({
