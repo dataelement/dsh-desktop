@@ -43,7 +43,8 @@ export function windowsMenuTemplate(
   name: WindowsMenuName,
   locale: string,
   zoomFactor: number,
-  actions: WindowsMenuActions
+  actions: WindowsMenuActions,
+  appName: string
 ): MenuItemConstructorOptions[] {
   const text = desktopMenuMessages(locale)
   const command = (
@@ -104,7 +105,7 @@ export function windowsMenuTemplate(
     },
     { type: 'separator' },
     command('check-for-updates', text.update, 'Ctrl+U'),
-    command('about', text.about),
+    command('about', text.about.replace('{app}', () => appName)),
     command('explore-enterprise', text.enterprise),
     { type: 'separator' },
     command('quit', text.exit)

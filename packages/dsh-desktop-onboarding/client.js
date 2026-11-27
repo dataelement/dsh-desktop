@@ -57,31 +57,33 @@ window.__ModuleLoader__.load({
 
     // ---------- locale dictionaries ----------
 
+    const productName = typeof window.__DSH_PRODUCT_NAME__ === 'string' && window.__DSH_PRODUCT_NAME__.trim()
+      ? window.__DSH_PRODUCT_NAME__ : 'DSH Desktop'
     const en = {
-      brandName: 'DSH Desktop',
+      brandName: `${productName}`,
       brandBy: 'by dataelem',
       step0Title: 'Internal Testing Notice',
       declarationBody: "DeepSeek Harness 0.1 remains in testing for Harness developers. Many areas need further improvement, and we welcome feedback from the developer community. DeepSeek Harness's core plugins and foundational APIs will continue to evolve rapidly over the coming months.\n\nWe look forward to exploring the limits of intelligence with developers around the world, building on open-source, open, reusable, and composable infrastructure. We welcome Harness developers everywhere to join the DSH plugin ecosystem.",
-      desktopIntroTitle: 'About DSH Desktop',
-      desktopIntroBody: 'DSH Desktop is maintained by the DataElem team as the desktop edition of DeepSeek Harness — local-first and cross-platform.',
-      officialSite: 'Official site',
+      desktopIntroTitle: `About ${productName}`,
+      desktopIntroBody: `${productName} provides a local-first, cross-platform desktop experience for DeepSeek Harness.`,
+      officialSite: 'DSH Desktop official site',
       officialSiteUrl: 'https://www.dshdesktop.com/',
-      desktopIntroFeedback: 'Found a bug or have a suggestion? Open an issue on GitHub, or reach us through the official site.',
+      desktopIntroFeedback: 'For DSH Desktop, report issues on its GitHub repository or contact the project through its official site.',
       configureModel: 'Configure a model',
       later: 'Maybe later',
       saveFailed: 'Could not save your acknowledgment. Please try again.'
     }
 
     const zh = {
-      brandName: 'DSH Desktop',
+      brandName: `${productName}`,
       brandBy: 'by dataelem',
       step0Title: '内测声明',
       declarationBody: 'DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。',
-      desktopIntroTitle: '关于 DSH Desktop',
-      desktopIntroBody: 'DSH Desktop 是由 DataElem 团队维护的 DeepSeek Harness 桌面版本，为 Harness 提供本地优先、跨平台的桌面体验。',
-      officialSite: '官网',
+      desktopIntroTitle: `关于 ${productName}`,
+      desktopIntroBody: `${productName} 为 DeepSeek Harness 提供本地优先、跨平台的桌面体验。`,
+      officialSite: 'DSH Desktop 官网',
       officialSiteUrl: 'https://dshdesktop.com/zh/',
-      desktopIntroFeedback: '遇到问题或有功能建议？欢迎在 GitHub 提交 Issue，或在官网联系我们。',
+      desktopIntroFeedback: 'DSH Desktop 的问题和建议可提交至其 GitHub 仓库，或通过其官网联系项目。',
       configureModel: '去配置模型',
       later: '稍后再说',
       saveFailed: '未能保存确认，请重试。'
@@ -109,7 +111,7 @@ window.__ModuleLoader__.load({
           )
         ),
         React.createElement('span', { className: 'dshDeskOnbBrandName' }, t('brandName')),
-        React.createElement('span', { className: 'dshDeskOnbBrandBy' }, t('brandBy'))
+        productName === 'DSH Desktop' && React.createElement('span', { className: 'dshDeskOnbBrandBy' }, t('brandBy'))
       )
     }
 
@@ -127,7 +129,7 @@ window.__ModuleLoader__.load({
     function NoticeBody({ t }) {
       const paragraphs = t('declarationBody').split('\n\n')
       const links = [
-        { label: 'GitHub', href: 'https://github.com/dataelement/dsh-desktop', icon: GitHubMark },
+        { label: 'DSH Desktop GitHub', href: 'https://github.com/dataelement/dsh-desktop', icon: GitHubMark },
         { label: t('officialSite'), href: t('officialSiteUrl'), icon: IconGlobeOutlineRegular }
       ]
       return React.createElement(

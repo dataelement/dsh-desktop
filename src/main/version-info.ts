@@ -34,8 +34,9 @@ export function bundledHarnessVersion(appPath: string): string | undefined {
 export function aboutDetail(
   desktopVersion: string,
   harnessVersion: string | undefined,
-  locale: DesktopLocale
+  locale: DesktopLocale,
+  productName = 'DSH Desktop'
 ): string {
   const harness = harnessVersion ?? updateText(locale, 'unknown')
-  return `${updateText(locale, 'desktopVersion', { version: desktopVersion })}\n${updateText(locale, 'harnessVersion', { version: harness })}\n\n${updateText(locale, 'harnessUpdated')}`
+  return `${updateText(locale, 'desktopVersion', { version: desktopVersion, app: productName })}\n${updateText(locale, 'harnessVersion', { version: harness })}\n\n${updateText(locale, 'harnessUpdated', { app: productName })}`
 }

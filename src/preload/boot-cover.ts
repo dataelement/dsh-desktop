@@ -17,6 +17,7 @@ const MARK_ASPECT_RATIO = '480 / 276'
 export interface BootCoverOptions {
   document: Document
   locale: DesktopLocale
+  productName?: string
   stallMs?: number
   schedule?: (callback: () => void, delayMs: number) => number
   cancel?: (timer: number) => void
@@ -158,7 +159,7 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
   const relabel = (): void => {
     const active = desktopLocale(doc.documentElement?.lang) ?? locale
     const stalled = cover.hasAttribute('data-stalled')
-    title.textContent = updateText(active, stalled ? 'stalled' : 'starting')
+    title.textContent = updateText(active, stalled ? 'stalled' : 'starting', { app: options.productName ?? 'DSH Desktop' })
     status.textContent = updateText(active, stalled ? 'stillLoading' : 'firstLaunch')
   }
   relabel()

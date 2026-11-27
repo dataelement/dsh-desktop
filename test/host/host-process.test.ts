@@ -31,12 +31,13 @@ describe('desktop host process', () => {
       projectDir: directory,
       dshHome: join(directory, 'harness'),
       profile: 'desktop',
-      environment: { FIXTURE_REPORT: report }
+      environment: { FIXTURE_REPORT: report, DSH_DESKTOP_PRODUCT_NAME: 'Example 桌面' }
     })
     await expect(host.start()).resolves.toEqual({ url: 'http://127.0.0.1:9/', injections: ['boot'] })
     expect(JSON.parse(await readFile(report, 'utf8'))).toEqual({
       home: join(directory, 'harness'),
       profile: 'desktop',
+      productName: 'Example 桌面',
       execPath: electron
     })
     await host.stop()

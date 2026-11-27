@@ -19,6 +19,13 @@ import {
 } from '../src/main/recovery/safe-mode-profile'
 
 describe('Safe Mode', () => {
+  it('uses the resolved product name in both languages', () => {
+    for (const locale of ['zh', 'en'] as const) {
+      const model = buildSafeModeViewModel({ locale, plugins: [], productName: 'BISHENG Dev' })
+      expect(model.brand).toBe('BISHENG Dev')
+      expect(model.quitLabel).toBe(locale === 'zh' ? '退出 BISHENG Dev' : 'Quit BISHENG Dev')
+    }
+  })
   it('is opt-in through an exact command-line switch', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode'])).toBe(true)
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)

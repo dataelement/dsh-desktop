@@ -1,5 +1,6 @@
 export interface MobilePageOptions {
   locale: 'en' | 'zh'
+  productName?: string
 }
 
 export interface PendingCreatedSession {
@@ -44,7 +45,8 @@ export function applyPendingCreatedSessions(
   return stillPending
 }
 
-export function renderMobilePage({ locale }: MobilePageOptions): string {
+export function renderMobilePage({ locale, productName = 'DSH Desktop' }: MobilePageOptions): string {
+  const mobileName = productName === 'DSH Desktop' ? 'DSH Mobile' : productName
   const zh = locale === 'zh'
   return `<!doctype html>
 <html lang="${zh ? 'zh-CN' : 'en'}">
@@ -54,10 +56,10 @@ export function renderMobilePage({ locale }: MobilePageOptions): string {
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)">
   <meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="DSH Mobile">
+  <meta name="apple-mobile-web-app-title" content="${escapeHtml(mobileName)}">
   <link rel="icon" href="/app-icon">
   <link rel="apple-touch-icon" href="/app-icon">
-  <title>DSH Mobile</title>
+  <title>${escapeHtml(mobileName)}</title>
   <style>
     :root{color-scheme:light;--paper:#fff;--sidebar:#f7f8fa;--ink:#18191c;--muted:#81858c;--line:#e5e7eb;--card:#fff;--hover:#f2f3f5;--surface:#f7f7f5;--brand:#4d6bfe;--tunnel-warn-h:0px}
     @media(prefers-color-scheme:dark){:root{color-scheme:dark;--paper:#141416;--sidebar:#19191b;--ink:#f5f5f6;--muted:#95979d;--line:#303034;--card:#1d1d20;--hover:#29292d;--surface:#202023;--brand:#6f86ff}}
@@ -78,7 +80,7 @@ export function renderMobilePage({ locale }: MobilePageOptions): string {
 </head>
 <body><main class="shell">
   <div id="toast" class="toast" role="status"></div>
-  <header><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>DSH Desktop</span></div><div id="status" class="status connecting" role="status" aria-label="${zh ? '正在连接' : 'Connecting'}"></div></header>
+  <header><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>${escapeHtml(productName)}</span></div><div id="status" class="status connecting" role="status" aria-label="${zh ? '正在连接' : 'Connecting'}"></div></header>
   <section id="sessionsView" class="view active">
     <div class="session-hero"><div class="session-heading"><p>${zh ? '移动工作台' : 'Mobile workspace'}</p><h1>${zh ? '继续对话' : 'Continue working'}</h1></div><button id="newSession" class="new-session" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5V12.5M3.5 8H12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>${zh ? '新会话' : 'New session'}</button></div>
     <div class="workspace-panel"><label class="workspace-label" for="workspace">${zh ? '当前工作区' : 'Current workspace'}</label><div class="session-actions"><select id="workspace" aria-label="${zh ? '当前工作区' : 'Current workspace'}"></select><button id="refresh" class="icon-button" aria-label="${zh ? '刷新' : 'Refresh'}"><svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M16 7.5A6.5 6.5 0 1 0 16 13M16 7.5V3.5M16 7.5H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div><div id="workspaceHint" class="workspace-hint"></div></div>
@@ -94,7 +96,7 @@ export function renderMobilePage({ locale }: MobilePageOptions): string {
 </main>
 <script>
 ${applyPendingCreatedSessions.toString()}
-const L=${JSON.stringify({
+const L=${scriptJson({
     noSessions: zh ? '还没有会话' : 'No sessions yet',
     emptyHint: zh ? '创建一个新会话，从这里继续电脑上的工作。' : 'Start a session and continue your desktop work here.',
     untitled: zh ? '未命名会话' : 'Untitled session',
@@ -105,7 +107,7 @@ const L=${JSON.stringify({
     toolFailed: zh ? '失败' : 'Failed',
     input: zh ? '输入' : 'Input',
     output: zh ? '输出' : 'Output'
-    ,noWorkspaces: zh ? '暂无工作区，请先在 DSH Desktop 中创建第一个工作区。' : 'No workspaces yet. Create your first workspace in DSH Desktop.'
+    ,noWorkspaces: zh ? `暂无工作区，请先在 ${productName} 中创建第一个工作区。` : `No workspaces yet. Create your first workspace in ${productName}.`
     ,refreshed: zh ? '已刷新' : 'Updated'
     ,justNow: zh ? '刚刚' : 'Now'
     ,minute: zh ? ' 分钟前' : 'm ago'
@@ -243,13 +245,15 @@ setInterval(checkConnection,1500);checkConnection();
 export function renderMobileReconnectPage(
   locale: 'en' | 'zh',
   connectionMode: 'lan' | 'tunnel' = 'lan',
-  options: { expired?: boolean; resumeUnavailable?: boolean } = {}
+  options: { expired?: boolean; resumeUnavailable?: boolean; productName?: string } = {}
 ): string {
   const zh = locale === 'zh'
+  const productName = options.productName ?? 'DSH Desktop'
+  const shortName = productName === 'DSH Desktop' ? 'DSH' : productName
   const expired = options.expired === true
   const resumeUnavailable = options.resumeUnavailable === true
   const text = {
-    title: zh ? '重新连接 DSH' : 'Reconnect DSH',
+    title: zh ? `重新连接 ${shortName}` : `Reconnect ${shortName}`,
     heading: zh ? '连接已断开' : 'Connection lost',
     action:
       connectionMode === 'tunnel' && !expired
@@ -278,10 +282,11 @@ export function renderMobileReconnectPage(
   const action = resumeUnavailable
     ? ''
     : `<a class="primary" href="/reconnect">${text.action}<svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg></a>`
-  return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)"><title>${text.title}</title><style>:root{color-scheme:light;--bg:#fff;--ink:#18191c;--muted:#81858c}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--ink:#f5f5f6;--muted:#95979d}}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:100%;max-width:340px;text-align:center}.brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:22px;font-size:13px;font-weight:600}.brand img{width:35px;height:20px;object-fit:contain}.brand .dark-logo{display:none}@media(prefers-color-scheme:dark){.brand .light-logo{display:none}.brand .dark-logo{display:block}}h1{margin:0;font-size:28px;line-height:1.18;letter-spacing:-.03em}.guidance{margin:13px auto 0;max-width:310px;color:var(--muted);font-size:14px;line-height:1.65}.primary{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;height:50px;margin-top:26px;border-radius:15px;background:var(--ink);color:var(--bg);font-weight:650;text-decoration:none}</style></head><body><main class="card"><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>DSH Desktop</span></div><h1>${text.heading}</h1><p class="guidance">${text.guidance}</p>${action}</main></body></html>`
+  return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)"><title>${escapeHtml(text.title)}</title><style>:root{color-scheme:light;--bg:#fff;--ink:#18191c;--muted:#81858c}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--ink:#f5f5f6;--muted:#95979d}}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:100%;max-width:340px;text-align:center}.brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:22px;font-size:13px;font-weight:600}.brand img{width:35px;height:20px;object-fit:contain}.brand .dark-logo{display:none}@media(prefers-color-scheme:dark){.brand .light-logo{display:none}.brand .dark-logo{display:block}}h1{margin:0;font-size:28px;line-height:1.18;letter-spacing:-.03em}.guidance{margin:13px auto 0;max-width:310px;color:var(--muted);font-size:14px;line-height:1.65}.primary{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;height:50px;margin-top:26px;border-radius:15px;background:var(--ink);color:var(--bg);font-weight:650;text-decoration:none}</style></head><body><main class="card"><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>${escapeHtml(productName)}</span></div><h1>${text.heading}</h1><p class="guidance">${text.guidance}</p>${action}</main></body></html>`
 }
 
 export function renderDesktopPairingPage(options: {
+  productName?: string
   qrSvg: string
   pairingUrl: string
   expiresAt: number
@@ -301,6 +306,7 @@ export function renderDesktopPairingPage(options: {
   tunnelExpiresAt?: number
 }): string {
   const zh = options.locale === 'zh'
+  const productName = options.productName ?? 'DSH Desktop'
   const text = {
     title: zh ? '连接移动设备' : 'Connect Mobile Device',
     heading: zh ? '连接移动设备' : 'Connect a mobile device',
@@ -380,7 +386,7 @@ export function renderDesktopPairingPage(options: {
   .pin-foot,.pin-reset{margin-top:auto;padding-top:12px}
   .retry{margin-top:10px}.action-error{margin:10px auto 0;color:var(--brand);font-size:12px}
   .tunnel-err{display:none;color:#e34d59;font-size:12px;margin:5px 7px 0}.tunnel-err.show{display:block}
-  </style></head><body class="${options.connected ? 'phone-connected manage-connected' : ''}"><div class="wrap"><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>DSH Desktop</span></div><h1>${options.connected ? text.manageHeading : text.heading}</h1>
+  </style></head><body class="${options.connected ? 'phone-connected manage-connected' : ''}"><div class="wrap"><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>${escapeHtml(productName)}</span></div><h1>${options.connected ? text.manageHeading : text.heading}</h1>
   <div class="mode-panel">
     <div class="mode-switch" role="group">
       <button id="btnLan" type="button" class="mode-btn${!internetSelected ? ' active' : ''}" aria-pressed="${!internetSelected}" onclick="switchMode(false)"${options.connected ? ' disabled' : ''}>${text.modeLan}</button>
@@ -570,10 +576,11 @@ export function renderDesktopPairingPage(options: {
   </script></body></html>`
 }
 
-export function renderPairingPinPage(locale: 'en' | 'zh'): string {
+export function renderPairingPinPage(locale: 'en' | 'zh', productName = 'DSH Desktop'): string {
+  const shortName = productName === 'DSH Desktop' ? 'DSH' : productName
   const zh = locale === 'zh'
   const text = {
-    title: zh ? '连接 DSH' : 'Pairing DSH',
+    title: zh ? `连接 ${shortName}` : `Pairing ${shortName}`,
     heading: zh ? '输入连接密码' : 'Enter pairing password',
     hint: zh ? '在电脑「连接手机」窗口查看 6 位密码。' : 'Find the 6-digit password in Connect Phone on the computer.',
     submit: zh ? '连接' : 'Connect',
@@ -581,12 +588,16 @@ export function renderPairingPinPage(locale: 'en' | 'zh'): string {
     invalid: zh ? '连接密码不正确。' : 'That pairing password is incorrect.',
     expired: zh ? '密码已过期，请在电脑上扫描新二维码。' : 'This password expired. Scan the new QR code on the computer.',
     rateLimited: zh ? '尝试次数过多，请 {n} 分钟后再试。' : 'Too many attempts. Try again in {n} min.',
-    unavailable: zh ? '暂时无法连接桌面端，请先启动 DSH Desktop。' : 'Cannot reach the desktop. Start DSH Desktop and try again.',
+    unavailable: zh ? `暂时无法连接桌面端，请先启动 ${productName}。` : `Cannot reach the desktop. Start ${productName} and try again.`,
     connecting: zh ? '正在连接…' : 'Connecting…'
   }
-  return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)"><title>${text.title}</title><style>:root{color-scheme:light;--bg:#fff;--card:#fff;--panel:#f7f8fa;--ink:#18191c;--muted:#81858c;--line:#e5e7eb;--brand:#4d6bfe}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--card:#1d1d20;--panel:#202023;--ink:#f5f5f6;--muted:#95979d;--line:#303034;--brand:#6f86ff}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}.card{width:100%;max-width:340px;text-align:center}.logo{width:54px;height:54px;display:grid;place-items:center;margin:0 auto 22px;border:1px solid var(--line);border-radius:16px;background:var(--card)}.logo img{width:39px;height:22px;object-fit:contain}.logo .dark-logo{display:none}@media(prefers-color-scheme:dark){.logo .light-logo{display:none}.logo .dark-logo{display:block}}h1{font-size:24px;line-height:1.25;font-weight:600;margin:0 0 8px}p{margin:0;color:var(--muted)}input{width:100%;height:52px;margin-top:22px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);text-align:center;font:28px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.28em}button{width:100%;height:44px;margin-top:12px;border:1px solid var(--ink);border-radius:12px;background:var(--ink);color:var(--bg);font:inherit;font-weight:600;cursor:pointer}button.quiet{border-color:var(--line);background:transparent;color:var(--ink)}.note{min-height:20px;margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--panel);color:#e34d59;font-size:13px}button:disabled{opacity:.55;cursor:default}</style></head><body><div class="card"><div class="logo"><img class="light-logo" src="/brand-logo/light" alt="DSH"><img class="dark-logo" src="/brand-logo/dark" alt="DSH"></div><h1>${text.heading}</h1><p>${text.hint}</p><form onsubmit="return submitPin(event)"><input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\\d{6}" required><button id="submit" type="submit">${text.submit}</button></form><button class="quiet" type="button" onclick="showPinOnDesktop()">${text.showPin}</button><div id="status" class="note"></div></div><script>const T=${JSON.stringify(text)};
+  return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)"><title>${escapeHtml(text.title)}</title><style>:root{color-scheme:light;--bg:#fff;--card:#fff;--panel:#f7f8fa;--ink:#18191c;--muted:#81858c;--line:#e5e7eb;--brand:#4d6bfe}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--card:#1d1d20;--panel:#202023;--ink:#f5f5f6;--muted:#95979d;--line:#303034;--brand:#6f86ff}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}.card{width:100%;max-width:340px;text-align:center}.logo{width:54px;height:54px;display:grid;place-items:center;margin:0 auto 22px;border:1px solid var(--line);border-radius:16px;background:var(--card)}.logo img{width:39px;height:22px;object-fit:contain}.logo .dark-logo{display:none}@media(prefers-color-scheme:dark){.logo .light-logo{display:none}.logo .dark-logo{display:block}}h1{font-size:24px;line-height:1.25;font-weight:600;margin:0 0 8px}p{margin:0;color:var(--muted)}input{width:100%;height:52px;margin-top:22px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);text-align:center;font:28px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.28em}button{width:100%;height:44px;margin-top:12px;border:1px solid var(--ink);border-radius:12px;background:var(--ink);color:var(--bg);font:inherit;font-weight:600;cursor:pointer}button.quiet{border-color:var(--line);background:transparent;color:var(--ink)}.note{min-height:20px;margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--panel);color:#e34d59;font-size:13px}button:disabled{opacity:.55;cursor:default}</style></head><body><div class="card"><div class="logo"><img class="light-logo" src="/brand-logo/light" alt="${escapeHtml(shortName)}"><img class="dark-logo" src="/brand-logo/dark" alt="${escapeHtml(shortName)}"></div><h1>${text.heading}</h1><p>${text.hint}</p><form onsubmit="return submitPin(event)"><input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\\d{6}" required><button id="submit" type="submit">${text.submit}</button></form><button class="quiet" type="button" onclick="showPinOnDesktop()">${text.showPin}</button><div id="status" class="note"></div></div><script>const T=${scriptJson(text)};
 async function submitPin(event){event.preventDefault();const pin=document.getElementById('pin').value.trim(),status=document.getElementById('status'),submit=document.getElementById('submit');submit.disabled=true;status.textContent=T.connecting;try{const r=await fetch('/pair/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pin})});const j=await r.json();if(r.status===429){const minutes=Math.max(1,Math.ceil(Number(j.retryAfter||r.headers.get('retry-after')||60)/60));status.textContent=T.rateLimited.replace('{n}',String(minutes));return false}if(j.ok){location.replace('/');return false}status.textContent=j.rescan||j.error==='expired'?T.expired:T.invalid}catch{status.textContent=T.unavailable}finally{submit.disabled=false}return false}
 async function showPinOnDesktop(){try{await fetch('/pair/retry',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})}catch{}}</script></body></html>`
+}
+
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
 }
 
 function escapeHtml(value: string): string {

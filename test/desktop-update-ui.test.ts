@@ -63,6 +63,21 @@ afterEach(() => {
 const status = (phase: UpdateStatus['phase'], extra: Partial<UpdateStatus> = {}): UpdateStatus => ({ phase, currentVersion: '1.0.0', manual: true, presentationId: 7, ...extra })
 
 describe('desktop update presentation at the IPC boundary', () => {
+  it('renders the window identity in update and About dialogs', async () => {
+    const arg = '--dsh-product-name=' + encodeURIComponent('Product $& <Dev>')
+    process.argv.push(arg)
+    try {
+      const ui = await mount(Promise.resolve(status('idle', { manual: false })))
+      ui.emit(status('up-to-date', { locale: 'en', presentationId: 8 }))
+      expect(ui.shadow.querySelector('.title')?.textContent).toBe('Product $& <Dev> v1.0.0')
+      expect(ui.shadow.querySelector('[role=dialog]')?.getAttribute('aria-label')).toContain('Product $& <Dev>')
+      ui.showAbout()
+      expect(ui.aboutShadow.querySelector('.about-card')?.textContent).toContain('Product $& <Dev>')
+      expect(ui.aboutShadow.querySelector('.about-card')?.textContent).toContain('Harness')
+    } finally {
+      process.argv.splice(process.argv.indexOf(arg), 1)
+    }
+  })
   it('defers an automatic update offer until all workbench notices close without dismissing the release', async () => {
     const ui = await mount(Promise.resolve(status('available', { manual: false, availableVersion: '1.1.0' })))
     const notice = document.createElement('aside')

@@ -15,6 +15,13 @@ function failedSnapshot(logs: string[] = []): RuntimeSnapshot {
 }
 
 describe('plugin recovery view model', () => {
+  it('uses the resolved product name for the brand and quit action', () => {
+    for (const locale of ['zh', 'en'] as const) {
+      const model = buildPluginRecoveryViewModel({ snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale, productName: 'BISHENG Dev' })
+      expect(model.brand).toBe('BISHENG Dev')
+      expect(model.quitLabel).toBe(locale === 'zh' ? '退出 BISHENG Dev' : 'Quit BISHENG Dev')
+    }
+  })
   it('offers one-click repair and rollback together for a known cause', () => {
     const model = buildPluginRecoveryViewModel({ snapshot: failedSnapshot(), plugins: ['a'], removedPlugins: [], locale: 'zh', rollbackVersion: '0.12.0',
       upgradeCandidate: { packageName: 'a', targetVersion: '2' } })

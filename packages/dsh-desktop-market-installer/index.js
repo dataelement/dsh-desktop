@@ -300,7 +300,7 @@ export function createDesktopProfilesService(home = dshHome(), env = process.env
     list: () => [current],
     select: async (requested) => {
       if (requested !== name) {
-        throw new Error(`DSH Desktop only exposes the ${name} profile.`)
+        throw new Error(`${env.DSH_DESKTOP_PRODUCT_NAME || 'DSH Desktop'} only exposes the ${name} profile.`)
       }
     }
   })
@@ -422,7 +422,7 @@ export function createDesktopPnpmService(options) {
   /** Install registry packages through the same generation backend as Plugin Manager. */
   const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (closed) throw new Error(`The ${process.env.DSH_DESKTOP_PRODUCT_NAME || 'DSH Desktop'} pnpm service has been disposed.`)
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
     const spec = args.slice(1).find((argument) => !argument.startsWith('-'))
@@ -492,7 +492,7 @@ export function createDesktopPnpmService(options) {
       throw new Error('A workbench install needs the package name it provides.')
     }
     if (typeof expectedVersion !== 'string' || !expectedVersion) throw new Error('A workbench install needs an exact version.')
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (closed) throw new Error(`The ${process.env.DSH_DESKTOP_PRODUCT_NAME || 'DSH Desktop'} pnpm service has been disposed.`)
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
 
@@ -551,7 +551,7 @@ export function createDesktopPnpmService(options) {
 
   const removeWorkbenchGeneration = (pluginName, invokingDir, signal) => {
     validatePluginOperation(['remove', pluginName], invokingDir)
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (closed) throw new Error(`The ${process.env.DSH_DESKTOP_PRODUCT_NAME || 'DSH Desktop'} pnpm service has been disposed.`)
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
     const handle = asHandle(async ({ write, isCancelled }) =>
@@ -580,7 +580,7 @@ export function createDesktopPnpmService(options) {
 
   const runPlugin = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (closed) throw new Error(`The ${process.env.DSH_DESKTOP_PRODUCT_NAME || 'DSH Desktop'} pnpm service has been disposed.`)
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
 

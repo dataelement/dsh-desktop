@@ -28,5 +28,10 @@
         <img class="mark" src="startup-whale.gif" width="480" height="276" alt="" />
       </div>
     </main>
+    <script>
+      const productName = new URLSearchParams(location.search).get('productName') || 'DSH Desktop'
+      document.title = productName
+      document.querySelector('main').setAttribute('aria-label', productName)
+    </script>
   </body>
 </html>

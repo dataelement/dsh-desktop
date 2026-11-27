@@ -9,6 +9,7 @@ import { mountDesktopUpdateUi } from './desktop-update-ui'
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
 import { mountBootCover, shouldReleaseBootCover } from './boot-cover'
+import { preloadProductName } from './product-name'
 import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'
 import { mountMacosWindowChrome } from './macos-window-chrome'
 import { createHostPathsBridge, HOST_PATHS_BRIDGE } from './host-paths'
@@ -35,7 +36,8 @@ const locale: UpdateLocale = navigator.language.toLowerCase().startsWith('zh') ?
 // Cover the Harness document before its own scripts paint the boot failure screen.
 const bootCover = mountBootCover(location.href, {
   document,
-  locale
+  locale,
+  productName: preloadProductName(process.argv)
 })
 
 const reportHarnessBootFailure = installHarnessBootBridge(() => {

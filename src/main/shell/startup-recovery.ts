@@ -72,6 +72,7 @@ export function startupRecoveryViewModel(options: {
   plugins: readonly string[]
   launchDirectory: string
   locale: PluginRecoveryLocale
+  productName?: string
   notice?: string
   logs?: readonly string[]
   plan?: RepairPlan
@@ -86,6 +87,7 @@ export function startupRecoveryViewModel(options: {
     plugins: options.plugins,
     removedPlugins: [],
     locale: options.locale,
+    productName: options.productName,
     ...(options.notice === undefined ? {} : { notice: options.notice }),
     ...(options.plan === undefined ? {} : { repairPlan: options.plan })
   })
