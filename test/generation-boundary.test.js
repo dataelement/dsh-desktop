@@ -23,7 +23,7 @@ import {
   writeDesired
 } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
 
-const renameFault = vi.hoisted(() => ({ phase: '' }))
+const renameFault = vi.hoisted(() => ({ phase: '', persist: false }))
 vi.mock('node:fs/promises', async importOriginal => {
   const fs = await importOriginal()
   return { ...fs, unlink: async path => {
@@ -43,7 +43,7 @@ vi.mock('node:fs/promises', async importOriginal => {
       : renameFault.phase === 'new-link' ? String(from).includes('.dsh-next-')
       : renameFault.phase === 'manifest' ? String(to).replaceAll('\\', '/').endsWith('/profiles/web/package.json') : false
     if (matches) {
-      renameFault.phase = ''
+      if (!renameFault.persist) renameFault.phase = ''
       throw Object.assign(new Error('EPERM: simulated occupied path'), { code: 'EPERM' })
     }
     return fs.rename(from, to)
@@ -76,6 +76,7 @@ describe('the market install boundary', () => {
 
   afterEach(async () => {
     renameFault.phase = ''
+    renameFault.persist = false
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
   })
@@ -377,6 +378,7 @@ describe('the market install boundary', () => {
     const beforeManifest = await readFile(join(profile, 'package.json'), 'utf8')
     const beforeDesired = await readDesired(home)
     renameFault.phase = phase
+    renameFault.persist = phase === 'manifest'
     const result = await drainHandle(service(home, stubGenerationInstall('widget', '2.0.0'))
       .runExternalMarketPluginInstall(['add', 'widget@2.0.0'], profile))
     expect(result.exitCode).toBe(1)
@@ -403,7 +405,10 @@ describe('the market install boundary', () => {
     })
     await writeDesired(home, [installed.generation.id])
     renameFault.phase = 'manifest'
+    renameFault.persist = true
     await expect(publishInstalledGeneration(home, 'widget', 'web', { allowRealDirectory: true, syncBundles: true })).rejects.toThrow('EPERM')
+    renameFault.phase = ''
+    renameFault.persist = false
     expect((await lstat(legacy)).isSymbolicLink()).toBe(false)
     expect(readInstalledVersion('web', 'widget', profile)).toBe('1.39.0')
     expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(before)

@@ -1,0 +1,244 @@
+diff --git a/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js b/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js
+index ccf128b..121be69 100755
+--- a/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js
++++ b/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js
+@@ -1069,9 +1069,26 @@ function plan(ready, request) {
+ 		})
+ 	};
+ }
++/** Await consumer backpressure within the converter cancellation/deadline lifetime. */
++function notifyImage(onImage, image, pageCount, signal) {
++	if (onImage === void 0) return;
++	signal.throwIfAborted();
++	return new Promise((resolve, reject) => {
++		const finish = (settle, value) => {
++			signal.removeEventListener("abort", abort);
++			settle(value);
++		};
++		const abort = () => finish(reject, signal.reason);
++		signal.addEventListener("abort", abort, { once: true });
++		Promise.resolve().then(() => {
++			signal.throwIfAborted();
++			return onImage(image, pageCount);
++		}).then(value => finish(resolve, value), error => finish(reject, error));
++	});
++}
+ /** Run one native image batch and write final PNGs only after each bounded paint succeeds. */
+ async function renderImagesWithNative(request) {
+-	const { engine, options, source, scratch, profile, fonts, substitutions, missingFonts, operation, signal } = request;
++	const { engine, options, source, scratch, profile, fonts, substitutions, missingFonts, operation, signal, onImage } = request;
+ 	signal.throwIfAborted();
+ 	await mkdir(profile, { mode: 448 });
+ 	await prepareNativeFontProfile(profile, substitutions);
+@@ -1245,6 +1262,8 @@ async function renderImagesWithNative(request) {
+ 					rectangle: region.rectangle,
+ 					byteLength: png.byteLength
+ 				});
++				signal.throwIfAborted();
++				await notifyImage(onImage, images.at(-1), planned.count, signal);
+ 			}
+ 			child.stdin.end("DONE\n");
+ 			if ((await response()).kind !== "done") throw new Error("LibreOffice native renderer did not finish.");
+@@ -1575,7 +1594,8 @@ const ENGINE_PREFIX = "@deepseek-ai/libreoffice-kit";
+ * @returns true when at least one resolution directory holds the package.
+ */
+ function installedPackageExists(name) {
+-	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) !== void 0);
++	// Electron ASAR returns null for missing entries; Node returns undefined.
++	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) != null);
+ }
+ /**
+ * Return the optional package target for the current process ABI.
+@@ -2220,7 +2240,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 			}
+ 		}
+ 	}
+-	async function executeImages(request, signal) {
++	async function executeImages(request, signal, onImage) {
+ 		await acquire(signal);
+ 		const deadline = new AbortController();
+ 		const stopped = AbortSignal.any([signal, deadline.signal]);
+@@ -2246,7 +2266,13 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 				fontCache: [...shared.fontCache.values()]
+ 			}, stopped, (entries) => mergeCache(fonts.generation, entries));
+ 			let images;
+-			if ("images" in result) images = result.images;
++			if ("images" in result) {
++				images = result.images;
++				for (const image of images.images) {
++					stopped.throwIfAborted();
++					await notifyImage(onImage, image, images.pageCount, stopped);
++				}
++			}
+ 			else if ("fonts" in result) {
+ 				const profile = join(scratch, "profile");
+ 				images = await renderImagesWithNative({
+@@ -2259,6 +2285,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 					substitutions: result.substitutions,
+ 					missingFonts: result.missingFonts,
+ 					operation: request,
++					onImage,
+ 					signal: stopped
+ 				});
+ 			} else throw new ConversionError("failed", "Image worker did not return its manifest.");
+@@ -2299,8 +2326,9 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 	const converter = {
+ 		backend: engine.backend,
+ 		render: (request, signal) => submit(request, "render", signal),
+-		async renderImages(request, signal) {
+-			const task = executeImages(resolveImageRender(request), signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal);
++		async renderImages(request, signal, onImage) {
++			if (onImage !== void 0 && typeof onImage !== "function") throw new TypeError("Image progress must be a function.");
++			const task = executeImages(resolveImageRender(request), signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal, onImage);
+ 			active.add(task);
+ 			task.finally(() => active.delete(task)).catch(() => {});
+ 			return task;
+diff --git a/node_modules/@deepseek-ai/libreoffice-kit/lib/editor.js b/node_modules/@deepseek-ai/libreoffice-kit/lib/editor.js
+index 923a306..2076275 100644
+--- a/node_modules/@deepseek-ai/libreoffice-kit/lib/editor.js
++++ b/node_modules/@deepseek-ai/libreoffice-kit/lib/editor.js
+@@ -502,7 +502,8 @@ const ENGINE_PREFIX = "@deepseek-ai/libreoffice-kit";
+ * @returns true when at least one resolution directory holds the package.
+ */
+ function installedPackageExists(name) {
+-	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) !== void 0);
++	// Electron ASAR returns null for missing entries; Node returns undefined.
++	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) != null);
+ }
+ /**
+ * Return the optional package target for the current process ABI.
+diff --git a/node_modules/@deepseek-ai/libreoffice-kit/lib/index.js b/node_modules/@deepseek-ai/libreoffice-kit/lib/index.js
+index 35d1be4..a89128f 100644
+--- a/node_modules/@deepseek-ai/libreoffice-kit/lib/index.js
++++ b/node_modules/@deepseek-ai/libreoffice-kit/lib/index.js
+@@ -1067,9 +1067,26 @@ function plan(ready, request) {
+ 		})
+ 	};
+ }
++/** Await consumer backpressure within the converter cancellation/deadline lifetime. */
++function notifyImage(onImage, image, pageCount, signal) {
++	if (onImage === void 0) return;
++	signal.throwIfAborted();
++	return new Promise((resolve, reject) => {
++		const finish = (settle, value) => {
++			signal.removeEventListener("abort", abort);
++			settle(value);
++		};
++		const abort = () => finish(reject, signal.reason);
++		signal.addEventListener("abort", abort, { once: true });
++		Promise.resolve().then(() => {
++			signal.throwIfAborted();
++			return onImage(image, pageCount);
++		}).then(value => finish(resolve, value), error => finish(reject, error));
++	});
++}
+ /** Run one native image batch and write final PNGs only after each bounded paint succeeds. */
+ async function renderImagesWithNative(request) {
+-	const { engine, options, source, scratch, profile, fonts, substitutions, missingFonts, operation, signal } = request;
++	const { engine, options, source, scratch, profile, fonts, substitutions, missingFonts, operation, signal, onImage } = request;
+ 	signal.throwIfAborted();
+ 	await mkdir(profile, { mode: 448 });
+ 	await prepareNativeFontProfile(profile, substitutions);
+@@ -1243,6 +1260,8 @@ async function renderImagesWithNative(request) {
+ 					rectangle: region.rectangle,
+ 					byteLength: png.byteLength
+ 				});
++				signal.throwIfAborted();
++				await notifyImage(onImage, images.at(-1), planned.count, signal);
+ 			}
+ 			child.stdin.end("DONE\n");
+ 			if ((await response()).kind !== "done") throw new Error("LibreOffice native renderer did not finish.");
+@@ -1573,7 +1592,8 @@ const ENGINE_PREFIX = "@deepseek-ai/libreoffice-kit";
+ * @returns true when at least one resolution directory holds the package.
+ */
+ function installedPackageExists(name) {
+-	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) !== void 0);
++	// Electron ASAR returns null for missing entries; Node returns undefined.
++	return (require.resolve.paths(name) ?? []).some((directory) => lstatSync(join(directory, name), { throwIfNoEntry: false }) != null);
+ }
+ /**
+ * Return the optional package target for the current process ABI.
+@@ -2218,7 +2238,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 			}
+ 		}
+ 	}
+-	async function executeImages(request, signal) {
++	async function executeImages(request, signal, onImage) {
+ 		await acquire(signal);
+ 		const deadline = new AbortController();
+ 		const stopped = AbortSignal.any([signal, deadline.signal]);
+@@ -2244,7 +2264,13 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 				fontCache: [...shared.fontCache.values()]
+ 			}, stopped, (entries) => mergeCache(fonts.generation, entries));
+ 			let images;
+-			if ("images" in result) images = result.images;
++			if ("images" in result) {
++				images = result.images;
++				for (const image of images.images) {
++					stopped.throwIfAborted();
++					await notifyImage(onImage, image, images.pageCount, stopped);
++				}
++			}
+ 			else if ("fonts" in result) {
+ 				const profile = join(scratch, "profile");
+ 				images = await renderImagesWithNative({
+@@ -2257,6 +2283,7 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 					substitutions: result.substitutions,
+ 					missingFonts: result.missingFonts,
+ 					operation: request,
++					onImage,
+ 					signal: stopped
+ 				});
+ 			} else throw new ConversionError("failed", "Image worker did not return its manifest.");
+@@ -2297,8 +2324,9 @@ function createConverterWith(resolvedOptions, engine, shared, onDispose) {
+ 	const converter = {
+ 		backend: engine.backend,
+ 		render: (request, signal) => submit(request, "render", signal),
+-		async renderImages(request, signal) {
+-			const task = executeImages(resolveImageRender(request), signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal);
++		async renderImages(request, signal, onImage) {
++			if (onImage !== void 0 && typeof onImage !== "function") throw new TypeError("Image progress must be a function.");
++			const task = executeImages(resolveImageRender(request), signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal, onImage);
+ 			active.add(task);
+ 			task.finally(() => active.delete(task)).catch(() => {});
+ 			return task;
+diff --git a/node_modules/@deepseek-ai/libreoffice-kit/lib/types/index.d.ts b/node_modules/@deepseek-ai/libreoffice-kit/lib/types/index.d.ts
+index 3cccf0e..7c5d8c2 100644
+--- a/node_modules/@deepseek-ai/libreoffice-kit/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/libreoffice-kit/lib/types/index.d.ts
+@@ -1,4 +1,4 @@
+-import type { RenderImagesRequest, RenderImagesResult } from './image-operations.ts';
++import type { RenderImagesRequest, RenderImagesResult, RenderedImage } from './image-operations.ts';
+ export { IMAGE_FORMATS } from './image-operations.ts';
+ export type { RenderImagesRequest, RenderImagesResult, RenderedImage } from './image-operations.ts';
+ import type { EnginePackageResolver } from './engine.ts';
+@@ -77,8 +77,10 @@ export interface Converter {
+     /** Render Office directly to PNG, or PDF through PDFium, in one fresh output directory.
+      * Worksheets use sheet/A1 coordinates; page selections are one-based for documents and slides.
+      * Failure/cancellation removes the complete batch. The manifest describes one saved input snapshot.
++     * Desktop progress runs after each validated PNG write (native), or after worker completion (WASM).
++     * Await the complete result before treating the batch as successful; callback errors fail the batch.
+      */
+-    renderImages(request: RenderImagesRequest, signal?: AbortSignal): Promise<RenderImagesResult>;
++    renderImages(request: RenderImagesRequest, signal?: AbortSignal, onImage?: (image: RenderedImage, pageCount: number) => void | Promise<void>): Promise<RenderImagesResult>;
+     /** Convert to the output extension; CSV requires a sheet for multi-sheet inputs. PDF results include `pageCount`. */
+     convert(request: ConversionRequest, signal?: AbortSignal): Promise<RenderResult>;
+     /**
+diff --git a/node_modules/@deepseek-ai/libreoffice-kit/lib/types/native-image-renderer.d.ts b/node_modules/@deepseek-ai/libreoffice-kit/lib/types/native-image-renderer.d.ts
+index eb4ab0d..d6675b4 100644
+--- a/node_modules/@deepseek-ai/libreoffice-kit/lib/types/native-image-renderer.d.ts
++++ b/node_modules/@deepseek-ai/libreoffice-kit/lib/types/native-image-renderer.d.ts
+@@ -1,4 +1,4 @@
+-import { type ImageRenderSpec, type RenderImagesResult } from './image-operations.ts';
++import { type ImageRenderSpec, type RenderImagesResult, type RenderedImage } from './image-operations.ts';
+ import type { FontSubstitution } from './font-loader.ts';
+ import type { NativeEngine } from './engine.ts';
+ import type { ResolvedOptions } from './options.ts';
+@@ -14,5 +14,6 @@ export declare function renderImagesWithNative(request: {
+     readonly missingFonts: string[];
+     readonly operation: ImageRenderSpec;
+     readonly signal: AbortSignal;
++    readonly onImage?: (image: RenderedImage, pageCount: number) => void | Promise<void>;
+ }): Promise<RenderImagesResult>;
+ //# sourceMappingURL=native-image-renderer.d.ts.map
+\ No newline at end of file

@@ -1,0 +1,69 @@
+diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
+index 6f5dfcc..4e7b219 100644
+--- a/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js
+@@ -776,13 +776,27 @@ var WindowsJobOwner = class {
+ function launchWindowsJob(spec, targetEnv, internals = {}) {
+ 	const invocation = internals.runnerInvocation ?? spawnRunnerInvocation();
+ 	const [command, ...prefix] = invocation;
++
++	// Electron GUI children need their own hidden console; they do not inherit it.
++	const consoleImports = [];
++	if (process.versions.electron && process.env.DSH_DESKTOP_HIDDEN_CONSOLE === "1") {
++		for (let index = 0; index < process.execArgv.length; index += 1) {
++			const arg = process.execArgv[index];
++			const next = process.execArgv[index + 1];
++			if (arg === "--import" && next?.includes("windows-hide-console-import")) consoleImports.push(arg, next);
++			else if (arg?.startsWith("--import=") && arg.includes("windows-hide-console-import")) consoleImports.push(arg);
++		}
++	}
++	const targetArgv = spec.argv[0] === process.execPath ? [spec.argv[0], ...consoleImports, ...spec.argv.slice(1)] : spec.argv;
++
+ 	const ignoredStdinFd = spec.stdio.stdin === "ignore" ? openSync(devNull, "r") : void 0;
+ 	let child;
+ 	try {
+ 		child = (internals.spawn ?? spawn)(command, [
++			...consoleImports,
+ 			...prefix,
+ 			"--",
+-			...spec.argv
++			...targetArgv
+ 		], {
+ 			cwd: process.cwd(),
+ 			windowsHide: true,
+diff --git a/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts b/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
+index 34bfff7..ee3132e 100644
+--- a/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
++++ b/node_modules/@deepseek-ai/dsh-subprocess-local/src/windows-job.ts
+@@ -140,13 +140,30 @@ export function launchWindowsJob(
+ ): ManagedProcessLaunch {
+   const invocation = internals.runnerInvocation ?? spawnRunnerInvocation()
+   const [command, ...prefix] = invocation
++
++  // Electron GUI children do not inherit the parent's console, even without
++  // CREATE_NO_WINDOW. Reapply Desktop's trusted preload to each Electron hop.
++  // Keep it in argv: subprocess environment scrubbing must remain intact.
++  const consoleImports: string[] = []
++  if (process.versions.electron && process.env.DSH_DESKTOP_HIDDEN_CONSOLE === '1') {
++    for (let index = 0; index < process.execArgv.length; index += 1) {
++      const arg = process.execArgv[index]
++      const next = process.execArgv[index + 1]
++      if (arg === '--import' && next?.includes('windows-hide-console-import')) consoleImports.push(arg, next)
++      else if (arg?.startsWith('--import=') && arg.includes('windows-hide-console-import')) consoleImports.push(arg)
++    }
++  }
++  const targetArgv = spec.argv[0] === process.execPath
++    ? [spec.argv[0], ...consoleImports, ...spec.argv.slice(1)] : spec.argv
++
+   const ignoredStdinFd = spec.stdio.stdin === 'ignore' ? openSync(devNull, 'r') : undefined
+   let child: RunnerProcess
+   try {
+     child = (internals.spawn ?? spawn)(command, [
++      ...consoleImports,
+       ...prefix,
+       '--',
+-      ...spec.argv,
++      ...targetArgv,
+     ], {
+       cwd: process.cwd(),
+       windowsHide: true,

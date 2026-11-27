@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.2-rc.1'
+const HARNESS_VERSION = '0.2.2-rc.5'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -200,11 +200,14 @@ describe('GitHub release contract', () => {
       'build/harness-node-entry.mjs',
       'build/host-module-fallback.mjs',
       'build/windows-hidden-console.mjs',
-      'build/windows-child-process-hide.mjs',
-      'build/windows-hide-console-import.mjs'
+      'build/windows-child-process-hide.mjs'
     ]) {
       expect(packageJson.build.extraResources).not.toContainEqual(expect.objectContaining({ from: removed }))
     }
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/windows-hide-console-import.mjs',
+      to: 'windows-hide-console-import.mjs'
+    })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/packaged-pnpm-invocation.mjs',
       to: 'packaged-pnpm-invocation.mjs'

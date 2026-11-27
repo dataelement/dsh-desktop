@@ -46,6 +46,43 @@ export const REAL_DIRECTORY_IN_PLACE = 'EDSH_REAL_PLUGIN_DIRECTORY'
 
 /** Versioned marker for the manifest fields owned by this derived projection. */
 const PROJECTION_VERSION = 1
+/** Windows denies rename onto a file another handle still has open. */
+const TRANSIENT_REPLACE_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
+/**
+ * Backoff before each retry. A scanner or Harness read usually drops the
+ * destination within a second; the last attempt still throws if it does not.
+ */
+const REPLACE_RETRY_DELAYS_MS = [40, 120, 300, 700]
+
+function delay(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+/**
+ * Replace an existing file without deleting it first.
+ *
+ * POSIX `rename` is atomic. On Windows the same call returns EPERM, EACCES,
+ * or EBUSY while the destination is open, which is what generation removal
+ * hits when it republishes `package.json` under a running host. Retry the
+ * same temporary file. Unlinking the destination before the new bytes land
+ * would drop the previous manifest if the lock never clears.
+ */
+async function replaceExistingFile(temporary, destination) {
+  let lastError
+  for (let attempt = 0; attempt <= REPLACE_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      await rename(temporary, destination)
+      return
+    } catch (error) {
+      lastError = error
+      if (!TRANSIENT_REPLACE_CODES.has(error?.code)) throw error
+      const wait = REPLACE_RETRY_DELAYS_MS[attempt]
+      if (wait === undefined) break
+      await delay(wait)
+    }
+  }
+  throw lastError
+}
 
 function profileDir(dshHome, profile = 'web') {
   return join(dshHome, 'profiles', profile)
@@ -710,8 +747,12 @@ async function syncProfileManifest(
   // `.install-complete` fingerprint for no reason.
   if (current !== body) {
     const temporary = `${manifestPath}.${process.pid}.${Date.now()}.tmp`
-    await writeFile(temporary, body, 'utf8')
-    await rename(temporary, manifestPath)
+    try {
+      await writeFile(temporary, body, 'utf8')
+      await replaceExistingFile(temporary, manifestPath)
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined)
+    }
   }
 
   return bundles

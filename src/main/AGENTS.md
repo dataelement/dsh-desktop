@@ -5,7 +5,7 @@
 ## 模块边界
 
 - `shell/app.ts` 是正式包的主进程入口，由 `electron.vite.config.ts` 打成 `out/main/index.js`。新的业务规则放入对应模块，避免继续堆叠 IPC handler、HTML 或文件操作实现。致命失败只交给 `recovery/fatal-entry`，规则见 `shell/AGENTS.md`。`profile/` 保存 profile 数据和 `web` 到 `desktop` 的复制，规则见 `profile/AGENTS.md`。`recovery/` 接收壳层交来的致命失败，规则见 `recovery/AGENTS.md`。
-- Host 子进程入口在 `src/host/`，主进程侧的拉起在 `shell/backend/`。`update/` 管更新状态；`mobile/` 管配对和桥接；`enterprise/` 管企业登录、凭据和模型网关；`desktop-service/` 管登录项诊断。这些模块不得反向导入 `shell/app.ts`。
+- Host 子进程入口在 `src/host/`，主进程侧的拉起在 `shell/backend/`。`update/` 管更新状态；`mobile/` 管配对和桥接；`enterprise/` 管企业登录、凭据和模型网关；`desktop-service/` 管登录项诊断和故障上报。这些模块不得反向导入 `shell/app.ts`。
 - 可测试的决策与 Electron/文件系统副作用分离；共享协议放 `src/shared/`，不要让 preload 导入 main 实现。
 
 ## IPC 与安全
@@ -19,7 +19,7 @@
 ## 生命周期与持久化
 
 - 子进程启动、停止、重试需要超时、退出处理和资源清理；重复调用不能产生并存 runtime 或遗留监听器。
-- 窗口关闭、隐藏到托盘、应用退出和 Harness 重启是不同操作；修改时保留现有平台语义，明确子进程和后台任务是否继续运行。涉及唤醒、网络恢复或多实例唤起时，验证重复事件不会重复启动任务。
+- 窗口关闭、隐藏到后台、应用退出和 Harness 重启是不同操作。macOS 关窗口隐藏进程，再点 Dock 图标显示，退出才结束；Windows 关窗口隐藏到托盘。修改时保留这些平台语义，明确子进程和后台任务是否继续运行。涉及唤醒、网络恢复或多实例唤起时，验证重复事件不会重复启动任务。
 - 长时间安装、网络请求和大型目录遍历不能阻塞主进程事件循环；需要进度、超时或取消时沿用对应服务的状态接口，不在窗口事件回调内实现完整任务。
 - 配置/迁移写入需考虑原子替换、崩溃恢复和重复执行。失败保留恢复材料，不能只输出成功日志或吞掉错误继续启动。
 - 清理目录须验证所有权与实际路径，处理 symlink/junction；平台路径使用 `node:path`，已有路径需要比较物理身份时使用 `realpath`。

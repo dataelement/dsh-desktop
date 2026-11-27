@@ -28,20 +28,24 @@ async function packagedLayout(engine = ENGINE): Promise<{ archive: string, entry
 }
 
 describe('Office engine resolution', () => {
-  it('shares one 0.1.5 kit across PPT, Office skills and PDF conversion', async () => {
+  it('shares one 0.2.3 kit across PPT and office-kit', async () => {
     const host = createRequire(import.meta.url)
     const manifest = host.resolve('@deepseek-ai/libreoffice-kit/package.json')
-    for (const consumer of ['dsh-ppt', '@deepseek-ai/dsh-skill-office', '@deepseek-ai/dsh-office-to-pdf']) {
+    for (const consumer of ['dsh-ppt', '@deepseek-ai/dsh-office-kit']) {
       const require = createRequire(host.resolve(consumer))
       expect(require.resolve('@deepseek-ai/libreoffice-kit/package.json')).toBe(manifest)
     }
     const kit = JSON.parse(await readFile(manifest, 'utf8'))
-    expect(kit.version).toBe('0.1.5')
-    expect(new Set(Object.values(kit.optionalDependencies))).toEqual(new Set(['0.1.5']))
+    expect(kit.version).toBe('0.2.3')
+    const optional = kit.optionalDependencies as Record<string, string>
+    expect(optional.koffi).toBe('3.1.1')
+    const engines = Object.entries(optional).filter(([name]) => name.startsWith('@deepseek-ai/libreoffice-kit-'))
+    expect(engines.length).toBeGreaterThan(0)
+    expect(new Set(engines.map(([, version]) => version))).toEqual(new Set(['0.2.3']))
     const lock = JSON.parse(await readFile(join(process.cwd(), 'package-lock.json'), 'utf8'))
     const kits = Object.keys(lock.packages).filter(path => path.endsWith('node_modules/@deepseek-ai/libreoffice-kit'))
     expect(kits).toEqual(['node_modules/@deepseek-ai/libreoffice-kit'])
-    expect(lock.packages['node_modules/@deepseek-ai/libreoffice-kit'].version).toBe('0.1.5')
+    expect(lock.packages['node_modules/@deepseek-ai/libreoffice-kit'].version).toBe('0.2.3')
   })
 
   it('finds the archive root only for an app.asar installation', () => {
@@ -106,7 +110,7 @@ describe('Office engine resolution', () => {
   it('registers the packaged engine in the desktop host before plugins load', async () => {
     const source = await readFile(join(process.cwd(), 'src/host/index.ts'), 'utf8')
     const registration = source.indexOf("registerOfficeEngineResolution(join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))")
-    const profile = source.indexOf('runProfile(')
+    const profile = source.indexOf('runHostProfile(')
     expect(registration).toBeGreaterThan(-1)
     expect(profile).toBeGreaterThan(registration)
   })

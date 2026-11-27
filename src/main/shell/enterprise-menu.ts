@@ -9,6 +9,8 @@ export interface DesktopMenuItem {
   role?: string
   enabled?: boolean
   accelerator?: string
+  visible?: boolean
+  acceleratorWorksWhenHidden?: boolean
   submenu?: DesktopMenuItem[]
   click?: () => void
 }
@@ -40,8 +42,8 @@ export function shortcutFileMenuLabels(locale: string): { fileMenu: string, clos
 
 /** Role actions remain native; their labels follow the Desktop language. */
 export function standardMenuLabels(locale: string) {
-  const { edit, undo, redo, cut, copy, paste, selectAll, window, minimize, close } = desktopMenuMessages(locale)
-  return { edit, undo, redo, cut, copy, paste, selectAll, window, minimize, close }
+  const { edit, undo, redo, cut, copy, paste, pasteAndMatchStyle, selectAll, window, minimize, close } = desktopMenuMessages(locale)
+  return { edit, undo, redo, cut, copy, paste, pasteAndMatchStyle, selectAll, window, minimize, close }
 }
 
 /** Keep About first. The file menu follows the application menu when shortcuts are installed. */
@@ -138,6 +140,10 @@ export function buildDarwinDesktopMenu(options: {
         { role: 'cut', label: standard.cut },
         { role: 'copy', label: standard.copy },
         { role: 'paste', label: standard.paste },
+        // Electron 44's default Edit menu binds Paste and Match Style to the wrong chord (#7782).
+        // The role label stays English unless overridden, so it follows the Desktop language too.
+        { role: 'pasteAndMatchStyle', label: standard.pasteAndMatchStyle, accelerator: 'Shift+Command+V' },
+        { role: 'pasteAndMatchStyle', label: standard.pasteAndMatchStyle, accelerator: 'Option+Shift+Command+V', visible: false, acceleratorWorksWhenHidden: true },
         { role: 'selectAll', label: standard.selectAll }
       ]
     },

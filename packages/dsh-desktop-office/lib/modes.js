@@ -1,6 +1,7 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { clientRequestSchema } from '@deepseek-ai/dsh-client-connection'
 import { renderSkillContent } from '@deepseek-ai/dsh-skill'
+import { MAX_OFFICE_REQUEST_BYTES } from './templates.js'
 
 const PLUGIN = 'dsh-desktop-office-composer'
 const sourcePlugin = source => source?.plugin ?? source?.kind?.replace(/^plugin:/, '')
@@ -20,8 +21,9 @@ export function templateContext(template) {
     `当前界面所选 Office 案例：${template.title}。`,
     `selected_template_id: ${template.id}`, `selected_template_revision: ${template.revision}`,
     `先调用 office_template(template_id="${template.id}")，再用 ${template.mode === 'word' ? 'office_template_write 按返回的 editable_paragraphs 编排并替换内容，生成新的 DOCX' : 'office-xlsx 处理返回的原生工作副本'}。`,
-    ...(template.mode === 'word' ? ['Word 的原生页面、样式、嵌入字体、版头、分隔线和页脚由所选模板提供。使用 office_template_write 的 replacements / additions / removals 填写当前内容，发文机关版头使用当前机构名称；present 时宿主会核对模板版式。'] : []),
-    '案例提供版式、章节、工作表与图表结构。当前用户材料提供全部事实、数值和结论；模板中的示例数据属于参考材料。',
+    ...(template.mode === 'word' ? [template.origin === 'personal' ? 'Word 的原生页面、样式、嵌入字体、版头、分隔线和页脚由所选模板提供。使用 office_template_write 的 replacements / additions / removals 填写当前内容；present 时宿主会核对模板版式。上传模板的页眉页脚保持原样，含字段/链接/绘图的段落不可直接替换。' : 'Word 的原生页面、样式、嵌入字体、版头、分隔线和页脚由所选模板提供。使用 office_template_write 的 replacements / additions / removals 填写当前内容，发文机关版头使用当前机构名称；present 时宿主会核对模板版式。'] : []),
+    template.origin === 'personal' ? '用户上传的模板保留原生结构。先阅读 design.md；只修改当前任务要求的内容，保留无关数据与公式，不把模板已有业务数据擅自改成示例。' : '案例提供版式、章节、工作表与图表结构。当前用户材料提供全部事实、数值和结论；模板中的示例数据属于参考材料。',
+    ...(template.origin === 'personal' && template.mode === 'excel' ? ['使用现有 office-xlsx 仅更新指定单元格。重算到独立临时文件核对数值；不能直接用重算稿覆盖原生样式稿。再按 office_template 返回的 guide，使用随副本提供的 xlsx-cache.py 回填公式缓存到新成品，保留原始公式/样式/数据，并保证 DSH 预览可显示结果。保留打开时自动计算，实际预览最终带缓存文件再 present。'] : []),
     ...(businessNames(template).length ? [`业务方法使用 ${businessNames(template).join('、')}。`] : [])
   ].join('\n')
 }
@@ -67,9 +69,18 @@ export function registerOfficeRoutes(ctx, library, modes) {
   const execute = async (endpoint, payload, signal) => {
       try {
         signal?.throwIfAborted()
-        if (!payload || JSON.stringify(payload).length > 16384) throw new Error('Use a bounded Office request')
+        if (!payload || JSON.stringify(payload).length > (endpoint === 'import' ? MAX_OFFICE_REQUEST_BYTES : 16384)) throw new Error('Use a bounded Office request')
         const { sessionId } = payload
         const ok = value => ({ ok: true, value })
+        if (endpoint === 'import' || endpoint === 'archive' || endpoint === 'update') {
+          if (!library.import || !library.archive) throw new Error('Personal Office templates are unavailable in this Profile')
+          if (endpoint === 'import') await library.import(payload, signal)
+          else if (endpoint === 'update') {
+            if (!library.update) throw new Error('Personal Office template metadata is unavailable')
+            await library.update(payload.templateId, payload.revision, payload.name, payload.description)
+          } else await library.archive(payload.templateId, payload.revision)
+          return ok({ templates: await library.list() })
+        }
         if (endpoint === 'preview') {
           if (payload.revision !== library.entry(payload.templateId).revision) throw new Error('The example was updated; reload the catalogue')
           return ok(await library.preview(payload.templateId, payload.page))
@@ -95,7 +106,7 @@ export function registerOfficeRoutes(ctx, library, modes) {
   ctx.connection.fetch.register({ path: '/api/office-templates', methods: ['POST'], requestBody: 'buffered',
     async fetch(request) {
       const raw = await request.text()
-      if (raw.length > 16384) return new Response('Office request is too large', { status: 413 })
+      if (raw.length > MAX_OFFICE_REQUEST_BYTES) return new Response('Office request is too large', { status: 413 })
       let message
       try { message = clientRequestSchema.parse(JSON.parse(raw)) } catch { return new Response('Use a valid Office request', { status: 400 }) }
       const result = message.method === 'office-templates'

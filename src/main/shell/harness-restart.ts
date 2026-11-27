@@ -73,6 +73,15 @@ export interface HarnessRestartSteps {
   /** Local waiting page. A false result is an ordinary load failure and the restart continues. */
   showWaiting: () => Promise<boolean>
   stop: () => Promise<void>
+  /**
+   * Runs after the old host has stopped and before the new one starts — the only
+   * moment generation projections are safe (a running plugin may still import from
+   * a generation). A failure is reported and does not block the restart: the pending
+   * restart banner stays and the host still comes back.
+   */
+  prepareStart?: () => Promise<void>
+  /** prepareStart threw. The host still starts; the caller records the failure. */
+  reportPrepareStartFailure?: (error: unknown) => void
   start: () => Promise<void>
   /** Load the saved application document for this session. */
   resume: (sessionId: number) => Promise<boolean>
@@ -105,6 +114,15 @@ export async function runHarnessRestart(steps: HarnessRestartSteps): Promise<boo
     steps.end(steps.sessionId)
     await steps.reportStopFailure(error)
     return false
+  }
+  if (abandoned(steps)) return false
+  if (steps.prepareStart !== undefined) {
+    try {
+      await steps.prepareStart()
+    } catch (error) {
+      if (!steps.isCurrent(steps.sessionId)) return false
+      steps.reportPrepareStartFailure?.(error)
+    }
   }
   if (abandoned(steps)) return false
   try {

@@ -19,10 +19,22 @@ export interface ProfileBundleInstallRequest {
   onOutput?(text: string, stream: 'stdout' | 'stderr'): void
 }
 
+export interface GenerationInstallationDrift {
+  name: string
+  code: 'external-modification'
+  path: string
+  expectedPath: string
+  recovery: string
+}
+
 export interface ProfileBundlePackageBackend {
   readonly supportsVerifiedInstall: true
-  /** Desired generations not yet selected by this Profile; same check as the mutation guard. */
-  readRestartStatus(): Promise<{ restartRequired: boolean; packages: string[] }>
+  /** Only staged switches require restart; external changes to committed entries need explicit recovery. */
+  readRestartStatus(): Promise<{
+    restartRequired: boolean
+    packages: string[]
+    installationDrift?: GenerationInstallationDrift[]
+  }>
   /** Installs every bundle, including the market, as an immutable generation. */
   install(request: ProfileBundleInstallRequest): Promise<{
     packageResult: PackageResult

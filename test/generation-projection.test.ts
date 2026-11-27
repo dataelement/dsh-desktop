@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -19,6 +19,8 @@ import {
 const generationMetaReadFault: {
   matches?: (path: string) => boolean
   renameDestination?: string
+  renameFailures?: number
+  persistRenameFault?: boolean
   symlinkDestination?: string
 } = vi.hoisted(() => ({}))
 
@@ -36,9 +38,17 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return actual.symlink(...args)
     },
     rename: async (...args: Parameters<typeof actual.rename>) => {
-      if (String(args[1]) === generationMetaReadFault.renameDestination) {
-        generationMetaReadFault.renameDestination = undefined
-        throw Object.assign(new Error('EPERM: simulated projection publication failure'), { code: 'EPERM' })
+      const fault = generationMetaReadFault
+      if (fault.renameDestination && String(args[1]) === fault.renameDestination) {
+        if (fault.persistRenameFault) {
+          throw Object.assign(new Error('EPERM: simulated projection publication failure'), { code: 'EPERM' })
+        }
+        const remaining = fault.renameFailures ?? 1
+        if (remaining > 0) {
+          fault.renameFailures = remaining - 1
+          if (fault.renameFailures === 0) fault.renameDestination = undefined
+          throw Object.assign(new Error('EPERM: simulated projection publication failure'), { code: 'EPERM' })
+        }
       }
       return actual.rename(...args)
     },
@@ -109,6 +119,8 @@ describe('generation projection onto the app-boot contract', () => {
   afterEach(async () => {
     generationMetaReadFault.matches = undefined
     generationMetaReadFault.renameDestination = undefined
+    generationMetaReadFault.renameFailures = undefined
+    generationMetaReadFault.persistRenameFault = undefined
     generationMetaReadFault.symlinkDestination = undefined
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
@@ -547,10 +559,14 @@ describe('generation projection onto the app-boot contract', () => {
     await fakeGeneration(home, 'a+2+x', 'plugin-a', '2.0.0')
     await fakeGeneration(home, 'new+1+x', 'plugin-new', '1.0.0')
     await writeDesired(home, ['market+2+x', 'a+2+x', 'new+1+x'])
-    if (phase === 'manifest') generationMetaReadFault.renameDestination = manifestPath
-    else generationMetaReadFault.symlinkDestination = join(modules, 'plugin-new')
+    if (phase === 'manifest') {
+      generationMetaReadFault.renameDestination = manifestPath
+      generationMetaReadFault.persistRenameFault = true
+    } else generationMetaReadFault.symlinkDestination = join(modules, 'plugin-new')
 
     await expect(projectGenerations(home)).rejects.toThrow('simulated projection publication failure')
+    generationMetaReadFault.persistRenameFault = false
+    generationMetaReadFault.renameDestination = undefined
     expect(await readFile(manifestPath, 'utf8')).toBe(beforeManifest)
     expect((await lstat(join(modules, 'dshmarket'))).isDirectory()).toBe(true)
     expect(await readFile(join(modules, 'dshmarket', 'package.json'), 'utf8')).toBe(oldMarket)
@@ -565,6 +581,26 @@ describe('generation projection onto the app-boot contract', () => {
     expect(JSON.parse(await readFile(join(modules, 'plugin-a', 'package.json'), 'utf8')).version).toBe('2.0.0')
     expect((await lstat(join(modules, 'plugin-new'))).isSymbolicLink()).toBe(true)
     await expect(lstat(join(modules, 'plugin-stale'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('publishes the profile manifest after a transient replace lock clears', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await initProfile(home)
+    await fakeGeneration(home, 'market+2+x', 'dshmarket', '2.0.0')
+    await writeDesired(home, ['market+2+x'])
+    const profile = join(home, 'profiles', 'web')
+    const manifestPath = join(profile, 'package.json')
+    generationMetaReadFault.renameDestination = manifestPath
+    generationMetaReadFault.renameFailures = 2
+
+    await projectGenerations(home)
+
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(manifest.dependencies.dshmarket).toBe('2.0.0')
+    expect(generationMetaReadFault.renameFailures).toBe(0)
+    const names = await readdir(profile)
+    expect(names.filter(name => name.includes('.tmp'))).toEqual([])
   })
 
   it('preserves the existing projection when desired generation metadata is temporarily unreadable', async () => {

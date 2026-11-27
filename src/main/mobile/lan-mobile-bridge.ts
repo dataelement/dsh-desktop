@@ -1,3 +1,4 @@
+import type { MobileProductExtension, MobileProductTransport, MobileRpcResult } from './product-extension'
 import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { networkInterfaces, tmpdir } from 'node:os'
@@ -90,6 +91,9 @@ const HARNESS_ENDPOINTS: Record<
 const RPC_ALLOWLIST = new Set([...Object.keys(HARNESS_ENDPOINTS), 'session.history', 'workspace.list'])
 
 export interface LanMobileBridgeOptions {
+  // A function is resolved once per start, before the bridge listens.
+  // That instance serves the run until stop.
+  product?: MobileProductExtension | (() => MobileProductExtension | undefined)
   harnessUrl(): string | undefined
   /**
    * Session cookie the shell already traded for the launch token.
@@ -171,6 +175,11 @@ interface MobileQuestionAnswer {
 }
 
 export class LanMobileBridge {
+  private readonly accessChannelToken = randomBytes(32).toString('base64url')
+  private detachProduct?: () => void | Promise<void>
+  private activeProduct?: MobileProductExtension
+  private remoteMuxUntil = 0
+  private remoteMuxTimer?: ReturnType<typeof setTimeout>
   private server?: ReturnType<typeof createServer>
   private port?: number
   private pairingToken?: string
@@ -224,6 +233,8 @@ export class LanMobileBridge {
       this.syncConnected()
       return this.snapshot()
     }
+    const product = this.options.product
+    this.activeProduct = typeof product === 'function' ? product() : product
     this.rotatePairingToken()
     this.server = createServer((request, response) => {
       void this.handle(request, response)
@@ -236,16 +247,36 @@ export class LanMobileBridge {
         // the renderers in step without polling either of them.
         .finally(() => this.syncConnected())
     })
-    await new Promise<void>((resolve, reject) => {
-      this.server?.once('error', reject)
-      this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
-    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.server?.once('error', reject)
+        this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
+      })
+    } catch (error) {
+      // A failed listen is not a running bridge. Release its state so the next
+      // click retries and preserves the original bind error if still occupied.
+      await this.stop()
+      throw error
+    }
     this.port = (this.server.address() as AddressInfo).port
+    try { this.detachProduct = this.activeProduct?.attach?.(this.productTransport()) || undefined }
+    catch (error) { await this.stop(); throw error }
     this.syncConnected()
     return this.snapshot()
   }
 
   async stop(): Promise<void> {
+    const detach = this.detachProduct
+    this.detachProduct = undefined
+    this.activeProduct = undefined
+    if (this.remoteMuxTimer) clearTimeout(this.remoteMuxTimer)
+    this.remoteMuxTimer = undefined
+    this.remoteMuxUntil = 0
+    // Close active streams immediately, before awaiting a product's remote unbind.
+    for (const abort of this.sessionStreamAborts) abort.abort()
+    let detachError: unknown
+    const detached = Promise.resolve().then(() => detach?.()).catch((error: unknown) => { detachError = error })
+
     const server = this.server
     this.server = undefined
     this.port = undefined
@@ -280,12 +311,14 @@ export class LanMobileBridge {
     this.muxAbort = undefined
     this.muxTask = undefined
     if (muxTask) await muxTask.catch(() => undefined)
-    if (!server) return
+    if (!server) { await detached; if (detachError) throw detachError; return }
     // An in-flight mobile RPC can hold its socket for up to the 30s abort
     // timeout; close() alone waits for active connections to drain, which
     // would stall app shutdown. Drop every live socket explicitly.
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
+    await detached
+    if (detachError) throw detachError
   }
 
   async toggleTunnel(enable?: boolean): Promise<LanMobileBridgeSnapshot> {
@@ -695,6 +728,9 @@ export class LanMobileBridge {
         ? normalizeRemoteAddress(forwardedAddress)
         : transportAddress
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
+    if (firstHeaderValue(request.headers['x-dsh-mobile-channel']) === 'remote') {
+      return this.handleProductChannel(request, response, url, transportAddress)
+    }
 
     if (request.method === 'GET' && url.pathname.startsWith('/brand-logo/')) {
       const variant = url.pathname === '/brand-logo/dark' ? 'dark' : 'light'
@@ -1068,7 +1104,7 @@ export class LanMobileBridge {
       })
     }
     if (request.method === 'GET' && url.pathname === '/') {
-      return this.html(response, renderMobilePage({ locale: this.locale() }))
+      return this.html(response, this.activeProduct?.renderPage?.(this.locale()) ?? renderMobilePage({ locale: this.locale() }))
     }
     if (request.method === 'GET' && url.pathname === '/api/session/stream') {
       this.verifyTrustedOrigin(request)
@@ -1079,12 +1115,74 @@ export class LanMobileBridge {
     if (request.method === 'POST' && url.pathname === '/api/rpc') {
       this.verifySameOrigin(request)
       const input = JSON.parse(await readBody(request)) as { method?: unknown; payload?: unknown }
+      const result = await this.dispatchMobileRpc(input)
+      return this.json(response, result.status, result.body)
+    }
+    this.text(response, 404, 'Not found.')
+  }
+
+  private productTransport(): MobileProductTransport {
+    return {
+      port: () => this.port,
+      channelToken: () => this.accessChannelToken,
+      request: async (path, init) => {
+        const base = this.options.harnessUrl()
+        if (!base) throw new Error('Harness is not ready.')
+        const url = new URL(path, base)
+        if (url.origin !== new URL(base).origin) throw new Error('Mobile product request must remain on the Host origin.')
+        return this.harnessFetch(url, init, base)
+      },
+      invoke: (endpoint, args) => this.invokeHarness(endpoint, args),
+      forward: (method, payload) => this.forwardRpc(method, payload)
+    }
+  }
+
+  private productRemoteAuthorized(request: IncomingMessage): boolean {
+    try {
+      return this.activeProduct?.authorizeRemote(request.headers) === true
+    } catch {
+      // Account lookup failures must deny access; do not log account headers or error secrets.
+      console.warn('[mobile-product] Authorization check failed; remote access denied.')
+      return false
+    }
+  }
+
+  private async handleProductChannel(request: IncomingMessage, response: ServerResponse, url: URL, address: string): Promise<void> {
+    const token = firstHeaderValue(request.headers['x-dsh-mobile-channel-token']) ?? ''
+    if (!isLoopbackAddress(address) || !this.pinsEqual(token, this.accessChannelToken) || !this.productRemoteAuthorized(request)) {
+      return this.json(response, 401, { ok: false, error: 'account_switched' })
+    }
+    this.remoteMuxUntil = this.now() + 120_000
+    if (this.remoteMuxTimer) clearTimeout(this.remoteMuxTimer)
+    this.remoteMuxTimer = setTimeout(() => { this.remoteMuxTimer = undefined; this.syncConnected() }, 120_000)
+    this.remoteMuxTimer.unref?.()
+    this.syncConnected()
+    if (request.method === 'GET' && url.pathname === '/api/v1/status') return this.json(response, 200, { ok: true, accepted: true })
+    if (request.method === 'POST' && url.pathname === '/api/v1/rpc') {
+      let input: { method?: unknown; payload?: unknown }
+      try { input = JSON.parse(await readBody(request)) as typeof input }
+      catch (error) { return this.json(response, error instanceof Error && error.message.includes('too large') ? 413 : 400, { ok: false, error: 'Invalid mobile request.' }) }
+      const result = await this.dispatchMobileRpc(input)
+      return this.json(response, result.status, result.body)
+    }
+    if (request.method === 'GET' && url.pathname === '/api/v1/session/stream') {
+      const sessionId = url.searchParams.get('sessionId')
+      if (!sessionId) return this.text(response, 400, 'Session id is required.')
+      return this.streamSession(request, response, sessionId, () => this.productRemoteAuthorized(request))
+    }
+    return this.json(response, 404, { ok: false, error: 'Not found.' })
+  }
+
+  private async dispatchMobileRpc(input: { method?: unknown; payload?: unknown }): Promise<{ status: number; body: MobileRpcResult }> {
+    if (!input || typeof input !== 'object') return { status: 400, body: { ok: false, error: 'Invalid mobile request.' } }
+    const custom = await this.activeProduct?.rpc?.(input, this.productTransport())
+    if (custom) return { status: custom.ok ? 200 : 400, body: custom }
       if (input.method === 'interaction.pending') {
         const sessionId = requiredStringField(input.payload, 'sessionId')
         const pending = [...this.pendingQuestions.values()].find(
           (item) => item.sessionId === sessionId
         )
-        return this.json(response, 200, { ok: true, value: pending ?? null })
+        return { status: 200, body: { ok: true, value: pending ?? null } }
       }
       if (input.method === 'interaction.answer') {
         const answer = parseQuestionResponse(input.payload)
@@ -1094,7 +1192,7 @@ export class LanMobileBridge {
           kind: 'result',
           value: { answers: answer.answers }
         })
-        return this.json(response, result.ok ? 200 : 400, result)
+        return { status: result.ok ? 200 : 400, body: result }
       }
       if (input.method === 'interaction.cancel') {
         const rpcId = requiredStringField(input.payload, 'rpcId')
@@ -1108,15 +1206,13 @@ export class LanMobileBridge {
             code: 'cancelled'
           }
         })
-        return this.json(response, result.ok ? 200 : 400, result)
+        return { status: result.ok ? 200 : 400, body: result }
       }
       if (typeof input.method !== 'string' || !RPC_ALLOWLIST.has(input.method)) {
-        return this.json(response, 403, { ok: false, error: 'RPC method is not available on mobile.' })
+        return { status: 403, body: { ok: false, error: 'RPC method is not available on mobile.' } }
       }
       const result = await this.forwardRpc(input.method, input.payload ?? {})
-      return this.json(response, result.ok ? 200 : 400, result)
-    }
-    this.text(response, 404, 'Not found.')
+      return { status: result.ok ? 200 : 400, body: result }
   }
 
   private locale(): 'en' | 'zh' {
@@ -1436,7 +1532,7 @@ export class LanMobileBridge {
    */
   private syncConnected(): void {
     const connected = this.sessions.size > 0
-    if (connected) this.startMuxMonitor()
+    if (connected || this.now() < this.remoteMuxUntil) this.startMuxMonitor()
     else this.muxAbort?.abort()
     if (connected === this.lastConnected) return
     this.lastConnected = connected
@@ -1587,16 +1683,20 @@ export class LanMobileBridge {
   private async streamSession(
     request: IncomingMessage,
     response: ServerResponse,
-    sessionId: string
+    sessionId: string,
+    authorized?: () => boolean
   ): Promise<void> {
     const base = this.options.harnessUrl()
     if (!base) return this.text(response, 503, 'Harness is not ready.')
     const cookie = await this.harnessSession(base)
+    if (authorized && !authorized()) return this.json(response, 401, { ok: false, error: 'account_switched' })
     const url = new URL(REMOTE_STREAM_MUX_PATH, base)
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     const streamId = `mobile-session-${randomUUID()}`
     const abort = new AbortController()
     this.sessionStreamAborts.add(abort)
+
+    const projection = this.activeProduct?.sessionProjection?.(sessionId, new URL(request.url || '/', 'http://localhost').searchParams.get('view'))
 
     response.statusCode = 200
     response.setHeader('content-type', 'text/event-stream; charset=utf-8')
@@ -1616,7 +1716,9 @@ export class LanMobileBridge {
       // same close pattern with the identical sink; keep the two in lockstep.
       socket.addEventListener('error', () => {})
       let settled = false
+      let authorizationTimer: ReturnType<typeof setInterval> | undefined
       const cleanup = (): void => {
+        if (authorizationTimer) clearInterval(authorizationTimer)
         request.removeListener('close', finish)
         abort.signal.removeEventListener('abort', finish)
         socket.removeEventListener('open', handleOpen)
@@ -1633,19 +1735,27 @@ export class LanMobileBridge {
         if (!response.writableEnded) response.end()
         resolve()
       }
+      const checkAuthorization = (): boolean => {
+        if (settled) return false
+        if (!authorized || authorized()) return true
+        finish()
+        return false
+      }
       const handleOpen = (): void => {
+        if (!checkAuthorization()) return
         socket.send(JSON.stringify({
           type: 'open',
           streamId,
           endpoint: 'session/follow',
           payload: {
             args: {
-              request: { address: { kind: 'session', sessionId }, maxMessages: 100 }
+              request: { address: { kind: 'session', sessionId }, maxMessages: 100, ...(projection?.assistantStream ? { assistantStream: true } : {}) }
             }
           }
         }))
       }
       const handleMessage = (event: { data: unknown }): void => {
+        if (!checkAuthorization()) return
         const text = typeof event.data === 'string'
           ? event.data
           : Buffer.isBuffer(event.data) ? event.data.toString('utf8') : undefined
@@ -1654,7 +1764,10 @@ export class LanMobileBridge {
         try { frame = JSON.parse(text) } catch { return }
         if (!isRecord(frame) || frame.streamId !== streamId) return
         if (frame.type === 'item') {
-          const value = frame.value
+          let value: unknown
+          try { value = projection ? projection.project(frame.value) : frame.value }
+          catch (error) { this.options.tunnelLog?.('Mobile stream projection failed: ' + (error instanceof Error ? error.message : 'unknown error')); finish(); return }
+          if (value === undefined || !checkAuthorization()) return
           const eventName = isRecord(value) && value.type === 'snapshot' ? 'snapshot' : 'event'
           response.write(`event: ${eventName}\ndata: ${JSON.stringify(value)}\n\n`)
         } else if (frame.type === 'error' || frame.type === 'end') {
@@ -1669,6 +1782,11 @@ export class LanMobileBridge {
       socket.addEventListener('message', handleMessage)
       socket.addEventListener('close', handleClose, { once: true })
       socket.addEventListener('error', handleError, { once: true })
+      // Idle streams also expire; no frame can pass after authorization is lost.
+      if (authorized) {
+        authorizationTimer = setInterval(checkAuthorization, 1000)
+        authorizationTimer.unref?.()
+      }
       if (abort.signal.aborted) finish()
     })
   }

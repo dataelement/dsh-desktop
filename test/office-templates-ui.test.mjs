@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import React, { act } from 'react'
+import { desktopUi } from './helpers/template-library-controls.mjs'
 import { createRoot } from 'react-dom/client'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -19,13 +20,14 @@ let root, container, cleanup = []
 afterEach(async () => { if (root) await act(async () => root.unmount()); for (const dispose of cleanup.splice(0)) dispose?.(); container?.remove(); root = null; delete window.__ModuleLoader__ })
 
 async function fixture({ bound = true, remote = {}, english = false, deferState = false, examples = templates, blank = true } = {}) {
+  examples = [...examples]
   let plugin, dictionaries, store, sessionId = bound ? 'session-a' : undefined
   let leading = true
   const seats = new Map(), calls = [], held = new Map(), failures = new Map(), states = new Map([['session-a', { mode: null, ...remote }]])
   const hooks = new Map()
   let releaseInitial
   if (deferState) held.set('state', new Promise(resolve => { releaseInitial = resolve }))
-  window.__ModuleLoader__ = { load({ factory }) { plugin = factory(name => { if (name === 'react') return React; throw new Error(name) }) } }
+  window.__ModuleLoader__ = { load({ factory }) { plugin = factory(name => { if (name === 'react') return React; if (name === 'dsh-desktop-client-ui') return desktopUi; throw new Error(name) }) } }
   new Function(source)()
   const connection = { rpc: { async call(channel, endpoint, payload, signal) {
     expect(channel).toBe('/api'); expect(endpoint).toBe('office-templates'); endpoint = payload.endpoint; const { endpoint: operation, ...args } = payload; payload = args; calls.push({ endpoint, payload, signal })
@@ -36,6 +38,9 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
     const failureKey = failures.has(requestKey) ? requestKey : endpoint
     if (failures.has(failureKey)) { const message = failures.get(failureKey); failures.delete(failureKey); return { ok: false, error: { message } } }
     if (endpoint === 'preview') return { ok: true, value: { page: payload.page, image, pages: examples.find(item => item.id === payload.templateId).pages } }
+    if (endpoint === 'import') examples.unshift({ ...templates[0], id: 'personal-upload', origin: 'personal', mode: payload.mode, title: payload.fileName.replace(/\.(docx|xlsx)$/, '') })
+    if (endpoint === 'update') examples = examples.map(item => item.id === payload.templateId ? { ...item, title: payload.name, description: payload.description } : item)
+    if (endpoint === 'archive') examples = examples.filter(item => item.id !== payload.templateId)
     let state = states.get(payload.sessionId) ?? { mode: null }
     if (endpoint === 'mode') state = { mode: payload.mode, selectedTemplateId: null }
     if (endpoint === 'select') state = { ...state, selectedTemplateId: payload.templateId }
@@ -43,7 +48,8 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
     states.set(payload.sessionId, state)
     return { ok: true, value: { ...state, templates: examples } }
   } } }
-  const ctx = { get: () => connection, effect(run) { cleanup.push(run()) }, on(name, hook) { hooks.set(name, hook) }, locale: { register(_ns, value) { dictionaries = value; return () => {} } },
+  let published
+  const ctx = { provide: (name, value) => { expect(name).toBe('desktopOffice'); published = value }, get: () => connection, effect(run) { cleanup.push(run()) }, on(name, hook) { hooks.set(name, hook) }, locale: { register(_ns, value) { dictionaries = value; return () => {} } },
     slots: { inject(_seat, run) { run() }, register(meta, component) { store = meta.inject().store; seats.set(meta.name, component) } } }
   plugin.apply(ctx)
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
@@ -61,13 +67,91 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
     const button = [...scope.querySelectorAll('button')].find(element => element.textContent === label || element.getAttribute('aria-label') === label)
     expect(button, label).toBeDefined(); await act(async () => button.click())
   }
-  return { calls, store, click, states, async reset() { await act(async () => hooks.get('connection/reset')()) },
+  return { calls, store, published, click, states, async reset() { await act(async () => hooks.get('connection/reset')()) },
     async releaseInitial() { await act(async () => { held.delete('state'); releaseInitial?.() }) }, fail(endpoint, message) { failures.set(endpoint, message) },
     hold(endpoint) { let release; held.set(endpoint, new Promise(resolve => release = resolve)); return async () => { await act(async () => { held.delete(endpoint); release() }) } },
     async setBlank(value) { blank = value; await act(async () => render()) },
     async setLeading(value) { leading = value; await act(async () => render()) },
     async switchSession(id) { sessionId = id; await act(async () => render()) } }
 }
+
+it.each([['Word', 'word', '.docx'], ['Excel', 'excel', '.xlsx']])('uploads and manages a personal %s template through the visible file input', async (label, mode, extension) => {
+  const f = await fixture(); await f.click(label)
+  const input = container.querySelector('input[type=file]')
+  expect(input.accept).toBe(extension)
+  expect(container.querySelector('.dso-grid').firstElementChild.textContent).toBe('新建自定义模板')
+  let opened = false
+  input.click = () => { opened = true }
+  await f.click('新建自定义模板')
+  expect(opened).toBe(true)
+  const file = new File(['native-file-bytes'], `自有模板${extension}`)
+  Object.defineProperty(input, 'files', { value: [file], configurable: true })
+  await act(async () => {
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await new Promise(resolve => setTimeout(resolve, 25))
+  })
+  expect(f.calls.find(call => call.endpoint === 'import')?.payload).toMatchObject({ mode, fileName: `自有模板${extension}`, data: btoa('native-file-bytes') })
+  await f.click('选用案例 自有模板')
+  expect(f.store.snapshot('session-a').selectedTemplateId).toBe('personal-upload')
+  await f.click('编辑模板 自有模板')
+  expect(container.querySelector('dialog[open] input').value).toBe('自有模板')
+  await f.click('保存修改')
+  expect(f.calls.find(call => call.endpoint === 'update')?.payload).toMatchObject({ templateId: 'personal-upload', name: '自有模板' })
+  await f.click('删除 自有模板')
+  expect(f.calls.some(call => call.endpoint === 'archive')).toBe(false)
+  await f.click('取消')
+  expect(container.querySelector('[data-office-template="personal-upload"]')).not.toBeNull()
+  await f.click('删除 自有模板')
+  expect(document.activeElement.textContent).toBe('取消')
+  f.fail('archive', '模拟删除失败')
+  await f.click('确认删除')
+  expect(container.querySelector('dialog[open]').textContent).toContain('模拟删除失败')
+  expect(container.querySelector('[data-office-template="personal-upload"]')).not.toBeNull()
+  await f.click('确认删除')
+  expect(container.querySelector('[data-office-template="personal-upload"]')).toBeNull()
+  expect(f.store.snapshot('session-a').selectionExpired).toBe(true)
+})
+
+it.each([false, true])('renders the template name separately from the localized delete explanation (English=%s)', async english => {
+  const item = { ...templates[0], id: 'personal-test', title: 'My template', titleEn: 'My template', origin: 'personal' }
+  const f = await fixture({ english, examples: [item] })
+  await f.click('Word')
+  await f.click(english ? 'Delete My template' : '删除 My template')
+
+  const copy = container.querySelector('dialog[open] .dsh-template-delete-copy')
+  expect(copy.querySelector('bdi')?.textContent).toBe('My template')
+  expect(copy.querySelector('br')?.nextSibling?.textContent).toBe(english
+    ? 'Generated files are preserved when you delete a template.'
+    : '删除模板后，已生成的文件继续保留。')
+})
+
+it('rejects the wrong upload format before making a request and displays import failures', async () => {
+  const f = await fixture(); await f.click('Word')
+  const input = container.querySelector('input[type=file]')
+  Object.defineProperty(input, 'files', { value: [new File(['bytes'], 'wrong.xlsx')] })
+  await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
+  expect(f.calls.some(call => call.endpoint === 'import')).toBe(false)
+  expect(container.textContent).toContain('请选择不超过 16 MiB')
+  f.fail('import', '模拟转换失败')
+  await act(async () => f.store.libraryChange('session-a', 'import', { mode: 'word', fileName: 'a.docx', data: 'YQ==' }))
+  expect(container.textContent).toContain('模拟转换失败')
+  expect(f.store.snapshot('session-a').busy).toBe(false)
+})
+
+it.each([false, true])('shows one localized import error and keeps the template library usable (English=%s)', async english => {
+  const f = await fixture({ english }); await f.click('Word')
+  f.fail('import', 'OFFICE_TEMPLATE_EXTERNAL_DATA')
+  await act(async () => f.store.libraryChange('session-a', 'import', { mode: 'word', fileName: 'linked.docx', data: 'YQ==' }))
+  const alerts = container.querySelectorAll('[role=alert]')
+  expect(alerts).toHaveLength(1)
+  expect(alerts[0].textContent).toContain(english ? 'external data links' : '外部数据链接')
+  expect(container.textContent).not.toContain('OFFICE_TEMPLATE_EXTERNAL_DATA')
+  expect(f.store.snapshot('session-a').busy).toBe(false)
+  await f.click(english ? 'Retry' : '重新加载')
+  expect(container.querySelector('[role=alert]')).toBeNull()
+  await f.click(english ? 'Select example Official notice' : '选用案例 公文写作 · 通知')
+  expect(f.store.snapshot('session-a').selectedTemplateId).toBe('government-notice')
+})
 
 it.each([
   ['Word', 'coffee-market', '中国现制咖啡市场调研报告'],
@@ -362,4 +446,17 @@ it('loads an Excel pair atomically and retries both pages after a worksheet fail
   expect(f.calls.filter(call => call.endpoint === 'preview').map(call => call.payload.page)).toEqual([1, 2, 1, 2])
   await f.click('做同款')
   expect(container.querySelector('[data-office-selected]').dataset.officeSelected).toBe('annual-business')
+})
+
+it('shares template mutations with extension clients and the visible picker', async () => {
+  const f = await fixture()
+  expect(f.published).toBe(f.store)
+  const snapshots = []
+  const dispose = f.published.subscribe('session-a', () => snapshots.push(f.published.snapshot('session-a')))
+  await act(async () => { expect(await f.published.mutate('session-a', 'mode', { mode: 'word' })).toBe(true) })
+  await act(async () => { expect(await f.published.mutate('session-a', 'select', { templateId: templates[0].id, revision: templates[0].revision })).toBe(true) })
+  expect(f.published.snapshot('session-a').selectedTemplateId).toBe(templates[0].id)
+  expect(container.querySelector('.dso-selected')).not.toBeNull()
+  expect(snapshots.some(state => state.busy)).toBe(true)
+  dispose()
 })

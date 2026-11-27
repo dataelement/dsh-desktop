@@ -6,7 +6,11 @@ const root = resolve(import.meta.dirname, '../..')
 export const hostBundle = join(root, 'out', 'main', 'host.js')
 
 export async function ensureHostBundle(): Promise<void> {
-  const sourceTime = (await stat(join(root, 'src/host/index.ts'))).mtimeMs
+  const sourceTimes = await Promise.all([
+    'src/host/index.ts',
+    'src/host/upstream-api.ts'
+  ].map(async file => (await stat(join(root, file))).mtimeMs))
+  const sourceTime = Math.max(...sourceTimes)
   let builtTime = 0
   try {
     builtTime = (await stat(hostBundle)).mtimeMs

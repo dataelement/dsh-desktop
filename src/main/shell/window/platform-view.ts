@@ -1,12 +1,9 @@
+import { desktopPlatformAdapter } from '../../../shared/desktop-platform'
 import type { EventEmitter } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
 import { WebContentsView, session, shell, type Session, type View, type WebFrameMain } from 'electron'
-import {
-  mergePlatformCookies,
-  platformClientHeaders,
-  type AccountClientMetadata,
-  type PlatformSession
-} from '@deepseek-ai/dsh-deepseek-account'
+import type { AccountClientMetadata, PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
+import { mergePlatformCookies, platformClientHeaders } from '@deepseek-ai/dsh-deepseek-account/client-metadata'
 import { PLATFORM_IPC, type PlatformLocale } from './ipc'
 
 export { PLATFORM_IPC } from './ipc'
@@ -73,7 +70,9 @@ export class DesktopPlatformView {
   async open(owner: PlatformOwner, page: 'usage' | 'top-up', bounds: PlatformBounds): Promise<void> {
     // The upstream account protocol has no Linux desktop identity. Never impersonate macOS.
     const platform = this.platform
-    if (platform !== 'darwin' && platform !== 'win32') throw new Error('Platform view unsupported on this platform')
+    if (!desktopPlatformAdapter(platform)?.officialAccount || (platform !== 'darwin' && platform !== 'win32')) {
+      throw new Error('Platform view unsupported on this platform')
+    }
     if (this.disposed) throw new Error('Platform view disposed')
     if (this.blocked(owner)) throw new Error('Platform view blocked by update prompt')
     this.close()

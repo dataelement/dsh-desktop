@@ -21,6 +21,8 @@
 # Keep the v0.9.2 settings launcher and model setup without upstream account UI.
 - id: ui-settings-account
   disabled: true
+- id: ui-account-notifications
+  disabled: true
 
 # Desktop keeps the existing web Profile; upstream only enables this for a
 # Profile named desktop. Enable the shipped browser in the Desktop overlay.
@@ -80,4 +82,3 @@
       name: dsh-desktop-office
       config:
         resources: !!js process.env.DSH_DESKTOP_OFFICE_RESOURCES
-        cli: !!js process.env.DSH_DESKTOP_OFFICE_CLI

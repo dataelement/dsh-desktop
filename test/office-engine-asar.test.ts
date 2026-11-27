@@ -38,7 +38,7 @@ async function selectionFixture(bundle: 'index.js' | 'cli.js', native: 'absent' 
   await writeFile(join(kit, 'package.json'), JSON.stringify({ type: 'module' }))
   await writeFile(join(kit, 'lib', 'selection.mjs'), [
     "import { createRequire } from 'node:module'",
-    "import { lstatSync } from 'node:fs'",
+    "import { lstatSync, statSync } from 'node:fs'",
     "import { readFile, stat } from 'node:fs/promises'",
     "import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'",
     installed.slice(start, end),
@@ -46,9 +46,9 @@ async function selectionFixture(bundle: 'index.js' | 'cli.js', native: 'absent' 
   ].join('\n'))
   const wasm = join(app, 'node_modules', '@deepseek-ai', 'libreoffice-kit-wasm')
   await mkdir(wasm, { recursive: true })
-  await writeFile(join(wasm, 'package.json'), JSON.stringify({ name: '@deepseek-ai/libreoffice-kit-wasm', version: '0.1.5' }))
+  await writeFile(join(wasm, 'package.json'), JSON.stringify({ name: '@deepseek-ai/libreoffice-kit-wasm', version: '0.2.3' }))
   await writeFile(join(wasm, 'prebuilds.json'), JSON.stringify({
-    schemaVersion: 1, version: '0.1.5', status: 'built', platform: 'wasm',
+    schemaVersion: 1, version: '0.2.3', status: 'built', platform: 'wasm',
     engine: { kind: 'wasm', loader: 'loader.js', wasm: 'engine.wasm', data: 'engine.data', metadata: 'metadata.json', programDirectory: 'program' },
   }))
   for (const asset of ['loader.js', 'engine.wasm', 'engine.data', 'metadata.json']) await writeFile(join(wasm, asset), '')
