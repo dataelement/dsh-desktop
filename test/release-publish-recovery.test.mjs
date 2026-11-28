@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 const workflow = parse(readFileSync('.github/workflows/release.yml', 'utf8'))
 const { jobs } = workflow
+const updateStrategy = JSON.parse(readFileSync('package.json', 'utf8')).dshDesktopUpdates?.strategy ?? 'policy'
 function enabled(job, inputs = {}, results = {}, ref = 'refs/heads/main', event = 'workflow_dispatch') {
   const expression = jobs[job].if.replace(/needs[.]([a-z0-9]+(?:-[a-z0-9]+)+)/g, (_, name) => `needs['${name}']`)
   return runInNewContext(expression, {
@@ -88,7 +89,14 @@ describe('official release publication recovery', () => {
     expect(step('Mirror release assets to ModelScope').run).toContain('tag = os.environ["RELEASE_TAG"]')
     expect(step('Mirror release assets to ModelScope').run).not.toContain('GITHUB_REF_NAME')
     const index = name => jobs.publish.steps.findIndex(item => item.name === name)
-    for (const name of ['Create or update release', 'Mirror release assets to ModelScope', 'Configure initial 5% rollout on crash service']) {
+    expect(index('Wait for Feishu release confirmation')).toBeGreaterThanOrEqual(0)
+    expect(index('Recheck immutable source after human approval')).toBeGreaterThanOrEqual(0)
+    const consumers = ['Create or update release', 'Mirror release assets to ModelScope']
+    const rollout = 'Configure initial 5% rollout on crash service'
+    expect(['policy', 'feed']).toContain(updateStrategy)
+    if (updateStrategy === 'policy') consumers.push(rollout)
+    else expect(step(rollout)).toBeUndefined()
+    for (const name of consumers) {
       expect(index(name)).toBeGreaterThan(index('Wait for Feishu release confirmation'))
       expect(index(name)).toBeGreaterThan(index('Recheck immutable source after human approval'))
     }
