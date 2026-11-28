@@ -502,7 +502,7 @@ Start by asking for the first piece of information still missing.`,
         let stopped = false
         let timer
         const poll = async () => {
-          await Promise.all([this.refreshRestartStatus(), this.refreshMarketRestartStatus()])
+          await this.refreshRestartStatus()
           if (!stopped && !this.disposed) timer = setTimeout(poll, 5000)
         }
         const changed = (event) => {
@@ -513,21 +513,6 @@ Start by asking for the first piece of information still missing.`,
         window.addEventListener?.('dsh-desktop-restart-required', changed)
         poll()
         return () => { stopped = true; clearTimeout(timer); window.removeEventListener?.('dsh-desktop-restart-required', changed) }
-      }
-      async refreshMarketRestartStatus() {
-        const runtimeId = this.restartRuntimeId
-        try {
-          const response = await this.request('/dsh-desktop/market-installer/status', { credentials: 'same-origin', cache: 'no-store' })
-          if (!response.ok) return
-          const status = await response.json()
-          if (this.disposed || runtimeId !== this.restartRuntimeId || typeof status.phase !== 'string' || typeof status.restartRequired !== 'boolean') return
-          const before = this.extraRestartSources.has('market')
-          if (status.restartRequired) this.extraRestartSources.add('market')
-          else this.extraRestartSources.delete('market')
-          if (before !== status.restartRequired) this.publish()
-        } catch {
-          // An unavailable optional market must not erase pending changes.
-        }
       }
       restartReasons() {
         return [...new Set([

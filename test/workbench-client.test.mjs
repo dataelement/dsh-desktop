@@ -4503,11 +4503,17 @@ describe('local workbench installation restart notice', () => {
     ctx.remote = { harness: { restart } }
     let pending = false
     request.mockImplementation(async () => Response.json({ restartRequired: pending }))
+    request.mockClear()
     const stop = service.watchRestartStatus()
     await vi.advanceTimersByTimeAsync(0)
+    expect(request.mock.calls.map(([url]) => url)).toEqual(['/api/desktop-workbenches/restart-status'])
     expect(service.getSnapshot().restartNeeded).toBe(false)
     pending = true
     await vi.advanceTimersByTimeAsync(5000)
+    expect(request.mock.calls.map(([url]) => url)).toEqual([
+      '/api/desktop-workbenches/restart-status',
+      '/api/desktop-workbenches/restart-status'
+    ])
     expect(service.getSnapshot().restartNeeded).toBe(true)
     expect(restart).not.toHaveBeenCalled()
     const reloaded = new Workbenches(ctx, request)
@@ -4571,25 +4577,6 @@ describe('local workbench installation restart notice', () => {
     await reloaded.refreshRestartStatus()
     expect(reloaded.restartNeeded).toBe(false)
     reloaded.dispose(); service.dispose()
-  })
-
-  it('merges only explicit market restart requirements and ignores stale responses from an old runtime', async () => {
-    const { service, request } = await fixture()
-    service.restartRuntimeId = 'before'
-    request.mockResolvedValue(Response.json({ phase: 'installed', restartRequired: true }))
-    await service.refreshMarketRestartStatus()
-    expect(service.restartReasons()).toContain('market')
-    const response = deferred()
-    request.mockReturnValue(response.promise)
-    const reading = service.refreshMarketRestartStatus()
-    service.restartRuntimeId = 'after'; service.extraRestartSources.clear()
-    response.resolve(Response.json({ phase: 'installed', restartRequired: true }))
-    await reading
-    expect(service.restartNeeded).toBe(false)
-    request.mockResolvedValue(Response.json({ phase: 'installed', restartRequired: false }))
-    await service.refreshMarketRestartStatus()
-    expect(service.restartNeeded).toBe(false)
-    service.dispose()
   })
 
   it('preserves current notice on older hosts/errors and ignores late results after disposal', async () => {
