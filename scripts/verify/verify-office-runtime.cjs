@@ -17,7 +17,7 @@ async function verifyOfficeRuntime(resources, executable, smokeScript = path.joi
   await fs.mkdir(diagnosticsDirectory, { recursive: true })
   const scratch = await fs.mkdtemp(path.join(diagnosticsDirectory, 'dsh-office-smoke-'))
   // Let the CLI report its own 120-second deadline before the process watchdog fires.
-  const options = { cwd: scratch, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 150_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true }
+  const options = { cwd: scratch, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 120_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true }
   let stage = 'Python authoring smoke'
   try {
     await execute(python, ['-I', '-B', smokeScript, scratch, metadata], options)
@@ -34,7 +34,7 @@ async function verifyOfficeRuntime(resources, executable, smokeScript = path.joi
       // smoke.py reopens each document and checks content and OPC paths;
       // current upstream skills no longer ship scripts/check_office.py.
       stage = `${extension.toUpperCase()} to PDF conversion`
-      await execute(executable, [cli, 'convert', '--input', input, '--output', path.join(scratch, `${extension}.pdf`), '--timeout-ms', '120000'], options)
+      await execute(executable, [cli, 'convert', '--input', input, '--output', path.join(scratch, `${extension}.pdf`), '--timeout-ms', '120000'], { ...options, timeout: 150_000 })
       stage = `${extension.toUpperCase()} PDF validation`
       const pdf = await fs.readFile(path.join(scratch, `${extension}.pdf`))
       if (pdf.subarray(0, 5).toString() !== '%PDF-') throw new Error(`Office ${extension} conversion did not produce PDF`)
@@ -43,13 +43,14 @@ async function verifyOfficeRuntime(resources, executable, smokeScript = path.joi
   } catch (cause) {
     // electron-builder prints message/stack, but drops execFile's diagnostic fields.
     const outputTail = value => String(value ?? '').slice(-16 * 1024)
-    throw new Error([
+    console.error([
       `Packaged Office gate failed at ${stage}: ${cause instanceof Error ? cause.message : String(cause)}`,
       `code=${cause?.code ?? 'unknown'} signal=${cause?.signal ?? 'none'} killed=${cause?.killed ?? 'unknown'}`,
       `stdout (last 16384 characters):\n${outputTail(cause?.stdout)}`,
       `stderr (last 16384 characters):\n${outputTail(cause?.stderr)}`,
       `Office smoke scratch preserved: ${scratch}`
-    ].join('\n'), { cause })
+    ].join('\n'))
+    throw cause
   }
   await fs.rm(scratch, { recursive: true, force: true })
 }
