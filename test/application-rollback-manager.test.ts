@@ -1,13 +1,19 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApplicationRollback } from '../src/main/update/application-rollback'
-import { DEFAULT_UPDATE_CONFIG } from '../src/main/update/update-config'
+import type { DesktopUpdateConfig } from '../src/main/update/update-config'
+
+const updateConfig: DesktopUpdateConfig = {
+  updatesBaseUrl: 'https://updates.example/desktop/',
+  strategy: 'policy',
+  policyUrl: 'https://updates.example/policy'
+}
 
 const mocks = vi.hoisted(() => ({ root: '', catalog: vi.fn(), netFetch: vi.fn(), handlers: new Map<string, (info: { version: string }) => void>(),
   updater: { setFeedURL: vi.fn(), checkForUpdates: vi.fn(), downloadUpdate: vi.fn(), quitAndInstall: vi.fn(), on: vi.fn() } }))
-vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd(), isPackaged: true, getVersion: () => '0.13.0', getPath: () => mocks.root, isReady: () => true },
+vi.mock('electron', () => ({ app: { getAppPath: () => mocks.root, isPackaged: true, getVersion: () => '0.13.0', getPath: () => mocks.root, isReady: () => true },
   BrowserWindow: { getAllWindows: () => [] }, powerMonitor: { on: vi.fn(), removeListener: vi.fn() }, ipcMain: { handle: vi.fn() },
   net: { fetch: mocks.netFetch } }))
 vi.mock('electron-updater', () => ({ default: { autoUpdater: mocks.updater } }))
@@ -19,6 +25,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   mocks.handlers.clear()
   mocks.root = await mkdtemp(join(tmpdir(), 'dsh-rollback-manager-'))
+  await writeFile(join(mocks.root, 'package.json'), JSON.stringify({ dshDesktopUpdates: updateConfig }))
   mocks.updater.on.mockImplementation((event: string, callback: (info: { version: string }) => void) => mocks.handlers.set(event, callback))
   mocks.catalog.mockResolvedValue([{ version: '0.11.2' }, { version: '0.12.1' }])
   mocks.updater.checkForUpdates.mockImplementation(async () => {
@@ -60,8 +67,8 @@ async function expectDesktopSessionRequest(request: unknown): Promise<void> {
   const signal = new AbortController().signal
   const response = { ok: true, status: 200, json: async () => ({ versions: [] }) }
   mocks.netFetch.mockResolvedValue(response)
-  await expect(request('https://dshdesktop.com/updates/versions.json', { signal })).resolves.toBe(response)
-  expect(mocks.netFetch).toHaveBeenCalledWith('https://dshdesktop.com/updates/versions.json', { signal })
+  await expect(request('https://updates.example/desktop/versions.json', { signal })).resolves.toBe(response)
+  expect(mocks.netFetch).toHaveBeenCalledWith('https://updates.example/desktop/versions.json', { signal })
 }
 
 it('keeps recovery downgrade closed without a verified data compatibility policy', async () => {
@@ -77,9 +84,9 @@ it.each(['darwin', 'win32'] as const)('downloads only the actual pre-upgrade ver
   const requests = mocks.catalog.mock.calls.map(call => call[1])
   expect(requests.length).toBeGreaterThan(0)
   expect(new Set(requests).size).toBe(1)
-  expect(mocks.catalog).toHaveBeenCalledWith('0.13.0', requests[0], DEFAULT_UPDATE_CONFIG)
+  expect(mocks.catalog).toHaveBeenCalledWith('0.13.0', requests[0], updateConfig)
   await expectDesktopSessionRequest(requests[0])
-  expect(mocks.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: 'https://dshdesktop.com/updates/archive/0.11.2/' })
+  expect(mocks.updater.setFeedURL).toHaveBeenCalledWith({ provider: 'generic', url: 'https://updates.example/desktop/archive/0.11.2/' })
   expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(false, true)
   expect(await manager.getApplicationRollbackStatus()).toMatchObject({ available: false, reason: 'rollback-installing' })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,7 +13,7 @@ const harness = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({
   app: {
-    getAppPath: () => harness.appPath || process.cwd(),
+    getAppPath: () => harness.appPath,
     get isPackaged() { return harness.packaged },
     getVersion: () => '0.12.1',
     getPath: () => '/tmp/dsh-desktop-update-service',
@@ -39,24 +39,35 @@ vi.mock('../src/main/desktop-service/diagnostics', () => ({
   attachDiagnostics: () => { harness.attached += 1 }
 }))
 
+beforeEach(() => {
+  vi.resetModules()
+  vi.clearAllMocks()
+  harness.packaged = false
+  harness.constructed = 0
+  harness.attached = 0
+  harness.appPath = mkdtempSync(join(tmpdir(), 'desktop-update-service-'))
+  writeFileSync(join(harness.appPath, 'package.json'), JSON.stringify({
+    dshDesktopUpdates: { updatesBaseUrl: 'https://updates.example/', strategy: 'policy', policyUrl: 'https://updates.example/policy' }
+  }))
+})
+
+afterEach(() => {
+  rmSync(harness.appPath, { recursive: true, force: true })
+  harness.appPath = ''
+  harness.packaged = false
+  vi.resetModules()
+})
+
 describe('official desktop update service', () => {
   it('does not initialize a policy service or diagnostics for a feed-only update check', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'desktop-update-feed-'))
-    try {
-      writeFileSync(join(dir, 'package.json'), JSON.stringify({ dshDesktopUpdates: { updatesBaseUrl: 'https://updates.example/', strategy: 'feed' } }))
-      harness.appPath = dir
-      harness.packaged = true
-      vi.resetModules()
-      const { initializeDesktopUpdateService } = await import('../src/main/desktop-service')
-      initializeDesktopUpdateService()
-      expect(harness.constructed).toBe(0)
-      expect(harness.attached).toBe(0)
-    } finally {
-      harness.appPath = ''
-      harness.packaged = false
-      vi.resetModules()
-      rmSync(dir, { recursive: true, force: true })
-    }
+    writeFileSync(join(harness.appPath, 'package.json'), JSON.stringify({
+      dshDesktopUpdates: { updatesBaseUrl: 'https://updates.example/', strategy: 'feed' }
+    }))
+    harness.packaged = true
+    const { initializeDesktopUpdateService } = await import('../src/main/desktop-service')
+    initializeDesktopUpdateService()
+    expect(harness.constructed).toBe(0)
+    expect(harness.attached).toBe(0)
   })
 
   it('creates only the policy service for a packaged check', async () => {

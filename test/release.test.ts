@@ -662,7 +662,11 @@ describe('rollback catalog publication', () => {
       'utf8'
     )
     expect(yml).toContain('releases/archive/')
-    expect(yml).toContain('from append_version_index import append_version_index')
+    // Products may wrap the publisher; retain the archive-before-index contract.
+    const archive = yml.indexOf('path_in_repo=f"releases/archive/{version}"')
+    const publishIndex = yml.indexOf('append_version_index(api, repo_id, token, version)')
+    expect(archive).toBeGreaterThanOrEqual(0)
+    expect(publishIndex).toBeGreaterThan(archive)
     expect(yml).toContain('releases/versions.json')
   })
 })

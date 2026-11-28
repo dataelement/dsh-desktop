@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const harness = vi.hoisted(() => ({ constructed: 0 }))
+const harness = vi.hoisted(() => ({ appPath: '', constructed: 0 }))
 
 vi.mock('electron', () => ({
   app: {
-    getAppPath: () => process.cwd(),
+    getAppPath: () => harness.appPath,
     isPackaged: true,
     getVersion: () => '0.12.1',
     getPath: () => '/tmp/dsh-desktop-update-service',
@@ -29,6 +32,21 @@ vi.mock('../src/main/desktop-service/service', () => ({
 vi.mock('../src/main/desktop-service/diagnostics', () => ({
   attachDiagnostics: () => undefined
 }))
+
+beforeEach(() => {
+  vi.resetModules()
+  harness.constructed = 0
+  harness.appPath = mkdtempSync(join(tmpdir(), 'desktop-update-service-failure-'))
+  writeFileSync(join(harness.appPath, 'package.json'), JSON.stringify({
+    dshDesktopUpdates: { updatesBaseUrl: 'https://updates.example/', strategy: 'policy', policyUrl: 'https://updates.example/policy' }
+  }))
+})
+
+afterEach(() => {
+  rmSync(harness.appPath, { recursive: true, force: true })
+  harness.appPath = ''
+  vi.resetModules()
+})
 
 describe('desktop update service initialization failure', () => {
   it('keeps the constructor error instead of the generic unavailable message', async () => {
